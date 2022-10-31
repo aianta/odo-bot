@@ -18,43 +18,21 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.StringReader;
+import java.util.List;
 import java.util.Map;
 
 public class SemanticFlowParser extends AbstractVerticle {
 
     private static final Logger log = LoggerFactory.getLogger(SemanticFlowParser.class);
 
-    RestClient restClient;
-    ElasticsearchTransport transport;
-    ElasticsearchClient client;
-
     @Override
     public Completable rxStart() {
 
-
-        log.info("Initializing Elasticsearch client");
-        restClient = RestClient.builder(new HttpHost("localhost", 9200)).build();
-        transport = new RestClientTransport(restClient, new JacksonJsonpMapper());
-        client = new ElasticsearchClient(transport);
-
-        log.info("Fetching documents from fused-index");
-        try{
-            SearchResponse<JsonData> search = client.search(s-> s
-                            .index("fused-index")
-                            .query(q->q
-                                    .matchAll(v->v.withJson(new StringReader("{}"))))
-                    , JsonData.class
-            );
-
-            for (Hit<JsonData> hit: search.hits().hits()){
-                log.info(hit.source().toString());
-                JsonObject json = JsonDataUtility.fromJsonData(hit.source());
-                log.info(json.encodePrettily());
-            }
-
-        }catch (IOException ioe){
-            log.error(ioe.getMessage(), ioe);
-        }
+        EventLogs eventLogs = EventLogs.getInstance();
+//        eventLogs.testSearch().forEach(jsonObject -> log.info(jsonObject.encodePrettily()));
+        List<JsonObject> events = eventLogs.fetchAll("fused-index");
+        events.forEach(jsonObject -> log.info(jsonObject.encodePrettily()));
+        log.info("{} events", events.size());
 
         return super.rxStart();
     }
