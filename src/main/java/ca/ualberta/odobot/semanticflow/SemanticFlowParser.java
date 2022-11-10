@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
 import org.elasticsearch.client.RestClient;
+import org.locationtech.jts.awt.PointShapeFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,7 +29,7 @@ import java.util.Map;
 public class SemanticFlowParser extends AbstractVerticle {
 
     private static final Logger log = LoggerFactory.getLogger(SemanticFlowParser.class);
-    private static final String RDF_REPO_ID = "calendar-1";
+    private static final String RDF_REPO_ID = "calendar-2";
 
     @Override
     public Completable rxStart() {
@@ -39,6 +40,14 @@ public class SemanticFlowParser extends AbstractVerticle {
         events.forEach(jsonObject -> log.info(jsonObject.encodePrettily()));
         log.info("{} events", events.size());
 
+        XPathProbabilityParser parser = new XPathProbabilityParser();
+        parser.parse(events);
+
+
+        return super.rxStart();
+    }
+
+    public void flowParse(List<JsonObject> events){
         log.info("Building flows model");
         FlowParser parser = new FlowParser.Builder()
                 .setNamespace("http://localhost:8080/rdf-server/repositories/"+RDF_REPO_ID+"#")
@@ -58,6 +67,5 @@ public class SemanticFlowParser extends AbstractVerticle {
         }
 
         log.info("done");
-        return super.rxStart();
     }
 }

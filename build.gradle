@@ -22,6 +22,19 @@ dependencies {
     implementation 'io.vertx:vertx-rx-java3'
     implementation 'io.vertx:vertx-config'
 
+    /**
+     * HTML parsing
+     */
+    // https://mvnrepository.com/artifact/org.jsoup/jsoup
+    implementation 'org.jsoup:jsoup:1.15.3'
+
+    /**
+     * MultiMaps
+     */
+    // https://mvnrepository.com/artifact/com.google.guava/guava
+    implementation 'com.google.guava:guava:31.1-jre'
+
+
     // https://mvnrepository.com/artifact/org.eclipse.rdf4j/rdf4j-bom
     implementation group: 'org.eclipse.rdf4j', name: 'rdf4j-bom', version: '4.2.0', ext: 'pom'
     implementation("org.eclipse.rdf4j:rdf4j-storage:4.2.0")
