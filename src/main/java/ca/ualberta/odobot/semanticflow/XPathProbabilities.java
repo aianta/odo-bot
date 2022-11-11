@@ -2,6 +2,8 @@ package ca.ualberta.odobot.semanticflow;
 
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Multimap;
+import io.vertx.core.json.JsonArray;
+import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -32,7 +34,13 @@ public class XPathProbabilities {
     public XPathProbabilities observeGivenThat(String xpath, String value, Map<String, String> newObservations){
         XpathValue xv = new XpathValue(xpath, value);
         Multimap<String,String> observations = conditionalObservations.getOrDefault(xv, ArrayListMultimap.create());
-        newObservations.entrySet().forEach(entry->observations.put(entry.getKey(), entry.getValue()));
+        newObservations.entrySet().forEach(entry-> {
+            //Exclude the conditioned upon xpath. We know that it is fixed and always set to the xpath value.
+            if(!entry.getKey().equals(xv.xpath())){
+                observations.put(entry.getKey(), entry.getValue());
+            }
+        });
+        conditionalObservations.put(xv, observations);
         return this;
     }
 
@@ -53,4 +61,42 @@ public class XPathProbabilities {
      return rawObservations.get(xpath);
     }
 
+    public Iterable<String> watchedXpaths(){
+        return rawObservations.keySet();
+    }
+
+    public JsonObject toJson(){
+        JsonObject contents = new JsonObject();
+
+        JsonObject raw = new JsonObject();
+        JsonArray conditional = new JsonArray();
+
+        //Construct raw observations
+        rawObservations.keySet().forEach(key->{
+            raw.put(key, rawObservations.get(key).stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
+        });
+
+        //Construct conditional observations
+        conditionalObservations.keySet().forEach(xpathValue -> {
+            JsonObject observation  = new JsonObject()
+                    .put("xpath", xpathValue.xpath())
+                    .put("value", xpathValue.value());
+
+            Multimap<String,String> conditionalData = conditionalObservations.get(xpathValue);
+            conditionalData.keySet().forEach(key->{
+                observation.put(key, conditionalData.get(key).stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
+            });
+            conditional.add(observation);
+        });
+
+        //Assemble the two in a single object
+        contents
+                .put("raw", raw)
+                .put("conditional", conditional);
+        return contents;
+    }
+
+    public String toString(){
+        return toJson().encodePrettily();
+    }
 }

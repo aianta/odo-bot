@@ -29,20 +29,22 @@ import java.util.Map;
 public class SemanticFlowParser extends AbstractVerticle {
 
     private static final Logger log = LoggerFactory.getLogger(SemanticFlowParser.class);
-    private static final String RDF_REPO_ID = "calendar-2";
+    private static final String RDF_REPO_ID = "calendar-4";
 
     @Override
     public Completable rxStart() {
-
-        EventLogs eventLogs = EventLogs.getInstance();
+        try{
+            EventLogs eventLogs = EventLogs.getInstance();
 //        eventLogs.testSearch().forEach(jsonObject -> log.info(jsonObject.encodePrettily()));
-        List<JsonObject> events = eventLogs.fetchAll(RDF_REPO_ID);
-        events.forEach(jsonObject -> log.info(jsonObject.encodePrettily()));
-        log.info("{} events", events.size());
+            List<JsonObject> events = eventLogs.fetchAll(RDF_REPO_ID);
+            //events.forEach(jsonObject -> log.info(jsonObject.encodePrettily()));
+            log.info("{} events", events.size());
 
-        XPathProbabilityParser parser = new XPathProbabilityParser();
-        parser.parse(events);
-
+            XPathProbabilityParser parser = new XPathProbabilityParser();
+            parser.parse(events);
+        }catch (Exception e){
+            log.error(e.getMessage(), e);
+        }
 
         return super.rxStart();
     }
