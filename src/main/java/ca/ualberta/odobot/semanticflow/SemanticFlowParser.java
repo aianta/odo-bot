@@ -11,25 +11,24 @@ import co.elastic.clients.transport.rest_client.RestClientTransport;
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.core.AbstractVerticle;
-import org.apache.http.HttpHost;
+
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
-import org.elasticsearch.client.RestClient;
-import org.locationtech.jts.awt.PointShapeFactory;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.io.StringReader;
+
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class SemanticFlowParser extends AbstractVerticle {
 
     private static final Logger log = LoggerFactory.getLogger(SemanticFlowParser.class);
-    private static final String RDF_REPO_ID = "calendar-4";
+    private static final String RDF_REPO_ID = "calendar-5";
 
     @Override
     public Completable rxStart() {
@@ -40,8 +39,30 @@ public class SemanticFlowParser extends AbstractVerticle {
             //events.forEach(jsonObject -> log.info(jsonObject.encodePrettily()));
             log.info("{} events", events.size());
 
+            Neo4JParser neo4j = new Neo4JParser("bolt://localhost", "neo4j","neo4j2");
+
             XPathProbabilityParser parser = new XPathProbabilityParser();
-            parser.parse(events);
+            XPathProbabilities xpp = parser.parse(events);
+            Set<XpathValue> xvs = xpp.getXpathValues();
+            xvs.forEach(xv->neo4j.createNode(xv.xpath(), xv.value()));
+
+
+
+            xvs.forEach(xv->{
+                Map<String, Map<String,Integer>> info = xpp.compute(xv.xpath(), xv.value());
+                info.forEach((xpath, map)->{
+                    map.forEach((value, count)->{
+                        if (value == "all"){
+                            return;
+                        }
+                        int total = map.get("all");
+                        neo4j.linkNodes(xv.xpath(), xv.value(), xpath, value, (double)count/(double) total, count, total);
+                    });
+                });
+            });
+
+            log.info("xvs: {}", xvs.size());
+
         }catch (Exception e){
             log.error(e.getMessage(), e);
         }

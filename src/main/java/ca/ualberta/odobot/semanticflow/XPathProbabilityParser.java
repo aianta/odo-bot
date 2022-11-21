@@ -18,13 +18,14 @@ import java.util.Optional;
 public class XPathProbabilityParser {
 
     private static final Logger log = LoggerFactory.getLogger(XPathProbabilityParser.class);
-    private Multimap<String, String> watchedXpaths = ArrayListMultimap.create();
+
     private XPathProbabilities probabilities = new XPathProbabilities();
 
-    public void parse(List<JsonObject> events){
+    public XPathProbabilities parse(List<JsonObject> events){
         events.forEach(this::parse);
 
         log.info("XPathProbabilities: {}",probabilities.toString());
+        return probabilities;
     }
 
     private void parse(JsonObject event) {
@@ -56,10 +57,10 @@ public class XPathProbabilityParser {
         String targetElementXpath = event.getString("eventDetails_xpath");
         JsonObject targetElementDetails = eventDetailsPath.getJsonObject(0);
         String targetInnerHTML = targetElementDetails.getString("innerHTML");
+        targetInnerHTML = targetInnerHTML.strip();
 
         //Record an observation for the current button click.
         if (targetElementXpath.equals(targetElementDetails.getString("xpath"))){
-            watchedXpaths.put(targetElementXpath, targetInnerHTML);
             probabilities.put(targetElementXpath, targetInnerHTML);
         }else{
             log.warn("Xpaths didn't match... {} and {}", targetElementXpath, targetElementDetails.getString("xpath"));

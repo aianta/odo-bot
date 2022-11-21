@@ -7,10 +7,7 @@ import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 public class XPathProbabilities {
 
@@ -61,6 +58,15 @@ public class XPathProbabilities {
      return rawObservations.get(xpath);
     }
 
+    public Set<XpathValue> getXpathValues(){
+        Set<XpathValue> result = new HashSet<>();
+        rawObservations.forEach((key,value)->{
+            XpathValue xv = new XpathValue(key, value);
+            result.add(xv);
+        });
+        return result;
+    }
+
     public Iterable<String> watchedXpaths(){
         return rawObservations.keySet();
     }
@@ -98,5 +104,36 @@ public class XPathProbabilities {
 
     public String toString(){
         return toJson().encodePrettily();
+    }
+
+    public Map<String, Map<String, Integer>> compute(String xpath, String value){
+        XpathValue xv = new XpathValue(xpath, value);
+        Multimap<String,String> data = conditionalObservations.get(xv);
+
+        Map<String, Map<String,Integer>> results = new HashMap<>();
+
+        data.keySet().forEach(key->{
+            Collection<String> values = data.get(key);
+            Map<String, Integer> count = new HashMap<>();
+
+            values.forEach(v->{
+                Integer total = count.getOrDefault("all", 0);
+                total++;
+                count.put("all", total);
+
+                if (v.equals("null")){
+                    return;
+                }
+
+                Integer c = count.getOrDefault(v, 0);
+                c++;
+                count.put(v, c);
+
+            });
+
+            results.put(key, count);
+        });
+
+        return results;
     }
 }
