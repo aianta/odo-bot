@@ -44,22 +44,24 @@ public class SemanticFlowParser extends AbstractVerticle {
             XPathProbabilityParser parser = new XPathProbabilityParser();
             XPathProbabilities xpp = parser.parse(events);
             Set<XpathValue> xvs = xpp.getXpathValues();
-            xvs.forEach(xv->neo4j.createNode(xv.xpath(), xv.value()));
 
 
+            //neo4j.materializeXpath("/html/body/div[3]/div[2]/div/div[2]/div[1]/div/div[1]/div/div/div/div[2]/a/i");
+            xpp.watchedXpaths().forEach(xpath->neo4j.materializeXpath(xpath));
 
-            xvs.forEach(xv->{
-                Map<String, Map<String,Integer>> info = xpp.compute(xv.xpath(), xv.value());
-                info.forEach((xpath, map)->{
-                    map.forEach((value, count)->{
-                        if (value == "all"){
-                            return;
-                        }
-                        int total = map.get("all");
-                        neo4j.linkNodes(xv.xpath(), xv.value(), xpath, value, (double)count/(double) total, count, total);
-                    });
-                });
-            });
+//            xvs.forEach(xv->neo4j.createNode(xv.xpath(), xv.value()));
+//            xvs.forEach(xv->{
+//                Map<String, Map<String,Integer>> info = xpp.compute(xv.xpath(), xv.value());
+//                info.forEach((xpath, map)->{
+//                    map.forEach((value, count)->{
+//                        if (value == "all"){
+//                            return;
+//                        }
+//                        int total = map.get("all");
+//                        neo4j.linkNodes(xv.xpath(), xv.value(), xpath, value, (double)count/(double) total, count, total);
+//                    });
+//                });
+//            });
 
             log.info("xvs: {}", xvs.size());
 
