@@ -20,6 +20,7 @@ public class Neo4JParser {
     private final Driver driver;
     private static final String DOM_ELEMENT_LABEL = "DOM_Element";
     private static final String EVENT_TARGET_LABEL = "Event_Target";
+    private static final String DOM_VALUE_LABEL = "DOM_Value";
 
     public Neo4JParser(String uri, String user, String password){
         driver = GraphDatabase.driver(uri, AuthTokens.basic(user, password));
@@ -38,15 +39,36 @@ public class Neo4JParser {
         }
     }
 
-    public void linkNodes(String xpath1, String value1, String xpath2, String value2, double probability, int observations, int totalObservations){
+    public void addValueNode(String xpath, String value){
         try(var session = driver.session()){
             session.executeWrite(tx->{
-                var queryString = "MATCH (n1 {xpath:\""+xpath1+"\", value:$value1}), " +
-                        "(n2 {xpath:\""+xpath2+"\", value:$value2}) " +
-                        "CREATE (n1)-[r:observes {probability: "+probability+", observations: "+observations+",  totalObservations: "+totalObservations+" }]->(n2); ";
-                log.info(queryString);
-               var query = new Query(queryString, parameters("value1", value1, "value2", value2));
-               tx.run(query);
+                var queryString =
+                        "MATCH (n1:"+DOM_ELEMENT_LABEL+":"+EVENT_TARGET_LABEL+" {path:$path1})" +
+                                "MERGE (n1)-[r1:value]->(v1:"+DOM_VALUE_LABEL+" {value:$value1}) RETURN *; ";
+                var query = new Query(queryString, parameters("path1",xpath, "value1", value));
+                tx.run(query);
+                return 0;
+            });
+        }
+    }
+
+    public void linkNodes(String xpath1, String value1, String xpath2, String value2, double probability, int observations, int totalObservations){
+        //Create value nodes
+        addValueNode(xpath1, value1);
+        addValueNode(xpath2, value2);
+
+        //Bind value nodes together
+        try(var session = driver.session()){
+            session.executeWrite(tx->{
+
+                var queryString =
+                        "MATCH (n1:"+DOM_ELEMENT_LABEL+":"+EVENT_TARGET_LABEL+" {path:$path1})-[:value]->(v1:"+DOM_VALUE_LABEL+" {value:$value1}), (n2:"+DOM_ELEMENT_LABEL+":"+EVENT_TARGET_LABEL+" {path:$path2})-[:value]->(v2:"+DOM_VALUE_LABEL+" {value:$value2}) " +
+                                "CREATE (v1)-[r:observes {probability: "+probability+", observations: "+observations+",  totalObservations: "+totalObservations+" }]->(v2) RETURN *; ";
+
+               var query = new Query(queryString, parameters("path1", xpath1, "path2", xpath2, "value1", value1, "value2", value2));
+               log.info("{}", query.toString());
+               Result result = tx.run(query);
+               //log.info("result:{}",result.single().toString());
                return 0;
             });
         }
@@ -78,8 +100,8 @@ public class Neo4JParser {
             int parentIndex = getIndex(parent);
             int childIndex = getIndex(child);
 
-            parentPath += parent + "/";
-            childPath = parentPath + child + "/";
+            parentPath += parent + ( parentIt.hasNext()?"/":"");
+            childPath = parentPath + child + (childIt.hasNext()?"/":"");
             log.info("parent: {} path: {} child:{} path:{}", parent, parentPath, child, childPath);
 
             //Build xpath
