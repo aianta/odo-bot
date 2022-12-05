@@ -4,3 +4,4 @@ build
 test_store.ttl
 test_store
 sample*.json
+calendar*.json
