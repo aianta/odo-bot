@@ -55,13 +55,13 @@ public class XPathProbabilityParser {
 
         JsonArray eventDetailsPath = new JsonArray(event.getString("eventDetails_path"));
         String targetElementXpath = event.getString("eventDetails_xpath");
-        JsonObject targetElementDetails = eventDetailsPath.getJsonObject(0);
-        String targetInnerHTML = targetElementDetails.getString("innerHTML");
-        targetInnerHTML = targetInnerHTML.strip();
+        JsonObject targetElementDetails = new JsonObject(event.getString("eventDetails_element"));
+        String targetOuterHTML = targetElementDetails.getString("outerHTML");
+        targetOuterHTML = targetOuterHTML.strip();
 
         //Record an observation for the current button click.
         if (targetElementXpath.equals(targetElementDetails.getString("xpath"))){
-            probabilities.put(targetElementXpath, targetInnerHTML);
+            probabilities.put(targetElementXpath, targetOuterHTML);
         }else{
             log.warn("Xpaths didn't match... {} and {}", targetElementXpath, targetElementDetails.getString("xpath"));
         }
@@ -69,24 +69,13 @@ public class XPathProbabilityParser {
         /*
          *  Iterate through our watched xpaths, and collect observations of their values.
          */
-        probabilities.observeGivenThat(targetElementXpath, targetInnerHTML, introspect(eventDetailsPath, probabilities.watchedXpaths()));
+        probabilities.observeGivenThat(targetElementXpath, targetOuterHTML, introspect(new JsonObject(event.getString("eventDetails_domSnapshot")), probabilities.watchedXpaths()));
 
     }
 
-    private Map<String,String> introspect(JsonArray pathInfo, Iterable<String> targetXpaths) throws Exception{
-        Optional<JsonObject> root = pathInfo.stream()
-                .map(o->(JsonObject)o)
-                .filter(json->json.getString("nodeName").equals("HTML")) //Find root in path
-                .findFirst();
+    private Map<String,String> introspect(JsonObject domSnapshot, Iterable<String> targetXpaths) throws Exception{
 
-        if(!root.isPresent()){
-            String msg = "Could not find root element in event path. Did bubbling get suppressed?";
-            log.error(msg);
-            throw new Exception(msg);
-        }
-
-        String rootHTML = root.get().getString("innerHTML");
-        rootHTML = "<html>" + rootHTML + "</html>";
+        String rootHTML = domSnapshot.getString("outerHTML");
         Document document = Jsoup.parse(rootHTML);
 
         Map<String, String> observations = new HashMap<>();

@@ -130,10 +130,9 @@ public class FlowParser {
 
 
 
-        JsonObject underlying = horrificTrash(event);
-        log.info("Result of horrific trash: {}", event.encodePrettily());
-        JsonArray nodes = underlying.getJsonObject("eventDetails")
-                .getJsonArray("nodes");
+        //JsonObject underlying = horrificTrash(event);
+        //log.info("Result of horrific trash: {}", event.encodePrettily());
+        JsonArray nodes = new JsonArray(event.getString("eventDetails_nodes"));
 
         if(nodes.size() == 0){
             log.warn("Got effect with 0 nodes... this probably shouldn't happen...");
@@ -167,11 +166,9 @@ public class FlowParser {
 
     private void onButtonClick(JsonObject event){
         clicks++;
-        //Get underlying entry
-        JsonObject underlying = horrificTrash(event);
 
         //Unpack metadata
-        JsonArray metadata = underlying.getJsonArray("metadata");
+        JsonArray metadata = new JsonArray(event.getString("metadata"));
 
         IRI buttonClick = Values.iri(namespace, event.getString("sessionID")+"$click$"+clicks);
         Literal buttonText = Values.literal(getMetadataValue("buttonText", metadata));
@@ -193,33 +190,5 @@ public class FlowParser {
                 .findFirst().get().getString("value");
     }
 
-    private JsonObject getUnderlying(JsonObject event){
-        //Get underlying entry
-        return new JsonObject(event.getString("log_entry"));
-    }
 
-    /**
-     * A temporary function that does bad string things to retrieve some items
-     * from the log_entry field.
-     *
-     * TODO-This needs to be repalced with a valid json string in log_entry
-     * @param event
-     * @return
-     */
-    private JsonObject horrificTrash(JsonObject event){
-        String logEntryText = event.getString("log_entry");
-        logEntryText = logEntryText.substring(52);
-
-//        log.info("trimmed:");
-//        log.info("{}", logEntryText);
-        logEntryText = "{" + logEntryText;
-
-        logEntryText = logEntryText.replaceAll("=>", ":");
-        logEntryText = logEntryText.replaceAll("nil", "\"null\"");
-        logEntryText = logEntryText.replaceAll("\\\\#", "");
-        log.info("json?");
-        log.info("{}", logEntryText);
-
-        return new JsonObject(logEntryText);
-    }
 }

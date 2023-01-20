@@ -1,6 +1,7 @@
 package ca.ualberta.odobot.semanticflow;
 
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
+import co.elastic.clients.elasticsearch._types.ElasticsearchException;
 import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.Time;
 import co.elastic.clients.elasticsearch.core.*;
@@ -106,7 +107,10 @@ public class EventLogs {
                 ClosePointInTimeResponse closePITResponse = client.closePointInTime(close->close.id(pitResponse.id()));
                 log.info("{}",closePITResponse.succeeded());
 
-            }catch (IOException e){
+            }catch (ElasticsearchException esException){
+                log.error(esException.getMessage(), esException);
+            }
+            catch (IOException e){
                 log.error(e.getMessage(), e);
             }finally {
                 //Finally, delete the PIT once we're done.

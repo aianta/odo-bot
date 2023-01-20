@@ -35,11 +35,12 @@ import java.util.stream.Collectors;
 public class SemanticFlowParser extends AbstractVerticle {
 
     private static final Logger log = LoggerFactory.getLogger(SemanticFlowParser.class);
-    private static final String RDF_REPO_ID = "calendar-6";
+    private static final String RDF_REPO_ID = "state-merge-7";
 
     @Override
     public Completable rxStart() {
         try{
+
             EventLogs eventLogs = EventLogs.getInstance();
 //        eventLogs.testSearch().forEach(jsonObject -> log.info(jsonObject.encodePrettily()));
             List<JsonObject> events = eventLogs.fetchAll(RDF_REPO_ID);
