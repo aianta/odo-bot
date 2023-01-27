@@ -1,5 +1,8 @@
 package ca.ualberta.odobot.semanticflow;
 
+import ca.ualberta.odobot.semanticflow.statemodel.Coordinate;
+import ca.ualberta.odobot.semanticflow.statemodel.CoordinateData;
+import ca.ualberta.odobot.semanticflow.statemodel.Graph;
 import io.vertx.core.json.JsonObject;
 import org.neo4j.driver.*;
 import org.neo4j.driver.Record;
@@ -26,6 +29,77 @@ public class Neo4JParser {
         driver = GraphDatabase.driver(uri, AuthTokens.basic(user, password));
     }
 
+    public void persistGraph(Graph g, String name, String sequence){
+        log.info("trying to persist graph under name: {} and sequence: {}", name, sequence);
+        try(var session = driver.session()){
+            //Create nodes
+            session.executeWrite(tx->{
+                g.getNodes().forEach(node->{
+                    var queryString = "CREATE (n:coordinate {xpath: $xpath, graph:$name, sequence:$sequence}) return n;";
+                    var query = new Query(queryString, parameters("xpath", node, "name", name, "sequence", sequence));
+                    tx.run(query);
+                });
+                return  0;
+            });
+
+            //Create edges
+            session.executeWrite(tx->{
+                g.getEdges().forEach(edge->{
+                    var queryString = "MATCH (n:coordinate {xpath: $source, graph: $name, sequence:$sequence}), (m:coordinate {xpath:$target, graph: $name, sequence:$sequence}) CREATE (n)-[r:edge]->(m);";
+                    var query = new Query(queryString, parameters("source", edge.source, "target", edge.target, "name", name, "sequence", sequence));
+                    tx.run(query);
+                });
+                return 0;
+            });
+
+            //Create data nodes
+            session.executeWrite(tx->{
+                g.getNodes().forEach(node->{
+                    Collection<CoordinateData> data = g.getData(node);
+                    data.forEach(d->{
+                        var queryString = "CREATE (d:data {" +
+                                "graph: $source," +
+                                "xpath: $xpath," +
+                                "sequence: $sequence," +
+                                "isEventTarget: $eventTarget," +
+                                "tag: $tag," +
+                                "attributes: $attributes," +
+                                "outerHTML: $outerHTML," +
+                                "eventId: $eventId" +
+                                "}) return d;";
+                        var query = new Query(queryString, parameters(
+                                "source", name,
+                                "xpath", node,
+                                "sequence", sequence,
+                                "eventTarget", d.isEventTarget(),
+                                "tag", d.getTag(),
+                                "attributes", d.getAttributes().encode(),
+                                "outerHTML", d.getOuterHTML() == null?"null": d.getOuterHTML(),
+                                "eventId", d.getEventId()
+                        ));
+                        tx.run(query);
+                    });
+
+                });
+                return 0;
+            });
+
+            //Bind data nodes to nodes
+            session.executeWrite(tx->{
+                g.getNodes().forEach(node->{
+                    var queryString = "MATCH (n: coordinate {xpath: $xpath, graph: $graph, sequence: $sequence}), (m:data {xpath:$xpath, graph:$graph, sequence:$sequence}) CREATE (n)-[r:value]->(m);";
+                    var query = new Query(queryString, parameters(
+                            "xpath", node,
+                            "graph", name,
+                            "sequence", sequence
+                    ));
+                    tx.run(query);
+                });
+                return 0;
+            });
+
+        }
+    }
     
     public void createNode(String xpath, String value){
         try(var session = driver.session()){
@@ -51,6 +125,8 @@ public class Neo4JParser {
             });
         }
     }
+
+
 
     public void linkNodes(String xpath1, String value1, String xpath2, String value2, double probability, int observations, int totalObservations){
         //Create value nodes

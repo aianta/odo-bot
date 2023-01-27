@@ -1,4 +1,4 @@
-package ca.ualberta.odobot.semanticflow;
+package ca.ualberta.odobot.semanticflow.statemodel;
 
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
@@ -16,13 +16,19 @@ public class Coordinate {
     public String xpath;
     public int index;
     private UUID id;
-    public UUID stateId;
-    private boolean isEventTarget;
-    private String outerHTML;
-    private String tag;
-    private JsonObject styleRules;
-    private JsonObject attributes;
-    private CoordinateType type;
+    private List<CoordinateData> data = new ArrayList<>();
+
+    public List<CoordinateData> getData() {
+        return data;
+    }
+
+    public void setData(CoordinateData data) {
+        this.data.add(data);
+    }
+
+    public void setData(List<CoordinateData> data){
+        this.data = data;
+    }
 
     public Coordinate(){};
 
@@ -35,14 +41,6 @@ public class Coordinate {
         this.xpath = coordinate.xpath;
         this.index = coordinate.index;
         this.id = coordinate.id;
-        this.stateId = coordinate.stateId;
-        this.isEventTarget = coordinate.isEventTarget;
-        this.outerHTML = coordinate.outerHTML;
-        this.tag = coordinate.tag;
-        this.styleRules = coordinate.styleRules;
-        this.attributes = coordinate.attributes;
-        this.type = coordinate.type;
-
     }
 
     public Graph toGraph(){
@@ -64,18 +62,12 @@ public class Coordinate {
         return coordinates.stream().filter(coordinate -> coordinate.xpath.equals(xpath)).findFirst();
     }
 
-    public boolean isStateless(){
-        return stateId == null;
-    }
+
 
     public boolean isRoot(){
         return parent == null;
     }
 
-    public Coordinate addChildren(Set<Coordinate> children){
-        this.children.addAll(children);
-        return this;
-    }
 
     public Coordinate addChild(Coordinate child){
         children.add(child);
@@ -87,61 +79,30 @@ public class Coordinate {
     }
 
     public int hashCode(){
-        if(stateId != null){
-            return xpath.hashCode() ^ stateId.hashCode() ^ index;
-        }else{
-            return xpath.hashCode() ^ index;
-        }
-
+        return xpath.hashCode() ^ index ;
     }
 
     public boolean equals(Object o){
         if(o instanceof Coordinate){
             Coordinate other = (Coordinate) o;
 
-            /*
-                For two coordinates to be the same they must have the same children
-             */
-            Set<String> childXpaths = getChildren().stream().map(c->c.xpath).collect(Collectors.toSet());
-            Set<String> otherXpaths = other.getChildren().stream().map(c->c.xpath).collect(Collectors.toSet());
+            return this.xpath.equals(other.xpath);
 
-            Set<String> intersection = new HashSet<>(childXpaths);
-            intersection.retainAll(otherXpaths);
-
-            if(intersection.size() != childXpaths.size()){
-                return false;
-            }
-
-            if (this.stateId != null && other.stateId != null){
-                return this.xpath.equals(other.xpath) && this.stateId.equals(other.stateId);
-            }else{
-                return this.xpath.equals(other.xpath);
-            }
         }
         return false;
     }
 
-    /**
-     * The log events from which this coordinate originates.
-     */
-    private Set<JsonObject> evidence = new HashSet<>();
 
-    public void submitEvidence(JsonObject event){
 
-    }
-
-    public boolean hasStyleRule(String property){
-        return styleRules.containsKey(property);
-    }
-
-    public String getAttribute(String attributeName){
-        return attributes.getString(attributeName);
-    }
 
     public Set<Coordinate> getChildren() {
         return children;
     }
 
+    /**
+     *
+     * @return A set containing this, and all child coordinates.
+     */
     public Set<Coordinate> toSet(){
         Set<Coordinate> result = new HashSet<>();
 
@@ -181,11 +142,22 @@ public class Coordinate {
         return toJson().encodePrettily();
     }
 
-    public CoordinateType getType() {
-        return type;
+    public static Coordinate merge(Coordinate c1, Coordinate c2){
+        Graph sourceGraph = c1.toGraph();
+        Graph targetGraph = c2.toGraph();
+        Graph result = Graph.merge(sourceGraph, targetGraph);
+        Set<Coordinate> resultingCoordinates = result.toCoordinate();
+        if(resultingCoordinates.size() > 1){
+            log.warn("rootset size was {} after merge!", resultingCoordinates.size());
+        }
+        return resultingCoordinates.iterator().next();
     }
 
-    public void setType(CoordinateType type) {
-        this.type = type;
-    }
+    //TODO - this doesn't make sense logically yet.
+//    public static Coordinate split(Coordinate c1, Coordinate c2){
+//        Graph sourceGraph = c1.toGraph();
+//        Graph targetGraph = c2.toGraph();
+//        Graph result = Graph.split(sourceGraph, targetGraph);
+//        return result.toCoordinate();
+//    }
 }

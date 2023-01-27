@@ -1,4 +1,4 @@
-package ca.ualberta.odobot.semanticflow;
+package ca.ualberta.odobot.semanticflow.statemodel;
 
 public enum CoordinateType {
     DOM_EFFECT_ADD,

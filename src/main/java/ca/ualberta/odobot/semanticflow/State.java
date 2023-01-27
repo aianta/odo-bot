@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.semanticflow;
 
+import ca.ualberta.odobot.semanticflow.statemodel.Coordinate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

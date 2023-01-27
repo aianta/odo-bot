@@ -1,6 +1,9 @@
 package ca.ualberta.odobot.semanticflow;
 
 
+import ca.ualberta.odobot.semanticflow.statemodel.Coordinate;
+import ca.ualberta.odobot.semanticflow.statemodel.DOMSliverSequence;
+import ca.ualberta.odobot.semanticflow.statemodel.Graph;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch.core.SearchResponse;
 import co.elastic.clients.elasticsearch.core.search.Hit;
@@ -26,10 +29,7 @@ import java.io.*;
 import java.sql.Date;
 import java.text.SimpleDateFormat;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class SemanticFlowParser extends AbstractVerticle {
@@ -50,30 +50,56 @@ public class SemanticFlowParser extends AbstractVerticle {
 
             Neo4JParser neo4j = new Neo4JParser("bolt://localhost", "neo4j","neo4j2");
 
-            XPathProbabilityParser parser = new XPathProbabilityParser();
-            XPathProbabilities xpp = parser.parse(events);
-            Set<XpathValue> xvs = xpp.getXpathValues();
+            StateParser sp = new StateParser();
+
+            List<JsonObject> specificEvents = new ArrayList<>();
+            boolean include = false;
+            for(JsonObject event: events){
+                if(event.getString("mongo_id").equals("63c82f037eacefdb6501b64c")){
+                    include = true;
+                }
+                if(include){
+                    specificEvents.add(event);
+                }
+            }
+
+            DOMSliverSequence sequence = sp.parse(specificEvents);
+            ListIterator<Coordinate> it = sequence.listIterator();
+            while (it.hasNext()){
+                int index = it.nextIndex();
+                Coordinate curr = it.next();
+                Graph currGraph = curr.toGraph();
+                neo4j.persistGraph(currGraph, Integer.toString(index), sequence.getId().toString());
+            }
 
 
-            //neo4j.materializeXpath("/html/body/div[3]/div[2]/div/div[2]/div[1]/div/div[1]/div/div/div/div[2]/a/i");
-            xpp.watchedXpaths().forEach(xpath->neo4j.materializeXpath(xpath));
+            log.info("Created sequence {} with {} graphs", sequence.getId().toString(), sequence.size());
 
-//            xvs.forEach(xv->neo4j.createNode(xv.xpath(), xv.value()));
-            xvs.forEach(xv->{
-                Map<String, Map<String,Integer>> info = xpp.compute(xv.xpath(), xv.value());
-                info.forEach((xpath, map)->{
-                    map.forEach((value, count)->{
-                        if (value == "all"){
-                            return;
-                        }
-                        int total = map.get("all");
-                        neo4j.linkNodes(xv.xpath(), xv.value(), xpath, value, (double)count/(double) total, count, total);
-                    });
-                });
-            });
 
-            log.info("{}", xpp.toString());
-            log.info("xvs: {}", xvs.size());
+//            XPathProbabilityParser parser = new XPathProbabilityParser();
+//            XPathProbabilities xpp = parser.parse(events);
+//            Set<XpathValue> xvs = xpp.getXpathValues();
+//
+//
+//            //neo4j.materializeXpath("/html/body/div[3]/div[2]/div/div[2]/div[1]/div/div[1]/div/div/div/div[2]/a/i");
+//            xpp.watchedXpaths().forEach(xpath->neo4j.materializeXpath(xpath));
+//
+////            xvs.forEach(xv->neo4j.createNode(xv.xpath(), xv.value()));
+//            xvs.forEach(xv->{
+//                Map<String, Map<String,Integer>> info = xpp.compute(xv.xpath(), xv.value());
+//                info.forEach((xpath, map)->{
+//                    map.forEach((value, count)->{
+//                        if (value == "all"){
+//                            return;
+//                        }
+//                        int total = map.get("all");
+//                        neo4j.linkNodes(xv.xpath(), xv.value(), xpath, value, (double)count/(double) total, count, total);
+//                    });
+//                });
+//            });
+//
+//            log.info("{}", xpp.toString());
+//            log.info("xvs: {}", xvs.size());
 
         }catch (Exception e){
             log.error(e.getMessage(), e);
@@ -81,6 +107,8 @@ public class SemanticFlowParser extends AbstractVerticle {
 
         return super.rxStart();
     }
+
+
 
     public void flowParse(List<JsonObject> events){
         log.info("Building flows model");

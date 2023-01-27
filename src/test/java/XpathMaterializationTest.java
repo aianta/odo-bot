@@ -1,5 +1,4 @@
-import ca.ualberta.odobot.semanticflow.Coordinate;
-import ca.ualberta.odobot.semanticflow.ModelManager;
+import ca.ualberta.odobot.semanticflow.statemodel.Coordinate;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,6 +19,15 @@ public class XpathMaterializationTest {
             "/html/body/div[13]/div/div/div/div[2]/button[12]",
             "/html/body/div[3]/div[2]/div[2]/div[2]/div[1]/div/form/div[3]/button[2]"
     };
+
+    private static String stopPath = "/html/body/div[6]/div[3]/div";
+    private static String testStopPathFull = "/html/body/div[6]/div[3]/div/ul/li/a";
+
+    @Test
+    void stopMaterializationTest(){
+        Coordinate result = materializeXpath(stopPath, testStopPathFull);
+        printChain(result);
+    }
 
     @Test
     void materializationTest(){

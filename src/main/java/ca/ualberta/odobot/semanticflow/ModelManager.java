@@ -1,67 +1,48 @@
 package ca.ualberta.odobot.semanticflow;
 
 
-import ca.ualberta.odobot.semanticflow.exceptions.UnmergableCoordinates;
+import ca.ualberta.odobot.semanticflow.statemodel.Coordinate;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Optional;
-import java.util.Set;
+import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 public class ModelManager {
 
     private static final Logger log = LoggerFactory.getLogger(ModelManager.class);
 
     /**
-     * Creates a new coordinate, which is the result of merging source and target coordinates.
-     * @param source coordinate to merge into.
-     * @param target coordinate to merge.
-     * @return merged coordinate.
+     * Like {@link #materializeXpath(String)} except stops once the {@code stop} xpath is reached.
+     * Implicitly the stop path should always be shorter than the xpath, and included within the xpath.
+     * @param stop The xpath at which to stop materializing.
+     * @param xpath The xpath to materialize.
+     * @return The materialized coordinate structure.
      */
-    public static Coordinate merge(Coordinate source, Coordinate target) {
-
-        Set<Coordinate> pool = new HashSet<>();
-
-        Set<String> sourceXpaths = source.getXpaths();
-        Set<String> targetXpaths = target.getXpaths();
-
-        Set<String> intersectionXpaths = new HashSet<>(sourceXpaths);
-        intersectionXpaths.retainAll(targetXpaths);
-
-        for(String xpath: intersectionXpaths){
-            Optional<Coordinate> sourceMergePoint = source.getByXpath(xpath);
-            Optional<Coordinate> targetMergePoint = target.getByXpath(xpath);
-
-            if(sourceMergePoint.isPresent() && targetMergePoint.isPresent()){
-                Coordinate sourceMergeCoordinate = sourceMergePoint.get();
-                Coordinate targetMergeCoordinate = targetMergePoint.get();
-                Coordinate result = new Coordinate();
-                result.xpath = xpath;
-                result.index = sourceMergeCoordinate.index;
-                result.parent = sourceMergeCoordinate.parent;
-                result.addChildren(sourceMergeCoordinate.getChildren());
-                result.addChildren(targetMergeCoordinate.getChildren());
-
-                pool.add(result);
-
-            }
-
+    public static Coordinate materializeXpath(String stop, String xpath){
+        if(!xpath.contains(stop)){
+            log.error("Stop xpath is not contained in xpath.");
+            return null;
         }
-
-        Coordinate root = pool.iterator().next().getRoot();
-
-        return root;
-
+        Predicate<String> reachedStopOrRoot = remainder ->remainder.isEmpty() || remainder.equals(stop);
+        return materializeXpath(xpath, reachedStopOrRoot);
     }
 
-
     public static Coordinate materializeXpath(String xpath){
+        Predicate<String> reachedRoot = remainder -> remainder.isEmpty();
+        return materializeXpath(xpath, reachedRoot);
+    }
+
+    /**
+     * Materializes an xpath, that is, turns it into the corresponding Coordinate structure until a
+     * stop condition is reached. For example the xpath has been fully consumed.
+     * @param xpath the xpath to materialize.
+     * @param stopCondition the condition upon which to stop materializing. {@link #materializeXpath(String)} and {@link #materializeXpath(String, String)} make use of this.
+     * @return the materialized coordinate structure.
+     */
+    private static Coordinate materializeXpath(String xpath, Predicate<String> stopCondition){
         int lastSlash = xpath.lastIndexOf('/');
         String component = xpath.substring(lastSlash+1);
         String remainder = xpath.substring(0,lastSlash);
@@ -69,7 +50,7 @@ public class ModelManager {
         Coordinate coordinate = new Coordinate();
         coordinate.xpath = xpath;
         coordinate.index = getIndex(component);
-        coordinate.parent = remainder.isEmpty()?null:materializeXpath(remainder);
+        coordinate.parent = stopCondition.test(remainder)?null:materializeXpath(remainder, stopCondition);
         if(coordinate.parent != null){
             coordinate.parent.addChild(coordinate);
         }

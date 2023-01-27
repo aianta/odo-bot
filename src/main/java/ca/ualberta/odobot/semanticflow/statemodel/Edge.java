@@ -1,4 +1,4 @@
-package ca.ualberta.odobot.semanticflow;
+package ca.ualberta.odobot.semanticflow.statemodel;
 
 public class Edge {
     public String source;

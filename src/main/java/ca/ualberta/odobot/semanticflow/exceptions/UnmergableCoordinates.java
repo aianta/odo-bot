@@ -1,6 +1,6 @@
 package ca.ualberta.odobot.semanticflow.exceptions;
 
-import ca.ualberta.odobot.semanticflow.Coordinate;
+import ca.ualberta.odobot.semanticflow.statemodel.Coordinate;
 
 public class UnmergableCoordinates extends Exception{
 
