@@ -2,14 +2,14 @@ package ca.ualberta.odobot.semanticflow;
 
 import org.jsoup.helper.Validate;
 import org.jsoup.nodes.Element;
-import org.jsoup.nodes.Node;
-import org.jsoup.select.NodeTraversor;
-import org.jsoup.select.NodeVisitor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
- * Based on NodeTraversor in JSoup, but stateful. Call next() to proceed further with the traversal.
+ * Based/inspired by on NodeTraversor in JSoup, but stateful. Call next() to proceed further with the traversal.
  *
  * see: https://github.com/jhy/jsoup/blob/master/src/main/java/org/jsoup/select/NodeTraversor.java
  *
@@ -24,17 +24,29 @@ public class ElementTraversal {
     private Element root;
     private Element element;
     private int depth;
-    private ElementVisitor visitor;
+    private IElementVisitor visitor;
     private TraversalState state = TraversalState.INIT;
 
-    public static class ElementVisitor{
+    public interface IElementVisitor{
+        void visit(Element e, int depth);
+    }
+
+    public static class SimpleVisitor implements  IElementVisitor{
+
+        List<Element> elementList = new ArrayList<>();
+
         public void visit(Element e, int depth){
+
             log.info("got: {}@{}", e.tagName(), depth);
+            elementList.add(e);
+        }
+
+        public List<Element> getElementList(){
+            return elementList;
         }
     }
 
-    public ElementTraversal(ElementVisitor visitor, Element root){
-        Validate.notNull(visitor);
+    public ElementTraversal(IElementVisitor visitor, Element root){
         Validate.notNull(root);
 
         this.root = root;
@@ -42,6 +54,10 @@ public class ElementTraversal {
         this.depth = 0;
         this.visitor = visitor;
         this.state = TraversalState.IN_PROGRESS;
+    }
+
+    protected void emit(Element e, int depth){
+        visitor.visit(e, depth);
     }
 
     public void traverse() {
@@ -52,7 +68,7 @@ public class ElementTraversal {
 
         if(element != null){
             //TODO - handle changes to parent by visitor? I don't think that's our use case, but good to know where it would have to be dealt with.
-            visitor.visit(element, depth);
+            emit(element, depth);
 
             if(element.childrenSize() > 0){ //descend
                 element = element.child(0);

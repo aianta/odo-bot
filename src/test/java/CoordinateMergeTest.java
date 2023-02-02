@@ -1,6 +1,7 @@
 import ca.ualberta.odobot.semanticflow.ModelManager;
 import ca.ualberta.odobot.semanticflow.Neo4JParser;
 import ca.ualberta.odobot.semanticflow.StateParser;
+import ca.ualberta.odobot.semanticflow.Utils;
 import ca.ualberta.odobot.semanticflow.statemodel.Coordinate;
 import ca.ualberta.odobot.semanticflow.statemodel.Graph;
 
@@ -68,7 +69,7 @@ public class CoordinateMergeTest {
                  * component xpaths to the xpath of the attach point. Thus creating the xpath from the
                  * root of the document to the attached leaf.
                  */
-                .map(element -> StateParser.fuseXpaths(attachPointXpath, StateParser.computeComponentXpath(element)))
+                .map(element -> StateParser.fuseXpaths(attachPointXpath, Utils.computeComponentXpath(element)))
                 .peek(s->log.info("leaf xpath: {}", s))
                 /**
                  * Materialize the leaf xpaths into coordinates. Use the attach point as the stop condition.

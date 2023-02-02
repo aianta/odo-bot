@@ -18,6 +18,9 @@ import java.util.*;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import static ca.ualberta.odobot.semanticflow.Utils.computeComponentXpath;
+import static ca.ualberta.odobot.semanticflow.Utils.computeXpath;
+
 public class StateParser {
 
     private static final Logger log = LoggerFactory.getLogger(StateParser.class);
@@ -41,13 +44,7 @@ public class StateParser {
         Element element = document.selectXpath(xpath).get(0);
         result.setTag(element.tagName());
 
-        result.setAttributes(element.attributes().asList().stream().collect(
-                JsonObject::new,
-                ( json, attr)->{
-                    json.put(attr.getKey(), attr.getValue());
-                },
-                (json1, json2)->json1.mergeIn(json2)
-        ));
+        result.setAttributes(Utils.elementAttributesToJson(element));
 
         //result.setOuterHTML(element.outerHtml());
 
@@ -246,7 +243,7 @@ public class StateParser {
                 .collect(Collectors.toList());
 
                 if(leaves.size() == 0){
-                    //Handle situationn with no leaves. I don't think this should be possible but...
+                    //Handle situation with no leaves. I don't think this should be possible but...
                     log.warn("No leaves in DOM_ADD");
                     return attachPoint;
                 }
@@ -294,54 +291,7 @@ public class StateParser {
         }
     }
 
-    /**
-     * Computes an xpath from inside a component of a web page. NOT a full dom.
-     * It explicitly ignores html and body elements.
-     * @param element
-     * @return
-     */
-    public static String computeComponentXpath(Element element){
-        return computeXpath(element,"", e->!e.tagName().equals("html") && !e.tagName().equals("body"));
-    }
 
-    /**
-     * Like {@link #computeComponentXpath(Element)} but doesn't ignore html and body parts of xpath.
-     * This is needed to hydrate component xpaths since we're hydrating from the JSOUP parsed component HTML document.
-     * @param element
-     * @return
-     */
-    public static String computeXpath(Element element){
-//        return computeXpath(element, "", e->!e.tagName().equals("#root"));
-        return computeXpath(element, "", e->true);
-    }
-
-    /**
-     * Returns the xpath of a given element to its root
-     * @param element the element
-     * @return the xpath to the element
-     */
-    public static String computeXpath(Element element, String xpath, Predicate<Element> stopCondition){
-
-        String tag = element.tagName();
-        int index = element.elementSiblingIndex(); //NOTE: siblingIndex() lies for some reason...
-
-        String chunk = index > 0?(tag + "[" + Integer.toString(index) + "]"):tag;
-
-
-        if(element.hasParent() && stopCondition.test(element.parent())){
-            Element parent = element.parent();
-            xpath = xpath.isEmpty()?chunk:(chunk + "/" + xpath);
-            return computeXpath(parent, xpath, stopCondition);
-        }else{
-            if(xpath.isEmpty()){
-                return "/" + chunk;
-            }else{
-                xpath = "/" + chunk + "/" + xpath;
-                return xpath;
-            }
-
-        }
-    }
 
 
 }
