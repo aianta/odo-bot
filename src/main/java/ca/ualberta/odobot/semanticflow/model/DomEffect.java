@@ -14,8 +14,8 @@ public class DomEffect extends AbstractArtifact {
     }
     private EffectType action;
     private Element effectElement;
-    private String tag;
-    private String text; //Derived from outerText
+
+    private String text; // Derived from outerText
 
     public EffectType getAction() {
         return action;
@@ -31,14 +31,6 @@ public class DomEffect extends AbstractArtifact {
 
     public void setEffectElement(Element effectElement) {
         this.effectElement = effectElement;
-    }
-
-    public String getTag() {
-        return tag;
-    }
-
-    public void setTag(String tag) {
-        this.tag = tag;
     }
 
     public String getText() {

@@ -2,6 +2,7 @@ package ca.ualberta.odobot.semanticflow;
 
 import ca.ualberta.odobot.semanticflow.model.DomEffect;
 import ca.ualberta.odobot.semanticflow.model.Effect;
+import ca.ualberta.odobot.semanticflow.model.InteractionEvent;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.jsoup.Jsoup;
@@ -30,6 +31,32 @@ public class SemanticSequencer {
 
         switch (event.getString("eventType")){
             case "interactionEvent":
+                switch (InteractionEvent.InteractionType.getType(event.getString("eventDetails_name"))){
+                    case CLICK -> {
+                        JsonArray path = new JsonArray(event.getString("eventDetails_path"));
+                        JsonObject triggerElementInfo = path.getJsonObject(0);
+
+                        String tag = triggerElementInfo.getString("localName");
+                        String baseUri = triggerElementInfo.getString("baseURI");
+                        int offsetWidth = triggerElementInfo.getInteger("offsetWidth");
+                        int offsetHeight = triggerElementInfo.getInteger("offsetHeight");
+                        String htmlId = triggerElementInfo.getString("id");
+
+                        InteractionEvent interactionEvent = new InteractionEvent();
+                        interactionEvent.setXpath(triggerElementInfo.getString("xpath"));
+                        interactionEvent.setDomSnapshot(parsedDOMSnapshot);
+                        interactionEvent.setTag(tag);
+                        interactionEvent.setBaseURI(baseUri);
+                        interactionEvent.setHtmlId(htmlId);
+                        interactionEvent.setTriggerElement(parsedDOMSnapshot.selectXpath(interactionEvent.getXpath()).first());
+                        interactionEvent.setElementHeight(offsetHeight);
+                        interactionEvent.setElementWidth(offsetWidth);
+                        interactionEvent.setMinimumDomTree(interactionEvent.getMinimumDomTree());
+                        interactionEvent.setType(InteractionEvent.InteractionType.CLICK);
+
+                    }
+                    case INPUT -> {}
+                }
                 break;
             case "customEvent":
                 if(event.getString("eventDetails_name").equals("DOM_EFFECT")){

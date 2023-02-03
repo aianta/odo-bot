@@ -11,6 +11,10 @@ import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+/**
+ * The Effect class allows us to treat a series of DomEffects as
+ * a single entity.
+ */
 public class Effect extends ArrayList<DomEffect> {
 
     private static final Logger log = LoggerFactory.getLogger(Effect.class);
@@ -68,10 +72,10 @@ public class Effect extends ArrayList<DomEffect> {
 
     public JsonObject toJson(){
         JsonObject result = new JsonObject()
-                .put("added", toJson(elementsAdded()))
-                .put("shown", toJson(elementsShown()))
-                .put("hidden", toJson(elementsHidden()))
-                .put("removed", toJson(elementsRemoved()))
+//                .put("added", toJson(elementsAdded()))
+//                .put("shown", toJson(elementsShown()))
+//                .put("hidden", toJson(elementsHidden()))
+//                .put("removed", toJson(elementsRemoved()))
                 .put("madeVisible", toJson(madeVisible()))
                 .put("madeInvisible", toJson(madeInvisible()))
                 .put("netVisible", toJson(netVisible()));

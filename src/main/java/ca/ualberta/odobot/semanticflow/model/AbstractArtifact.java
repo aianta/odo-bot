@@ -14,7 +14,8 @@ public abstract class AbstractArtifact {
     protected Document domSnapshot;
     protected UUID id = UUID.randomUUID();
     private String htmlId; //HTML id if provided
-
+    private String tag;
+    private String baseURI; // The absolute base URL of the document containing the node:  https://developer.mozilla.org/en-US/docs/Web/API/Node/baseURI
 
     public String getHtmlId() {
         return htmlId;
@@ -46,5 +47,21 @@ public abstract class AbstractArtifact {
 
     public void setId(UUID id) {
         this.id = id;
+    }
+
+    public String getTag() {
+        return tag;
+    }
+
+    public String getBaseURI() {
+        return baseURI;
+    }
+
+    public void setBaseURI(String baseURI) {
+        this.baseURI = baseURI;
+    }
+
+    public void setTag(String tag) {
+        this.tag = tag;
     }
 }
