@@ -16,13 +16,13 @@ import java.util.List;
 public class RunnableUtils {
 
     private static final Logger log = LoggerFactory.getLogger(RunnableUtils.class);
-    private static String DATA_PATH = "state-merge-7-18-01-2023.json";
+    private static String DATA_PATH = "semantic-timeline-1-06-02-2023.json";
 
     public static void main(String args []){
 
         List<JsonObject> events = SemanticFlowParser.loadEvents(DATA_PATH);
 
-        printTimeline(events, "state-merge-7");
+        printTimeline(events, "semantic-timeline-1");
 
 
     }

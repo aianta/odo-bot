@@ -25,7 +25,7 @@ import java.util.stream.Collectors;
 public class SemanticFlowParser extends AbstractVerticle {
 
     private static final Logger log = LoggerFactory.getLogger(SemanticFlowParser.class);
-    private static final String RDF_REPO_ID = "state-merge-7";
+    private static final String RDF_REPO_ID = "semantic-timeline-1";
 
     @Override
     public Completable rxStart() {
@@ -33,14 +33,16 @@ public class SemanticFlowParser extends AbstractVerticle {
         EventLogs eventLogs = EventLogs.getInstance();
         List<JsonObject> events = eventLogs.fetchAll(RDF_REPO_ID);
 
+        saveEvents(events);
+
         //We want to focus on a particular set of events that follow from the create new event link
         List<JsonObject> specificEvents = new ArrayList<>();
         boolean include = false;
         for(JsonObject event: events){
-            if(event.getString("mongo_id").equals("63c82f037eacefdb6501b64d")){
+            if(event.getString("mongo_id").equals("63e14bc567c16a012ce2cfda")){
                 include = true;
             }
-            if(event.getString("mongo_id").equals("63c82f077eacefdb6501b66f")){
+            if(event.getString("mongo_id").equals("63e14bcd67c16a012ce2d015")){
                 include = false;
             }
             if(include){

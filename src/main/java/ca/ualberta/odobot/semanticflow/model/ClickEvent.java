@@ -8,12 +8,12 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Set;
 
-public class InteractionEvent extends AbstractArtifact {
+public class ClickEvent extends AbstractArtifact {
 
-   private static final Logger log = LoggerFactory.getLogger(InteractionEvent.class);
+   private static final Logger log = LoggerFactory.getLogger(ClickEvent.class);
 
    public enum InteractionType{
-       CLICK(Set.of("LINK_CLICK","TD_CLICK","BUTTON_CLICK_ACTUAL")),
+       CLICK(Set.of("LINK_CLICK","TD_CLICK","BUTTON_CLICK_ACTUAL","BTN_CLICK")),
        INPUT(Set.of("INPUT_CHANGE"));
 
        InteractionType(Set<String> logNames){

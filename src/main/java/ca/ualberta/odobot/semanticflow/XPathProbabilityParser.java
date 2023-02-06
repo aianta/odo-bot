@@ -36,6 +36,9 @@ public class XPathProbabilityParser {
                         case "BUTTON_CLICK_ACTUAL":
                             handleClick(event);
                             break;
+                        case "BTN_CLICK":
+                            handleClick(event);
+                            break;
                         case "TD_CLICK":
                             handleClick(event);
                             break;
