@@ -1,6 +1,7 @@
 package ca.ualberta.odobot.semanticflow;
 
 
+import ca.ualberta.odobot.semanticflow.model.Timeline;
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -51,7 +52,9 @@ public class SemanticFlowParser extends AbstractVerticle {
         }
 
         SemanticSequencer sequencer = new SemanticSequencer();
-        sequencer.parse(specificEvents);
+        Timeline timeline = sequencer.parse(events);
+
+        log.info("Timeline: {}", timeline.toString());
 
         return super.rxStart();
     }

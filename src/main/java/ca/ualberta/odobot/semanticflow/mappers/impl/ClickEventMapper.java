@@ -2,6 +2,7 @@ package ca.ualberta.odobot.semanticflow.mappers.impl;
 
 import ca.ualberta.odobot.semanticflow.mappers.JsonMapper;
 import ca.ualberta.odobot.semanticflow.model.ClickEvent;
+import ca.ualberta.odobot.semanticflow.model.InteractionType;
 import io.vertx.core.json.JsonObject;
 
 import javax.swing.text.Element;
@@ -35,7 +36,7 @@ public class ClickEventMapper extends JsonMapper<ClickEvent> {
         result.setTriggerElement(getDOMSnapshot(event).selectXpath(result.getXpath()).first());
         result.setElementHeight(element.getInteger(ELEMENT_HEIGHT_FIELD));
         result.setElementWidth(element.getInteger(ELEMENT_WIDTH_FIELD));
-        result.setType(ClickEvent.InteractionType.CLICK);
+        result.setType(InteractionType.CLICK);
 
         return result;
     }

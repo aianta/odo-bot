@@ -9,6 +9,7 @@ public class InputChange extends AbstractArtifact{
     private static final Logger log = LoggerFactory.getLogger(InputChange.class);
     private Element inputElement;
     private String value;
+    private String placeholderText;
 
     public Element getInputElement() {
         return inputElement;
@@ -24,5 +25,13 @@ public class InputChange extends AbstractArtifact{
 
     public void setValue(String value) {
         this.value = value;
+    }
+
+    public String getPlaceholderText() {
+        return placeholderText;
+    }
+
+    public void setPlaceholderText(String placeholderText) {
+        this.placeholderText = placeholderText;
     }
 }

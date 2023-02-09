@@ -8,27 +8,11 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Set;
 
-public class ClickEvent extends AbstractArtifact {
+public class ClickEvent extends AbstractArtifact implements TimelineEntity {
 
    private static final Logger log = LoggerFactory.getLogger(ClickEvent.class);
 
-   public enum InteractionType{
-       CLICK(Set.of("LINK_CLICK","TD_CLICK","BUTTON_CLICK_ACTUAL","BTN_CLICK")),
-       INPUT(Set.of("INPUT_CHANGE"));
 
-       InteractionType(Set<String> logNames){
-           this.logNames = logNames;
-       }
-
-       public static InteractionType getType(String eventDetails_name){
-           if(CLICK.logNames.contains(eventDetails_name))return CLICK;
-           if(INPUT.logNames.contains(eventDetails_name))return INPUT;
-           log.warn("Cannot find InteractionType for eventDetails_name: {}", eventDetails_name);
-           return null;
-       }
-
-       Set<String> logNames;
-   }
    //This is the actual element that triggered the event
    private Element triggerElement;
    private int elementHeight; //offsetHeight https://developer.mozilla.org/en-US/docs/Web/API/HTMLElement/offsetHeight
@@ -36,6 +20,10 @@ public class ClickEvent extends AbstractArtifact {
    // TODO - the actual screen position of the border might be interesting. However we'd have to normalize it for the display resolution
    private Document minimumDomTree; //A pruned DOM coning strictly the parents that contain the trigger element and their parents, leading up to the root.
     private InteractionType type;
+
+    public String symbol(){
+        return "CE";
+    }
 
     public InteractionType getType() {
         return type;
@@ -106,6 +94,14 @@ public class ClickEvent extends AbstractArtifact {
        if(element.hasParent()){
            prune(element.parent());
        }
+   }
+
+    /**
+     * This is a singular event, and so it's size on the timeline is 1.
+     * @return 1
+     */
+   public int size(){
+       return 1;
    }
 
 

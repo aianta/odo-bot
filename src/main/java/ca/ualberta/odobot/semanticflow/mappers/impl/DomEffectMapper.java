@@ -41,7 +41,7 @@ public class DomEffectMapper extends JsonMapper<DomEffect> {
         DomEffect result = new DomEffect();
         result.setDomSnapshot(getDOMSnapshot(event));
         result.setXpath(event.getString(XPATH_FIELD));
-        result.setEffectElement(extractTargetElement(node));
+        result.setEffectElement(extractElement(node.getString(NODE_HTML_FIELD)));
         result.setTag(node.getString(NODE_TAG_FIELD));
         result.setHtmlId(node.getString(NODE_ID_FIELD));
         result.setText(node.getString(NODE_TEXT_FIELD));
@@ -59,31 +59,13 @@ public class DomEffectMapper extends JsonMapper<DomEffect> {
     }
 
 
-    private Element extractTargetElement(JsonObject node){
-        Document doc = Jsoup.parseBodyFragment(node.getString(NODE_HTML_FIELD));
-        if(doc.body().childrenSize() != 1){
-            log.warn("This dom effect somehow is adding multiple or no elements?");
-        }
-        Element effectElement = doc.body().firstElementChild();
-        return effectElement;
-    }
-
     /**
-     * Returns the JsonArray containing the nodes that were added or removed for the dom effect.
-     * @return JsonArray of nodes added or removed.
-     */
-    private JsonArray getNodes(JsonObject event){
-        JsonArray nodes = new JsonArray(event.getString(NODES_FIELD));
-        return nodes;
-    }
-
-
-    /**
-     * Returns the first, and often, only element in the nodes array. See {@link #getNodes(JsonObject)}
+     * Returns the first, and often, only element in the nodes array.
      * @param event
      * @return
      */
     private JsonObject firstNode(JsonObject event){
-        return getNodes(event).getJsonObject(0);
+        JsonArray nodes = new JsonArray(event.getString(NODES_FIELD));
+        return nodes.getJsonObject(0);
     }
 }

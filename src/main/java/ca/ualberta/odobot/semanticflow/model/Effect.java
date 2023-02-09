@@ -15,9 +15,13 @@ import java.util.stream.Collectors;
  * The Effect class allows us to treat a series of DomEffects as
  * a single entity.
  */
-public class Effect extends ArrayList<DomEffect> {
+public class Effect extends ArrayList<DomEffect> implements TimelineEntity {
 
     private static final Logger log = LoggerFactory.getLogger(Effect.class);
+
+    public String symbol(){
+        return "E";
+    }
 
     public Set<Element> netVisible(){
         Set<Element> netVisible  = madeVisible();
