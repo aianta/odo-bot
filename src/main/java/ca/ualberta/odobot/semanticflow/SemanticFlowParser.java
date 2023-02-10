@@ -1,7 +1,10 @@
 package ca.ualberta.odobot.semanticflow;
 
 
+import ca.ualberta.odobot.semanticflow.extraction.terms.impl.TextStrategy;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
+import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
+import ca.ualberta.odobot.semanticflow.ranking.terms.impl.DistanceToTarget;
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -26,7 +29,7 @@ import java.util.stream.Collectors;
 public class SemanticFlowParser extends AbstractVerticle {
 
     private static final Logger log = LoggerFactory.getLogger(SemanticFlowParser.class);
-    private static final String RDF_REPO_ID = "semantic-timeline-1";
+    private static final String RDF_REPO_ID = "semantic-timeline-4";
 
     @Override
     public Completable rxStart() {
@@ -53,6 +56,20 @@ public class SemanticFlowParser extends AbstractVerticle {
 
         SemanticSequencer sequencer = new SemanticSequencer();
         Timeline timeline = sequencer.parse(events);
+        ListIterator<TimelineEntity> it = timeline.listIterator();
+        Map<Integer,List<String>> termManifest = new HashMap<>();
+        while (it.hasNext()){
+            int index = it.nextIndex();
+            TimelineEntity e = it.next();
+            List<String> terms = e.terms(new DistanceToTarget(), new TextStrategy());
+            termManifest.put(index, terms);
+        }
+
+        for(int i = 0; i < timeline.size(); i++){
+            log.info("{} - terms: {}", i, termManifest.get(i));
+        }
+
+
 
         log.info("Timeline: {}", timeline.toString());
 

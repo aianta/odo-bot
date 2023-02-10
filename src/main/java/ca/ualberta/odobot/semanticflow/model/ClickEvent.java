@@ -1,11 +1,14 @@
 package ca.ualberta.odobot.semanticflow.model;
 
 
+import ca.ualberta.odobot.semanticflow.extraction.terms.TermExtractionStrategy;
+import ca.ualberta.odobot.semanticflow.ranking.terms.TermRankingStrategy;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.Set;
 
 public class ClickEvent extends AbstractArtifact implements TimelineEntity {
@@ -21,8 +24,14 @@ public class ClickEvent extends AbstractArtifact implements TimelineEntity {
    private Document minimumDomTree; //A pruned DOM coning strictly the parents that contain the trigger element and their parents, leading up to the root.
     private InteractionType type;
 
+
     public String symbol(){
         return "CE";
+    }
+
+    @Override
+    public List<String> terms(TermRankingStrategy rankingStrategy, TermExtractionStrategy extractionStrategy) {
+        return null;
     }
 
     public InteractionType getType() {

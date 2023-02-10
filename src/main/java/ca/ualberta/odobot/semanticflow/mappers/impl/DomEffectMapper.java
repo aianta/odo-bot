@@ -31,16 +31,19 @@ public class DomEffectMapper extends JsonMapper<DomEffect> {
     private static final String NODE_ID_FIELD = "id";
     private static final String NODE_TEXT_FIELD = "outerText";
     private static final String NODE_BASEURI_FIELD = "baseURI";
+    private static final String NODE_XPATH_FIELD = "xpath";
 
     @Override
     public DomEffect map(JsonObject event) {
 
         //Get the dom node/element that was added/shown/hidden/removed
         JsonObject node = firstNode(event);
+//        log.info("node: {}", node.encodePrettily());
+//        log.info("{}", event.getString(XPATH_FIELD));
 
         DomEffect result = new DomEffect();
         result.setDomSnapshot(getDOMSnapshot(event));
-        result.setXpath(event.getString(XPATH_FIELD));
+        result.setXpath(node.getString(NODE_XPATH_FIELD));
         result.setEffectElement(extractElement(node.getString(NODE_HTML_FIELD)));
         result.setTag(node.getString(NODE_TAG_FIELD));
         result.setHtmlId(node.getString(NODE_ID_FIELD));
@@ -53,6 +56,15 @@ public class DomEffectMapper extends JsonMapper<DomEffect> {
             case SHOW_ACTION -> result.setAction(DomEffect.EffectType.SHOW);
             case HIDE_ACTION -> result.setAction(DomEffect.EffectType.HIDE);
             case REMOVE_ACTION -> result.setAction(DomEffect.EffectType.REMOVE);
+        }
+
+//        if(result.getTargetElement() == null){
+//            log.error("Target Element missing! {} \n{}", event.getString(ACTION_FIELD), result.getXpath(), result.getEffectElement().html());
+//        }
+
+        if(result.getAction() == DomEffect.EffectType.ADD && !result.getXpath().startsWith("/html")){
+            log.warn("Got a DOM ADD event with a broken xpath? This is really bad, investigate this please. Anyways, skipping for now...");
+            return null;
         }
 
         return result;

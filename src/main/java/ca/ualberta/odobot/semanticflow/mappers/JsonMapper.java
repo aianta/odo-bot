@@ -33,6 +33,9 @@ public abstract class JsonMapper<T extends AbstractArtifact> {
 
     protected Element extractElement(String html){
 
+        /**
+         * Handle dangling tbody special case.
+         */
         if(html.startsWith("<tbody>") && html.endsWith("</tbody>")){
             return handleTbodyFragment(html);
         }

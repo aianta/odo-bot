@@ -1,5 +1,7 @@
 package ca.ualberta.odobot.semanticflow.model;
 
+import ca.ualberta.odobot.semanticflow.extraction.terms.TermExtractionStrategy;
+import ca.ualberta.odobot.semanticflow.ranking.terms.TermRankingStrategy;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.jsoup.nodes.Element;
@@ -7,6 +9,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -27,6 +31,17 @@ public class Effect extends ArrayList<DomEffect> implements TimelineEntity {
         Set<Element> netVisible  = madeVisible();
         netVisible.removeAll(madeInvisible());
         return netVisible;
+    }
+
+
+    public Set<DomEffect> domEffectMadeInvisible(){
+        return getDomEffects(effect -> effect.getAction() == DomEffect.EffectType.REMOVE ||
+                effect.getAction() == DomEffect.EffectType.HIDE);
+    }
+
+    public Set<DomEffect> domEffectMadeVisible(){
+        return getDomEffects(effect -> effect.getAction() == DomEffect.EffectType.ADD ||
+                effect.getAction() == DomEffect.EffectType.SHOW);
     }
 
     public Set<Element> madeVisible(){
@@ -53,6 +68,12 @@ public class Effect extends ArrayList<DomEffect> implements TimelineEntity {
 
     public Set<Element> elementsHidden(){
         return getElementSet(effect -> effect.getAction() == DomEffect.EffectType.HIDE);
+    }
+
+    private Set<DomEffect> getDomEffects(Predicate<? super DomEffect> predicate){
+        return stream()
+                .filter(predicate)
+                .collect(Collectors.toSet());
     }
 
     private Set<Element> getElementSet(Predicate<? super DomEffect> predicate){
@@ -86,4 +107,17 @@ public class Effect extends ArrayList<DomEffect> implements TimelineEntity {
         return result;
     }
 
+    @Override
+    public List<String> terms(TermRankingStrategy rankingStrategy, TermExtractionStrategy extractionStrategy) {
+        List<String> allTerms = new ArrayList<>();
+
+        Iterator<DomEffect> it = domEffectMadeVisible().iterator();
+        while (it.hasNext()){
+            DomEffect curr = it.next();
+            List<String> terms = rankingStrategy.getTerms(curr, extractionStrategy);
+            allTerms.addAll(terms == null?List.of():terms);
+        }
+
+        return allTerms;
+    }
 }

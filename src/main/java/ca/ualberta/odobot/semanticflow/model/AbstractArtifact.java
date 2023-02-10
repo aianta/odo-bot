@@ -1,6 +1,7 @@
 package ca.ualberta.odobot.semanticflow.model;
 
 import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -63,5 +64,9 @@ public abstract class AbstractArtifact {
 
     public void setTag(String tag) {
         this.tag = tag;
+    }
+
+    public Element getTargetElement(){
+        return domSnapshot.selectXpath(getXpath()).first();
     }
 }

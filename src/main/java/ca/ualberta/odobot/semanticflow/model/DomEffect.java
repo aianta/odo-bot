@@ -41,5 +41,13 @@ public class DomEffect extends AbstractArtifact {
         this.text = text;
     }
 
+    public Element getTargetElement(){
+        if(action == EffectType.REMOVE || action == EffectType.HIDE){
+            return effectElement;
+        }else{
+            return super.getTargetElement();
+        }
+    }
+
 
 }

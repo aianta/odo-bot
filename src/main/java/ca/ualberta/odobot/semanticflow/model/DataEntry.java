@@ -1,10 +1,13 @@
 package ca.ualberta.odobot.semanticflow.model;
 
+import ca.ualberta.odobot.semanticflow.extraction.terms.TermExtractionStrategy;
+import ca.ualberta.odobot.semanticflow.ranking.terms.TermRankingStrategy;
 import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Semantic artifact that arises from a series of input changes.
@@ -49,8 +52,15 @@ public class DataEntry extends ArrayList<InputChange> implements TimelineEntity 
         return "DE";
     }
 
+    @Override
+    public List<String> terms(TermRankingStrategy rankingStrategy, TermExtractionStrategy extractionStrategy) {
+        return null;
+    }
+
     public String getEnteredData(){
         return get(size()-1).getValue();
     }
+
+
 
 }

@@ -68,6 +68,7 @@ public class SemanticSequencer {
             case "customEvent":
                 if(event.getString("eventDetails_name").equals("DOM_EFFECT")){
                     DomEffect domEffect = domEffectMapper.map(event);
+                    if(domEffect == null) {return;} //
                     /**
                         Check if the last entity in the timeline is an {@link Effect},
                         if so, add this domEffect to it. Otherwise, create a new Effect

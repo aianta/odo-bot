@@ -34,4 +34,5 @@ public class InputChange extends AbstractArtifact{
     public void setPlaceholderText(String placeholderText) {
         this.placeholderText = placeholderText;
     }
+
 }
