@@ -1,7 +1,9 @@
 package ca.ualberta.odobot.semanticflow.model;
 
 import ca.ualberta.odobot.semanticflow.extraction.terms.TermExtractionStrategy;
+import ca.ualberta.odobot.semanticflow.extraction.terms.impl.TextStrategy;
 import ca.ualberta.odobot.semanticflow.ranking.terms.TermRankingStrategy;
+import ca.ualberta.odobot.semanticflow.ranking.terms.impl.DistanceToTarget;
 import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -48,13 +50,20 @@ public class DataEntry extends ArrayList<InputChange> implements TimelineEntity 
         return isEmpty()?null:get(size()-1).getInputElement();
     }
 
+    public InputChange lastChange(){
+        return isEmpty()?null:get(size()-1);
+    }
+
     public String symbol(){
         return "DE";
     }
 
     @Override
     public List<String> terms(TermRankingStrategy rankingStrategy, TermExtractionStrategy extractionStrategy) {
-        return null;
+        TextStrategy textStrategy = new TextStrategy();
+        textStrategy.allowDuplicates(false);
+        return new DistanceToTarget().getTerms(lastChange(), textStrategy);
+
     }
 
     public String getEnteredData(){

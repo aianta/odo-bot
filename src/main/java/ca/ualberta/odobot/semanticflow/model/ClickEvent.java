@@ -2,7 +2,9 @@ package ca.ualberta.odobot.semanticflow.model;
 
 
 import ca.ualberta.odobot.semanticflow.extraction.terms.TermExtractionStrategy;
+import ca.ualberta.odobot.semanticflow.extraction.terms.impl.TextStrategy;
 import ca.ualberta.odobot.semanticflow.ranking.terms.TermRankingStrategy;
+import ca.ualberta.odobot.semanticflow.ranking.terms.impl.DistanceToTarget;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
@@ -31,7 +33,9 @@ public class ClickEvent extends AbstractArtifact implements TimelineEntity {
 
     @Override
     public List<String> terms(TermRankingStrategy rankingStrategy, TermExtractionStrategy extractionStrategy) {
-        return null;
+        TextStrategy strategy = new TextStrategy();
+        strategy.allowDuplicates(false);
+        return new DistanceToTarget().getTerms(this, strategy);
     }
 
     public InteractionType getType() {
