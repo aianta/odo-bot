@@ -17,6 +17,10 @@ vertx{
     redeploy = false
 }
 
+ext{
+    corenlp_version = "4.4.0"
+}
+
 dependencies {
     implementation "io.vertx:vertx-web"
     implementation 'io.vertx:vertx-rx-java3'
@@ -48,7 +52,9 @@ dependencies {
     /*
      * Stanford CoreNLP
      */
-    implementation 'edu.stanford.nlp:stanford-corenlp:4.4.0'
+    implementation "edu.stanford.nlp:stanford-corenlp:$corenlp_version"
+    implementation "edu.stanford.nlp:stanford-corenlp:$corenlp_version:models"
+    implementation "edu.stanford.nlp:stanford-corenlp:$corenlp_version:models-english"
 
     /**
      * Elasticsearch

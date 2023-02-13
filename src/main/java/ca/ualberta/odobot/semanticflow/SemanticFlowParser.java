@@ -5,6 +5,7 @@ import ca.ualberta.odobot.semanticflow.extraction.terms.impl.TextStrategy;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
 import ca.ualberta.odobot.semanticflow.ranking.terms.impl.DistanceToTarget;
+import ca.ualberta.odobot.semanticflow.ranking.terms.impl.NoRanking;
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -61,7 +62,7 @@ public class SemanticFlowParser extends AbstractVerticle {
         while (it.hasNext()){
             int index = it.nextIndex();
             TimelineEntity e = it.next();
-            List<String> terms = e.terms(new DistanceToTarget(), new TextStrategy());
+            List<String> terms = e.terms(new NoRanking(), new TextStrategy());
             termManifest.put(index, terms);
         }
 

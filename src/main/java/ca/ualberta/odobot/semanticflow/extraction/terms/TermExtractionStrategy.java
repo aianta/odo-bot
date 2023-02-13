@@ -1,6 +1,7 @@
 package ca.ualberta.odobot.semanticflow.extraction.terms;
 
 
+import edu.stanford.nlp.ling.CoreLabel;
 import org.jsoup.nodes.Element;
 
 import java.util.List;
@@ -10,6 +11,6 @@ import java.util.List;
  */
 public interface TermExtractionStrategy {
 
-    List<String> extractTerms(Element element);
+    List<CoreLabel> extractTerms(Element element);
 
 }

@@ -13,20 +13,25 @@ import java.util.Properties;
 public abstract class AbstractTermExtractionStrategy {
     private static final Logger log = LoggerFactory.getLogger(AbstractTermExtractionStrategy.class);
 
-    protected List<String> tokenize(String input){
-        List<String> result = new ArrayList<>();
+    protected List<CoreLabel> tokenize(String input){
+        List<CoreLabel> result = new ArrayList<>();
         log.info("Tokenizing: {}", input);
 
         Properties properties = new Properties();
-        properties.setProperty("annotators", "tokenize");
+        properties.setProperty("annotators", "tokenize,ssplit,pos");
+        /**
+         * For more information on options check the following links:
+         * https://stanfordnlp.github.io/CoreNLP/tokenize.html
+         * https://nlp.stanford.edu/nlp/javadoc/javanlp/edu/stanford/nlp/process/PTBTokenizer.html
+         */
         properties.setProperty("tokenize.options", "splitHyphenated=true");
 
         StanfordCoreNLP pipeline = new StanfordCoreNLP(properties);
         CoreDocument document = new CoreDocument(input);
         pipeline.annotate(document);
         for(CoreLabel tok: document.tokens()){
-            log.info(tok.word());
-            result.add(tok.word());
+            log.debug("{} {}",tok.word(), tok.tag());
+            result.add(tok);
         }
 
         return result;
