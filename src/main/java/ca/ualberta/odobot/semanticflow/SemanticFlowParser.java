@@ -40,20 +40,6 @@ public class SemanticFlowParser extends AbstractVerticle {
 
         saveEvents(events);
 
-        //We want to focus on a particular set of events that follow from the create new event link
-        List<JsonObject> specificEvents = new ArrayList<>();
-        boolean include = false;
-        for(JsonObject event: events){
-            if(event.getString("mongo_id").equals("63e14bc567c16a012ce2cfda")){
-                include = true;
-            }
-            if(event.getString("mongo_id").equals("63e14bcd67c16a012ce2d015")){
-                include = false;
-            }
-            if(include){
-                specificEvents.add(event);
-            }
-        }
 
         SemanticSequencer sequencer = new SemanticSequencer();
         Timeline timeline = sequencer.parse(events);
@@ -75,6 +61,31 @@ public class SemanticFlowParser extends AbstractVerticle {
         log.info("Timeline: {}", timeline.toString());
 
         return super.rxStart();
+    }
+
+    /**
+     * Helper method for reading only a particular part of a trace.
+     * @param events
+     * @param startMongoId
+     * @param endMongoId
+     * @return
+     */
+    public List<JsonObject> eventsSubset(List<JsonObject> events, String startMongoId, String endMongoId){
+        //We want to focus on a particular set of events that follow from the create new event link
+        List<JsonObject> specificEvents = new ArrayList<>();
+        boolean include = false;
+        for(JsonObject event: events){
+            if(event.getString("mongo_id").equals(startMongoId)){
+                include = true;
+            }
+            if(event.getString("mongo_id").equals(endMongoId)){
+                include = false;
+            }
+            if(include){
+                specificEvents.add(event);
+            }
+        }
+        return specificEvents;
     }
 
     public void flowParse(List<JsonObject> events){
