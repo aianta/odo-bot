@@ -5,19 +5,23 @@ import ca.ualberta.odobot.semanticflow.SemanticFlowParser;
 import io.reactivex.rxjava3.core.Completable;
 
 import io.vertx.core.http.HttpMethod;
+import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.core.AbstractVerticle;
 import io.vertx.rxjava3.core.http.HttpServer;
+import io.vertx.rxjava3.core.http.HttpServerResponse;
 import io.vertx.rxjava3.ext.web.Route;
 import io.vertx.rxjava3.ext.web.Router;
 import io.vertx.rxjava3.ext.web.RoutingContext;
-import io.vertx.rxjava3.ext.web.handler.StaticHandler;
+import io.vertx.rxjava3.ext.web.handler.*;
 import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 
 public class TimelineWebApp extends AbstractVerticle {
@@ -25,7 +29,8 @@ public class TimelineWebApp extends AbstractVerticle {
     private static final Logger log = LoggerFactory.getLogger(TimelineWebApp.class);
 
     private static final String API_PATH_PREFIX = "/api/*";
-    private static final int PORT = 8180;
+    private static final String HOST = "0.0.0.0";
+    private static final int PORT = 8080;
 
     HttpServer server;
     Router mainRouter;
@@ -37,21 +42,35 @@ public class TimelineWebApp extends AbstractVerticle {
     @Override
     public Completable rxStart() {
 
+
         try{
             log.info("Starting Timeline Web App");
             log.info("Loading timelines and annotations...");
             loadTimelinesAndAnnotations();
 
-            server = vertx.createHttpServer();
+            HttpServerOptions options = new HttpServerOptions()
+                    .setHost(HOST)
+                    .setPort(PORT)
+                    .setSsl(false);
+
+            server = vertx.createHttpServer(options);
             mainRouter = Router.router(vertx);
             api = Router.router(vertx);
 
             //Define API routes
             api.route().method(HttpMethod.GET).path("/timelines/").handler(this::getTimelines);
             api.route().method(HttpMethod.GET).path("/annotations/:timelineId/").handler(this::getAnnotation);
+            api.route().method(HttpMethod.PUT).path("/annotations/:timelineId/").handler(this::updateAnnotation);
 
 
             //Mount API routes
+            mainRouter.route().handler(LoggerHandler.create());
+            mainRouter.route().handler(BodyHandler.create());
+            mainRouter.route().handler(rc->{
+                rc.response().putHeader("Access-Control-Allow-Origin","*");
+                rc.next();
+            });
+            mainRouter.route().handler(FaviconHandler.create(vertx));
             mainRouter.route(API_PATH_PREFIX).subRouter(api);
 
             //Mount static files handler
@@ -76,8 +95,47 @@ public class TimelineWebApp extends AbstractVerticle {
                 .filter(json->json.containsKey("id") && json.getString("id").equals(timelineId.toString()))
                 .findFirst();
 
-        if(annotation.isPresent()) rc.response().end(annotation.get().encode());
+        if(annotation.isPresent()) rc.response().putHeader("Content-Type", "application/json").end(annotation.get().encode());
         else rc.fail(404);
+
+    }
+
+    void updateAnnotation(RoutingContext rc){
+        UUID timelineId = UUID.fromString(rc.pathParam("timelineId"));
+
+        JsonObject payload = rc.body().asJsonObject();
+        log.info("Updated annotation: {}", payload.encodePrettily());
+        //Ensure annotation contains the correct id
+        if(payload.containsKey("id") && payload.getString("id").equals(timelineId.toString())){
+            try{
+                String annotationPath = getAnnotationPath(timelineId);
+                //Delete old annotation file
+                Files.deleteIfExists(Path.of(annotationPath));
+
+                //Write the new annotation file
+                File updatedAnnotation = new File(annotationPath);
+                try(
+                        FileWriter fw  = new FileWriter(updatedAnnotation);
+                        BufferedWriter bw = new BufferedWriter(fw);
+                        ){
+                    bw.write(payload.encode());
+                    bw.flush();
+                }
+
+                //Update the runtime map of annotations
+                annotations.put(annotationPath, payload);
+
+                rc.response().setStatusCode(200).end();
+
+            }catch (IOException e){
+                log.error(e.getMessage(), e);
+            }
+
+
+        }else{
+            //Bad request
+            rc.fail(400);
+        }
 
     }
 
@@ -86,13 +144,17 @@ public class TimelineWebApp extends AbstractVerticle {
      * @param rc
      */
     void getTimelines(RoutingContext rc){
-        rc.response().end(timelines.values().stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encodePrettily());
+        rc.response().putHeader("Content-Type", "application/json")
+                .end(timelines.values().stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encodePrettily());
     }
 
     void notFoundHandler(RoutingContext rc){
         rc.response().end(new JsonObject().put("error", "An error has occured!").encode());
     }
 
+    private String getAnnotationPath(UUID timelineId){
+        return annotations.keySet().stream().filter(path->path.contains(timelineId.toString())).findFirst().get();
+    }
 
     private void loadTimelinesAndAnnotations(){
         File timelinesDir = new File(SemanticFlowParser.TIMELINE_DATA_FOLDER);

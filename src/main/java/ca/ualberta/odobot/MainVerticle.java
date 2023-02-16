@@ -18,7 +18,7 @@ public class MainVerticle extends AbstractVerticle {
         SemanticFlowParser svp = new SemanticFlowParser();
         TimelineWebApp timelineWebApp = new TimelineWebApp();
 
-        vertx.deployVerticle(svp);
+        //vertx.deployVerticle(svp);
         vertx.deployVerticle(timelineWebApp);
 
         return super.rxStart();
