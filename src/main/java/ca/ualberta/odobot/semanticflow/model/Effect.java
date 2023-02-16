@@ -1,7 +1,9 @@
 package ca.ualberta.odobot.semanticflow.model;
 
 import ca.ualberta.odobot.semanticflow.extraction.terms.TermExtractionStrategy;
+import ca.ualberta.odobot.semanticflow.extraction.terms.impl.TextStrategy;
 import ca.ualberta.odobot.semanticflow.ranking.terms.TermRankingStrategy;
+import ca.ualberta.odobot.semanticflow.ranking.terms.impl.NoRanking;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.jsoup.nodes.Element;
@@ -108,13 +110,15 @@ public class Effect extends ArrayList<DomEffect> implements TimelineEntity {
     }
 
     @Override
-    public List<String> terms(TermRankingStrategy rankingStrategy, TermExtractionStrategy extractionStrategy) {
+    public List<String> terms() {
+        TermRankingStrategy rankingStrategy = new NoRanking();
+        TextStrategy textStrategy = new TextStrategy();
         List<String> allTerms = new ArrayList<>();
 
         Iterator<DomEffect> it = domEffectMadeVisible().iterator();
         while (it.hasNext()){
             DomEffect curr = it.next();
-            List<String> terms = rankingStrategy.getTerms(curr, extractionStrategy);
+            List<String> terms = rankingStrategy.getTerms(curr, textStrategy);
             allTerms.addAll(terms == null?List.of():terms);
         }
 

@@ -12,7 +12,7 @@ repositories {
 }
 
 vertx{
-    mainVerticle = "ca.ualberta.odobot.semanticflow.SemanticFlowParser"
+    mainVerticle = "ca.ualberta.odobot.MainVerticle"
     vertxVersion = "4.3.4"
     redeploy = false
 }

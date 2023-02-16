@@ -1,17 +1,17 @@
 package ca.ualberta.odobot.semanticflow;
 
 
-import ca.ualberta.odobot.semanticflow.extraction.terms.impl.TextStrategy;
+
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
-import ca.ualberta.odobot.semanticflow.ranking.terms.impl.DistanceToTarget;
-import ca.ualberta.odobot.semanticflow.ranking.terms.impl.NoRanking;
+
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.core.AbstractVerticle;
 
 import org.eclipse.rdf4j.model.Model;
+
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
@@ -21,6 +21,8 @@ import org.slf4j.LoggerFactory;
 
 
 import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Date;
 import java.text.SimpleDateFormat;
 import java.time.Instant;
@@ -31,6 +33,9 @@ public class SemanticFlowParser extends AbstractVerticle {
 
     private static final Logger log = LoggerFactory.getLogger(SemanticFlowParser.class);
     private static final String RDF_REPO_ID = "semantic-timeline-4";
+
+    //Timeline data config
+    public static final String TIMELINE_DATA_FOLDER = "timelines";
 
     @Override
     public Completable rxStart() {
@@ -48,7 +53,7 @@ public class SemanticFlowParser extends AbstractVerticle {
         while (it.hasNext()){
             int index = it.nextIndex();
             TimelineEntity e = it.next();
-            List<String> terms = e.terms(new NoRanking(), new TextStrategy());
+            List<String> terms = e.terms();
             termManifest.put(index, terms);
         }
 
@@ -60,7 +65,44 @@ public class SemanticFlowParser extends AbstractVerticle {
 
         log.info("Timeline: {}", timeline.toString());
 
+        saveTimeline(timeline);
+
         return super.rxStart();
+    }
+
+
+    public void saveTimeline(Timeline timeline){
+        try{
+            Path rootDir = Path.of(TIMELINE_DATA_FOLDER);
+
+            //Create timelines folder if it doesn't exist
+            if(!Files.exists(rootDir) ) Files.createDirectory(Path.of(TIMELINE_DATA_FOLDER));
+
+            //Create a folder for this timeline using its id if it doesn't exist.
+            Path timelineDir = Path.of(TIMELINE_DATA_FOLDER, timeline.getId().toString());
+            if(!Files.exists(timelineDir)) Files.createDirectory(timelineDir);
+
+            File timelineFile = new File(timelineDir + "/timeline.json");
+            try(FileWriter fw = new FileWriter(timelineFile);
+                BufferedWriter bw = new BufferedWriter(fw);
+            ){
+                bw.write(timeline.toJson().encodePrettily());
+                bw.flush();
+            }
+
+            File annotationsFile = new File(timelineDir + "/annotations.json");
+            try(FileWriter fw = new FileWriter(annotationsFile);
+                BufferedWriter bw = new BufferedWriter(fw);
+            ){
+                bw.write(timeline.getAnnotations().encodePrettily());
+                bw.flush();
+            }
+
+        }catch (IOException ioe){
+            log.error(ioe.getMessage(), ioe);
+        }
+
+
     }
 
     /**

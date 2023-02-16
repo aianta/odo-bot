@@ -4,6 +4,7 @@ import ca.ualberta.odobot.semanticflow.extraction.terms.TermExtractionStrategy;
 import ca.ualberta.odobot.semanticflow.extraction.terms.impl.TextStrategy;
 import ca.ualberta.odobot.semanticflow.ranking.terms.TermRankingStrategy;
 import ca.ualberta.odobot.semanticflow.ranking.terms.impl.DistanceToTarget;
+import io.vertx.core.json.JsonObject;
 import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -59,7 +60,7 @@ public class DataEntry extends ArrayList<InputChange> implements TimelineEntity 
     }
 
     @Override
-    public List<String> terms(TermRankingStrategy rankingStrategy, TermExtractionStrategy extractionStrategy) {
+    public List<String> terms() {
         TextStrategy textStrategy = new TextStrategy();
         textStrategy.allowDuplicates(false);
         return new DistanceToTarget().getTerms(lastChange(), textStrategy);
@@ -70,6 +71,11 @@ public class DataEntry extends ArrayList<InputChange> implements TimelineEntity 
         return get(size()-1).getValue();
     }
 
+    public JsonObject toJson(){
+        JsonObject result = new JsonObject();
+        result.put("enteredData", getEnteredData());
+        return result;
+    }
 
 
 }

@@ -5,6 +5,7 @@ import ca.ualberta.odobot.semanticflow.extraction.terms.TermExtractionStrategy;
 import ca.ualberta.odobot.semanticflow.extraction.terms.impl.TextStrategy;
 import ca.ualberta.odobot.semanticflow.ranking.terms.TermRankingStrategy;
 import ca.ualberta.odobot.semanticflow.ranking.terms.impl.DistanceToTarget;
+import io.vertx.core.json.JsonObject;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
@@ -27,12 +28,16 @@ public class ClickEvent extends AbstractArtifact implements TimelineEntity {
     private InteractionType type;
 
 
+    public JsonObject toJson(){
+        return new JsonObject();
+    }
+
     public String symbol(){
         return "CE";
     }
 
     @Override
-    public List<String> terms(TermRankingStrategy rankingStrategy, TermExtractionStrategy extractionStrategy) {
+    public List<String> terms() {
         TextStrategy strategy = new TextStrategy();
         strategy.allowDuplicates(false);
         return new DistanceToTarget().getTerms(this, strategy);
