@@ -39,6 +39,15 @@ public class TimelineWebApp extends AbstractVerticle {
     Map<String, JsonObject> timelines = new LinkedHashMap<>();
     Map<String, JsonObject> annotations = new LinkedHashMap<>();
 
+    private static TimelineWebApp instance;
+
+    public static TimelineWebApp getInstance(){
+        if(instance == null){
+            instance = new TimelineWebApp();
+        }
+        return instance;
+    }
+
     @Override
     public Completable rxStart() {
 
@@ -156,7 +165,10 @@ public class TimelineWebApp extends AbstractVerticle {
         return annotations.keySet().stream().filter(path->path.contains(timelineId.toString())).findFirst().get();
     }
 
-    private void loadTimelinesAndAnnotations(){
+    public void loadTimelinesAndAnnotations(){
+        timelines.clear();
+        annotations.clear();
+
         File timelinesDir = new File(SemanticFlowParser.TIMELINE_DATA_FOLDER);
         File [] timelinesArray = timelinesDir.listFiles();
 

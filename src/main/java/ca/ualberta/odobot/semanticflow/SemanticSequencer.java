@@ -24,6 +24,7 @@ public class SemanticSequencer {
 
     public Timeline parse(List<JsonObject> events){
         line = new Timeline();
+        line.setAnnotations(line.getAnnotations().put("origin-es-index", SemanticFlowParser.RDF_REPO_ID));
         events.forEach(event->parse(event));
         return line;
     }
@@ -37,6 +38,7 @@ public class SemanticSequencer {
                     case CLICK -> {
                         ClickEvent clickEvent = clickEventMapper.map(event);
                         line.add(clickEvent);
+                        log.info("handled CLICK");
 
                     }
                     case INPUT -> {
@@ -61,6 +63,7 @@ public class SemanticSequencer {
                             dataEntry.add(inputChange);
                             line.add(dataEntry);
                         }
+                        log.info("handled INPUT");
 
                     }
                 }
@@ -85,6 +88,7 @@ public class SemanticSequencer {
                         line.add(effect);
                     }
                 }
+                log.info("handled DOM_EFFECT");
         }
     }
 }

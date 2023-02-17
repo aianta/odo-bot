@@ -38,7 +38,7 @@ public class InputChangeMapper extends JsonMapper<InputChange> {
 
         JsonObject element = new JsonObject(event.getString(ELEMENT_FIELD));
         //TODO METADATA_FIELD is not valid json string, is mongo BSON
-        //JsonArray metadata = new JsonArray(event.getString(METADATA_FIELD));
+        JsonArray metadata = new JsonArray(event.getString(METADATA_FIELD));
 
         InputChange result = new InputChange();
         result.setDomSnapshot(getDOMSnapshot(event));
@@ -49,7 +49,7 @@ public class InputChangeMapper extends JsonMapper<InputChange> {
         result.setBaseURI(element.getString(ELEMENT_BASEURI_FIELD));
         result.setPlaceholderText(result.getInputElement().attr("placeholder"));
         //TODO - this will yield results 1 character off, this is a problem in the data being sent back by LogUI
-        result.setValue(result.getInputElement().attr("value"));
+        result.setValue(getMetadataValue(METADATA_VALUE_FIELD, metadata));
 
         return result;
     }

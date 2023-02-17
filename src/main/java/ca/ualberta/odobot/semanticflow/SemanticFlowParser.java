@@ -5,6 +5,7 @@ package ca.ualberta.odobot.semanticflow;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
 
+import ca.ualberta.odobot.web.TimelineWebApp;
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -32,7 +33,7 @@ import java.util.stream.Collectors;
 public class SemanticFlowParser extends AbstractVerticle {
 
     private static final Logger log = LoggerFactory.getLogger(SemanticFlowParser.class);
-    private static final String RDF_REPO_ID = "semantic-timeline-4";
+    public static final String RDF_REPO_ID = "semantic-timeline-5";
 
     //Timeline data config
     public static final String TIMELINE_DATA_FOLDER = "timelines";
@@ -66,6 +67,9 @@ public class SemanticFlowParser extends AbstractVerticle {
         log.info("Timeline: {}", timeline.toString());
 
         saveTimeline(timeline);
+
+        //Refresh the web app.
+        TimelineWebApp.getInstance().loadTimelinesAndAnnotations();
 
         return super.rxStart();
     }
