@@ -33,7 +33,7 @@ import java.util.stream.Collectors;
 public class SemanticFlowParser extends AbstractVerticle {
 
     private static final Logger log = LoggerFactory.getLogger(SemanticFlowParser.class);
-    public static final String RDF_REPO_ID = "semantic-timeline-5";
+    public static final String RDF_REPO_ID = "dataset-alpha-19";
 
     //Timeline data config
     public static final String TIMELINE_DATA_FOLDER = "timelines";
@@ -48,25 +48,31 @@ public class SemanticFlowParser extends AbstractVerticle {
 
 
         SemanticSequencer sequencer = new SemanticSequencer();
-        Timeline timeline = sequencer.parse(events);
-        ListIterator<TimelineEntity> it = timeline.listIterator();
-        Map<Integer,List<String>> termManifest = new HashMap<>();
-        while (it.hasNext()){
-            int index = it.nextIndex();
-            TimelineEntity e = it.next();
-            List<String> terms = e.terms();
-            termManifest.put(index, terms);
+        try{
+            Timeline timeline = sequencer.parse(events);
+            ListIterator<TimelineEntity> it = timeline.listIterator();
+            Map<Integer,List<String>> termManifest = new HashMap<>();
+            while (it.hasNext()){
+                int index = it.nextIndex();
+                TimelineEntity e = it.next();
+                List<String> terms = e.terms();
+                termManifest.put(index, terms);
+            }
+
+            for(int i = 0; i < timeline.size(); i++){
+                log.info("{} - terms: {}", i, termManifest.get(i));
+            }
+
+
+
+            log.info("Timeline: {}", timeline.toString());
+
+            saveTimeline(timeline);
+        }catch (Exception e){
+            log.error(e.getMessage(), e);
         }
 
-        for(int i = 0; i < timeline.size(); i++){
-            log.info("{} - terms: {}", i, termManifest.get(i));
-        }
 
-
-
-        log.info("Timeline: {}", timeline.toString());
-
-        saveTimeline(timeline);
 
         //Refresh the web app.
         TimelineWebApp.getInstance().loadTimelinesAndAnnotations();

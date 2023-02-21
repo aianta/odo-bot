@@ -154,7 +154,19 @@ public class TimelineWebApp extends AbstractVerticle {
      */
     void getTimelines(RoutingContext rc){
         rc.response().putHeader("Content-Type", "application/json")
-                .end(timelines.values().stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encodePrettily());
+                .end(
+                        timelines.entrySet().stream()
+                                .sorted( new Comparator<Map.Entry<String, JsonObject>>() {
+                                        @Override
+                                        public int compare(Map.Entry<String, JsonObject> o1, Map.Entry<String, JsonObject> o2) {
+                                            File f1 = new File(o1.getKey());
+                                            File f2 = new File(o2.getKey());
+                                            return (int)(f1.lastModified() - f2.lastModified());
+                                        }
+                                    }
+                                )
+                                .map(entry->entry.getValue())
+                                .collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encodePrettily());
     }
 
     void notFoundHandler(RoutingContext rc){

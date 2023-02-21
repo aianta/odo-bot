@@ -63,7 +63,8 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
                 .map(term->{
             log.debug("Looking for: {}", term.word());
 
-            Elements elements = body.getElementsMatchingOwnText(term.word());
+            Elements elements = body.getElementsMatchingOwnText(
+                    term.tag().equals("SYM")?("\\"+term.word()):term.word()); //Handle case where we're looking for '+' or some other symbol.
             log.debug("Found {} elements", elements.size());
 
             if(elements.size() > 1){
