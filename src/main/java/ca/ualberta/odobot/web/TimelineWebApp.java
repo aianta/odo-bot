@@ -156,6 +156,7 @@ public class TimelineWebApp extends AbstractVerticle {
         rc.response().putHeader("Content-Type", "application/json")
                 .end(
                         timelines.entrySet().stream()
+                                //Impose chronological order
                                 .sorted( new Comparator<Map.Entry<String, JsonObject>>() {
                                         @Override
                                         public int compare(Map.Entry<String, JsonObject> o1, Map.Entry<String, JsonObject> o2) {
