@@ -57,6 +57,8 @@ public class Timeline extends ArrayList<TimelineEntity> {
             data.put("size", entity.size());
             data.put("index", index);
             data.put("terms", entity.terms().stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
+            data.put("cssClassTerms", entity.cssClassTerms().stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
+            data.put("idTerms", entity.idTerms().stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
             data.mergeIn(entity.toJson()); //Bring in entity specific data.
             entityData.add(data);
         }

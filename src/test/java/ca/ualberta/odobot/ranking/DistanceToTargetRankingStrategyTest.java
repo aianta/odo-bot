@@ -1,6 +1,7 @@
 package ca.ualberta.odobot.ranking;
 
-import ca.ualberta.odobot.semanticflow.extraction.terms.impl.TextStrategy;
+import ca.ualberta.odobot.semanticflow.extraction.terms.SourceFunctions;
+import ca.ualberta.odobot.semanticflow.extraction.terms.impl.BasicStanfordNLPStrategy;
 import ca.ualberta.odobot.semanticflow.mappers.impl.ClickEventMapper;
 import ca.ualberta.odobot.semanticflow.model.ClickEvent;
 import ca.ualberta.odobot.semanticflow.ranking.terms.impl.DistanceToTarget;
@@ -34,8 +35,8 @@ public class DistanceToTargetRankingStrategyTest {
     @Test
     void basic(){
         DistanceToTarget rankingStrategy = new DistanceToTarget();
-        TextStrategy extractionStrategy = new TextStrategy();
+        BasicStanfordNLPStrategy extractionStrategy = new BasicStanfordNLPStrategy();
         extractionStrategy.allowDuplicates(false);
-        log.info("result: {}",rankingStrategy.getTerms(sampleClickEvent, extractionStrategy));
+        log.info("result: {}",rankingStrategy.getTerms(sampleClickEvent, extractionStrategy, SourceFunctions.TARGET_ELEMENT_TEXT.getFunction()));
     }
 }

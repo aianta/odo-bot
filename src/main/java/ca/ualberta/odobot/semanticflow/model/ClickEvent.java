@@ -1,10 +1,10 @@
 package ca.ualberta.odobot.semanticflow.model;
 
 
-import ca.ualberta.odobot.semanticflow.extraction.terms.TermExtractionStrategy;
-import ca.ualberta.odobot.semanticflow.extraction.terms.impl.TextStrategy;
-import ca.ualberta.odobot.semanticflow.ranking.terms.TermRankingStrategy;
+import ca.ualberta.odobot.semanticflow.extraction.terms.SourceFunctions;
+import ca.ualberta.odobot.semanticflow.extraction.terms.impl.BasicStanfordNLPStrategy;
 import ca.ualberta.odobot.semanticflow.ranking.terms.impl.DistanceToTarget;
+import ca.ualberta.odobot.semanticflow.ranking.terms.impl.NoRanking;
 import io.vertx.core.json.JsonObject;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -12,7 +12,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
-import java.util.Set;
 
 public class ClickEvent extends AbstractArtifact implements TimelineEntity {
 
@@ -38,9 +37,24 @@ public class ClickEvent extends AbstractArtifact implements TimelineEntity {
 
     @Override
     public List<String> terms() {
-        TextStrategy strategy = new TextStrategy();
+        BasicStanfordNLPStrategy strategy = new BasicStanfordNLPStrategy();
         strategy.allowDuplicates(false);
-        return new DistanceToTarget().getTerms(this, strategy);
+        DistanceToTarget rankingStrategy = new DistanceToTarget();
+        rankingStrategy.setMatchingFunction(DistanceToTarget.MatchingFunction.OWN_TEXT.getFunction());
+
+        return new DistanceToTarget().getTerms(this, strategy, DistanceToTarget.SourceFunction.TEXT.getFunction());
+    }
+
+    public List<String> cssClassTerms(){
+        BasicStanfordNLPStrategy strategy = new BasicStanfordNLPStrategy();
+        strategy.allowDuplicates(false);
+        return new NoRanking().getTerms(this, strategy, SourceFunctions.TARGET_ELEMENT_CSS_CLASSES.getFunction());
+    }
+
+    public List<String> idTerms(){
+        BasicStanfordNLPStrategy strategy = new BasicStanfordNLPStrategy();
+        strategy.allowDuplicates(false);
+        return new NoRanking().getTerms(this, strategy, SourceFunctions.TARGET_ELEMENT_ID.getFunction());
     }
 
     public InteractionType getType() {

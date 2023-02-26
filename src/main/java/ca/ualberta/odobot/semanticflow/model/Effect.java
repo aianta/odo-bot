@@ -1,7 +1,7 @@
 package ca.ualberta.odobot.semanticflow.model;
 
-import ca.ualberta.odobot.semanticflow.extraction.terms.TermExtractionStrategy;
-import ca.ualberta.odobot.semanticflow.extraction.terms.impl.TextStrategy;
+import ca.ualberta.odobot.semanticflow.extraction.terms.SourceFunctions;
+import ca.ualberta.odobot.semanticflow.extraction.terms.impl.BasicStanfordNLPStrategy;
 import ca.ualberta.odobot.semanticflow.ranking.terms.TermRankingStrategy;
 import ca.ualberta.odobot.semanticflow.ranking.terms.impl.NoRanking;
 import io.vertx.core.json.JsonArray;
@@ -10,10 +10,7 @@ import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -112,16 +109,46 @@ public class Effect extends ArrayList<DomEffect> implements TimelineEntity {
     @Override
     public List<String> terms() {
         TermRankingStrategy rankingStrategy = new NoRanking();
-        TextStrategy textStrategy = new TextStrategy();
+        BasicStanfordNLPStrategy textStrategy = new BasicStanfordNLPStrategy();
         List<String> allTerms = new ArrayList<>();
 
         Iterator<DomEffect> it = domEffectMadeVisible().iterator();
         while (it.hasNext()){
             DomEffect curr = it.next();
-            List<String> terms = rankingStrategy.getTerms(curr, textStrategy);
+            List<String> terms = rankingStrategy.getTerms(curr, textStrategy, SourceFunctions.TARGET_ELEMENT_TEXT.getFunction());
             allTerms.addAll(terms == null?List.of():terms);
         }
 
         return allTerms;
+    }
+
+    public List<String> cssClassTerms(){
+        TermRankingStrategy rankingStrategy = new NoRanking();
+        BasicStanfordNLPStrategy strategy = new BasicStanfordNLPStrategy();
+        strategy.allowDuplicates(false);
+        Set<String> allTerms = new HashSet<>();
+
+        Iterator<DomEffect> it = domEffectMadeVisible().iterator();
+        while (it.hasNext()){
+            DomEffect curr = it.next();
+            List<String> terms = rankingStrategy.getTerms(curr, strategy, SourceFunctions.TARGET_ELEMENT_CSS_CLASSES.getFunction());
+            allTerms.addAll(terms == null?List.of():terms);
+        }
+
+        return allTerms.stream().toList();
+    }
+
+    public List<String> idTerms(){
+        TermRankingStrategy rankingStrategy = new NoRanking();
+        BasicStanfordNLPStrategy strategy = new BasicStanfordNLPStrategy();
+        strategy.allowDuplicates(false);
+        Set<String> allTerms = new HashSet<>();
+        Iterator<DomEffect> it = domEffectMadeVisible().iterator();
+        while (it.hasNext()){
+            DomEffect curr = it.next();
+            List<String> terms = rankingStrategy.getTerms(curr, strategy, SourceFunctions.TARGET_ELEMENT_ID.getFunction());
+            allTerms.addAll(terms == null?List.of():terms);
+        }
+        return allTerms.stream().toList();
     }
 }

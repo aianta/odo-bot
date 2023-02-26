@@ -1,9 +1,9 @@
 package ca.ualberta.odobot.semanticflow.model;
 
-import ca.ualberta.odobot.semanticflow.extraction.terms.TermExtractionStrategy;
-import ca.ualberta.odobot.semanticflow.extraction.terms.impl.TextStrategy;
-import ca.ualberta.odobot.semanticflow.ranking.terms.TermRankingStrategy;
+import ca.ualberta.odobot.semanticflow.extraction.terms.SourceFunctions;
+import ca.ualberta.odobot.semanticflow.extraction.terms.impl.BasicStanfordNLPStrategy;
 import ca.ualberta.odobot.semanticflow.ranking.terms.impl.DistanceToTarget;
+import ca.ualberta.odobot.semanticflow.ranking.terms.impl.NoRanking;
 import io.vertx.core.json.JsonObject;
 import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
@@ -61,10 +61,22 @@ public class DataEntry extends ArrayList<InputChange> implements TimelineEntity 
 
     @Override
     public List<String> terms() {
-        TextStrategy textStrategy = new TextStrategy();
-        textStrategy.allowDuplicates(false);
-        return new DistanceToTarget().getTerms(lastChange(), textStrategy);
+        BasicStanfordNLPStrategy strategy = new BasicStanfordNLPStrategy();
+        strategy.allowDuplicates(false);
+        return new DistanceToTarget().getTerms(lastChange(), strategy, DistanceToTarget.SourceFunction.TEXT.getFunction());
 
+    }
+
+    public List<String> cssClassTerms(){
+        BasicStanfordNLPStrategy strategy = new BasicStanfordNLPStrategy();
+        strategy.allowDuplicates(false);
+        return new NoRanking().getTerms(lastChange(), strategy, SourceFunctions.TARGET_ELEMENT_CSS_CLASSES.getFunction());
+    }
+
+    public List<String> idTerms(){
+        BasicStanfordNLPStrategy strategy = new BasicStanfordNLPStrategy();
+        strategy.allowDuplicates(false);
+        return new NoRanking().getTerms(lastChange(), strategy, SourceFunctions.TARGET_ELEMENT_ID.getFunction());
     }
 
     public String getEnteredData(){

@@ -1,17 +1,37 @@
 package ca.ualberta.odobot.semanticflow.extraction.terms;
 
+import ca.ualberta.odobot.semanticflow.model.AbstractArtifact;
 import edu.stanford.nlp.ling.CoreLabel;
 import edu.stanford.nlp.pipeline.CoreDocument;
 import edu.stanford.nlp.pipeline.StanfordCoreNLP;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Properties;
+import java.util.*;
+import java.util.function.Function;
 
-public abstract class AbstractTermExtractionStrategy {
+public abstract class AbstractTermExtractionStrategy implements TermExtractionStrategy {
     private static final Logger log = LoggerFactory.getLogger(AbstractTermExtractionStrategy.class);
+
+    /**
+     * If a term appears more than once, do we return multiple CoreLabels?
+     */
+    protected boolean allowDuplicates = true;
+
+
+    public void allowDuplicates(boolean allowDuplicates) {
+        this.allowDuplicates = allowDuplicates;
+    }
+
+
+    public List<CoreLabel> extractTerms(String input){
+        List<CoreLabel> result = tokenize(input);
+        return allowDuplicates? result:removeDuplicates(result);
+    }
+
+    public <T extends AbstractArtifact> List<CoreLabel> extractTerms(T artifact, Function<T, String> sourceText){
+        return extractTerms(sourceText.apply(artifact));
+    }
 
     protected List<CoreLabel> tokenize(String input){
         List<CoreLabel> result = new ArrayList<>();
@@ -37,4 +57,19 @@ public abstract class AbstractTermExtractionStrategy {
         return result;
     }
 
+
+    protected List<CoreLabel> removeDuplicates(List<CoreLabel> input){
+        Set<String> words = new HashSet<>();
+        Iterator<CoreLabel> it = input.iterator();
+        while (it.hasNext()){
+            CoreLabel curr = it.next();
+            if(words.contains(curr.word())){
+                it.remove();
+            }else{
+                words.add(curr.word());
+            }
+        }
+
+        return input;
+    }
 }

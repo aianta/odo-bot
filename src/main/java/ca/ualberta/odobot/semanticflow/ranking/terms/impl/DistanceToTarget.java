@@ -12,6 +12,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -29,6 +31,8 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
             "VBZ","WDT","WP","WP$","WRB"
     );
 
+    private BiFunction<Element,String, Elements> matchingFunction;
+
     /**
      * An enum to choose different options for handling multiple elements matching
      * extracted tokens when computing the distance (rank) for the token.
@@ -39,22 +43,81 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
         MIN   //Take the minimum distance of the elements
     }
 
+    public enum SourceFunction{
+        TEXT((artifact)->artifact.getDomSnapshot().body().text());
+
+         Function<AbstractArtifact, String> function;
+
+         SourceFunction(Function<AbstractArtifact, String> function){
+             this.function = function;
+         }
+
+         public Function<AbstractArtifact, String> getFunction(){
+             return function;
+         }
+    }
+
+    public enum MatchingFunction{
+        OWN_TEXT(
+                (element,regex)->element.getElementsMatchingOwnText(regex)
+        );
+
+        public BiFunction<Element,String,Elements> function;
+        MatchingFunction(BiFunction<Element,String, Elements> function){
+            this.function = function;
+        }
+
+        public BiFunction<Element,String,Elements> getFunction(){
+            return function;
+        }
+    }
+
     private MultiElementOptions multiElementOptions = MultiElementOptions.MIN;
+
+    public BiFunction<Element,String, Elements> getMatchingFunction() {
+        return matchingFunction;
+    }
+
+    /**
+     * The matching function is used to return a set of elements from the body of the document which match
+     * the field we're interested in using.
+     *
+     * For example, if the source function returns the text in the body {@link SourceFunction#TEXT}
+     * of the elements, the corresponding matching function would use {@link  org.jsoup.nodes.Element#getElementsMatchingOwnText(String)} to
+     * retrieve element to compute the distance to.
+     * @param matchingFunction
+     */
+    public void setMatchingFunction(BiFunction<Element,String, Elements> matchingFunction) {
+        this.matchingFunction = matchingFunction;
+    }
 
     public void setMultiElementOptions(MultiElementOptions multiElementOptions) {
         this.multiElementOptions = multiElementOptions;
     }
 
+    /**
+     *
+     * @param artifact
+     * @param extractionStrategy
+     * @param source a function that returns the string to extract terms from
+     * @param <T>
+     * @return
+     */
     @Override
-    public List<String> getTerms(AbstractArtifact artifact, TermExtractionStrategy extractionStrategy) {
-
+    public <T extends AbstractArtifact> List<String> getTerms(T artifact, TermExtractionStrategy extractionStrategy, Function<T, String> source) {
+        if(matchingFunction == null){
+            log.error("Cannot get terms! Matching function is not set!");
+            return List.of();
+        }
 
         Element targetElement = artifact.getTargetElement();
         Document dom = artifact.getDomSnapshot();
-        Element body = dom.body(); //TODO I think we can safely exclude the head/meta.... try it this way for now.
+        Element body = dom.body();
+
         log.debug("targetElement: {}", targetElement);
 
-        List<CoreLabel> terms = extractionStrategy.extractTerms(body);
+        List<CoreLabel> terms = extractionStrategy.extractTerms(artifact, (a)->a.getDomSnapshot().body().text());
+
         log.debug("terms size: {}", terms.size());
         log.debug("'Event' count: {}",terms.stream().filter(term->term.word().equals("Event")).count());
 
@@ -63,8 +126,10 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
                 .map(term->{
             log.debug("Looking for: {}", term.word());
 
-            Elements elements = body.getElementsMatchingOwnText(
-                    term.tag().equals("SYM")?("\\"+term.word()):term.word()); //Handle case where we're looking for '+' or some other symbol.
+            Elements elements = matchingFunction.apply(body,
+                    term.tag().equals("SYM")?("\\"+term.word()):term.word() //Handle case where we're looking for '+' or some other symbol.
+            );
+
             log.debug("Found {} elements", elements.size());
 
             if(elements.size() > 1){

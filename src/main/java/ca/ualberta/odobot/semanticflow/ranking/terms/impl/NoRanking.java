@@ -6,6 +6,7 @@ import ca.ualberta.odobot.semanticflow.ranking.terms.TermRankingStrategy;
 import edu.stanford.nlp.ling.CoreLabel;
 
 import java.util.List;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
@@ -14,8 +15,8 @@ import java.util.stream.Collectors;
  */
 public class NoRanking implements TermRankingStrategy<AbstractArtifact> {
     @Override
-    public List<String> getTerms(AbstractArtifact artifact, TermExtractionStrategy extractionStrategy) {
-        return extractionStrategy.extractTerms(artifact.getTargetElement())
+    public <T extends AbstractArtifact> List<String> getTerms(T artifact, TermExtractionStrategy extractionStrategy, Function<T, String> source) {
+        return extractionStrategy.extractTerms(artifact, source)
                 .stream().map(CoreLabel::word).collect(Collectors.toList());
     }
 }
