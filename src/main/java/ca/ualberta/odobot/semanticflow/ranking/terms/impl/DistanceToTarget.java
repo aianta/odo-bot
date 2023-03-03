@@ -122,6 +122,7 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
         log.debug("'Event' count: {}",terms.stream().filter(term->term.word().equals("Event")).count());
 
         List<RankedTerm> result = terms.stream()
+                //TODO - working with CoreLabel's here makes TermRankingStrategies tightly coupled with the BasicStanfordNLPStrategy, should move filtering logic to extraction strategy.
                 .filter(term->ALLOWED_PARTS_OF_SPEECH.contains(term.tag()))
                 .map(term->{
             log.debug("Looking for: {}", term.word());
