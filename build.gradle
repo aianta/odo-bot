@@ -26,6 +26,7 @@ dependencies {
     implementation "io.vertx:vertx-web"
     implementation 'io.vertx:vertx-rx-java3'
     implementation 'io.vertx:vertx-config'
+    implementation 'io.vertx:vertx-web-client'
 
     /**
      * HTML parsing

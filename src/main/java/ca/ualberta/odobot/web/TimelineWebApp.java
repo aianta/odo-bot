@@ -4,25 +4,32 @@ package ca.ualberta.odobot.web;
 import ca.ualberta.odobot.semanticflow.SemanticFlowParser;
 import io.reactivex.rxjava3.core.Completable;
 
+
+import io.vertx.core.Future;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+
 import io.vertx.rxjava3.core.AbstractVerticle;
+import io.vertx.rxjava3.core.Promise;
+
 import io.vertx.rxjava3.core.http.HttpServer;
-import io.vertx.rxjava3.core.http.HttpServerResponse;
-import io.vertx.rxjava3.ext.web.Route;
+
 import io.vertx.rxjava3.ext.web.Router;
 import io.vertx.rxjava3.ext.web.RoutingContext;
+
+import io.vertx.rxjava3.ext.web.client.WebClient;
 import io.vertx.rxjava3.ext.web.handler.*;
 import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
+import java.util.*;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.*;
+
+import java.util.stream.Collectors;
 
 public class TimelineWebApp extends AbstractVerticle {
 
@@ -32,9 +39,16 @@ public class TimelineWebApp extends AbstractVerticle {
     private static final String HOST = "0.0.0.0";
     private static final int PORT = 8080;
 
+    private static final String DEEP_SERVICE_HOST = "127.0.0.1";
+    private static final int DEEP_SERVICE_PORT = 5000;
+    private static final String DEEP_SERVICE_EMBEDDING_ENDPOINT = "/embeddings/";
+    private static final String DEEP_SERVICE_DISTANCES_ENDPOINT = "/embeddings/distance";
+
     HttpServer server;
     Router mainRouter;
     Router api;
+
+    WebClient client;
 
     Map<String, JsonObject> timelines = new LinkedHashMap<>();
     Map<String, JsonObject> annotations = new LinkedHashMap<>();
@@ -50,7 +64,7 @@ public class TimelineWebApp extends AbstractVerticle {
 
     @Override
     public Completable rxStart() {
-
+        client = WebClient.create(vertx);
 
         try{
             log.info("Starting Timeline Web App");
@@ -70,8 +84,8 @@ public class TimelineWebApp extends AbstractVerticle {
             api.route().method(HttpMethod.GET).path("/timelines/").handler(this::getTimelines);
             api.route().method(HttpMethod.GET).path("/annotations/:timelineId/").handler(this::getAnnotation);
             api.route().method(HttpMethod.PUT).path("/annotations/:timelineId/").handler(this::updateAnnotation);
-
-
+            api.route().method(HttpMethod.POST).path("/actions/createEmbeddings").handler(this::createEmbeddings);
+            api.route().method(HttpMethod.GET).path("/actions/computeDistances").handler(this::getDistances);
             //Mount API routes
             mainRouter.route().handler(LoggerHandler.create());
             mainRouter.route().handler(BodyHandler.create());
@@ -96,6 +110,69 @@ public class TimelineWebApp extends AbstractVerticle {
         return super.rxStart();
     }
 
+    void getDistances(RoutingContext rc){
+        client.get(DEEP_SERVICE_PORT, DEEP_SERVICE_HOST, DEEP_SERVICE_DISTANCES_ENDPOINT).rxSend().subscribe(
+                result->{
+                    rc.response().setStatusCode(200).end(result.bodyAsJsonObject().encode());
+                }
+        );
+    }
+
+    void createEmbeddings(RoutingContext rc){
+        List<JsonObject> elementsToEmbed = new ArrayList<>();
+        timelines.values().forEach(timeline->{
+            // Create a composite ID for each request using <timelineId>#<index>
+            String timelineId = timeline.getString("id");
+            JsonArray timelineEntries = timeline.getJsonArray("data");
+            List<JsonObject> processedEntries = timelineEntries.stream()
+                    .map(o->(JsonObject)o)
+                    .map(json->json.put("id", timelineId + "#" + json.getInteger("index")))
+                    .peek(json->{
+                        if(json.getJsonArray("terms").size() == 0) log.warn("{} has 0 terms...", json.getString("id"));
+                    })
+                    .filter(json->json.getJsonArray("terms").size() != 0) //Filter entities with 0 terms
+
+                    .peek(json->log.info("Creating request for {}", json.getString("id")))
+                    .collect(Collectors.toList());
+            elementsToEmbed.addAll(processedEntries);
+        });
+
+        Future future = null;
+        for (JsonObject element: elementsToEmbed){
+            Promise requestPromise = Promise.promise();
+            client.post(DEEP_SERVICE_PORT, DEEP_SERVICE_HOST, DEEP_SERVICE_EMBEDDING_ENDPOINT)
+                    .rxSendJsonObject(element).subscribe((result, err)->{
+                        if(err!= null){
+                            log.error(err.getMessage(), err);
+                            return;
+                        }
+
+                        log.info("Embedding Response status code: {}", result.statusCode());
+                        if(result.statusCode() == 201){
+                            log.info("Created embedding for {}", result.bodyAsJsonObject().getString("id"));
+                        }
+
+
+
+                        requestPromise.complete();
+                    });
+
+            if(future == null) {
+                future = requestPromise.future();
+            }else{
+                future.compose((op)->requestPromise.future());
+            }
+        }
+
+        future.onComplete(op->log.info("Create embeddings complete"));
+
+        rc.response().setStatusCode(200).end();
+    }
+
+    /**
+     * Returns annotation data for a particular timeline id
+     * @param rc
+     */
     void getAnnotation(RoutingContext rc){
         UUID timelineId = UUID.fromString(rc.pathParam("timelineId"));
 
@@ -109,6 +186,11 @@ public class TimelineWebApp extends AbstractVerticle {
 
     }
 
+    /**
+     * Update annotation data for a particular timeline id.
+     * TODO: Probably should validate some of this huh?
+     * @param rc
+     */
     void updateAnnotation(RoutingContext rc){
         UUID timelineId = UUID.fromString(rc.pathParam("timelineId"));
 
