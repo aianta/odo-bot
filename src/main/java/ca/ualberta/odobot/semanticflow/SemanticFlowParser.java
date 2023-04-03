@@ -33,7 +33,7 @@ import java.util.stream.Collectors;
 public class SemanticFlowParser extends AbstractVerticle {
 
     private static final Logger log = LoggerFactory.getLogger(SemanticFlowParser.class);
-    public static final String RDF_REPO_ID = "dataset-alpha-1";
+    public static final String RDF_REPO_ID = "odo-sight-2";
 
     //Timeline data config
     public static final String TIMELINE_DATA_FOLDER = "timelines";

@@ -4,6 +4,8 @@ import ca.ualberta.odobot.semanticflow.mappers.JsonMapper;
 import ca.ualberta.odobot.semanticflow.model.ClickEvent;
 import ca.ualberta.odobot.semanticflow.model.InteractionType;
 import io.vertx.core.json.JsonObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.swing.text.Element;
 
@@ -13,13 +15,13 @@ import javax.swing.text.Element;
  */
 public class ClickEventMapper extends JsonMapper<ClickEvent> {
 
+    private static final Logger log = LoggerFactory.getLogger(ClickEventMapper.class);
+
     private static final String ELEMENT_FIELD = "eventDetails_element";
 
     private static final String ELEMENT_TAG_FIELD = "localName";
     private static final String ELEMENT_XPATH_FIELD = "xpath";
     private static final String ELEMENT_BASEURI_FIELD = "baseURI";
-    private static final String ELEMENT_WIDTH_FIELD = "offsetWidth";
-    private static final String ELEMENT_HEIGHT_FIELD = "offsetHeight";
     private static final String ELEMENT_ID_FIELD = "id";
 
 
@@ -34,8 +36,6 @@ public class ClickEventMapper extends JsonMapper<ClickEvent> {
         result.setBaseURI(element.getString(ELEMENT_BASEURI_FIELD));
         result.setHtmlId(element.getString(ELEMENT_ID_FIELD));
         result.setTriggerElement(getDOMSnapshot(event).selectXpath(result.getXpath()).first());
-        result.setElementHeight(element.getInteger(ELEMENT_HEIGHT_FIELD));
-        result.setElementWidth(element.getInteger(ELEMENT_WIDTH_FIELD));
         result.setType(InteractionType.CLICK);
 
         return result;

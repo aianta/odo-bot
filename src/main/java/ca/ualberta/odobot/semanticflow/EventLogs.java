@@ -150,7 +150,8 @@ public class EventLogs {
 
     private SearchRequest fetchAllRequest(String pitId, Time keepAliveValue, List<String> sortInfo){
         SearchRequest.Builder requestBuilder = new SearchRequest.Builder()
-                .size(10000)
+                .size(100)
+
                 .pit(pit->pit.id(pitId).keepAlive(keepAliveValue))
                 .query(q->q.matchAll(v->v.withJson(new StringReader("{}"))))
                 .sort(sort->sort.field(f->f.field(TIMESTAMP_FIELD).order(SortOrder.Asc))) //Oldest event first
