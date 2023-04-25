@@ -70,7 +70,8 @@ public class OdoSightSupport extends AbstractVerticle {
         vertx.rxExecuteBlocking(blocking->{
             try{
                 log.info("Executing mongo scrape for flightId: {} into es-index: {} ", flightId, flightName);
-                ProcessBuilder pb = new ProcessBuilder("wsl", SCRAPE_SCRIPT_PATH, flightId, flightName,"&&","echo", "\"__END__\"");
+                ProcessBuilder pb = new ProcessBuilder("wsl", SCRAPE_SCRIPT_PATH, flightId, flightName);
+//                ProcessBuilder pb = new ProcessBuilder("wsl", SCRAPE_SCRIPT_PATH, flightId, flightName,"&&","echo", "\"__END__\"");
                 //ProcessBuilder pb = new ProcessBuilder("wsl", "ls;", "echo", "\"__END__\"");
                 pb.inheritIO();
                 Process scrapeProcess = pb.start();
