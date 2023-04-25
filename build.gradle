@@ -48,7 +48,7 @@ dependencies {
     /*
      * Neo4j
      */
-    implementation 'org.neo4j.driver:neo4j-java-driver:5.2.0'
+    implementation 'org.neo4j.driver:neo4j-java-driver:5.7.0'
 
 
     /*

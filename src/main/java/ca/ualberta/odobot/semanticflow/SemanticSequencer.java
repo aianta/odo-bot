@@ -1,5 +1,9 @@
 package ca.ualberta.odobot.semanticflow;
 
+import ca.ualberta.odobot.semanticflow.exceptions.InvalidSessionId;
+import ca.ualberta.odobot.semanticflow.exceptions.InvalidTimestamp;
+import ca.ualberta.odobot.semanticflow.exceptions.MissingSessionId;
+import ca.ualberta.odobot.semanticflow.exceptions.MissingTimestamp;
 import ca.ualberta.odobot.semanticflow.mappers.impl.ClickEventMapper;
 import ca.ualberta.odobot.semanticflow.mappers.impl.DomEffectMapper;
 import ca.ualberta.odobot.semanticflow.mappers.impl.InputChangeMapper;
@@ -9,11 +13,25 @@ import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.UUID;
 
 
 public class SemanticSequencer {
     private static final Logger log = LoggerFactory.getLogger(SemanticSequencer.class);
+
+    public static String TIMESTAMP_FIELD = "timestamps_eventTimestamp";
+    public static String SESSION_ID_FIELD = "sessionID";
+    //TODO -> I'm not sure what effect the timezone has here, this might be a thing to revist.
+    //https://stackoverflow.com/questions/25612129/java-8-datetimeformatter-and-iso-instant-issues-with-zoneddatetime
+    //Either way, we need the zone to be set in order to parse the timestamps.
+    public static DateTimeFormatter timeFormatter = DateTimeFormatter.ISO_INSTANT.withZone(ZoneId.systemDefault());
 
 
     private DomEffectMapper domEffectMapper = new DomEffectMapper();
@@ -25,11 +43,44 @@ public class SemanticSequencer {
     public Timeline parse(List<JsonObject> events){
         line = new Timeline();
         line.setAnnotations(line.getAnnotations().put("origin-es-index", SemanticFlowParser.RDF_REPO_ID));
-        events.forEach(event->parse(event));
+        events.forEach(event-> {
+            try {
+                validate(event);
+                parse(event);
+            } catch (MissingSessionId | InvalidSessionId | MissingTimestamp | InvalidTimestamp e) {
+                log.error(e.getMessage(),e);
+                log.error("Stopping parse!");
+                return;
+            }
+        });
         return line;
     }
 
-    private void parse(JsonObject event){
+    private void validate(JsonObject event) throws MissingSessionId, MissingTimestamp, InvalidTimestamp, InvalidSessionId {
+        //Check that session id field exists
+        if(!event.containsKey(SESSION_ID_FIELD)) throw new MissingSessionId(event);
+        //Check that timestamp field exists
+        if(!event.containsKey(TIMESTAMP_FIELD)) throw new MissingTimestamp(event);
+        //Check validity of session Id value
+        String sessionIdString = event.getString(SESSION_ID_FIELD);
+        try{
+            UUID.fromString(sessionIdString);
+        }catch (IllegalArgumentException e){
+            log.error(e.getMessage(),e);
+            throw new InvalidSessionId(event);
+        }
+        //Check validity of timestamp value
+        try{
+            String dateString = event.getString(TIMESTAMP_FIELD);
+            ZonedDateTime date = ZonedDateTime.parse(dateString, timeFormatter);
+
+        }catch (DateTimeParseException e){
+            log.error(e.getMessage(), e);
+            throw new InvalidTimestamp(event);
+        }
+    }
+
+    private void parse(JsonObject event)  {
 
 
         switch (event.getString("eventType")){

@@ -5,6 +5,7 @@ package ca.ualberta.odobot.semanticflow;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
 
+import ca.ualberta.odobot.semanticflow.statemodel.SimpleStateModelParser;
 import ca.ualberta.odobot.web.TimelineWebApp;
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.json.JsonArray;
@@ -68,6 +69,11 @@ public class SemanticFlowParser extends AbstractVerticle {
             log.info("Timeline: {}", timeline.toString());
 
             saveTimeline(timeline);
+
+            //Let's try to create a state model!
+            SimpleStateModelParser stateModelParser = new SimpleStateModelParser();
+            stateModelParser.parseTimeline(timeline);
+
         }catch (Exception e){
             log.error(e.getMessage(), e);
         }
