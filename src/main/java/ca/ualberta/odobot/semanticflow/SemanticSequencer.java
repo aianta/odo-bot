@@ -43,16 +43,18 @@ public class SemanticSequencer {
     public Timeline parse(List<JsonObject> events){
         line = new Timeline();
         line.setAnnotations(line.getAnnotations().put("origin-es-index", SemanticFlowParser.RDF_REPO_ID));
-        events.forEach(event-> {
+
+        for(JsonObject event: events){
             try {
                 validate(event);
                 parse(event);
             } catch (MissingSessionId | InvalidSessionId | MissingTimestamp | InvalidTimestamp e) {
                 log.error(e.getMessage(),e);
                 log.error("Stopping parse!");
-                return;
+                return null;
             }
-        });
+        }
+
         return line;
     }
 

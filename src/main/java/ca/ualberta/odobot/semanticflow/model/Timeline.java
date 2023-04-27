@@ -53,6 +53,7 @@ public class Timeline extends ArrayList<TimelineEntity> {
             TimelineEntity entity = it.next();
 
             JsonObject data = new JsonObject();
+            data.put("id", id.toString()+"#"+index);
             data.put("symbol", entity.symbol());
             data.put("size", entity.size());
             data.put("index", index);

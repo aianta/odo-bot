@@ -86,6 +86,8 @@ public class TimelineWebApp extends AbstractVerticle {
             api.route().method(HttpMethod.PUT).path("/annotations/:timelineId/").handler(this::updateAnnotation);
             api.route().method(HttpMethod.POST).path("/actions/createEmbeddings").handler(this::createEmbeddings);
             api.route().method(HttpMethod.GET).path("/actions/computeDistances").handler(this::getDistances);
+            api.route().method(HttpMethod.GET).path("/entities").handler(this::getTimelineEntities);
+
             //Mount API routes
             mainRouter.route().handler(LoggerHandler.create());
             mainRouter.route().handler(BodyHandler.create());
@@ -227,6 +229,35 @@ public class TimelineWebApp extends AbstractVerticle {
             //Bad request
             rc.fail(400);
         }
+
+    }
+
+    void getTimelineEntities(RoutingContext rc){
+
+        String entitySymbol = rc.queryParam("symbol").get(0);
+        JsonArray result = new JsonArray();
+        timelines.values().forEach(timeline->{
+            ListIterator entityIterator = timeline.getJsonArray("data").stream().toList().listIterator();
+            while (entityIterator.hasNext()){
+                var index = entityIterator.nextIndex();
+                JsonObject entity = (JsonObject) entityIterator.next();
+                //If a timeline entity record doesn't have an id, create it
+                if(!entity.containsKey("id")){
+                    entity.put("id", timeline.getString("id") + "#" + index);
+                }
+                if (entity.getString("symbol").equals(entitySymbol) &&
+                        entity.getJsonArray("terms").size() != 0){ //Don't report on entities with no terms, since that's what we're using to embed for now.
+                    result.add(entity);
+                }
+
+            }
+        });
+
+        rc.response().setStatusCode(200).putHeader("Content-Type", "application/json")
+                .end(
+                    result.encode()
+                );
+
 
     }
 
