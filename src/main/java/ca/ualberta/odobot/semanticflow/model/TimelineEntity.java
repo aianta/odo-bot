@@ -19,4 +19,6 @@ public interface TimelineEntity {
 
     JsonObject toJson();
 
+    long timestamp();
+
 }

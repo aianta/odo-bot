@@ -54,6 +54,7 @@ public class Timeline extends ArrayList<TimelineEntity> {
 
             JsonObject data = new JsonObject();
             data.put("id", id.toString()+"#"+index);
+            data.put("timestamp_milli", entity.timestamp());
             data.put("symbol", entity.symbol());
             data.put("size", entity.size());
             data.put("index", index);

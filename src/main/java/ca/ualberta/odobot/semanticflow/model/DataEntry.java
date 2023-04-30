@@ -89,5 +89,10 @@ public class DataEntry extends ArrayList<InputChange> implements TimelineEntity 
         return result;
     }
 
+    @Override
+    public long timestamp() {
+        return lastChange().getTimestamp().toInstant().toEpochMilli();
+    }
+
 
 }

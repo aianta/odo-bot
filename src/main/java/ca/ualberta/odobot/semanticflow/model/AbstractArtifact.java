@@ -5,12 +5,14 @@ import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.ZonedDateTime;
 import java.util.UUID;
 
 public abstract class AbstractArtifact {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractArtifact.class);
 
+    protected ZonedDateTime timestamp;
     protected String xpath;
     protected Document domSnapshot;
     protected UUID id = UUID.randomUUID();
@@ -64,6 +66,14 @@ public abstract class AbstractArtifact {
 
     public void setTag(String tag) {
         this.tag = tag;
+    }
+
+    public ZonedDateTime getTimestamp() {
+        return timestamp;
+    }
+
+    public void setTimestamp(ZonedDateTime timestamp) {
+        this.timestamp = timestamp;
     }
 
     public Element getTargetElement(){

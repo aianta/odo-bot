@@ -31,6 +31,11 @@ public class ClickEvent extends AbstractArtifact implements TimelineEntity {
         return new JsonObject();
     }
 
+    @Override
+    public long timestamp() {
+        return getTimestamp().toInstant().toEpochMilli();
+    }
+
     public String symbol(){
         return "CE";
     }

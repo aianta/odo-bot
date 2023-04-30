@@ -5,9 +5,11 @@ package ca.ualberta.odobot.semanticflow;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
 
-import ca.ualberta.odobot.semanticflow.statemodel.SimpleStateModelParser;
 import ca.ualberta.odobot.web.TimelineWebApp;
 import io.reactivex.rxjava3.core.Completable;
+import io.vertx.core.CompositeFuture;
+import io.vertx.core.Future;
+import io.vertx.core.Promise;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.core.AbstractVerticle;
@@ -37,20 +39,46 @@ public class SemanticFlowParser extends AbstractVerticle {
     public static final String RDF_REPO_ID = "groundbreaker-1";
 
     //Timeline data config
-    public static final String TIMELINE_DATA_FOLDER = "timelines";
+    public static final String TIMELINE_DATA_FOLDER = "timelines_apr_28";
+
+    //Set of es-indices to compute timelines for:
+    public static final String [] ES_INDICES = {
+        "dataset-beta-1","dataset-beta-2", "dataset-beta-3","dataset-beta-4", "dataset-beta-5",
+        "dataset-beta-6","dataset-beta-7","dataset-beta-8"
+    };
 
     @Override
     public Completable rxStart() {
+        List<Future> futures = new ArrayList<>();
+        for (String index: ES_INDICES){
 
+            EventLogs eventLogs = EventLogs.getInstance();
+            List<JsonObject> events = eventLogs.fetchAll(index);
+            saveEvents(events, index);
+            futures.add(computeTimeline(events, index));
+        }
+
+        CompositeFuture.all(futures).onFailure(err->{
+            log.error(err.getMessage(), err);
+        }).onSuccess(done->{
+            //Refresh the web app.
+            TimelineWebApp.getInstance().loadTimelinesAndAnnotations();
+            log.info("Processed all indices!");
+        });
+
+        return super.rxStart();
+    }
+
+    public Completable april28thRxStart(){
         EventLogs eventLogs = EventLogs.getInstance();
         List<JsonObject> events = eventLogs.fetchAll(RDF_REPO_ID);
 
-        saveEvents(events);
+        saveEvents(events, RDF_REPO_ID);
 
 
         SemanticSequencer sequencer = new SemanticSequencer();
         try{
-            Timeline timeline = sequencer.parse(events);
+            Timeline timeline = sequencer.parse(events, RDF_REPO_ID);
             ListIterator<TimelineEntity> it = timeline.listIterator();
             Map<Integer,List<String>> termManifest = new HashMap<>();
             while (it.hasNext()){
@@ -71,8 +99,8 @@ public class SemanticFlowParser extends AbstractVerticle {
             saveTimeline(timeline);
 
             //Let's try to create a state model!
-            SimpleStateModelParser stateModelParser = new SimpleStateModelParser();
-            stateModelParser.parseTimeline(timeline);
+//            SimpleStateModelParser stateModelParser = new SimpleStateModelParser();
+//            stateModelParser.parseTimeline(timeline);
 
         }catch (Exception e){
             log.error(e.getMessage(), e);
@@ -84,6 +112,34 @@ public class SemanticFlowParser extends AbstractVerticle {
         TimelineWebApp.getInstance().loadTimelinesAndAnnotations();
 
         return super.rxStart();
+    }
+
+    public Future<Timeline> computeTimeline(List<JsonObject> events , String elasticSearchIndex){
+        Promise<Timeline> promise = Promise.promise();
+
+        SemanticSequencer sequencer = new SemanticSequencer();
+        try{
+            Timeline timeline = sequencer.parse(events, elasticSearchIndex);
+            ListIterator<TimelineEntity> it = timeline.listIterator();
+            Map<Integer,List<String>> termManifest = new HashMap<>();
+            while (it.hasNext()){
+                int index = it.nextIndex();
+                TimelineEntity e = it.next();
+                List<String> terms = e.terms();
+                termManifest.put(index, terms);
+            }
+
+            for(int i = 0; i < timeline.size(); i++){
+                log.info("{} - terms: {}", i, termManifest.get(i));
+            }
+
+            saveTimeline(timeline);
+            promise.complete(timeline);
+        }catch (Exception e){
+            log.error(e.getMessage(),e);
+        }
+
+        return promise.future();
     }
 
 
@@ -168,9 +224,9 @@ public class SemanticFlowParser extends AbstractVerticle {
         log.info("done");
     }
 
-    public static void saveEvents(List<JsonObject> events){
+    public static void saveEvents(List<JsonObject> events, String esIndex){
         SimpleDateFormat dateFormat = new SimpleDateFormat("dd-MM-yyyy");
-        File out = new File(RDF_REPO_ID + "-" + dateFormat.format(Date.from(Instant.now()))+".json");
+        File out = new File(esIndex + "-" + dateFormat.format(Date.from(Instant.now()))+".json");
         try(FileWriter fw = new FileWriter(out);
             BufferedWriter bw = new BufferedWriter(fw)){
 

@@ -40,9 +40,9 @@ public class SemanticSequencer {
 
     private Timeline line;
 
-    public Timeline parse(List<JsonObject> events){
+    public Timeline parse(List<JsonObject> events, String esIndex){
         line = new Timeline();
-        line.setAnnotations(line.getAnnotations().put("origin-es-index", SemanticFlowParser.RDF_REPO_ID));
+        line.setAnnotations(line.getAnnotations().put("origin-es-index", esIndex));
 
         for(JsonObject event: events){
             try {
@@ -90,13 +90,14 @@ public class SemanticSequencer {
                 switch (InteractionType.getType(event.getString("eventDetails_name"))){
                     case CLICK -> {
                         ClickEvent clickEvent = clickEventMapper.map(event);
+                        clickEvent.setTimestamp(ZonedDateTime.parse(event.getString(TIMESTAMP_FIELD), timeFormatter));
                         line.add(clickEvent);
                         log.info("handled CLICK");
 
                     }
                     case INPUT -> {
                         InputChange inputChange = inputChangeMapper.map(event);
-
+                        inputChange.setTimestamp(ZonedDateTime.parse(event.getString(TIMESTAMP_FIELD), timeFormatter));
                         /**  Check if the last entity in the timeline is a {@link DataEntry},
                          * if so, add this input change to it. Otherwise, create a new
                          * DataEntry and add this input change to it before adding the created DataEntry to the timeline. */
@@ -124,7 +125,9 @@ public class SemanticSequencer {
             case "customEvent":
                 if(event.getString("eventDetails_name").equals("DOM_EFFECT")){
                     DomEffect domEffect = domEffectMapper.map(event);
-                    if(domEffect == null) {return;} //
+
+                    if(domEffect == null) {return;} //TODO - I wonder why this was necessary
+                    domEffect.setTimestamp(ZonedDateTime.parse(event.getString(TIMESTAMP_FIELD), timeFormatter));
                     /**
                         Check if the last entity in the timeline is an {@link Effect},
                         if so, add this domEffect to it. Otherwise, create a new Effect

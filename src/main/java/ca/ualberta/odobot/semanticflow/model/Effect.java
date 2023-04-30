@@ -107,6 +107,12 @@ public class Effect extends ArrayList<DomEffect> implements TimelineEntity {
     }
 
     @Override
+    public long timestamp() {
+
+        return get(size()-1).getTimestamp().toInstant().toEpochMilli();
+    }
+
+    @Override
     public List<String> terms() {
         TermRankingStrategy rankingStrategy = new NoRanking();
         BasicStanfordNLPStrategy textStrategy = new BasicStanfordNLPStrategy();

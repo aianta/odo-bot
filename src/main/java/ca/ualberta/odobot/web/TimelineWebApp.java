@@ -4,7 +4,6 @@ package ca.ualberta.odobot.web;
 import ca.ualberta.odobot.semanticflow.SemanticFlowParser;
 import io.reactivex.rxjava3.core.Completable;
 
-
 import io.vertx.core.Future;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerOptions;
@@ -29,6 +28,7 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 public class TimelineWebApp extends AbstractVerticle {
@@ -81,7 +81,8 @@ public class TimelineWebApp extends AbstractVerticle {
             api = Router.router(vertx);
 
             //Define API routes
-            api.route().method(HttpMethod.GET).path("/timelines/").handler(this::getTimelines);
+            api.route().method(HttpMethod.GET).path("/timelines").handler(this::getTimelines);
+            api.route().method(HttpMethod.GET).path("/curated/timelines").handler(this::getCuratedTimelines);
             api.route().method(HttpMethod.GET).path("/annotations/:timelineId/").handler(this::getAnnotation);
             api.route().method(HttpMethod.PUT).path("/annotations/:timelineId/").handler(this::updateAnnotation);
             api.route().method(HttpMethod.POST).path("/actions/createEmbeddings").handler(this::createEmbeddings);
@@ -232,9 +233,30 @@ public class TimelineWebApp extends AbstractVerticle {
 
     }
 
+    /**
+     * Retrieves timeline entities from all timelines subject to some filtering.
+     * @param rc
+     */
     void getTimelineEntities(RoutingContext rc){
 
-        String entitySymbol = rc.queryParam("symbol").get(0);
+        List<String> symbols = rc.queryParam("symbol");
+
+        JsonArray result = null;
+        if(symbols.size() > 0){
+            result = getEntities(new EntityFilters.hasSymbolAndHasTerms(symbols));
+        }else{
+            result = getEntities(new EntityFilters.hasTerms());
+        }
+
+        rc.response().setStatusCode(200).putHeader("Content-Type", "application/json")
+                .end(
+                    result.encode()
+                );
+
+
+    }
+
+    private JsonArray getEntities(Predicate<JsonObject> filter){
         JsonArray result = new JsonArray();
         timelines.values().forEach(timeline->{
             ListIterator entityIterator = timeline.getJsonArray("data").stream().toList().listIterator();
@@ -245,20 +267,13 @@ public class TimelineWebApp extends AbstractVerticle {
                 if(!entity.containsKey("id")){
                     entity.put("id", timeline.getString("id") + "#" + index);
                 }
-                if (entity.getString("symbol").equals(entitySymbol) &&
-                        entity.getJsonArray("terms").size() != 0){ //Don't report on entities with no terms, since that's what we're using to embed for now.
+                if (filter.test(entity)){
                     result.add(entity);
                 }
 
             }
         });
-
-        rc.response().setStatusCode(200).putHeader("Content-Type", "application/json")
-                .end(
-                    result.encode()
-                );
-
-
+        return result;
     }
 
     /**
@@ -281,6 +296,24 @@ public class TimelineWebApp extends AbstractVerticle {
                                 )
                                 .map(entry->entry.getValue())
                                 .collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encodePrettily());
+    }
+
+    /**
+     * Only returns timelines with entities and for which all entities have terms.
+     * @return
+     */
+    void getCuratedTimelines(RoutingContext rc){
+        rc.response().putHeader("Content-Type", "application/json")
+                .end(
+                        timelines.entrySet().stream()
+                                .map(entry->entry.getValue())
+                                .filter(timeline->
+                                        timeline.getJsonArray("data").size() > 0 ||
+                                                timeline.getJsonArray("data").stream().map(o->(JsonObject)o).filter(new EntityFilters.doesNotHaveTerms()).findAny().isEmpty()
+                                )
+                                .collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encodePrettily()
+                );
+
     }
 
     void notFoundHandler(RoutingContext rc){

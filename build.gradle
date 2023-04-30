@@ -29,6 +29,13 @@ dependencies {
     implementation 'io.vertx:vertx-web-client'
 
     /**
+     * OpenXES implementation
+     * https://www.xes-standard.org/openxes/download
+     * https://www.xes-standard.org/openxes/developerguide
+     */
+    implementation files('libs/OpenXES-20211004.jar')
+
+    /**
      * HTML parsing
      */
     // https://mvnrepository.com/artifact/org.jsoup/jsoup
