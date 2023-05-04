@@ -9,6 +9,7 @@ version '1.0-SNAPSHOT'
 repositories {
     mavenCentral()
     jcenter()
+    maven { url 'https://jitpack.io' }
 }
 
 vertx{
@@ -34,6 +35,12 @@ dependencies {
      * https://www.xes-standard.org/openxes/developerguide
      */
     implementation files('libs/OpenXES-20211004.jar')
+    /**
+     * For XML serialization.
+     * http://code.deckfour.org/Spex/
+     * https://github.com/delas/spex
+     */
+    implementation 'com.github.delas:spex:1.1.0'
 
     /**
      * HTML parsing
@@ -81,6 +88,7 @@ dependencies {
 
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.7.0'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.7.0'
+    testImplementation files('libs/OpenXES-20211004.jar')
 }
 
 test {

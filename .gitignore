@@ -7,3 +7,4 @@ sample*.json
 calendar*.json
 *.json
 *.timeline
+*.xml

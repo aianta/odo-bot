@@ -47,7 +47,7 @@ public class ClickEvent extends AbstractArtifact implements TimelineEntity {
         DistanceToTarget rankingStrategy = new DistanceToTarget();
         rankingStrategy.setMatchingFunction(DistanceToTarget.MatchingFunction.OWN_TEXT.getFunction());
 
-        return new DistanceToTarget().getTerms(this, strategy, DistanceToTarget.SourceFunction.TEXT.getFunction());
+        return rankingStrategy.getTerms(this, strategy, DistanceToTarget.SourceFunction.TEXT.getFunction());
     }
 
     public List<String> cssClassTerms(){

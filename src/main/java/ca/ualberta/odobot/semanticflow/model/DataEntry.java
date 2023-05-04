@@ -63,7 +63,9 @@ public class DataEntry extends ArrayList<InputChange> implements TimelineEntity 
     public List<String> terms() {
         BasicStanfordNLPStrategy strategy = new BasicStanfordNLPStrategy();
         strategy.allowDuplicates(false);
-        return new DistanceToTarget().getTerms(lastChange(), strategy, DistanceToTarget.SourceFunction.TEXT.getFunction());
+        DistanceToTarget rankingStrategy = new DistanceToTarget();
+        rankingStrategy.setMatchingFunction(DistanceToTarget.MatchingFunction.OWN_TEXT.getFunction());
+        return rankingStrategy.getTerms(lastChange(), strategy, DistanceToTarget.SourceFunction.TEXT.getFunction());
 
     }
 

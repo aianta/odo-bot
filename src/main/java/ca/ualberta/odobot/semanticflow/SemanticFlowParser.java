@@ -42,10 +42,14 @@ public class SemanticFlowParser extends AbstractVerticle {
     public static final String TIMELINE_DATA_FOLDER = "timelines_apr_28";
 
     //Set of es-indices to compute timelines for:
+//    public static final String [] ES_INDICES = {
+//        "dataset-beta-1","dataset-beta-2", "dataset-beta-3","dataset-beta-4", "dataset-beta-5",
+//        "dataset-beta-6","dataset-beta-7","dataset-beta-8"
+//    };
     public static final String [] ES_INDICES = {
-        "dataset-beta-1","dataset-beta-2", "dataset-beta-3","dataset-beta-4", "dataset-beta-5",
-        "dataset-beta-6","dataset-beta-7","dataset-beta-8"
+            "dataset-charlie-1","dataset-charlie-3","dataset-charlie-5","dataset-charlie-6",
     };
+
 
     @Override
     public Completable rxStart() {
