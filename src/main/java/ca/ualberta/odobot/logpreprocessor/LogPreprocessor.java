@@ -33,6 +33,7 @@ public class LogPreprocessor extends AbstractVerticle {
     private static final String TIMELINE_SERVICE_ADDRESS = "timeline-service";
     private static final String ELASTICSEARCH_SERVICE_ADDRESS = "elasticsearch-service";
     private static final String TIMELINES_INDEX = "timelines";
+    private static final String TIMELINE_ENTITIES_INDEX = "timeline-entities";
 
     private static TimelineService timelineService;
     private static ElasticsearchService elasticsearchService;
@@ -130,17 +131,31 @@ public class LogPreprocessor extends AbstractVerticle {
            rc.response().putHeader("Content-Type", "application/json").end(result.encode());
 
            if(!_isTransient){ //If this is not a transient request, save the timeline into elastic search
-               elasticsearchService.saveIntoIndex(resultObjects, TIMELINES_INDEX).onSuccess(saved->{
+                final String timelinesString = resultObjects.stream().map(object->object.getString("id")).collect(StringBuilder::new, (sb, ele)->sb.append(ele + ", "), StringBuilder::append).toString();
 
-                   log.info("Timelines {} persisted in elasticsearch index: {}",
-                           resultObjects.stream().map(object->object.getString("id")).collect(StringBuilder::new, (sb, ele)->sb.append(ele + ", "), StringBuilder::append).toString(),
-                           TIMELINES_INDEX);
+                //Save the timelines themselves
+               elasticsearchService.saveIntoIndex(resultObjects, TIMELINES_INDEX).onSuccess(saved->{
+                   log.info("Timelines {} persisted in elasticsearch index: {}", timelinesString,TIMELINES_INDEX);
                }).onFailure(err->{
-                   log.error("Error persisting timelines {} into elasticsearch index: {}",
-                           resultObjects.stream().map(object->object.getString("id")).collect(StringBuilder::new, (sb, ele)->sb.append(ele + ", "), StringBuilder::append).toString(),
-                           TIMELINES_INDEX
-                           );
+                   log.error("Error persisting timelines {} into elasticsearch index: {}",timelinesString, TIMELINES_INDEX);
                    log.error(err.getMessage(), err);
+               });
+
+               //Save the entities within the timeline in a separate index as well.
+
+               //Extract the entities from inside the result json arrays into a single List<JsonObject>
+               List<JsonObject> entities = resultObjects.stream().map(timelineJson->
+                       timelineJson.getJsonArray("data").stream()
+                               .map(o->(JsonObject)o)
+                               .collect(Collectors.toList())
+
+               ).collect(ArrayList::new, ArrayList::addAll, ArrayList::addAll);
+
+               final String entitiesString = entities.stream().map(entity->entity.getString("id")).collect(StringBuilder::new, (sb, id)->sb.append(id + ", "), StringBuilder::append).toString();
+               elasticsearchService.saveIntoIndex(entities, TIMELINE_ENTITIES_INDEX).onSuccess(saved->{
+                   log.info("Entities {} persisted in elasticsearch index: {}",entitiesString,TIMELINE_ENTITIES_INDEX);
+               }).onFailure(err->{
+                   log.error("Error persisting entities {} into elastic search index: {}", entitiesString,TIMELINE_ENTITIES_INDEX);
                });
            }
        });
