@@ -2,6 +2,7 @@ package ca.ualberta.odobot.semanticflow;
 
 
 
+import ca.ualberta.odobot.logpreprocessor.EventLogs;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
 
@@ -82,7 +83,8 @@ public class SemanticFlowParser extends AbstractVerticle {
 
         SemanticSequencer sequencer = new SemanticSequencer();
         try{
-            Timeline timeline = sequencer.parse(events, RDF_REPO_ID);
+            Timeline timeline = sequencer.parse(events);
+            timeline.getAnnotations().put("origin-es-index", RDF_REPO_ID);
             ListIterator<TimelineEntity> it = timeline.listIterator();
             Map<Integer,List<String>> termManifest = new HashMap<>();
             while (it.hasNext()){
@@ -123,7 +125,8 @@ public class SemanticFlowParser extends AbstractVerticle {
 
         SemanticSequencer sequencer = new SemanticSequencer();
         try{
-            Timeline timeline = sequencer.parse(events, elasticSearchIndex);
+            Timeline timeline = sequencer.parse(events);
+            timeline.getAnnotations().put("origin-es-index", elasticSearchIndex);
             ListIterator<TimelineEntity> it = timeline.listIterator();
             Map<Integer,List<String>> termManifest = new HashMap<>();
             while (it.hasNext()){

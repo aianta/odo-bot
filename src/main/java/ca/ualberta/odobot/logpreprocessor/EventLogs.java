@@ -1,5 +1,6 @@
-package ca.ualberta.odobot.semanticflow;
+package ca.ualberta.odobot.logpreprocessor;
 
+import ca.ualberta.odobot.semanticflow.JsonDataUtility;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.ElasticsearchException;
 import co.elastic.clients.elasticsearch._types.SortOrder;

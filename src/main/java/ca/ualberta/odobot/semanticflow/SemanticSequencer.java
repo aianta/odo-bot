@@ -40,9 +40,9 @@ public class SemanticSequencer {
 
     private Timeline line;
 
-    public Timeline parse(List<JsonObject> events, String esIndex){
+    public Timeline parse(List<JsonObject> events){
         line = new Timeline();
-        line.setAnnotations(line.getAnnotations().put("origin-es-index", esIndex));
+
 
         for(JsonObject event: events){
             try {
