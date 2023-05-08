@@ -15,8 +15,8 @@ import java.util.List;
 @ProxyGen
 public interface ElasticsearchService {
 
-    static ElasticsearchService create(Vertx vertx){
-        return new ElasticsearchServiceImpl(vertx);
+    static ElasticsearchService create(Vertx vertx, String host, int port){
+        return new ElasticsearchServiceImpl(vertx, host, port);
     }
 
     static ElasticsearchService createProxy(Vertx vertx, String address){
@@ -24,5 +24,7 @@ public interface ElasticsearchService {
     }
 
     Future<List<JsonObject>> fetchAll(String index);
+
+    Future<Void> saveIntoIndex(List<JsonObject> items, String index);
 
 }

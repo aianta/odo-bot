@@ -18,6 +18,8 @@ import io.vertx.rxjava3.ext.web.handler.LoggerHandler;
 import io.vertx.serviceproxy.ServiceBinder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.stream.Collectors;
@@ -30,6 +32,7 @@ public class LogPreprocessor extends AbstractVerticle {
     private static final int PORT = 8078;
     private static final String TIMELINE_SERVICE_ADDRESS = "timeline-service";
     private static final String ELASTICSEARCH_SERVICE_ADDRESS = "elasticsearch-service";
+    private static final String TIMELINES_INDEX = "timelines";
 
     private static TimelineService timelineService;
     private static ElasticsearchService elasticsearchService;
@@ -48,7 +51,7 @@ public class LogPreprocessor extends AbstractVerticle {
                 .register(TimelineService.class, timelineService);
 
         //Init Elasticsearch Service
-        elasticsearchService = ElasticsearchService.create(vertx.getDelegate());
+        elasticsearchService = ElasticsearchService.create(vertx.getDelegate(), "localhost", 9200);
         new ServiceBinder(vertx.getDelegate())
                 .setAddress(ELASTICSEARCH_SERVICE_ADDRESS)
                 .register(ElasticsearchService.class, elasticsearchService);
@@ -85,10 +88,20 @@ public class LogPreprocessor extends AbstractVerticle {
      * @param rc
      */
     private void process(RoutingContext rc){
-       List<String> esIndices = rc.queryParam("index");
+        boolean isTransient = false; // Flag for whether to skip saving the resulting timeline in es.
+        if(rc.request().params().contains("transient")){
+            //Just some error handling
+            if (rc.request().params().getAll("transient").size() > 1){
+                rc.response().setStatusCode(400).end(new JsonObject().put("error", "cannot have multiple 'transient' parameters in request.").encode());
+                return;
+            }
+            isTransient = Boolean.parseBoolean(rc.request().params().get("transient"));
+        }
 
+        final boolean _isTransient = isTransient;
+       List<String> esIndices = rc.queryParam("index");
        //Fetch the event logs corresponding with every index requested.
-       CompositeFuture.all(
+        CompositeFuture.all(
                esIndices.stream().map(elasticsearchService::fetchAll)
                .collect(Collectors.toList())
        //Parse each list of events into its own timeline object.
@@ -100,7 +113,7 @@ public class LogPreprocessor extends AbstractVerticle {
            );
        }).onSuccess(timelines->{
            JsonArray result = new JsonArray();
-
+           List<JsonObject> resultObjects = new ArrayList<>();
            //Annotate the timelines with their corresponding ES indices & accumulate in result JsonArray.
            List<Timeline> timelineList = timelines.list();
            ListIterator<Timeline> it = timelineList.listIterator();
@@ -108,10 +121,28 @@ public class LogPreprocessor extends AbstractVerticle {
                var index = it.nextIndex();
                Timeline curr = it.next();
                curr.getAnnotations().put("origin-es-index", esIndices.get(index));
-               result.add(curr.toJson());
+               JsonObject json = curr.toJson();
+               result.add(json);
+               //Embed annotations into the object that is being sent to es.
+               resultObjects.add(json.put("annotations", curr.getAnnotations()));
            }
 
            rc.response().putHeader("Content-Type", "application/json").end(result.encode());
+
+           if(!_isTransient){ //If this is not a transient request, save the timeline into elastic search
+               elasticsearchService.saveIntoIndex(resultObjects, TIMELINES_INDEX).onSuccess(saved->{
+
+                   log.info("Timelines {} persisted in elasticsearch index: {}",
+                           resultObjects.stream().map(object->object.getString("id")).collect(StringBuilder::new, (sb, ele)->sb.append(ele + ", "), StringBuilder::append).toString(),
+                           TIMELINES_INDEX);
+               }).onFailure(err->{
+                   log.error("Error persisting timelines {} into elasticsearch index: {}",
+                           resultObjects.stream().map(object->object.getString("id")).collect(StringBuilder::new, (sb, ele)->sb.append(ele + ", "), StringBuilder::append).toString(),
+                           TIMELINES_INDEX
+                           );
+                   log.error(err.getMessage(), err);
+               });
+           }
        });
 
     }

@@ -3,6 +3,7 @@ package ca.ualberta.odobot.logpreprocessor;
 import ca.ualberta.odobot.semanticflow.JsonDataUtility;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.ElasticsearchException;
+import co.elastic.clients.elasticsearch._types.FieldValue;
 import co.elastic.clients.elasticsearch._types.SortOrder;
 import co.elastic.clients.elasticsearch._types.Time;
 import co.elastic.clients.elasticsearch.core.*;
@@ -135,7 +136,7 @@ public class EventLogs {
 
         //Otherwise add to our results and formulate the next search request
         Iterator<Hit<JsonData>> it = response.hits().hits().iterator();
-        List<String> sortInfo = new ArrayList<>();
+        List<FieldValue> sortInfo = new ArrayList<>();
         while (it.hasNext()){
             Hit<JsonData> curr = it.next();
             resultsSoFar.add(JsonDataUtility.fromJsonData(curr.source()));
@@ -149,7 +150,7 @@ public class EventLogs {
         return fetchAll(search, request,resultsSoFar);
     }
 
-    private SearchRequest fetchAllRequest(String pitId, Time keepAliveValue, List<String> sortInfo){
+    private SearchRequest fetchAllRequest(String pitId, Time keepAliveValue, List<FieldValue> sortInfo){
         SearchRequest.Builder requestBuilder = new SearchRequest.Builder()
                 .size(100)
 
