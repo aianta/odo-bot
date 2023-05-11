@@ -1,11 +1,17 @@
 package ca.ualberta.odobot.elasticsearch.impl;
 
 import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
-import ca.ualberta.odobot.logpreprocessor.EventLogs;
+
+import ca.ualberta.odobot.semanticflow.JsonDataUtility;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
-import co.elastic.clients.elasticsearch.core.BulkRequest;
-import co.elastic.clients.elasticsearch.core.BulkResponse;
+import co.elastic.clients.elasticsearch._types.*;
+import co.elastic.clients.elasticsearch.core.*;
+
 import co.elastic.clients.elasticsearch.core.bulk.BulkResponseItem;
+import co.elastic.clients.elasticsearch.core.search.Hit;
+import co.elastic.clients.elasticsearch.core.search.TrackHits;
+import co.elastic.clients.elasticsearch.indices.DeleteIndexRequest;
+
 import co.elastic.clients.json.JsonData;
 import co.elastic.clients.json.jackson.JacksonJsonpMapper;
 import co.elastic.clients.transport.ElasticsearchTransport;
@@ -14,21 +20,28 @@ import co.elastic.clients.util.BinaryData;
 import co.elastic.clients.util.ContentType;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.apache.http.HttpHost;
 import org.elasticsearch.client.RestClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.StringReader;
+import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 
 public class ElasticsearchServiceImpl implements ElasticsearchService {
     private static final Logger log = LoggerFactory.getLogger(ElasticsearchServiceImpl.class);
-    private EventLogs  eventLogs = EventLogs.getInstance();
 
 
+    //Constants
+    private static final Time keepAliveValue = Time.of(t->t.time("1m"));
 
+    //Elasticsearch communication
     private RestClient restClient;
     private ElasticsearchTransport transport;
     private ElasticsearchClient client;
@@ -40,10 +53,89 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
         client = new ElasticsearchClient(transport);
     }
 
+    /**
+     * See {@link #fetchAndSortAll(String, JsonArray)}
+     */
+    public Future<List<JsonObject>> fetchAll(String index){
+        return fetchAndSortAll(index, null);
+    }
+
+    /**
+     * Fetches all documents stored in the specified index.
+     *
+     * Note: This method accumulates the results in an ArrayList, and thus could scale poorly with
+     * large datasets.
+     *
+     * TODO -> Consider a scalable implementation...
+     *
+     * @param index index from which to retrieve documents.
+     * @param sortOptions a json array of elasticsearch sort options (see: https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html)
+     * @return A list of all available documents from that index.
+     */
     @Override
-    public Future<List<JsonObject>> fetchAll(String index) {
-        //TODO -> need to extract a generic fetch all logic from EventLogs
-        return Future.succeededFuture(eventLogs.fetchAll(index));
+    public Future<List<JsonObject>> fetchAndSortAll(String index, JsonArray sortOptions) {
+        List<JsonObject> results = new ArrayList<>();
+
+        //Construct SortOptions from JsonArray
+        SortOptions options;
+        if(sortOptions == null || sortOptions.size() == 0){
+            options = null;
+        }else{
+            options = makeSortOptions(sortOptions);
+        }
+
+        /**
+         * Procedure:
+         *      Create point-in-time (PIT) to freeze the index and get consistent results.
+         *      Fetch first page of results.
+         *      Keep fetching results using 'search_after' until we run out.
+         *      Delete the PIT.
+         *
+         *     https://www.elastic.co/guide/en/elasticsearch/reference/current/paginate-search-results.html#search-after
+         */
+        try{
+            log.info("Creating PIT");
+
+            //Index is specified through PIT request.
+            OpenPointInTimeResponse pitResponse = client.openPointInTime(pitRequest->pitRequest.index(index).keepAlive(keepAliveValue));
+            log.info("PIT: {}", pitResponse.id());
+
+            try{
+                /**
+                 * No sort info for the first request, that's what makes it the initial request.
+                 * NOTE: DO NOT CONFUSE SORT INFO FOR SORT OPTIONS!!
+                 */
+                log.info("Harvesting events from index: {}", index);
+                SearchRequest initialRequest = fetchAllRequest(pitResponse.id(), keepAliveValue, options, null);
+
+                SearchResponse<JsonData> search = client.search(initialRequest, JsonData.class);
+
+                //Recurse!
+                fetchAll(search, initialRequest, options, results);
+                log.info("Done! got {} documents.", results.size());
+
+
+            }catch (ElasticsearchException ese){
+                log.error("Error in search request during fetch!");
+                log.error(ese.getMessage(), ese);
+                return Future.failedFuture(ese);
+            }catch (IOException ioe){
+                log.error(ioe.getMessage(), ioe);
+                return Future.failedFuture(ioe);
+            }finally {
+                //Finally, delete the PIT once we're done.
+                log.info("Deleting PIT: {}", pitResponse.id());
+                ClosePointInTimeResponse closePITResponse = client.closePointInTime(close->close.id(pitResponse.id()));
+                log.info("{}",closePITResponse.succeeded());
+            }
+
+        }catch (IOException ioe){
+            log.error("Error fetching documents from es index: {} with sort options: \n{}", index, sortOptions.encodePrettily());
+            log.error(ioe.getMessage(), ioe);
+            return Future.failedFuture(ioe);
+        }
+
+        return Future.succeededFuture(results);
     }
 
     @Override
@@ -85,5 +177,81 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
         return Future.succeededFuture();
     }
 
+    @Override
+    public Future<Void> deleteIndex(String index) {
+        try{
+            DeleteIndexRequest.Builder request = new DeleteIndexRequest.Builder().index(index);
+            client.indices().delete(request.build());
 
+        } catch (IOException ioException) {
+            log.error("Error deleting es index: {}", index);
+            log.error(ioException.getMessage(), ioException);
+            return Future.failedFuture(ioException);
+        }
+        return Future.succeededFuture();
+    }
+
+    private List<JsonObject> fetchAll(SearchResponse<JsonData> response, SearchRequest request, SortOptions sortOptions, List<JsonObject> resultsSoFar) throws IOException {
+
+        //Termination condition: response contains 0 results.
+        if(response.hits().hits().size() == 0){
+            return resultsSoFar;
+        }
+
+        //Otherwise add to our results and formulate the next search request
+        Iterator<Hit<JsonData>> it = response.hits().hits().iterator();
+        List<FieldValue> sortInfo = new ArrayList<>();
+        while (it.hasNext()){
+            Hit<JsonData> curr = it.next();
+            resultsSoFar.add(JsonDataUtility.fromJsonData(curr.source()));
+            sortInfo = curr.sort();
+        }
+
+        //Update the search request with the last sort information from the last result.
+        SearchRequest nextRequest = fetchAllRequest(response.pitId(), keepAliveValue, sortOptions,  sortInfo);
+
+        SearchResponse<JsonData> search = client.search(nextRequest, JsonData.class);
+        return fetchAll(search, request, sortOptions, resultsSoFar);
+    }
+
+    /**
+     * Support json sort options as described here:
+     * https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html
+     *
+     * @return
+     */
+    private SortOptions makeSortOptions(JsonArray sortOptions){
+
+        /**
+         * TODO - actually implement this properly.
+         *
+         * Check issue and question to see if anyone responded to the problem we were having initially implementing this.
+         * https://github.com/elastic/elasticsearch-java/issues/573
+         * https://stackoverflow.com/questions/76214016/class-cast-exception-when-creating-elasticsearch-sortoptions-using-builder-withj
+         */
+
+        return SortOptions.of(b->b.field(f->f.field("timestamps_eventTimestamp").order(SortOrder.Asc))); //Oldest event first
+    }
+
+    private SearchRequest fetchAllRequest(String pitId, Time keepAliveValue, SortOptions sortOptions, List<FieldValue> sortInfo){
+
+        //Build request
+        SearchRequest.Builder requestBuilder = new SearchRequest.Builder()
+                .size(100)
+                .pit(pit->pit.id(pitId).keepAlive(keepAliveValue))
+                .query(q->q.matchAll(v->v.withJson(new StringReader("{}"))))
+                .trackTotalHits(TrackHits.of(th->th.enabled(false)));
+
+        //If we were given sort options, add them to the request now
+        if(sortOptions != null){
+            requestBuilder.sort(sortOptions);
+        }
+
+
+        if (sortInfo != null){
+            requestBuilder.searchAfter(sortInfo);
+        }
+
+        return requestBuilder.build();
+    }
 }

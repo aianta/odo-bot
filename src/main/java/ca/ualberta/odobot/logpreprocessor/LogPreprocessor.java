@@ -34,6 +34,7 @@ public class LogPreprocessor extends AbstractVerticle {
     private static final String ELASTICSEARCH_SERVICE_ADDRESS = "elasticsearch-service";
     private static final String TIMELINES_INDEX = "timelines";
     private static final String TIMELINE_ENTITIES_INDEX = "timeline-entities";
+    private static final String TIMESTAMP_FIELD = "timestamps_eventTimestamp";
 
     private static TimelineService timelineService;
     private static ElasticsearchService elasticsearchService;
@@ -69,6 +70,8 @@ public class LogPreprocessor extends AbstractVerticle {
 
         //Define API routes
         api.route().method(HttpMethod.GET).path("/timelines").handler(this::process);
+        api.route().method(HttpMethod.DELETE).path("/indices/:target").handler(this::clearIndex);
+        api.route().method(HttpMethod.DELETE).path("/indices").handler(this::clearIndices);
 
         //Mount handlers to main router
         mainRouter.route().handler(LoggerHandler.create());
@@ -80,6 +83,32 @@ public class LogPreprocessor extends AbstractVerticle {
         log.info("LogPreprocessor Server started on port: {}", PORT);
 
         return super.rxStart();
+    }
+
+    /**
+     * Clears the {@link #TIMELINES_INDEX} and {@link #TIMELINE_ENTITIES_INDEX} indices.
+     * @param rc
+     */
+    private void clearIndices(RoutingContext rc){
+        elasticsearchService.deleteIndex(TIMELINES_INDEX)
+                .compose(mapper->elasticsearchService.deleteIndex(TIMELINE_ENTITIES_INDEX))
+                .onSuccess(done->rc.response().setStatusCode(200).end())
+                .onFailure(err->{
+                    log.error(err.getMessage(), err);
+                    rc.response().setStatusCode(500).end();
+                });
+    }
+
+    //Clears a particular index
+    private void clearIndex(RoutingContext rc){
+        final String indexToDelete = rc.request().params().get("target");
+        elasticsearchService.deleteIndex(indexToDelete)
+                .onSuccess(done->rc.response().setStatusCode(200).end())
+                .onFailure(err->{
+                    log.error(err.getMessage(),err);
+                    rc.response().setStatusCode(500).end();
+                })
+        ;
     }
 
     /**
@@ -101,9 +130,19 @@ public class LogPreprocessor extends AbstractVerticle {
 
         final boolean _isTransient = isTransient;
        List<String> esIndices = rc.queryParam("index");
+
+        /**
+         *  Event logs should be returned with the oldest event first. Create a JsonArray
+         *  following the format described here: https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html
+         *  to enforce this.
+          */
+
+        JsonArray sortOptions = new JsonArray()
+                .add(new JsonObject().put(TIMESTAMP_FIELD, "asc"));
+
        //Fetch the event logs corresponding with every index requested.
         CompositeFuture.all(
-               esIndices.stream().map(elasticsearchService::fetchAll)
+               esIndices.stream().map(index->elasticsearchService.fetchAndSortAll(index, sortOptions))
                .collect(Collectors.toList())
        //Parse each list of events into its own timeline object.
        ).compose(mapper->{

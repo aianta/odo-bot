@@ -4,6 +4,7 @@ import ca.ualberta.odobot.elasticsearch.impl.ElasticsearchServiceImpl;
 import io.vertx.codegen.annotations.ProxyGen;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
 
@@ -25,6 +26,9 @@ public interface ElasticsearchService {
 
     Future<List<JsonObject>> fetchAll(String index);
 
+    Future<List<JsonObject>> fetchAndSortAll(String index, JsonArray sortOptions);
+
     Future<Void> saveIntoIndex(List<JsonObject> items, String index);
 
+    Future<Void> deleteIndex(String index);
 }

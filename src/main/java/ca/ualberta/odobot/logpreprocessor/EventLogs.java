@@ -28,7 +28,10 @@ import java.util.List;
 
 /**
  * Manages the retrieval of application event logs from elasticsearch.
+ *
+ * Deprecated, to be deleted, replaced by {@link ca.ualberta.odobot.elasticsearch.ElasticsearchService}
  */
+@Deprecated
 public class EventLogs {
     private static final Logger log = LoggerFactory.getLogger(EventLogs.class);
     private static EventLogs instance = null;
@@ -153,7 +156,6 @@ public class EventLogs {
     private SearchRequest fetchAllRequest(String pitId, Time keepAliveValue, List<FieldValue> sortInfo){
         SearchRequest.Builder requestBuilder = new SearchRequest.Builder()
                 .size(100)
-
                 .pit(pit->pit.id(pitId).keepAlive(keepAliveValue))
                 .query(q->q.matchAll(v->v.withJson(new StringReader("{}"))))
                 .sort(sort->sort.field(f->f.field(TIMESTAMP_FIELD).order(SortOrder.Asc))) //Oldest event first
