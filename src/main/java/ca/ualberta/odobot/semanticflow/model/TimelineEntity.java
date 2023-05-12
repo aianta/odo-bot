@@ -11,14 +11,10 @@ public interface TimelineEntity {
 
     String symbol();
 
-    List<String> terms();
-
-    List<String> cssClassTerms();
-
-    List<String> idTerms();
-
     JsonObject toJson();
 
     long timestamp();
+
+    JsonObject getSemanticArtifacts();
 
 }

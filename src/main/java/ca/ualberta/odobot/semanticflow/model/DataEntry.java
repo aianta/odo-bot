@@ -23,6 +23,8 @@ public class DataEntry extends ArrayList<InputChange> implements TimelineEntity 
 
     private static final Logger log = LoggerFactory.getLogger(DataEntry.class);
 
+    private JsonObject semanticArtifacts = new JsonObject();
+
 
     /**
      * Only allow additions of input changes for the same kind of element.
@@ -59,7 +61,7 @@ public class DataEntry extends ArrayList<InputChange> implements TimelineEntity 
         return "DE";
     }
 
-    @Override
+    @Deprecated
     public List<String> terms() {
         BasicStanfordNLPStrategy strategy = new BasicStanfordNLPStrategy();
         strategy.allowDuplicates(false);
@@ -69,12 +71,14 @@ public class DataEntry extends ArrayList<InputChange> implements TimelineEntity 
 
     }
 
+    @Deprecated
     public List<String> cssClassTerms(){
         BasicStanfordNLPStrategy strategy = new BasicStanfordNLPStrategy();
         strategy.allowDuplicates(false);
         return new NoRanking().getTerms(lastChange(), strategy, SourceFunctions.TARGET_ELEMENT_CSS_CLASSES.getFunction());
     }
 
+    @Deprecated
     public List<String> idTerms(){
         BasicStanfordNLPStrategy strategy = new BasicStanfordNLPStrategy();
         strategy.allowDuplicates(false);
@@ -94,6 +98,11 @@ public class DataEntry extends ArrayList<InputChange> implements TimelineEntity 
     @Override
     public long timestamp() {
         return lastChange().getTimestamp().toInstant().toEpochMilli();
+    }
+
+    @Override
+    public JsonObject getSemanticArtifacts() {
+        return this.semanticArtifacts;
     }
 
 

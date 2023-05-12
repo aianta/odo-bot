@@ -31,6 +31,9 @@ import java.nio.file.Path;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import static ca.ualberta.odobot.logpreprocessor.Constants.DEEP_SERVICE_HOST;
+import static ca.ualberta.odobot.logpreprocessor.Constants.DEEP_SERVICE_PORT;
+
 public class TimelineWebApp extends AbstractVerticle {
 
     private static final Logger log = LoggerFactory.getLogger(TimelineWebApp.class);
@@ -39,8 +42,7 @@ public class TimelineWebApp extends AbstractVerticle {
     private static final String HOST = "0.0.0.0";
     private static final int PORT = 8080;
 
-    private static final String DEEP_SERVICE_HOST = "127.0.0.1";
-    private static final int DEEP_SERVICE_PORT = 5000;
+
     private static final String DEEP_SERVICE_EMBEDDING_ENDPOINT = "/embeddings/";
     private static final String DEEP_SERVICE_DISTANCES_ENDPOINT = "/embeddings/distance";
 

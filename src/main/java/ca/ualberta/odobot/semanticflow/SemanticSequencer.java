@@ -28,7 +28,7 @@ public class SemanticSequencer {
 
     public static String TIMESTAMP_FIELD = "timestamps_eventTimestamp";
     public static String SESSION_ID_FIELD = "sessionID";
-    //TODO -> I'm not sure what effect the timezone has here, this might be a thing to revist.
+    //TODO -> I'm not sure what effect the timezone has here, this might be a thing to revisit.
     //https://stackoverflow.com/questions/25612129/java-8-datetimeformatter-and-iso-instant-issues-with-zoneddatetime
     //Either way, we need the zone to be set in order to parse the timestamps.
     public static DateTimeFormatter timeFormatter = DateTimeFormatter.ISO_INSTANT.withZone(ZoneId.systemDefault());

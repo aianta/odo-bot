@@ -1,0 +1,2 @@
+@io.vertx.codegen.annotations.ModuleGen(groupPackage = "ca.ualberta.odobot.logpreprocessor.activitylabels", name = "activitylabels", useFutures = true)
+package ca.ualberta.odobot.logpreprocessor.activitylabels;

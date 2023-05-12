@@ -22,6 +22,8 @@ public class Effect extends ArrayList<DomEffect> implements TimelineEntity {
 
     private static final Logger log = LoggerFactory.getLogger(Effect.class);
 
+    private JsonObject semanticArtifacts = new JsonObject();
+
     public String symbol(){
         return "E";
     }
@@ -113,6 +115,11 @@ public class Effect extends ArrayList<DomEffect> implements TimelineEntity {
     }
 
     @Override
+    public JsonObject getSemanticArtifacts() {
+        return this.semanticArtifacts;
+    }
+
+    @Deprecated
     public List<String> terms() {
         TermRankingStrategy rankingStrategy = new NoRanking();
         BasicStanfordNLPStrategy textStrategy = new BasicStanfordNLPStrategy();
@@ -128,6 +135,7 @@ public class Effect extends ArrayList<DomEffect> implements TimelineEntity {
         return allTerms;
     }
 
+    @Deprecated
     public List<String> cssClassTerms(){
         TermRankingStrategy rankingStrategy = new NoRanking();
         BasicStanfordNLPStrategy strategy = new BasicStanfordNLPStrategy();
@@ -144,6 +152,7 @@ public class Effect extends ArrayList<DomEffect> implements TimelineEntity {
         return allTerms.stream().toList();
     }
 
+    @Deprecated
     public List<String> idTerms(){
         TermRankingStrategy rankingStrategy = new NoRanking();
         BasicStanfordNLPStrategy strategy = new BasicStanfordNLPStrategy();

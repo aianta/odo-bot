@@ -1,6 +1,6 @@
 package ca.ualberta.odobot;
 
-import ca.ualberta.odobot.xes.XesTransformer;
+import ca.ualberta.odobot.logpreprocessor.xes.XesTransformer;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.apache.commons.io.IOUtils;
@@ -11,7 +11,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URISyntaxException;
 

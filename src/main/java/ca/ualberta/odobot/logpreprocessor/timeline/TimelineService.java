@@ -1,7 +1,7 @@
-package ca.ualberta.odobot.timeline;
+package ca.ualberta.odobot.logpreprocessor.timeline;
 
 import ca.ualberta.odobot.semanticflow.model.Timeline;
-import ca.ualberta.odobot.timeline.impl.TimelineServiceImpl;
+import ca.ualberta.odobot.logpreprocessor.timeline.impl.TimelineServiceImpl;
 import io.vertx.codegen.annotations.ProxyGen;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;

@@ -40,7 +40,7 @@ public class ClickEvent extends AbstractArtifact implements TimelineEntity {
         return "CE";
     }
 
-    @Override
+    @Deprecated
     public List<String> terms() {
         BasicStanfordNLPStrategy strategy = new BasicStanfordNLPStrategy();
         strategy.allowDuplicates(false);
@@ -50,12 +50,14 @@ public class ClickEvent extends AbstractArtifact implements TimelineEntity {
         return rankingStrategy.getTerms(this, strategy, DistanceToTarget.SourceFunction.TEXT.getFunction());
     }
 
+    @Deprecated
     public List<String> cssClassTerms(){
         BasicStanfordNLPStrategy strategy = new BasicStanfordNLPStrategy();
         strategy.allowDuplicates(false);
         return new NoRanking().getTerms(this, strategy, SourceFunctions.TARGET_ELEMENT_CSS_CLASSES.getFunction());
     }
 
+    @Deprecated
     public List<String> idTerms(){
         BasicStanfordNLPStrategy strategy = new BasicStanfordNLPStrategy();
         strategy.allowDuplicates(false);

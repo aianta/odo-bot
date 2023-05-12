@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.semanticflow.model;
 
+import io.vertx.core.json.JsonObject;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
@@ -8,9 +9,14 @@ import org.slf4j.LoggerFactory;
 import java.time.ZonedDateTime;
 import java.util.UUID;
 
+/**
+ * The abstract artifact class collects together information extracted from a
+ */
 public abstract class AbstractArtifact {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractArtifact.class);
+
+    protected JsonObject semanticArtifacts = new JsonObject();
 
     protected ZonedDateTime timestamp;
     protected String xpath;
@@ -19,6 +25,14 @@ public abstract class AbstractArtifact {
     private String htmlId; //HTML id if provided
     private String tag;
     private String baseURI; // The absolute base URL of the document containing the node:  https://developer.mozilla.org/en-US/docs/Web/API/Node/baseURI
+
+    public JsonObject getSemanticArtifacts() {
+        return semanticArtifacts;
+    }
+
+    public void setSemanticArtifacts(JsonObject semanticArtifacts) {
+        this.semanticArtifacts = semanticArtifacts;
+    }
 
     public String getHtmlId() {
         return htmlId;

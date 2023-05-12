@@ -2,7 +2,7 @@ package ca.ualberta.odobot.logpreprocessor;
 
 import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
-import ca.ualberta.odobot.timeline.TimelineService;
+import ca.ualberta.odobot.logpreprocessor.timeline.TimelineService;
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.CompositeFuture;
 import io.vertx.core.http.HttpMethod;
@@ -24,14 +24,15 @@ import java.util.List;
 import java.util.ListIterator;
 import java.util.stream.Collectors;
 
+import static ca.ualberta.odobot.logpreprocessor.Constants.ELASTICSEARCH_SERVICE_ADDRESS;
+import static ca.ualberta.odobot.logpreprocessor.Constants.TIMELINE_SERVICE_ADDRESS;
+
 public class LogPreprocessor extends AbstractVerticle {
     private static final Logger log = LoggerFactory.getLogger(LogPreprocessor.class);
 
     private static final String API_PATH_PREFIX = "/api/*";
     private static final String HOST = "0.0.0.0";
     private static final int PORT = 8078;
-    private static final String TIMELINE_SERVICE_ADDRESS = "timeline-service";
-    private static final String ELASTICSEARCH_SERVICE_ADDRESS = "elasticsearch-service";
     private static final String TIMELINES_INDEX = "timelines";
     private static final String TIMELINE_ENTITIES_INDEX = "timeline-entities";
     private static final String TIMESTAMP_FIELD = "timestamps_eventTimestamp";

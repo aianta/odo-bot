@@ -2,10 +2,16 @@ package ca.ualberta.odobot.logpreprocessor;
 
 
 import ca.ualberta.odobot.logpreprocessor.executions.PreprocessingPipelineExecution;
+import ca.ualberta.odobot.semanticflow.model.Timeline;
+import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
+import io.vertx.core.Future;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.ext.web.RoutingContext;
 
+import java.io.File;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public interface PreprocessingPipeline {
@@ -27,21 +33,23 @@ public interface PreprocessingPipeline {
     String processModelStatsIndex();
 
 
-    void executeHandler(RoutingContext rc);
+    Future<List<Timeline>> makeTimelines(Map<String, List<JsonObject>> eventsMap);
 
-    void timelinesHandler(RoutingContext rc);
 
-    void timelineEntitiesHandler(RoutingContext rc);
 
-    void activityLabelsHandler(RoutingContext rc);
+    Future<List<TimelineEntity>> makeEntities(List<Timeline> timelines);
 
-    void xlogHandler(RoutingContext rc);
 
-    void processModelVisualizationHandler(RoutingContext rc);
 
-    void processModelStatsHandler(RoutingContext rc);
+    Future<JsonObject> makeActivityLabels(List<TimelineEntity> entities);
 
-    void processModelHandler(RoutingContext rc);
+
+
+    Future<File> makeXes(JsonArray timelines, JsonObject activityLabels);
+
+
+
+
 
 
 }

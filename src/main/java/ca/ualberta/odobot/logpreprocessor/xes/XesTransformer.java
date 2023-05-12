@@ -1,9 +1,7 @@
-package ca.ualberta.odobot.xes;
+package ca.ualberta.odobot.logpreprocessor.xes;
 
-import ca.ualberta.odobot.semanticflow.model.Timeline;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
-import org.deckfour.xes.extension.XExtension;
 import org.deckfour.xes.extension.std.XConceptExtension;
 import org.deckfour.xes.factory.XFactory;
 import org.deckfour.xes.factory.XFactoryBufferedImpl;

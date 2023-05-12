@@ -1,8 +1,8 @@
-package ca.ualberta.odobot.timeline.impl;
+package ca.ualberta.odobot.logpreprocessor.timeline.impl;
 
 import ca.ualberta.odobot.semanticflow.SemanticSequencer;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
-import ca.ualberta.odobot.timeline.TimelineService;
+import ca.ualberta.odobot.logpreprocessor.timeline.TimelineService;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
