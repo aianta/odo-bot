@@ -79,7 +79,7 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
         //Construct SortOptions from JsonArray
         SortOptions options;
         if(sortOptions == null || sortOptions.size() == 0){
-            options = null;
+            options = defaultSort();
         }else{
             options = makeSortOptions(sortOptions);
         }
@@ -193,6 +193,8 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
 
     private List<JsonObject> fetchAll(SearchResponse<JsonData> response, SearchRequest request, SortOptions sortOptions, List<JsonObject> resultsSoFar) throws IOException {
 
+        log.info("Response: {}", response.toString());
+
         //Termination condition: response contains 0 results.
         if(response.hits().hits().size() == 0){
             return resultsSoFar;
@@ -205,6 +207,7 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
             Hit<JsonData> curr = it.next();
             resultsSoFar.add(JsonDataUtility.fromJsonData(curr.source()));
             sortInfo = curr.sort();
+            log.info("SortInfo: {}", sortInfo.toString());
         }
 
         //Update the search request with the last sort information from the last result.
@@ -231,6 +234,10 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
          */
 
         return SortOptions.of(b->b.field(f->f.field("timestamps_eventTimestamp").order(SortOrder.Asc))); //Oldest event first
+    }
+
+    private SortOptions defaultSort(){
+        return SortOptions.of(b->b.field(f->f.field("_score").order(SortOrder.Desc))); //Default to using _score sort.
     }
 
     private SearchRequest fetchAllRequest(String pitId, Time keepAliveValue, SortOptions sortOptions, List<FieldValue> sortInfo){

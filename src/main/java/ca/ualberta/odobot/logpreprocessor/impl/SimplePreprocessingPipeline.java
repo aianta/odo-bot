@@ -15,6 +15,8 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.core.Promise;
 import io.vertx.rxjava3.core.Vertx;
 
+import io.vertx.rxjava3.core.buffer.Buffer;
+import io.vertx.rxjava3.ext.web.RoutingContext;
 import org.deckfour.xes.model.XLog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -98,9 +100,9 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
     }
 
     @Override
-    public Future<JsonObject> makeActivityLabels(List<TimelineEntity> entities) {
+    public Future<JsonObject> makeActivityLabels(List<JsonObject> entities) {
         Promise<JsonObject> promise = Promise.promise();
-        JsonArray entitiesJson = entities.stream().map(entity -> entity.toJson()).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+        JsonArray entitiesJson = entities.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
 
         JsonObject requestObject = new JsonObject()
                 .put("id", "some-id").put("entities", entitiesJson);
@@ -120,10 +122,43 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
         Promise<File> promise = Promise.promise();
         XesTransformer transformer = new XesTransformer();
         XLog xesLog = transformer.parse(timelines, activityLabels);
-        File out = new File("log.xml");
+
+
+        File out = new File("log.xes");
         transformer.save(xesLog, out);
         promise.complete(out);
         return promise.future();
     }
 
+    @Override
+    public Future<Buffer> makeModelVisualization(File xes) {
+        Promise<Buffer> promise = Promise.promise();
+        vertx.fileSystem().rxReadFile(xes.toPath().toString())
+                .doOnError(err->log.error(err.getMessage(),err))
+                .subscribe(buffer->{
+            client.post(DEEP_SERVICE_PORT, DEEP_SERVICE_HOST, DEEP_SERVICE_MODEL_ENDPOINT).rxSendBuffer(buffer)
+                    .doOnError(err->promise.fail(err))
+                    .doOnSuccess(response->{
+                        Buffer visualization = response.bodyAsBuffer();
+                        promise.complete(visualization);
+                    }).subscribe();
+
+        });
+        return promise.future();
+    }
+
+    /**
+     * Clear all indices associated with this pipeline
+     * @param rc
+     */
+    @Override
+    public void purgePipeline(RoutingContext rc) {
+        elasticsearchService.deleteIndex(timelineIndex())
+                .compose(mapper->elasticsearchService.deleteIndex(timelineEntityIndex()))
+                .onSuccess(done->rc.response().setStatusCode(200).end())
+                .onFailure(err->{
+                    log.error(err.getMessage(),err);
+                    rc.response().setStatusCode(500).end();
+                });
+    }
 }

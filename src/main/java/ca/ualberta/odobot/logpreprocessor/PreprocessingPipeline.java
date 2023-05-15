@@ -7,6 +7,7 @@ import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import io.vertx.rxjava3.core.buffer.Buffer;
 import io.vertx.rxjava3.ext.web.RoutingContext;
 
 import java.io.File;
@@ -41,13 +42,14 @@ public interface PreprocessingPipeline extends PipelineService {
 
 
 
-    Future<JsonObject> makeActivityLabels(List<TimelineEntity> entities);
+    Future<JsonObject> makeActivityLabels(List<JsonObject> entities);
 
 
 
     Future<File> makeXes(JsonArray timelines, JsonObject activityLabels);
 
 
+    Future<Buffer> makeModelVisualization(File xes);
 
 
 

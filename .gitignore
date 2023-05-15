@@ -8,3 +8,5 @@ calendar*.json
 *.json
 *.timeline
 *.xml
+*.png
+*.xes

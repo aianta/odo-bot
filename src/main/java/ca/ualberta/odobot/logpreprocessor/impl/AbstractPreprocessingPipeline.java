@@ -18,6 +18,11 @@ import io.vertx.rxjava3.ext.web.client.WebClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -32,6 +37,7 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
 
     protected ElasticsearchService elasticsearchService;
     protected TimelineService timelineService;
+    protected Vertx vertx;
 
     WebClient client;
 
@@ -45,6 +51,7 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
     private String processModelStatsIndex;
 
     public AbstractPreprocessingPipeline(Vertx vertx, String slug){
+        this.vertx = vertx;
         /**
          * Pipelines use proxies to interact with services allowing for better use of resources
          * across a distributed deployment.
@@ -176,7 +183,7 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
                 JsonArray result = timelines.stream().map(Timeline::toJson).collect(JsonArray::new,JsonArray::add,JsonArray::addAll);
                 rc.response().putHeader("Content-Type", "application/json").setStatusCode(200).end(result.encode());
 
-                //If we weren't told to skip database operations for this segment of the pipline
+                //If we weren't told to skip database operations for this segment of the pipeline
                 if(!isTransient){
                     final String timelinesString = timelines.stream().map(Timeline::getId).collect(StringBuilder::new, (sb, ele)->sb.append(ele.toString() + ", "), StringBuilder::append).toString();
 
@@ -227,15 +234,88 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
     @Override
     public void activityLabelsHandler(RoutingContext rc) {
 
+        try{
+            final boolean isTransient = isTransient(rc);
+
+            elasticsearchService.fetchAll(timelineEntityIndex())
+                    .compose(entities->makeActivityLabels(entities))
+                    .onSuccess(actvityLabels->{
+                        rc.response().setStatusCode(200).putHeader("Content-Type", "application/json").end(actvityLabels.encode());
+
+                        //If we weren't told to skip database operations for this segment of the pipeline
+                        if(!isTransient){
+                            elasticsearchService.saveIntoIndex(List.of(actvityLabels), activityLabelIndex())
+                                    .onSuccess(done->log.info("Persisted activity labels!"))
+                                    .onFailure(err->log.error(err.getMessage(),err));
+                        }
+
+                    })
+                    .onFailure(err->log.error(err.getMessage(), err));
+
+        }catch (BadRequest badRequest){
+            log.error(badRequest.getMessage());
+            rc.response().setStatusCode(400).end(badRequest.getMessage());
+        }
+
+
+
     }
 
     @Override
     public void xesHandler(RoutingContext rc) {
+        CompositeFuture.all(
+                elasticsearchService.fetchAll(activityLabelIndex()),
+                elasticsearchService.fetchAll(timelineIndex())
+        ).compose(input->{
+            List<JsonObject> activityLabels = input.resultAt(0);
+            List<JsonObject> timelines = input.resultAt(1);
+
+            return makeXes(timelines.stream().collect(JsonArray::new,JsonArray::add, JsonArray::addAll), activityLabels.get(0));
+        }).onSuccess(xesFile->{
+            try{
+                List<String> lines = Files.readAllLines(xesFile.toPath());
+                StringBuilder builder = new StringBuilder();
+                lines.forEach(line->builder.append(line + "\n"));
+                rc.response().setStatusCode(200).putHeader("Content-Type", "text/xml").end(builder.toString());
+            }catch (IOException e){
+                log.error(e.getMessage(),e);
+            }
+        });
+
 
     }
 
     @Override
     public void processModelVisualizationHandler(RoutingContext rc) {
+        log.info("Got here");
+        try{
+            File xesInput = new File("log.xes");
+
+            boolean isTransient = isTransient(rc);
+
+            makeModelVisualization(xesInput).onSuccess(
+                    visualization->{
+
+                        rc.response().setStatusCode(200).putHeader("Content-Type", "image/png").end(visualization);
+
+                        if(!isTransient){ //If we're meant to persist artifacts from this segment of the pipeline do so now
+                            vertx.fileSystem().rxWriteFile("bpmn.png", visualization).subscribe(()->log.info("visualization saved"));
+                        }
+
+                    }
+            ).onFailure(err->{
+                log.error(err.getMessage(),err);
+                rc.response().setStatusCode(500).end(err.getMessage());
+            });
+
+
+
+        }catch (BadRequest badRequest){
+            log.error(badRequest.getMessage(), badRequest);
+            rc.response().setStatusCode(500).end(badRequest.getMessage());
+        }
+
+
 
     }
 
