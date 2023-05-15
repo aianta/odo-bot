@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-public interface PreprocessingPipeline {
+public interface PreprocessingPipeline extends PipelineService {
 
     String name();
 

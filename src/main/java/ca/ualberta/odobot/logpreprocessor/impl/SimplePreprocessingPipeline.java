@@ -14,16 +14,14 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.core.Promise;
 import io.vertx.rxjava3.core.Vertx;
-import org.apache.commons.collections.MultiMap;
-import org.apache.commons.collections.map.MultiValueMap;
-import org.apache.commons.collections4.MultiValuedMap;
+
 import org.deckfour.xes.model.XLog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.util.*;
-import java.util.stream.Collectors;
+
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.*;
 
@@ -32,13 +30,16 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
 
     private static final Logger log = LoggerFactory.getLogger(SimplePreprocessingPipeline.class);
 
-    public SimplePreprocessingPipeline(Vertx vertx){
-        super(vertx);
+    public SimplePreprocessingPipeline(Vertx vertx, UUID id, String slug, String name){
+        super(vertx, slug);
+        setId(id);
+        setName(name);
     }
 
     @Override
     public Future<List<Timeline>> makeTimelines(Map<String, List<JsonObject>> eventsMap) {
         Promise<List<Timeline>> promise = Promise.promise();
+        List<Timeline> results = new ArrayList<>();
 
         SemanticSequencer sequencer = new SemanticSequencer();
 
@@ -62,8 +63,6 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
                     extractorMultimap.put(DataEntry.class, new SimpleDataEntryIdTermsExtractor());
 
 
-
-
                     /**
                      * Semantic artifact extraction:
                      *
@@ -77,9 +76,12 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
 
                     });
 
+                    results.add(timeline);
+
                 }
         );
 
+        promise.complete(results);
 
         return promise.future();
     }

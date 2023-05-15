@@ -1,6 +1,8 @@
 package ca.ualberta.odobot.logpreprocessor;
 
 import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
+import ca.ualberta.odobot.logpreprocessor.exceptions.BadRequest;
+import ca.ualberta.odobot.logpreprocessor.impl.SimplePreprocessingPipeline;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 import ca.ualberta.odobot.logpreprocessor.timeline.TimelineService;
 import io.reactivex.rxjava3.core.Completable;
@@ -22,10 +24,10 @@ import org.slf4j.LoggerFactory;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.ListIterator;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
-import static ca.ualberta.odobot.logpreprocessor.Constants.ELASTICSEARCH_SERVICE_ADDRESS;
-import static ca.ualberta.odobot.logpreprocessor.Constants.TIMELINE_SERVICE_ADDRESS;
+import static ca.ualberta.odobot.logpreprocessor.Constants.*;
 
 public class LogPreprocessor extends AbstractVerticle {
     private static final Logger log = LoggerFactory.getLogger(LogPreprocessor.class);
@@ -35,7 +37,7 @@ public class LogPreprocessor extends AbstractVerticle {
     private static final int PORT = 8078;
     private static final String TIMELINES_INDEX = "timelines";
     private static final String TIMELINE_ENTITIES_INDEX = "timeline-entities";
-    private static final String TIMESTAMP_FIELD = "timestamps_eventTimestamp";
+
 
     private static TimelineService timelineService;
     private static ElasticsearchService elasticsearchService;
@@ -59,6 +61,12 @@ public class LogPreprocessor extends AbstractVerticle {
                 .setAddress(ELASTICSEARCH_SERVICE_ADDRESS)
                 .register(ElasticsearchService.class, elasticsearchService);
 
+        //Create simple preprocessing pipeline
+        PreprocessingPipeline simplePipeline = new SimplePreprocessingPipeline(
+                vertx, UUID.randomUUID(), "test", "test pipeline"
+        );
+
+
         //Init Http Server
         HttpServerOptions options = new HttpServerOptions()
                 .setHost(HOST)
@@ -73,6 +81,10 @@ public class LogPreprocessor extends AbstractVerticle {
         api.route().method(HttpMethod.GET).path("/timelines").handler(this::process);
         api.route().method(HttpMethod.DELETE).path("/indices/:target").handler(this::clearIndex);
         api.route().method(HttpMethod.DELETE).path("/indices").handler(this::clearIndices);
+
+        api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/timelines").handler(simplePipeline::timelinesHandler);
+        //TODO - pipelines aren't quite mature enough for this yet...
+//        api.route().method(HttpMethod.POST).path("/preprocessing/pipeline").handler(this::createPipeline);
 
         //Mount handlers to main router
         mainRouter.route().handler(LoggerHandler.create());
@@ -201,5 +213,6 @@ public class LogPreprocessor extends AbstractVerticle {
        });
 
     }
+
 
 }

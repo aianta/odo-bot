@@ -39,8 +39,9 @@ public class Neo4JUtils {
         log.info("entity {} index: {}", e.symbol(),  index);
         log.info("timeline: {}", t.toJson().encodePrettily());
         var stmt = "CREATE (n:TimelineEntity {symbol:$symbol, terms: $terms, timeline:$tId, index:$index, model:$model }) RETURN n";
-        var query = new Query(stmt, parameters("symbol", e.symbol(), "terms", e.terms(), "tId", t.getId().toString(), "index", index, "model",modelId.toString()));
-        write(query);
+        //TODO-migrate to post pipeline api data structures
+//        var query = new Query(stmt, parameters("symbol", e.symbol(), "terms", e.terms(), "tId", t.getId().toString(), "index", index, "model",modelId.toString()));
+//        write(query);
     }
 
     public void createEntitiesForTimeline(Timeline t, UUID modelId){

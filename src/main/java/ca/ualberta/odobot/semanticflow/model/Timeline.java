@@ -64,6 +64,7 @@ public class Timeline extends ArrayList<TimelineEntity> {
         }
 
         result.put("id", id.toString());
+        result.put("annotations", getAnnotations());
         result.put("string", toString());
         result.put("data", entityData);
 

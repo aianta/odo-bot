@@ -4,6 +4,8 @@ import io.vertx.rxjava3.ext.web.RoutingContext;
 
 public interface PipelineService {
 
+    String slug();
+
     void processModelVisualizationHandler(RoutingContext rc);
 
     void processModelStatsHandler(RoutingContext rc);

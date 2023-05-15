@@ -90,8 +90,8 @@ public class SemanticFlowParser extends AbstractVerticle {
             while (it.hasNext()){
                 int index = it.nextIndex();
                 TimelineEntity e = it.next();
-                List<String> terms = e.terms();
-                termManifest.put(index, terms);
+//                List<String> terms = e.terms();
+//                termManifest.put(index, terms);
             }
 
             for(int i = 0; i < timeline.size(); i++){
@@ -132,8 +132,8 @@ public class SemanticFlowParser extends AbstractVerticle {
             while (it.hasNext()){
                 int index = it.nextIndex();
                 TimelineEntity e = it.next();
-                List<String> terms = e.terms();
-                termManifest.put(index, terms);
+//                List<String> terms = e.terms();
+//                termManifest.put(index, terms);
             }
 
             for(int i = 0; i < timeline.size(); i++){
