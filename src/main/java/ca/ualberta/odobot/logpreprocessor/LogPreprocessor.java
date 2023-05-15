@@ -82,11 +82,12 @@ public class LogPreprocessor extends AbstractVerticle {
         api.route().method(HttpMethod.DELETE).path("/indices/:target").handler(this::clearIndex);
         api.route().method(HttpMethod.DELETE).path("/indices").handler(this::clearIndices);
 
+        api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/execute").handler(simplePipeline::executeHandler);
         api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/timelines").handler(simplePipeline::timelinesHandler);
         api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/activityLabels").handler(simplePipeline::activityLabelsHandler);
-        api.route().method(HttpMethod.DELETE).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/purge").handler(simplePipeline::purgePipeline);
         api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/xes").handler(simplePipeline::xesHandler);
         api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/visualization").handler(simplePipeline::processModelVisualizationHandler);
+        api.route().method(HttpMethod.DELETE).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/purge").handler(simplePipeline::purgePipeline);
         //TODO - pipelines aren't quite mature enough for this yet...
 //        api.route().method(HttpMethod.POST).path("/preprocessing/pipeline").handler(this::createPipeline);
 

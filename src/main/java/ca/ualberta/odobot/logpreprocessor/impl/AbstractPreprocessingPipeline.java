@@ -10,6 +10,7 @@ import ca.ualberta.odobot.logpreprocessor.timeline.TimelineService;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
 import io.vertx.core.CompositeFuture;
+import io.vertx.core.Promise;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.core.Vertx;
@@ -145,6 +146,64 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
 
     @Override
     public void executeHandler(RoutingContext rc) {
+
+        List<String> esIndices = rc.queryParam("index");
+
+        /**
+         *  Event logs should be returned with the oldest event first. Create a JsonArray
+         *  following the format described here: https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html
+         *  to enforce this.
+         */
+
+        JsonArray sortOptions = new JsonArray()
+                .add(new JsonObject().put(TIMESTAMP_FIELD, "asc"));
+
+        CompositeFuture.all(
+                esIndices.stream().map(index->elasticsearchService.fetchAndSortAll(index, sortOptions)).collect(Collectors.toList())
+        ).compose(future->{
+            List<List<JsonObject>> eventlogs = future.list();
+
+            //Build a map associating the logs with their elasticsearch indices
+            Map<String,List<JsonObject>> eventlogsMap = new HashMap<>();
+            for(int i = 0; i < eventlogs.size(); i++){
+                eventlogsMap.put(esIndices.get(i), eventlogs.get(i));
+            }
+
+            //Pass the eventlogMap to the implementing subclass for processing.
+            return makeTimelines(eventlogsMap);
+        }).compose( timelines -> {
+            JsonArray result = timelines.stream().map(Timeline::toJson).collect(JsonArray::new,JsonArray::add,JsonArray::addAll);
+
+            final String timelinesString = timelines.stream().map(Timeline::getId).collect(StringBuilder::new, (sb, ele)->sb.append(ele.toString() + ", "), StringBuilder::append).toString();
+
+            List<JsonObject> timelinesJson = timelines.stream().map(Timeline::toJson).collect(Collectors.toList());
+
+//            Promise<Void> timelinesSaved = Promise.promise();
+//            //Save the timelines themselves
+//            elasticsearchService.saveIntoIndex(timelinesJson, timelineIndex()).onSuccess(saved->{
+//                log.info("Timelines {} persisted in elasticsearch index: {}", timelinesString,timelineIndex());
+//                timelinesSaved.complete();
+//            }).onFailure(err->{
+//                log.error("Error persisting timelines {} into elasticsearch index: {}",timelinesString, timelineIndex());
+//                log.error(err.getMessage(), err);
+//            });
+
+            //Extract the entities from inside the result json arrays into a single List<JsonObject>
+            List<JsonObject> entities = timelinesJson.stream().map(timelineJson->
+                    timelineJson.getJsonArray("data").stream()
+                            .map(o->(JsonObject)o)
+                            .collect(Collectors.toList())
+
+            ).collect(ArrayList::new, ArrayList::addAll, ArrayList::addAll);
+            log.info("About to make activities");
+            return
+                    makeActivityLabels(entities)
+                    .compose(activityLabels->makeXes(result, activityLabels))
+                            .compose(xesFile->makeModelVisualization(xesFile))
+                            .onSuccess(visualization->{
+                                rc.response().setStatusCode(200).putHeader("Content-Type", "image/png").end(visualization);
+                            });
+        }).onSuccess(done->log.info("done pipeline"));
 
     }
 

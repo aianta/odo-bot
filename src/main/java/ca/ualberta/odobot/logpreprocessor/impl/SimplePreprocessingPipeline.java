@@ -101,17 +101,22 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
 
     @Override
     public Future<JsonObject> makeActivityLabels(List<JsonObject> entities) {
+        log.info("Making activity labels");
         Promise<JsonObject> promise = Promise.promise();
         JsonArray entitiesJson = entities.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
 
         JsonObject requestObject = new JsonObject()
                 .put("id", "some-id").put("entities", entitiesJson);
 
+        log.info("requestObject: {}", requestObject.encodePrettily());
+
         client.post(DEEP_SERVICE_PORT, DEEP_SERVICE_HOST,DEEP_SERVICE_ACTIVITY_LABELS_ENDPOINT)
                 .rxSendJsonObject(requestObject)
                 .doOnError(super::genericErrorHandler)
                 .subscribe(response->{
-                   promise.complete(response.bodyAsJsonObject());
+                    JsonObject data = response.bodyAsJsonObject();
+                    log.info("{}", data.encodePrettily());
+                   promise.complete(data);
                 });
 
         return promise.future();
@@ -119,6 +124,8 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
 
     @Override
     public Future<File> makeXes(JsonArray timelines, JsonObject activityLabels) {
+        log.info("Making XES file.");
+        log.info("{}", timelines.encodePrettily());
         Promise<File> promise = Promise.promise();
         XesTransformer transformer = new XesTransformer();
         XLog xesLog = transformer.parse(timelines, activityLabels);
@@ -132,6 +139,7 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
 
     @Override
     public Future<Buffer> makeModelVisualization(File xes) {
+        log.info("Making visualization");
         Promise<Buffer> promise = Promise.promise();
         vertx.fileSystem().rxReadFile(xes.toPath().toString())
                 .doOnError(err->log.error(err.getMessage(),err))
