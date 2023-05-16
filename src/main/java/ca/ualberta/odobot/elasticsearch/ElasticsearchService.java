@@ -1,6 +1,7 @@
 package ca.ualberta.odobot.elasticsearch;
 
 import ca.ualberta.odobot.elasticsearch.impl.ElasticsearchServiceImpl;
+import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
 import io.vertx.codegen.annotations.ProxyGen;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
@@ -31,4 +32,6 @@ public interface ElasticsearchService {
     Future<Void> saveIntoIndex(List<JsonObject> items, String index);
 
     Future<Void> deleteIndex(String index);
+
+    Future<BasicExecution> updateExecution(BasicExecution execution);
 }

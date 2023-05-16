@@ -2,13 +2,26 @@ package ca.ualberta.odobot.logpreprocessor.executions.impl;
 
 import ca.ualberta.odobot.logpreprocessor.executions.PreprocessingPipelineExecutionStatus;
 import io.vertx.core.json.JsonObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Define some status classes for preprocessing pipeline executions
  */
 public abstract class AbstractPreprocessingPipelineExecutionStatus implements PreprocessingPipelineExecutionStatus {
+    private static final Logger log = LoggerFactory.getLogger(AbstractPreprocessingPipelineExecutionStatus.class);
 
-    public class Failed extends AbstractPreprocessingPipelineExecutionStatus{
+    public static AbstractPreprocessingPipelineExecutionStatus fromJson(JsonObject input){
+        return switch (input.getString("status")){
+            case "Failed" -> new Failed(input);
+            case "In progress" -> new InProgress(input);
+            case "Initialized" -> new Initialized(input);
+            case "Complete"-> new Complete();
+            default -> null;
+        };
+    }
+
+    public static class Failed extends AbstractPreprocessingPipelineExecutionStatus{
         public Failed(){
             super("Failed");
         }
@@ -18,7 +31,7 @@ public abstract class AbstractPreprocessingPipelineExecutionStatus implements Pr
         }
     }
 
-    public class InProgress extends AbstractPreprocessingPipelineExecutionStatus{
+    public static class InProgress extends AbstractPreprocessingPipelineExecutionStatus{
         public InProgress(){
             super("In progress");
         }
@@ -28,7 +41,7 @@ public abstract class AbstractPreprocessingPipelineExecutionStatus implements Pr
         }
     }
 
-    public class Initialized extends AbstractPreprocessingPipelineExecutionStatus{
+    public static class Initialized extends AbstractPreprocessingPipelineExecutionStatus{
         public Initialized(){
             super("Initialized");
         }
@@ -38,7 +51,7 @@ public abstract class AbstractPreprocessingPipelineExecutionStatus implements Pr
         }
     }
 
-    public class Complete extends AbstractPreprocessingPipelineExecutionStatus{
+    public static class Complete extends AbstractPreprocessingPipelineExecutionStatus{
         public Complete(){
             super("Complete");
         }
@@ -50,7 +63,7 @@ public abstract class AbstractPreprocessingPipelineExecutionStatus implements Pr
 
     String name;
 
-    JsonObject data;
+    JsonObject data = new JsonObject();
 
     public AbstractPreprocessingPipelineExecutionStatus(){}
 
@@ -82,7 +95,7 @@ public abstract class AbstractPreprocessingPipelineExecutionStatus implements Pr
     }
 
     public JsonObject toJson(){
-        if (!data.containsKey("status")){
+        if (!data.containsKey("status")||!data.getString("status").equals(name())){
             data.put("status", name());
         }
         return data;

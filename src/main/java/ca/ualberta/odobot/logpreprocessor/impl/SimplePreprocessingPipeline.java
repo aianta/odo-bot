@@ -106,7 +106,7 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
         JsonArray entitiesJson = entities.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
 
         JsonObject requestObject = new JsonObject()
-                .put("id", "some-id").put("entities", entitiesJson);
+                .put("id", UUID.randomUUID().toString()).put("entities", entitiesJson);
 
         log.info("requestObject: {}", requestObject.encodePrettily());
 

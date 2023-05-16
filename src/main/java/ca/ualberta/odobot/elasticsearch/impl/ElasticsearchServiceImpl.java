@@ -2,6 +2,7 @@ package ca.ualberta.odobot.elasticsearch.impl;
 
 import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 
+import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
 import ca.ualberta.odobot.semanticflow.JsonDataUtility;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.*;
@@ -19,10 +20,12 @@ import co.elastic.clients.transport.rest_client.RestClientTransport;
 import co.elastic.clients.util.BinaryData;
 import co.elastic.clients.util.ContentType;
 import io.vertx.core.Future;
+import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.apache.http.HttpHost;
+import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,6 +36,8 @@ import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+
+import static ca.ualberta.odobot.logpreprocessor.Constants.EXECUTIONS_INDEX;
 
 public class ElasticsearchServiceImpl implements ElasticsearchService {
     private static final Logger log = LoggerFactory.getLogger(ElasticsearchServiceImpl.class);
@@ -138,6 +143,35 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
         return Future.succeededFuture(results);
     }
 
+    public Future<JsonObject> update(JsonObject document, String id, String index ){
+        Promise<JsonObject> promise = Promise.promise();
+        try{
+            BinaryData binaryData = BinaryData.of(document.toBuffer().getBytes(), ContentType.APPLICATION_JSON);
+
+//            UpdateRequest updateRequest = UpdateRequest.of(u->u
+//                    .id(id)
+//                    .index(index)
+//                    .doc(binaryData)
+//                    .docAsUpsert(true)
+//            );
+//
+//            client.update(updateRequest);
+
+            IndexResponse response = client.index(i->i
+                    .index(index)
+                    .id(id)
+                    .document(binaryData)
+            );
+
+            log.info("{}", response.result().jsonValue());
+        } catch (IOException ioException) {
+            log.error(ioException.getMessage(), ioException);
+            promise.fail(ioException);
+        }
+
+        return promise.future();
+    }
+
     @Override
     public Future<Void> saveIntoIndex(List<JsonObject> items, String index) {
         try{
@@ -189,6 +223,13 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
             return Future.failedFuture(ioException);
         }
         return Future.succeededFuture();
+    }
+
+    @Override
+    public Future<BasicExecution> updateExecution(BasicExecution execution) {
+        return update(execution.toJson(), execution.id().toString(), EXECUTIONS_INDEX).compose(
+                data->Future.succeededFuture(execution)
+        );
     }
 
     private List<JsonObject> fetchAll(SearchResponse<JsonData> response, SearchRequest request, SortOptions sortOptions, List<JsonObject> resultsSoFar) throws IOException {

@@ -4,7 +4,10 @@ import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 import ca.ualberta.odobot.logpreprocessor.PipelineService;
 import ca.ualberta.odobot.logpreprocessor.PreprocessingPipeline;
 import ca.ualberta.odobot.logpreprocessor.exceptions.BadRequest;
+import ca.ualberta.odobot.logpreprocessor.executions.ExternalArtifact;
 import ca.ualberta.odobot.logpreprocessor.executions.PreprocessingPipelineExecution;
+import ca.ualberta.odobot.logpreprocessor.executions.impl.AbstractPreprocessingPipelineExecutionStatus;
+import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
 import ca.ualberta.odobot.logpreprocessor.timeline.TimelineService;
 
 import ca.ualberta.odobot.semanticflow.model.Timeline;
@@ -147,6 +150,13 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
     @Override
     public void executeHandler(RoutingContext rc) {
 
+        //Create metadata record for the execution
+        BasicExecution execution = new BasicExecution();
+        execution.setId(UUID.randomUUID());
+        execution.setPipelineId(id());
+        execution.setStatus(new AbstractPreprocessingPipelineExecutionStatus.InProgress());
+        execution.start();
+
         List<String> esIndices = rc.queryParam("index");
 
         /**
@@ -172,21 +182,16 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
             //Pass the eventlogMap to the implementing subclass for processing.
             return makeTimelines(eventlogsMap);
         }).compose( timelines -> {
+
+            //Log the index-timelineId mappings into the execution record
+            timelines.forEach(timeline->execution.registerTimeline(timeline.getAnnotations().getString("source-index"),timeline.getId()));
+
             JsonArray result = timelines.stream().map(Timeline::toJson).collect(JsonArray::new,JsonArray::add,JsonArray::addAll);
 
             final String timelinesString = timelines.stream().map(Timeline::getId).collect(StringBuilder::new, (sb, ele)->sb.append(ele.toString() + ", "), StringBuilder::append).toString();
 
             List<JsonObject> timelinesJson = timelines.stream().map(Timeline::toJson).collect(Collectors.toList());
 
-//            Promise<Void> timelinesSaved = Promise.promise();
-//            //Save the timelines themselves
-//            elasticsearchService.saveIntoIndex(timelinesJson, timelineIndex()).onSuccess(saved->{
-//                log.info("Timelines {} persisted in elasticsearch index: {}", timelinesString,timelineIndex());
-//                timelinesSaved.complete();
-//            }).onFailure(err->{
-//                log.error("Error persisting timelines {} into elasticsearch index: {}",timelinesString, timelineIndex());
-//                log.error(err.getMessage(), err);
-//            });
 
             //Extract the entities from inside the result json arrays into a single List<JsonObject>
             List<JsonObject> entities = timelinesJson.stream().map(timelineJson->
@@ -195,13 +200,31 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
                             .collect(Collectors.toList())
 
             ).collect(ArrayList::new, ArrayList::addAll, ArrayList::addAll);
+
+            //Log all the entities that were used in this execution
+            entities.forEach(entity->execution.timelineEntityIds().add(entity.getString("id")));
+
             log.info("About to make activities");
             return
                     makeActivityLabels(entities)
-                    .compose(activityLabels->makeXes(result, activityLabels))
-                            .compose(xesFile->makeModelVisualization(xesFile))
+                    .compose(activityLabels->{
+                        execution.setActivityLabelingId(UUID.fromString(activityLabels.getString("id")));
+                        return makeXes(result, activityLabels);})
+                            .compose(xesFile->{
+                                execution.setXes(new ExternalArtifact(ExternalArtifact.Location.LOCAL_FILE_SYSTEM, xesFile.toPath().toString()));
+                                return makeModelVisualization(xesFile);
+                            })
                             .onSuccess(visualization->{
                                 rc.response().setStatusCode(200).putHeader("Content-Type", "image/png").end(visualization);
+
+                                vertx.fileSystem().rxWriteFile("bpmn.png", visualization).subscribe(()->{
+                                    log.info("visualization saved locally");
+                                    execution.processModelVisualizations().add(new ExternalArtifact(ExternalArtifact.Location.LOCAL_FILE_SYSTEM, "bpmn.png"));
+                                    execution.stop();
+                                    execution.setStatus(new AbstractPreprocessingPipelineExecutionStatus.Complete(execution.status().data()));
+                                    log.info("Execution: {}", execution.toJson().encodePrettily());
+                                });
+
                             });
         }).onSuccess(done->log.info("done pipeline"));
 
