@@ -1,5 +1,7 @@
 package ca.ualberta.odobot.logpreprocessor;
 
+import ca.ualberta.odobot.logpreprocessor.exceptions.BadRequest;
+import io.vertx.rxjava3.ext.web.Route;
 import io.vertx.rxjava3.ext.web.RoutingContext;
 
 public interface PipelineService {
@@ -23,5 +25,9 @@ public interface PipelineService {
     void timelinesHandler(RoutingContext rc);
 
     void purgePipeline(RoutingContext rc);
+
+    void transienceHandler(RoutingContext rc);
+
+    PipelinePersistenceLayer persistenceLayer();
 
 }

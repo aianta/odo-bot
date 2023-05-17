@@ -1,6 +1,7 @@
 package ca.ualberta.odobot.logpreprocessor.impl;
 
 import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
+import ca.ualberta.odobot.logpreprocessor.PipelinePersistenceLayer;
 import ca.ualberta.odobot.logpreprocessor.PipelineService;
 import ca.ualberta.odobot.logpreprocessor.PreprocessingPipeline;
 import ca.ualberta.odobot.logpreprocessor.exceptions.BadRequest;
@@ -17,6 +18,8 @@ import io.vertx.core.Promise;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.core.Vertx;
+import io.vertx.rxjava3.core.buffer.Buffer;
+import io.vertx.rxjava3.ext.web.Route;
 import io.vertx.rxjava3.ext.web.RoutingContext;
 import io.vertx.rxjava3.ext.web.client.WebClient;
 import org.slf4j.Logger;
@@ -232,136 +235,100 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
 
     @Override
     public void timelinesHandler(RoutingContext rc) {
-        try{
-            final boolean isTransient = isTransient(rc);
 
-            List<String> esIndices = rc.queryParam("index");
+        List<String> esIndices = rc.queryParam("index");
+        rc.put("esIndices", esIndices);
 
-            /**
-             *  Event logs should be returned with the oldest event first. Create a JsonArray
-             *  following the format described here: https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html
-             *  to enforce this.
-             */
+        /**
+         *  Event logs should be returned with the oldest event first. Create a JsonArray
+         *  following the format described here: https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html
+         *  to enforce this.
+         */
+        JsonArray sortOptions = new JsonArray()
+                .add(new JsonObject().put(TIMESTAMP_FIELD, "asc"));
 
-            JsonArray sortOptions = new JsonArray()
-                    .add(new JsonObject().put(TIMESTAMP_FIELD, "asc"));
+        //Fetch the event logs corresponding with every index requested
+        CompositeFuture.all(
+                esIndices.stream().map(index->elasticsearchService.fetchAndSortAll(index, sortOptions)).collect(Collectors.toList())
+        ).compose(future->{
+            List<List<JsonObject>> eventlogs = future.list();
 
-            //Fetch the event logs corresponding with every index requested
-            CompositeFuture.all(
-                    esIndices.stream().map(index->elasticsearchService.fetchAndSortAll(index, sortOptions)).collect(Collectors.toList())
-            ).compose(future->{
-                List<List<JsonObject>> eventlogs = future.list();
+            //Build a map associating the logs with their elasticsearch indices
+            Map<String,List<JsonObject>> eventlogsMap = new HashMap<>();
+            for(int i = 0; i < eventlogs.size(); i++){
+                eventlogsMap.put(esIndices.get(i), eventlogs.get(i));
+            }
+            rc.put("rawEventsMap", eventlogsMap);
 
-                //Build a map associating the logs with their elasticsearch indices
-                Map<String,List<JsonObject>> eventlogsMap = new HashMap<>();
-                for(int i = 0; i < eventlogs.size(); i++){
-                    eventlogsMap.put(esIndices.get(i), eventlogs.get(i));
-                }
+            //Pass the eventlogMap to the implementing subclass for processing.
+            return makeTimelines(eventlogsMap);
 
-                //Pass the eventlogMap to the implementing subclass for processing.
-                return makeTimelines(eventlogsMap);
+        }).onSuccess(timelines->{
+            //Put timelines in routing context for further processing or persistence layer.
+            rc.put("timelines", timelines);
 
-            }).onSuccess(timelines->{
-                JsonArray result = timelines.stream().map(Timeline::toJson).collect(JsonArray::new,JsonArray::add,JsonArray::addAll);
-                rc.response().putHeader("Content-Type", "application/json").setStatusCode(200).end(result.encode());
+            rc.next();
 
-                //If we weren't told to skip database operations for this segment of the pipeline
-                if(!isTransient){
-                    final String timelinesString = timelines.stream().map(Timeline::getId).collect(StringBuilder::new, (sb, ele)->sb.append(ele.toString() + ", "), StringBuilder::append).toString();
-
-                    List<JsonObject> timelinesJson = timelines.stream().map(Timeline::toJson).collect(Collectors.toList());
-
-                    //Save the timelines themselves
-                    elasticsearchService.saveIntoIndex(timelinesJson, timelineIndex()).onSuccess(saved->{
-                        log.info("Timelines {} persisted in elasticsearch index: {}", timelinesString,timelineIndex());
-                    }).onFailure(err->{
-                        log.error("Error persisting timelines {} into elasticsearch index: {}",timelinesString, timelineIndex());
-                        log.error(err.getMessage(), err);
-                    });
-
-                    //Save the entities within the timeline in a separate index as well.
-
-                    //Extract the entities from inside the result json arrays into a single List<JsonObject>
-                    List<JsonObject> entities = timelinesJson.stream().map(timelineJson->
-                            timelineJson.getJsonArray("data").stream()
-                                    .map(o->(JsonObject)o)
-                                    .collect(Collectors.toList())
-
-                    ).collect(ArrayList::new, ArrayList::addAll, ArrayList::addAll);
-
-                    final String entitiesString = entities.stream().map(entity->entity.getString("id")).collect(StringBuilder::new, (sb, id)->sb.append(id + ", "), StringBuilder::append).toString();
-                    elasticsearchService.saveIntoIndex(entities, timelineEntityIndex()).onSuccess(saved->{
-                        log.info("Entities {} persisted in elasticsearch index: {}",entitiesString,timelineEntityIndex());
-                    }).onFailure(err->{
-                        log.error("Error persisting entities {} into elastic search index: {}", entitiesString,timelineEntityIndex());
-                    });
-
-                }
-            });
+//            JsonArray result = timelines.stream().map(Timeline::toJson).collect(JsonArray::new,JsonArray::add,JsonArray::addAll);
+//            rc.response().putHeader("Content-Type", "application/json").setStatusCode(200).end(result.encode());
 
 
-        } catch (BadRequest badRequest) {
-            badRequest.printStackTrace();
-            rc.response().setStatusCode(400).end(badRequest.getMessage());
-        }
-
+        });
 
     }
 
     @Override
     public void timelineEntitiesHandler(RoutingContext rc) {
+        //Get timelines from the routing context
+        List<Timeline> timelines = rc.get("timelines");
+        //Convert them to JsonObjects
+        List<JsonObject> json = timelines.stream().map(Timeline::toJson).collect(Collectors.toList());
 
+        //Shuffle things around to extract all entities from all timelines
+        List<JsonObject> entityJson = json.stream().map(timelineJson->
+                timelineJson.getJsonArray("data").stream()
+                        .map(o->(JsonObject)o)
+                        .collect(Collectors.toList())
+
+        ).collect(ArrayList::new, ArrayList::addAll, ArrayList::addAll);
+
+        //Put the extracted entities back into the routing context
+        rc.put("entities", entityJson);
+        rc.next();
     }
 
     @Override
     public void activityLabelsHandler(RoutingContext rc) {
+        List<JsonObject> entities = rc.get("entities");
 
-        try{
-            final boolean isTransient = isTransient(rc);
-
-            elasticsearchService.fetchAll(timelineEntityIndex())
-                    .compose(entities->makeActivityLabels(entities))
-                    .onSuccess(actvityLabels->{
-                        rc.response().setStatusCode(200).putHeader("Content-Type", "application/json").end(actvityLabels.encode());
-
-                        //If we weren't told to skip database operations for this segment of the pipeline
-                        if(!isTransient){
-                            elasticsearchService.saveIntoIndex(List.of(actvityLabels), activityLabelIndex())
-                                    .onSuccess(done->log.info("Persisted activity labels!"))
-                                    .onFailure(err->log.error(err.getMessage(),err));
-                        }
-
-                    })
-                    .onFailure(err->log.error(err.getMessage(), err));
-
-        }catch (BadRequest badRequest){
-            log.error(badRequest.getMessage());
-            rc.response().setStatusCode(400).end(badRequest.getMessage());
-        }
-
-
-
+        makeActivityLabels(entities).onSuccess(actvityLabels->{
+                    rc.put("activities", actvityLabels);
+                    rc.next();
+//                    rc.response().setStatusCode(200).putHeader("Content-Type", "application/json").end(actvityLabels.encode());
+                })
+                .onFailure(err->log.error(err.getMessage(), err));
     }
 
     @Override
     public void xesHandler(RoutingContext rc) {
-        CompositeFuture.all(
-                elasticsearchService.fetchAll(activityLabelIndex()),
-                elasticsearchService.fetchAll(timelineIndex())
-        ).compose(input->{
-            List<JsonObject> activityLabels = input.resultAt(0);
-            List<JsonObject> timelines = input.resultAt(1);
 
-            return makeXes(timelines.stream().collect(JsonArray::new,JsonArray::add, JsonArray::addAll), activityLabels.get(0));
-        }).onSuccess(xesFile->{
-            try{
-                List<String> lines = Files.readAllLines(xesFile.toPath());
-                StringBuilder builder = new StringBuilder();
-                lines.forEach(line->builder.append(line + "\n"));
-                rc.response().setStatusCode(200).putHeader("Content-Type", "text/xml").end(builder.toString());
-            }catch (IOException e){
-                log.error(e.getMessage(),e);
-            }
+        JsonObject activities = rc.get("activities");
+        List<Timeline> timelines = rc.get("timelines");
+        JsonArray timelinesJson = timelines.stream().map(Timeline::toJson).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+
+
+
+        makeXes(timelinesJson, activities).onSuccess(xesFile->{
+//            try{
+                rc.put("xesFile", xesFile);
+                rc.next();
+//                List<String> lines = Files.readAllLines(xesFile.toPath());
+//                StringBuilder builder = new StringBuilder();
+//                lines.forEach(line->builder.append(line + "\n"));
+//                rc.response().setStatusCode(200).putHeader("Content-Type", "text/xml").end(builder.toString());
+//            }catch (IOException e){
+//                log.error(e.getMessage(),e);
+//            }
         });
 
 
@@ -369,46 +336,33 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
 
     @Override
     public void processModelVisualizationHandler(RoutingContext rc) {
-        log.info("Got here");
-        try{
-            File xesInput = new File("log.xes");
 
-            boolean isTransient = isTransient(rc);
-
-            makeModelVisualization(xesInput).onSuccess(
-                    visualization->{
-
-                        rc.response().setStatusCode(200).putHeader("Content-Type", "image/png").end(visualization);
-
-                        if(!isTransient){ //If we're meant to persist artifacts from this segment of the pipeline do so now
-                            vertx.fileSystem().rxWriteFile("bpmn.png", visualization).subscribe(()->log.info("visualization saved"));
-                        }
-
-                    }
-            ).onFailure(err->{
-                log.error(err.getMessage(),err);
-                rc.response().setStatusCode(500).end(err.getMessage());
-            });
+        File xesInput = new File("log.xes");
 
 
+        makeModelVisualization(xesInput).onSuccess(
+                visualization->{
 
-        }catch (BadRequest badRequest){
-            log.error(badRequest.getMessage(), badRequest);
-            rc.response().setStatusCode(500).end(badRequest.getMessage());
-        }
+                    rc.put("bpmnVisualization", visualization);
+//                    rc.response().setStatusCode(200).putHeader("Content-Type", "image/png").end(visualization);
+                    rc.next();
 
-
+                }
+        ).onFailure(err->{
+            log.error(err.getMessage(),err);
+            rc.response().setStatusCode(500).end(err.getMessage());
+        });
 
     }
 
     @Override
     public void processModelStatsHandler(RoutingContext rc) {
-
+        rc.next();
     }
 
     @Override
     public void processModelHandler(RoutingContext rc) {
-
+        rc.next();
     }
 
     protected void genericErrorHandler(Throwable e){
@@ -416,7 +370,7 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
         log.error(e.getMessage(), e);
     }
 
-    private boolean isTransient(RoutingContext rc) throws BadRequest {
+    public void transienceHandler(RoutingContext rc)  {
         boolean isTransient = false; // Flag for whether to skip saving the resulting timeline in es.
         if(rc.request().params().contains("transient")){
             //Just some error handling
@@ -427,6 +381,62 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
             isTransient = Boolean.parseBoolean(rc.request().params().get("transient"));
         }
 
-        return isTransient;
+        rc.put("isTransient", isTransient);
+        rc.next();
+    }
+
+    public PipelinePersistenceLayer persistenceLayer(){
+        PipelinePersistenceLayer persistenceLayer = new PipelinePersistenceLayer();
+
+        //Timeline persistence
+        persistenceLayer.<List<Timeline>>registerPersistence("timelines", (timelines)->{
+            //Convert to List<JsonObject> for transit over eventbus
+            List<JsonObject> json = timelines.stream().map(Timeline::toJson).collect(Collectors.toList());
+
+            final String timelinesString = timelines.stream().map(Timeline::getId).collect(StringBuilder::new, (sb, ele)->sb.append(ele.toString() + ", "), StringBuilder::append).toString();
+
+            //Store using elasticsearch service
+            elasticsearchService.saveIntoIndex(json, timelineIndex()).onSuccess(done->{
+                log.info("Timelines {} persisted in elasticsearch index: {}", timelinesString, timelineIndex());
+            }).onFailure(err->{
+                log.error("Error persisting timelines {} into elasticsearch index: {}",timelinesString, timelineIndex());
+                log.error(err.getMessage(), err);
+            });
+        }, PipelinePersistenceLayer.PersistenceType.ONCE);
+
+        //Entity persistence
+        persistenceLayer.<List<JsonObject>>registerPersistence("entities", (entities)->{
+            final String entitiesString = entities.stream().map(entity->entity.getString("id")).collect(StringBuilder::new, (sb, id)->sb.append(id + ", "), StringBuilder::append).toString();
+            elasticsearchService.saveIntoIndex(entities, timelineEntityIndex()).onSuccess(done->{
+                log.info("Entities {} persisted in elasticsearch index: {}", entitiesString, timelineEntityIndex());
+            }).onFailure(err->{
+                log.error("Error persisting entities {} into elastic search index: {}", entitiesString,timelineEntityIndex());
+                log.error(err.getMessage(), err);
+            });
+        }, PipelinePersistenceLayer.PersistenceType.ONCE);
+
+        /**
+         * Metadata {@link BasicExecution} persistence
+         */
+        persistenceLayer.<BasicExecution>registerPersistence("metadata", (execution)->{
+            elasticsearchService.updateExecution(execution)
+                    .onSuccess(done->log.info("Execution record updated!"))
+                    .onFailure(err->log.error(err.getMessage(),err))
+            ;
+        }, PipelinePersistenceLayer.PersistenceType.ALWAYS);
+
+        //ActivityLabeling persistence
+        persistenceLayer.<JsonObject>registerPersistence("activities", (activities)->{
+            elasticsearchService.saveIntoIndex(List.of(activities), activityLabelIndex())
+                    .onSuccess(done->log.info("Activity labels persisted!"))
+                    .onFailure(err->log.error(err.getMessage(), err));
+        }, PipelinePersistenceLayer.PersistenceType.ONCE);
+
+        //BPMN visualization persistence
+        persistenceLayer.<Buffer>registerPersistence("bpmnVisualization", (data)->{
+            vertx.fileSystem().rxWriteFile("bpmn.png", data).subscribe(()->log.info("bpmn visualization saved!"));
+        }, PipelinePersistenceLayer.PersistenceType.ONCE);
+
+        return persistenceLayer;
     }
 }

@@ -1,6 +1,6 @@
 package ca.ualberta.odobot.logpreprocessor.exceptions;
 
-public class BadRequest extends Exception{
+public class BadRequest extends RuntimeException{
 
     String msg;
 

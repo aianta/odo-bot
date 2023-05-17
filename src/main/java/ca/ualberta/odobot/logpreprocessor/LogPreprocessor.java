@@ -12,7 +12,9 @@ import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.core.AbstractVerticle;
+import io.vertx.rxjava3.core.buffer.Buffer;
 import io.vertx.rxjava3.core.http.HttpServer;
+import io.vertx.rxjava3.ext.web.Route;
 import io.vertx.rxjava3.ext.web.Router;
 import io.vertx.rxjava3.ext.web.RoutingContext;
 import io.vertx.rxjava3.ext.web.handler.BodyHandler;
@@ -81,6 +83,27 @@ public class LogPreprocessor extends AbstractVerticle {
         api.route().method(HttpMethod.GET).path("/timelines").handler(this::process);
         api.route().method(HttpMethod.DELETE).path("/indices/:target").handler(this::clearIndex);
         api.route().method(HttpMethod.DELETE).path("/indices").handler(this::clearIndices);
+
+        PipelinePersistenceLayer persistenceLayer = simplePipeline.persistenceLayer();
+        Route executeRoute = api.route().method(HttpMethod.GET).path("/preprocessing/pipelines" + simplePipeline.slug() + "/execute");
+
+        executeRoute.handler(simplePipeline::transienceHandler);
+        executeRoute.handler(simplePipeline::timelinesHandler);
+        executeRoute.handler(persistenceLayer::persistenceHandler);
+        executeRoute.handler(simplePipeline::timelineEntitiesHandler);
+        executeRoute.handler(persistenceLayer::persistenceHandler);
+        executeRoute.handler(simplePipeline::activityLabelsHandler);
+        executeRoute.handler(persistenceLayer::persistenceHandler);
+        executeRoute.handler(simplePipeline::xesHandler);
+        executeRoute.handler(persistenceLayer::persistenceHandler);
+        executeRoute.handler(simplePipeline::processModelVisualizationHandler);
+        executeRoute.handler(rc->{
+            rc.response().setStatusCode(200).putHeader("Content-Type", "image/png").end((Buffer)rc.get("bpmnVisualization"));
+        });
+        executeRoute.failureHandler(rc->{
+            rc.response().setStatusCode(500).end(rc.failure().getMessage());
+        });
+
 
         api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/execute").handler(simplePipeline::executeHandler);
         api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/timelines").handler(simplePipeline::timelinesHandler);
@@ -216,6 +239,11 @@ public class LogPreprocessor extends AbstractVerticle {
                });
            }
        });
+
+    }
+
+
+    private void transienceHandler(RoutingContext rc){
 
     }
 
