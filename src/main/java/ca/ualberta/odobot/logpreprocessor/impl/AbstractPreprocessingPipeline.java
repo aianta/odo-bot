@@ -469,7 +469,6 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
         elasticsearchService.deleteIndex(timelineIndex())
                 .compose(mapper->elasticsearchService.deleteIndex(timelineEntityIndex()))
                 .compose(mapper->elasticsearchService.deleteIndex(activityLabelIndex()))
-                .compose(mapper->elasticsearchService.deleteIndex(EXECUTIONS_INDEX))
                 .onSuccess(done->rc.response().setStatusCode(200).end())
                 .onFailure(err->{
                     log.error(err.getMessage(),err);
