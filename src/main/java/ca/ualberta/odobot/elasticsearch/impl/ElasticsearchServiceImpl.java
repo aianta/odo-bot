@@ -148,21 +148,12 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
         try{
             BinaryData binaryData = BinaryData.of(document.toBuffer().getBytes(), ContentType.APPLICATION_JSON);
 
-//            UpdateRequest updateRequest = UpdateRequest.of(u->u
-//                    .id(id)
-//                    .index(index)
-//                    .doc(binaryData)
-//                    .docAsUpsert(true)
-//            );
-//
-//            client.update(updateRequest);
-
             IndexResponse response = client.index(i->i
                     .index(index)
                     .id(id)
                     .document(binaryData)
             );
-
+            log.info("updated execution info");
             log.info("{}", response.result().jsonValue());
         } catch (IOException ioException) {
             log.error(ioException.getMessage(), ioException);

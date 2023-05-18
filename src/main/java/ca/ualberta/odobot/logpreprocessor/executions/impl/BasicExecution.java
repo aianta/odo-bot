@@ -8,11 +8,16 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
 
 @DataObject
 public class BasicExecution implements PreprocessingPipelineExecution {
+
+    public static DateTimeFormatter timeFormatter = DateTimeFormatter.ISO_INSTANT.withZone(ZoneId.systemDefault());
 
     Map<String, UUID> indexToTimelineMap = new HashMap<>();
     Map<UUID, String> timelineToIndexMap = new HashMap<>();
@@ -159,12 +164,12 @@ public class BasicExecution implements PreprocessingPipelineExecution {
         }
         if(startTimestamp != null){
             result.put("startTimestamp", startTimestamp())
-                    .put("_startTimestamp", Date.from(startTimestamp).toString());
+                    .put("_startTimestamp", ZonedDateTime.ofInstant(startTimestamp, ZoneId.systemDefault()).format(timeFormatter));
         }
 
         if(endTimestamp != null){
             result.put("endTimestamp", endTimestamp())
-                    .put("_endTimestamp", Date.from(endTimestamp).toString());
+                    .put("_endTimestamp", ZonedDateTime.ofInstant(endTimestamp, ZoneId.systemDefault()).format(timeFormatter));
         }
 
         return result;

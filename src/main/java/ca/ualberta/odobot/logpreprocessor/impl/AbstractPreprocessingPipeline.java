@@ -150,6 +150,24 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
         return this.processModelStatsIndex;
     }
 
+    public void afterExecution(RoutingContext rc){
+        BasicExecution execution = rc.get("metadata");
+        execution.stop();
+        execution.setStatus(new AbstractPreprocessingPipelineExecutionStatus.Complete(execution.status().data()));
+        rc.next();
+    }
+
+    public void beforeExecution(RoutingContext rc){
+        //Create metadata record for the execution
+        BasicExecution execution = new BasicExecution();
+        execution.setId(UUID.randomUUID());
+        execution.setPipelineId(id());
+        execution.setStatus(new AbstractPreprocessingPipelineExecutionStatus.InProgress());
+        execution.start();
+        rc.put("metadata", execution);
+        rc.next();
+    }
+
     @Override
     public void executeHandler(RoutingContext rc) {
 
@@ -264,15 +282,14 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
             return makeTimelines(eventlogsMap);
 
         }).onSuccess(timelines->{
+
+            BasicExecution execution = rc.get("metadata");
+            //Update execution metadata
+            timelines.forEach(timeline->execution.registerTimeline(timeline.getAnnotations().getString("source-index"),timeline.getId()));
+
             //Put timelines in routing context for further processing or persistence layer.
             rc.put("timelines", timelines);
-
             rc.next();
-
-//            JsonArray result = timelines.stream().map(Timeline::toJson).collect(JsonArray::new,JsonArray::add,JsonArray::addAll);
-//            rc.response().putHeader("Content-Type", "application/json").setStatusCode(200).end(result.encode());
-
-
         });
 
     }
@@ -292,6 +309,11 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
 
         ).collect(ArrayList::new, ArrayList::addAll, ArrayList::addAll);
 
+
+        //Update execution metadata, log all entities used in this execution
+        BasicExecution execution = rc.get("metadata");
+        entityJson.forEach(entity->execution.timelineEntityIds().add(entity.getString("id")));
+
         //Put the extracted entities back into the routing context
         rc.put("entities", entityJson);
         rc.next();
@@ -301,10 +323,13 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
     public void activityLabelsHandler(RoutingContext rc) {
         List<JsonObject> entities = rc.get("entities");
 
-        makeActivityLabels(entities).onSuccess(actvityLabels->{
-                    rc.put("activities", actvityLabels);
+        makeActivityLabels(entities).onSuccess(activityLabels->{
+                    //Update execution metadata
+                    BasicExecution execution = rc.get("metadata");
+                    execution.setActivityLabelingId(UUID.fromString(activityLabels.getString("id")));
+
+                    rc.put("activities", activityLabels);
                     rc.next();
-//                    rc.response().setStatusCode(200).putHeader("Content-Type", "application/json").end(actvityLabels.encode());
                 })
                 .onFailure(err->log.error(err.getMessage(), err));
     }
@@ -316,19 +341,12 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
         List<Timeline> timelines = rc.get("timelines");
         JsonArray timelinesJson = timelines.stream().map(Timeline::toJson).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
 
-
-
         makeXes(timelinesJson, activities).onSuccess(xesFile->{
-//            try{
+                //Update execution metadata
+                BasicExecution execution = rc.get("metadata");
+                execution.setXes(new ExternalArtifact(ExternalArtifact.Location.LOCAL_FILE_SYSTEM, xesFile.toPath().toString()));
                 rc.put("xesFile", xesFile);
                 rc.next();
-//                List<String> lines = Files.readAllLines(xesFile.toPath());
-//                StringBuilder builder = new StringBuilder();
-//                lines.forEach(line->builder.append(line + "\n"));
-//                rc.response().setStatusCode(200).putHeader("Content-Type", "text/xml").end(builder.toString());
-//            }catch (IOException e){
-//                log.error(e.getMessage(),e);
-//            }
         });
 
 
@@ -342,9 +360,11 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
 
         makeModelVisualization(xesInput).onSuccess(
                 visualization->{
+                    //Update execution metadata
+                    BasicExecution execution = rc.get("metadata");
+                    execution.processModelVisualizations().add(new ExternalArtifact(ExternalArtifact.Location.LOCAL_FILE_SYSTEM, "bpmn.png"));
 
                     rc.put("bpmnVisualization", visualization);
-//                    rc.response().setStatusCode(200).putHeader("Content-Type", "image/png").end(visualization);
                     rc.next();
 
                 }
@@ -438,5 +458,22 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
         }, PipelinePersistenceLayer.PersistenceType.ONCE);
 
         return persistenceLayer;
+    }
+
+    /**
+     * Clear all indices associated with this pipeline
+     * @param rc
+     */
+    @Override
+    public void purgePipeline(RoutingContext rc) {
+        elasticsearchService.deleteIndex(timelineIndex())
+                .compose(mapper->elasticsearchService.deleteIndex(timelineEntityIndex()))
+                .compose(mapper->elasticsearchService.deleteIndex(activityLabelIndex()))
+                .compose(mapper->elasticsearchService.deleteIndex(EXECUTIONS_INDEX))
+                .onSuccess(done->rc.response().setStatusCode(200).end())
+                .onFailure(err->{
+                    log.error(err.getMessage(),err);
+                    rc.response().setStatusCode(500).end();
+                });
     }
 }

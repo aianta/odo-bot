@@ -8,7 +8,7 @@ import ca.ualberta.odobot.semanticflow.SemanticSequencer;
 import ca.ualberta.odobot.semanticflow.model.*;
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Multimap;
-import io.vertx.core.CompositeFuture;
+
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -16,7 +16,7 @@ import io.vertx.rxjava3.core.Promise;
 import io.vertx.rxjava3.core.Vertx;
 
 import io.vertx.rxjava3.core.buffer.Buffer;
-import io.vertx.rxjava3.ext.web.RoutingContext;
+
 import org.deckfour.xes.model.XLog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -155,18 +155,5 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
         return promise.future();
     }
 
-    /**
-     * Clear all indices associated with this pipeline
-     * @param rc
-     */
-    @Override
-    public void purgePipeline(RoutingContext rc) {
-        elasticsearchService.deleteIndex(timelineIndex())
-                .compose(mapper->elasticsearchService.deleteIndex(timelineEntityIndex()))
-                .onSuccess(done->rc.response().setStatusCode(200).end())
-                .onFailure(err->{
-                    log.error(err.getMessage(),err);
-                    rc.response().setStatusCode(500).end();
-                });
-    }
+
 }

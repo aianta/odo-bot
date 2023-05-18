@@ -30,4 +30,8 @@ public interface PipelineService {
 
     PipelinePersistenceLayer persistenceLayer();
 
+    void beforeExecution(RoutingContext rc);
+
+    void afterExecution(RoutingContext rc);
+
 }

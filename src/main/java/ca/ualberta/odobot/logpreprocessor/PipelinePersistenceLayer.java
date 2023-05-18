@@ -26,7 +26,7 @@ public class PipelinePersistenceLayer {
 
     Map<String, Consumer> persistenceTargets = new HashMap<>();
     Map<String, PersistenceType> typeMap = new HashMap<>();
-    Map<UUID, Set<String>> requestInvokations = new HashMap<>();
+    Map<UUID, Set<String>> invocations = new HashMap<>();
 
     /**
      * Register persistence logic for a {@link RoutingContext} key.
@@ -59,16 +59,20 @@ public class PipelinePersistenceLayer {
                         //AND either
                         (typeMap.get(persistenceTarget) == PersistenceType.ALWAYS || //the persistence target is set to ALWAYS persist OR
                         (typeMap.get(persistenceTarget) == PersistenceType.ONCE &&  //the persistence target is set to persist ONCE AND
-                                !requestInvokations.getOrDefault(persistenceId, new HashSet<String>()).contains(persistenceTarget))) //it does not appear in the set of persistence targets we've persisted for this request.
+                                !invocations.getOrDefault(persistenceId, new HashSet<String>()).contains(persistenceTarget))) //it does not appear in the set of persistence targets we've persisted for this request.
                 ){
                     //Execute persistence logic
                     persistenceTargets.get(persistenceTarget).accept(rc.get(persistenceTarget));
-                    //Record the invokation of the persistence logic for this persistence target
-                    requestInvokations.get(persistenceId).add(persistenceTarget);
+                    //Record the invocations of the persistence logic for this persistence target
+                    Set<String> history = this.invocations.getOrDefault(persistenceId,new HashSet<>());
+                    history.add(persistenceTarget);
+                    this.invocations.put(persistenceId, history);
+
                 }
             });
         }
 
+        rc.next();
     }
 
 }

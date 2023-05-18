@@ -2,6 +2,8 @@ package ca.ualberta.odobot.logpreprocessor;
 
 import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 import ca.ualberta.odobot.logpreprocessor.exceptions.BadRequest;
+import ca.ualberta.odobot.logpreprocessor.executions.impl.AbstractPreprocessingPipelineExecutionStatus;
+import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
 import ca.ualberta.odobot.logpreprocessor.impl.SimplePreprocessingPipeline;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 import ca.ualberta.odobot.logpreprocessor.timeline.TimelineService;
@@ -85,8 +87,9 @@ public class LogPreprocessor extends AbstractVerticle {
         api.route().method(HttpMethod.DELETE).path("/indices").handler(this::clearIndices);
 
         PipelinePersistenceLayer persistenceLayer = simplePipeline.persistenceLayer();
-        Route executeRoute = api.route().method(HttpMethod.GET).path("/preprocessing/pipelines" + simplePipeline.slug() + "/execute");
+        Route executeRoute = api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/execute");
 
+        executeRoute.handler(simplePipeline::beforeExecution);
         executeRoute.handler(simplePipeline::transienceHandler);
         executeRoute.handler(simplePipeline::timelinesHandler);
         executeRoute.handler(persistenceLayer::persistenceHandler);
@@ -97,15 +100,22 @@ public class LogPreprocessor extends AbstractVerticle {
         executeRoute.handler(simplePipeline::xesHandler);
         executeRoute.handler(persistenceLayer::persistenceHandler);
         executeRoute.handler(simplePipeline::processModelVisualizationHandler);
+        executeRoute.handler(simplePipeline::afterExecution);
+        executeRoute.handler(persistenceLayer::persistenceHandler);
         executeRoute.handler(rc->{
             rc.response().setStatusCode(200).putHeader("Content-Type", "image/png").end((Buffer)rc.get("bpmnVisualization"));
         });
         executeRoute.failureHandler(rc->{
+
+            log.error(rc.failure().getMessage(), rc.failure());
             rc.response().setStatusCode(500).end(rc.failure().getMessage());
+            BasicExecution execution = rc.get("metadata");
+            execution.setStatus(new AbstractPreprocessingPipelineExecutionStatus.Failed(execution.status().data().mergeIn(new JsonObject().put("error", rc.failure().getMessage()))));
         });
+        executeRoute.failureHandler(persistenceLayer::persistenceHandler); //Update record keeping for failure.
 
 
-        api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/execute").handler(simplePipeline::executeHandler);
+//        api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/execute").handler(simplePipeline::executeHandler);
         api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/timelines").handler(simplePipeline::timelinesHandler);
         api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/activityLabels").handler(simplePipeline::activityLabelsHandler);
         api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/xes").handler(simplePipeline::xesHandler);
@@ -243,9 +253,7 @@ public class LogPreprocessor extends AbstractVerticle {
     }
 
 
-    private void transienceHandler(RoutingContext rc){
 
-    }
 
 
 }
