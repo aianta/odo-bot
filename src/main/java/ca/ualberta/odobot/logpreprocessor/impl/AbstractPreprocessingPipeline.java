@@ -9,27 +9,24 @@ import ca.ualberta.odobot.logpreprocessor.executions.ExternalArtifact;
 import ca.ualberta.odobot.logpreprocessor.executions.PreprocessingPipelineExecution;
 import ca.ualberta.odobot.logpreprocessor.executions.impl.AbstractPreprocessingPipelineExecutionStatus;
 import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
-import ca.ualberta.odobot.logpreprocessor.timeline.TimelineService;
+
 
 import ca.ualberta.odobot.semanticflow.model.Timeline;
-import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
+
 import io.vertx.core.CompositeFuture;
-import io.vertx.core.Promise;
+
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.core.Vertx;
 import io.vertx.rxjava3.core.buffer.Buffer;
-import io.vertx.rxjava3.ext.web.Route;
+
 import io.vertx.rxjava3.ext.web.RoutingContext;
 import io.vertx.rxjava3.ext.web.client.WebClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileReader;
-import java.io.IOException;
-import java.nio.file.Files;
+
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -43,7 +40,6 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
     private static final Logger log = LoggerFactory.getLogger(AbstractPreprocessingPipeline.class);
 
     protected ElasticsearchService elasticsearchService;
-    protected TimelineService timelineService;
     protected Vertx vertx;
 
     WebClient client;

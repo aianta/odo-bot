@@ -1,7 +1,6 @@
 package ca.ualberta.odobot.web;
 
 
-import ca.ualberta.odobot.semanticflow.SemanticFlowParser;
 import io.reactivex.rxjava3.core.Completable;
 
 import io.vertx.core.Future;
@@ -330,7 +329,8 @@ public class TimelineWebApp extends AbstractVerticle {
         timelines.clear();
         annotations.clear();
 
-        File timelinesDir = new File(SemanticFlowParser.TIMELINE_DATA_FOLDER);
+        //TODO: Fix this
+        File timelinesDir = null;
         File [] timelinesArray = timelinesDir.listFiles();
 
         for(int i = 0; i < timelinesArray.length; i++){

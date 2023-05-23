@@ -1,14 +1,12 @@
 package ca.ualberta.odobot.logpreprocessor;
 
 import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
-import ca.ualberta.odobot.logpreprocessor.exceptions.BadRequest;
 import ca.ualberta.odobot.logpreprocessor.executions.impl.AbstractPreprocessingPipelineExecutionStatus;
 import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
 import ca.ualberta.odobot.logpreprocessor.impl.SimplePreprocessingPipeline;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
-import ca.ualberta.odobot.logpreprocessor.timeline.TimelineService;
+
 import io.reactivex.rxjava3.core.Completable;
-import io.vertx.core.CompositeFuture;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.JsonArray;
@@ -22,14 +20,14 @@ import io.vertx.rxjava3.ext.web.RoutingContext;
 import io.vertx.rxjava3.ext.web.handler.BodyHandler;
 import io.vertx.rxjava3.ext.web.handler.LoggerHandler;
 import io.vertx.serviceproxy.ServiceBinder;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
+
 import java.util.List;
-import java.util.ListIterator;
 import java.util.UUID;
-import java.util.stream.Collectors;
+
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.*;
 
@@ -43,7 +41,7 @@ public class LogPreprocessor extends AbstractVerticle {
     private static final String TIMELINE_ENTITIES_INDEX = "timeline-entities";
 
 
-    private static TimelineService timelineService;
+
     private static ElasticsearchService elasticsearchService;
 
     Router mainRouter;
@@ -52,12 +50,6 @@ public class LogPreprocessor extends AbstractVerticle {
 
     public Completable rxStart(){
 
-        //Init Timeline Service
-        //https://vertx.io/docs/vertx-service-proxy/java/#_exposing_your_service
-        timelineService = TimelineService.create(vertx.getDelegate());
-        new ServiceBinder(vertx.getDelegate())
-                .setAddress(TIMELINE_SERVICE_ADDRESS)
-                .register(TimelineService.class, timelineService);
 
         //Init Elasticsearch Service
         elasticsearchService = ElasticsearchService.create(vertx.getDelegate(), "localhost", 9200);
@@ -82,7 +74,6 @@ public class LogPreprocessor extends AbstractVerticle {
         api = Router.router(vertx);
 
         //Define API routes
-        api.route().method(HttpMethod.GET).path("/timelines").handler(this::process);
         api.route().method(HttpMethod.DELETE).path("/indices/:target").handler(this::clearIndex);
         api.route().method(HttpMethod.DELETE).path("/indices").handler(this::clearIndices);
 
@@ -115,7 +106,6 @@ public class LogPreprocessor extends AbstractVerticle {
         executeRoute.failureHandler(persistenceLayer::persistenceHandler); //Update record keeping for failure.
 
 
-//        api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/execute").handler(simplePipeline::executeHandler);
         api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/timelines").handler(simplePipeline::timelinesHandler);
         api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/timelines").handler(rc->{
             List<Timeline> timelines = rc.get("timelines");
@@ -166,99 +156,6 @@ public class LogPreprocessor extends AbstractVerticle {
                 })
         ;
     }
-
-    /**
-     * Given a list of elastic search indices, process each of them into timelines
-     * and return the JSON notation of the result.
-     *
-     * @param rc
-     */
-    private void process(RoutingContext rc){
-        boolean isTransient = false; // Flag for whether to skip saving the resulting timeline in es.
-        if(rc.request().params().contains("transient")){
-            //Just some error handling
-            if (rc.request().params().getAll("transient").size() > 1){
-                rc.response().setStatusCode(400).end(new JsonObject().put("error", "cannot have multiple 'transient' parameters in request.").encode());
-                return;
-            }
-            isTransient = Boolean.parseBoolean(rc.request().params().get("transient"));
-        }
-
-        final boolean _isTransient = isTransient;
-       List<String> esIndices = rc.queryParam("index");
-
-        /**
-         *  Event logs should be returned with the oldest event first. Create a JsonArray
-         *  following the format described here: https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html
-         *  to enforce this.
-          */
-
-        JsonArray sortOptions = new JsonArray()
-                .add(new JsonObject().put(TIMESTAMP_FIELD, "asc"));
-
-       //Fetch the event logs corresponding with every index requested.
-        CompositeFuture.all(
-               esIndices.stream().map(index->elasticsearchService.fetchAndSortAll(index, sortOptions))
-               .collect(Collectors.toList())
-       //Parse each list of events into its own timeline object.
-       ).compose(mapper->{
-           List<List<JsonObject>> eventLists = mapper.list();
-           return CompositeFuture.all(
-                   eventLists.stream().map(timelineService::parse)
-                           .collect(Collectors.toList())
-           );
-       }).onSuccess(timelines->{
-           JsonArray result = new JsonArray();
-           List<JsonObject> resultObjects = new ArrayList<>();
-           //Annotate the timelines with their corresponding ES indices & accumulate in result JsonArray.
-           List<Timeline> timelineList = timelines.list();
-           ListIterator<Timeline> it = timelineList.listIterator();
-           while (it.hasNext()){
-               var index = it.nextIndex();
-               Timeline curr = it.next();
-               curr.getAnnotations().put("origin-es-index", esIndices.get(index));
-               JsonObject json = curr.toJson();
-               result.add(json);
-               //Embed annotations into the object that is being sent to es.
-               resultObjects.add(json.put("annotations", curr.getAnnotations()));
-           }
-
-           rc.response().putHeader("Content-Type", "application/json").end(result.encode());
-
-           if(!_isTransient){ //If this is not a transient request, save the timeline into elastic search
-                final String timelinesString = resultObjects.stream().map(object->object.getString("id")).collect(StringBuilder::new, (sb, ele)->sb.append(ele + ", "), StringBuilder::append).toString();
-
-                //Save the timelines themselves
-               elasticsearchService.saveIntoIndex(resultObjects, TIMELINES_INDEX).onSuccess(saved->{
-                   log.info("Timelines {} persisted in elasticsearch index: {}", timelinesString,TIMELINES_INDEX);
-               }).onFailure(err->{
-                   log.error("Error persisting timelines {} into elasticsearch index: {}",timelinesString, TIMELINES_INDEX);
-                   log.error(err.getMessage(), err);
-               });
-
-               //Save the entities within the timeline in a separate index as well.
-
-               //Extract the entities from inside the result json arrays into a single List<JsonObject>
-               List<JsonObject> entities = resultObjects.stream().map(timelineJson->
-                       timelineJson.getJsonArray("data").stream()
-                               .map(o->(JsonObject)o)
-                               .collect(Collectors.toList())
-
-               ).collect(ArrayList::new, ArrayList::addAll, ArrayList::addAll);
-
-               final String entitiesString = entities.stream().map(entity->entity.getString("id")).collect(StringBuilder::new, (sb, id)->sb.append(id + ", "), StringBuilder::append).toString();
-               elasticsearchService.saveIntoIndex(entities, TIMELINE_ENTITIES_INDEX).onSuccess(saved->{
-                   log.info("Entities {} persisted in elasticsearch index: {}",entitiesString,TIMELINE_ENTITIES_INDEX);
-               }).onFailure(err->{
-                   log.error("Error persisting entities {} into elastic search index: {}", entitiesString,TIMELINE_ENTITIES_INDEX);
-               });
-           }
-       });
-
-    }
-
-
-
 
 
 }

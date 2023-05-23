@@ -1,2 +1,0 @@
-@io.vertx.codegen.annotations.ModuleGen(groupPackage = "ca.ualberta.odobot.logpreprocessor.processmodel", name = "processmodel", useFutures = true)
-package ca.ualberta.odobot.logpreprocessor.processmodel;

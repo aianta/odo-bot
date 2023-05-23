@@ -1,14 +1,14 @@
 package ca.ualberta.odobot.semanticflow;
 
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
+import java.io.*;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * A collection of functions useful for development/analysis/etc.
@@ -20,7 +20,7 @@ public class RunnableUtils {
 
     public static void main(String args []){
 
-        List<JsonObject> events = SemanticFlowParser.loadEvents(DATA_PATH);
+        List<JsonObject> events = loadEvents(DATA_PATH);
 
         printTimeline(events, "groundbreaker-1");
 
@@ -82,5 +82,26 @@ public class RunnableUtils {
             ioException.printStackTrace();
         }
 
+    }
+
+    public static List<JsonObject> loadEvents(String path){
+        File in = new File(path);
+        try(FileReader fr = new FileReader(in);
+            BufferedReader br = new BufferedReader(fr)){
+
+            StringBuilder sb = new StringBuilder();
+            String line = br.readLine();
+            do {
+                sb.append(line);
+                line = br.readLine();
+            }while (line != null);
+
+            return new JsonArray(sb.toString()).stream().map(o->(JsonObject)o).collect(Collectors.toList());
+
+        }catch (IOException ioe){
+            log.error(ioe.getMessage(), ioe);
+        }
+        log.info("Failed to load events");
+        return new ArrayList<>();
     }
 }
