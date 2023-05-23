@@ -285,7 +285,10 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
 
             BasicExecution execution = rc.get("metadata");
             //Update execution metadata
-            timelines.forEach(timeline->execution.registerTimeline(timeline.getAnnotations().getString("source-index"),timeline.getId()));
+            if(execution != null){
+                timelines.forEach(timeline->execution.registerTimeline(timeline.getAnnotations().getString("source-index"),timeline.getId()));
+            }
+
 
             //Put timelines in routing context for further processing or persistence layer.
             rc.put("timelines", timelines);

@@ -117,6 +117,11 @@ public class LogPreprocessor extends AbstractVerticle {
 
 //        api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/execute").handler(simplePipeline::executeHandler);
         api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/timelines").handler(simplePipeline::timelinesHandler);
+        api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/timelines").handler(rc->{
+            List<Timeline> timelines = rc.get("timelines");
+            rc.response().setStatusCode(200).putHeader("Content-Type", "application/json").end(timelines.stream().map(Timeline::toJson).collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode());
+        });
+
         api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/activityLabels").handler(simplePipeline::activityLabelsHandler);
         api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/xes").handler(simplePipeline::xesHandler);
         api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/visualization").handler(simplePipeline::processModelVisualizationHandler);

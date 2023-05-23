@@ -62,6 +62,7 @@ public class XesTransformer {
         //Define trace attributes
         XAttributeID id = factory.createAttributeID("id", XID.parse(timeline.getString("id")),null);
         //TODO -> This should be the actual session id, which, currently isn't included in the timeline json. Need to fix this.
+        //TODO -> As of May 18, 2023: DO NOT FIX THIS, session ids may be broken, use timeline id's for now!!
         XAttributeLiteral caseId = factory.createAttributeLiteral("sessionId", timeline.getString("id"), XConceptExtension.instance());
 
         //Create trace attribute map

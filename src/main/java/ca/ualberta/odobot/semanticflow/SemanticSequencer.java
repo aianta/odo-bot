@@ -68,8 +68,11 @@ public class SemanticSequencer {
         try{
             UUID.fromString(sessionIdString);
         }catch (IllegalArgumentException e){
-            log.error(e.getMessage(),e);
-            throw new InvalidSessionId(event);
+//            log.error(e.getMessage(),e);
+//            throw new InvalidSessionId(event);
+            //TODO -> once session id are considered again properly and we don't get new ones off each page load, make this error out again.
+            //For now: we'll use the timeline id
+            event.put(SESSION_ID_FIELD, line.getId().toString());
         }
         //Check validity of timestamp value
         try{
