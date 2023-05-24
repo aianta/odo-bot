@@ -37,10 +37,6 @@ public class LogPreprocessor extends AbstractVerticle {
     private static final String API_PATH_PREFIX = "/api/*";
     private static final String HOST = "0.0.0.0";
     private static final int PORT = 8078;
-    private static final String TIMELINES_INDEX = "timelines";
-    private static final String TIMELINE_ENTITIES_INDEX = "timeline-entities";
-
-
 
     private static ElasticsearchService elasticsearchService;
 
@@ -105,48 +101,6 @@ public class LogPreprocessor extends AbstractVerticle {
         //Define API routes
         api.route().method(HttpMethod.DELETE).path("/indices/:target").handler(this::clearIndex);
         api.route().method(HttpMethod.DELETE).path("/indices").handler(this::clearIndices);
-
-//        PipelinePersistenceLayer persistenceLayer = simplePipeline.persistenceLayer();
-//        Route executeRoute = api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/execute");
-//
-//        executeRoute.handler(simplePipeline::beforeExecution);
-//        executeRoute.handler(simplePipeline::transienceHandler);
-//        executeRoute.handler(simplePipeline::timelinesHandler);
-//        executeRoute.handler(persistenceLayer::persistenceHandler);
-//        executeRoute.handler(simplePipeline::timelineEntitiesHandler);
-//        executeRoute.handler(persistenceLayer::persistenceHandler);
-//        executeRoute.handler(simplePipeline::activityLabelsHandler);
-//        executeRoute.handler(persistenceLayer::persistenceHandler);
-//        executeRoute.handler(simplePipeline::xesHandler);
-//        executeRoute.handler(persistenceLayer::persistenceHandler);
-//        executeRoute.handler(simplePipeline::processModelVisualizationHandler);
-//        executeRoute.handler(simplePipeline::afterExecution);
-//        executeRoute.handler(persistenceLayer::persistenceHandler);
-//        executeRoute.handler(rc->{
-//            rc.response().setStatusCode(200).putHeader("Content-Type", "image/png").end((Buffer)rc.get("bpmnVisualization"));
-//        });
-//        executeRoute.failureHandler(rc->{
-//
-//            log.error(rc.failure().getMessage(), rc.failure());
-//            rc.response().setStatusCode(500).end(rc.failure().getMessage());
-//            BasicExecution execution = rc.get("metadata");
-//            execution.setStatus(new AbstractPreprocessingPipelineExecutionStatus.Failed(execution.status().data().mergeIn(new JsonObject().put("error", rc.failure().getMessage()))));
-//        });
-//        executeRoute.failureHandler(persistenceLayer::persistenceHandler); //Update record keeping for failure.
-//
-
-//        api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/timelines").handler(simplePipeline::timelinesHandler);
-//        api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/timelines").handler(rc->{
-//            List<Timeline> timelines = rc.get("timelines");
-//            rc.response().setStatusCode(200).putHeader("Content-Type", "application/json").end(timelines.stream().map(Timeline::toJson).collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode());
-//        });
-
-//        api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/activityLabels").handler(simplePipeline::activityLabelsHandler);
-//        api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/xes").handler(simplePipeline::xesHandler);
-//        api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/visualization").handler(simplePipeline::processModelVisualizationHandler);
-//        api.route().method(HttpMethod.DELETE).path("/preprocessing/pipelines/" + simplePipeline.slug() + "/purge").handler(simplePipeline::purgePipeline);
-//        //TODO - pipelines aren't quite mature enough for this yet...
-//        api.route().method(HttpMethod.POST).path("/preprocessing/pipeline").handler(this::createPipeline);
 
         //Mount handlers to main router
         mainRouter.route().handler(LoggerHandler.create());
@@ -214,8 +168,8 @@ public class LogPreprocessor extends AbstractVerticle {
      * @param rc
      */
     private void clearIndices(RoutingContext rc){
-        elasticsearchService.deleteIndex(TIMELINES_INDEX)
-                .compose(mapper->elasticsearchService.deleteIndex(TIMELINE_ENTITIES_INDEX))
+        elasticsearchService.deleteIndex(EXECUTIONS_INDEX)
+                .compose(mapper->elasticsearchService.deleteIndex(PIPELINES_INDEX))
                 .onSuccess(done->rc.response().setStatusCode(200).end())
                 .onFailure(err->{
                     log.error(err.getMessage(), err);

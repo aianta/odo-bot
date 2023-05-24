@@ -5,7 +5,7 @@ import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 import io.reactivex.rxjava3.core.Completable;
 
 import io.vertx.core.Future;
-import io.vertx.core.Vertx;
+
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.JsonArray;
@@ -15,6 +15,7 @@ import io.vertx.rxjava3.core.AbstractVerticle;
 import io.vertx.rxjava3.core.Promise;
 
 import io.vertx.rxjava3.core.http.HttpServer;
+
 
 import io.vertx.rxjava3.ext.web.Router;
 import io.vertx.rxjava3.ext.web.RoutingContext;
@@ -88,13 +89,14 @@ public class TimelineWebApp extends AbstractVerticle {
 
             //Define API routes
             api.route().method(HttpMethod.GET).path("/pipelines").handler(this::getPipelines);
-            api.route().method(HttpMethod.GET).path("/timelines").handler(this::getTimelines);
-            api.route().method(HttpMethod.GET).path("/curated/timelines").handler(this::getCuratedTimelines);
-            api.route().method(HttpMethod.GET).path("/annotations/:timelineId/").handler(this::getAnnotation);
-            api.route().method(HttpMethod.PUT).path("/annotations/:timelineId/").handler(this::updateAnnotation);
-            api.route().method(HttpMethod.POST).path("/actions/createEmbeddings").handler(this::createEmbeddings);
-            api.route().method(HttpMethod.GET).path("/actions/computeDistances").handler(this::getDistances);
-            api.route().method(HttpMethod.GET).path("/entities").handler(this::getTimelineEntities);
+            api.route().method(HttpMethod.GET).path("/executions").handler(this::getExecutions);
+            api.route().method(HttpMethod.GET).path("/pipelines/:pipelineId/timelines").handler(this::getTimelines);
+            api.route().method(HttpMethod.GET).path("/executions/:executionId/timelines").handler(this::getExecutionTimelines);
+            api.route().failureHandler(rc->{
+                JsonObject errObject = new JsonObject()
+                        .put("error", rc.failure().getMessage());
+                rc.response().setStatusCode(rc.statusCode()).end(errObject.encode());
+            });
 
             //Mount API routes
             mainRouter.route().handler(LoggerHandler.create());
@@ -120,12 +122,61 @@ public class TimelineWebApp extends AbstractVerticle {
         return super.rxStart();
     }
 
+
+    void getExecutions(RoutingContext rc){
+        elasticsearchService.fetchAll(EXECUTIONS_INDEX)
+                .onSuccess(executions->simpleJsonListResponse(executions, rc))
+                .onFailure(err->rc.fail(500,err));
+    }
+
+    void getExecutionTimelines(RoutingContext rc){
+        UUID executionId = UUID.fromString(rc.pathParam("executionId"));
+
+        elasticsearchService.fetchAll(EXECUTIONS_INDEX) //Fetch all executions
+                .compose(executions->Future.succeededFuture(executions.stream().filter(e->e.getString("id").equals(executionId.toString())).findFirst().get())) //Filter out the execution for this request
+                .onSuccess(
+                execution->{
+                    //Create a set of timeline ids involved in this execution
+                    Set<String> timelineIds = execution.getJsonArray("timelineIds").stream().map(o->(String)o).collect(Collectors.toSet());
+
+                    elasticsearchService.fetchAll(PIPELINES_INDEX) //Fetch all pipelines
+                            .compose(pipelines->Future.succeededFuture(pipelines.stream()
+                                    .filter(p->p.getString("id").equals(execution.getString("pipelineId"))).findFirst()
+                                    .orElseThrow(
+                                            ()->new RuntimeException("PipelineId: " + execution.getString("pipelineId") +  " for execution: " +  execution.getString("id") + " could not be found!")))) //Filter out all pipelines except the one for this execution
+                            .compose(pipeline->elasticsearchService.fetchAll(pipeline.getString("timelineIndex"))) //Fetch all the timelines for this pipeline
+                            .compose(timelines->Future.succeededFuture(timelines.stream().filter(t->timelineIds.contains(t.getString("id"))).collect(Collectors.toList()))) //Return only the timelines involved in this execution
+                            .onSuccess(filteredTimelines->simpleJsonListResponse(filteredTimelines, rc))
+                            .onFailure(err->{
+                                log.error(err.getMessage(), err);
+                                rc.fail(500, err);
+                            })
+                    ;
+
+                }
+        ).onFailure(err->{
+            log.error(err.getMessage(), err);
+            rc.fail(500, err);
+                });
+    }
+
+    void getTimelines(RoutingContext rc){
+        UUID pipelineId = UUID.fromString(rc.pathParam("pipelineId"));
+
+        //TODO -> One day replace this with a more specific query that fetches the exact pipeline by id
+        elasticsearchService.fetchAll(PIPELINES_INDEX).compose(pipelines->
+                Future.succeededFuture(pipelines.stream()
+                        .filter(p->p.getString("id").equals(pipelineId.toString()))
+                        .findFirst().get()
+                )).compose(pipeline->elasticsearchService.fetchAll(pipeline.getString("timelineIndex")))
+                .onSuccess(timelines->simpleJsonListResponse(timelines, rc)).onFailure(err->rc.fail(500, err))
+        ;
+
+    }
+
     void getPipelines(RoutingContext rc){
         elasticsearchService.fetchAll(PIPELINES_INDEX)
-                .onSuccess(pipelines->{
-                    JsonArray response = pipelines.stream().collect(JsonArray::new, JsonArray::add,JsonArray::addAll);
-                    rc.response().setStatusCode(200).end(response.encode());
-                });
+                .onSuccess(pipelines->simpleJsonListResponse(pipelines, rc));
     }
 
     void getDistances(RoutingContext rc){
@@ -291,9 +342,7 @@ public class TimelineWebApp extends AbstractVerticle {
         return result;
     }
 
-    void getTimelines(RoutingContext rc){
 
-    }
 
     /**
      * Return a list of timelines available on the server.
@@ -374,6 +423,11 @@ public class TimelineWebApp extends AbstractVerticle {
             }
 
         }
+    }
+
+    void simpleJsonListResponse(List<JsonObject> data, RoutingContext rc){
+        JsonArray response = data.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+        rc.response().setStatusCode(200).end(response.encode());
     }
 
 }
