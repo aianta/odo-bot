@@ -12,4 +12,8 @@ public class Constants {
     public static final String PREPROCESSING_DATA_DIR = "/preprocessing_data/";
     public static final String EXECUTIONS_INDEX = "preprocessing-pipeline-executions";
     public static final String PIPELINES_INDEX = "preprocessing-pipelines";
+    public static final String ROOT_DATA_DIR = "data_artifacts";
+    public static final String BPMN_FILE_NAME = "bpmn.png";
+    public static final String XES_FILE_NAME = "log.xes";
+    public static final String EXECUTION_FILE_NAME = "execution.json";
 }

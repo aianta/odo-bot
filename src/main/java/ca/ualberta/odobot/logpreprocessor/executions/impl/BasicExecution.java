@@ -29,6 +29,7 @@ public class BasicExecution implements PreprocessingPipelineExecution {
     Instant endTimestamp;
     UUID id;
     UUID pipelineId;
+    String dataPath;
 
     PreprocessingPipelineExecutionStatus status = new AbstractPreprocessingPipelineExecutionStatus.Initialized();
 
@@ -39,6 +40,8 @@ public class BasicExecution implements PreprocessingPipelineExecution {
     public BasicExecution(JsonObject input){
         this.id = UUID.fromString(input.getString("id"));
         this.pipelineId = UUID.fromString(input.getString("pipelineId"));
+
+        this.dataPath = input.containsKey("dataPath")?input.getString("dataPath"):null;
 
         JsonObject indexTimelineMappings = input.getJsonObject("indexTimelineMappings");
         indexTimelineMappings.forEach(entry->{
@@ -134,6 +137,10 @@ public class BasicExecution implements PreprocessingPipelineExecution {
         return endTimestamp.toEpochMilli();
     }
 
+    public String dataPath(){
+        return dataPath;
+    }
+
     @Override
     public PreprocessingPipelineExecutionStatus status() {
         return status;
@@ -155,6 +162,10 @@ public class BasicExecution implements PreprocessingPipelineExecution {
                 .put("entityIds", entityIds.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll))
                 .put("visualizations", visualizations.stream().map(record->record.toJson()).collect(JsonArray::new, JsonArray::add, JsonArray::addAll))
                 .put("status", status().toJson());
+
+        if(dataPath() != null){
+            result.put("dataPath", dataPath());
+        }
 
         if(activityLabelingId != null){
             result.put("activityLabelingId", activityLabelingId.toString());
@@ -205,5 +216,9 @@ public class BasicExecution implements PreprocessingPipelineExecution {
 
     public void setStatus(PreprocessingPipelineExecutionStatus status) {
         this.status = status;
+    }
+
+    public void setDataPath(String dataPath){
+        this.dataPath = dataPath;
     }
 }

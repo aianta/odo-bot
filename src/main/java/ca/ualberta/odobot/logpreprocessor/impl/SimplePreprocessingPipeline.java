@@ -151,7 +151,7 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
         XLog xesLog = transformer.parse(timelines, activityLabels);
 
 
-        File out = new File("log.xes");
+        File out = new File(XES_FILE_NAME);
         transformer.save(xesLog, out);
         promise.complete(out);
         return promise.future();

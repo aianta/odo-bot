@@ -107,6 +107,8 @@ public interface PreprocessingPipelineExecution {
      */
     JsonObject toJson();
 
+    String dataPath();
+
     void registerTimeline(String index, UUID timeline);
 
 }

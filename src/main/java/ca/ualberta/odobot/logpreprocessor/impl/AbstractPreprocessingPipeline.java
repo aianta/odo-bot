@@ -27,6 +27,9 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -298,12 +301,20 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
         JsonArray timelinesJson = timelines.stream().map(Timeline::toJson).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
 
         makeXes(timelinesJson, activities).onSuccess(xesFile->{
+            try{
                 //Update execution metadata
                 if(execution != null){
-                    execution.setXes(new ExternalArtifact(ExternalArtifact.Location.LOCAL_FILE_SYSTEM, xesFile.toPath().toString()));
+                    var xesPath = Path.of(execution.dataPath(), XES_FILE_NAME);
+                    execution.setXes(new ExternalArtifact(ExternalArtifact.Location.LOCAL_FILE_SYSTEM, xesPath.toString()));
+                    Files.copy(xesFile.toPath(), xesPath);
                 }
                 rc.put("xesFile", xesFile);
                 rc.next();
+            }catch (IOException e){
+                log.error(e.getMessage(), e);
+                rc.fail(500, e);
+            }
+
         }).onFailure(err->{
             rc.fail(500, err);
         });
@@ -319,14 +330,15 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
             execution.status().data().put("step","processModelVisualizationHandler");
         }
 
-        File xesInput = new File("log.xes");
+        File xesInput = new File(Path.of(execution.dataPath(), XES_FILE_NAME).toString());
 
 
         makeModelVisualization(xesInput).onSuccess(
                 visualization->{
                     //Update execution metadata
                     if (execution != null){
-                        execution.processModelVisualizations().add(new ExternalArtifact(ExternalArtifact.Location.LOCAL_FILE_SYSTEM, "bpmn.png"));
+                        var bpmnPath = Path.of(execution.dataPath(), BPMN_FILE_NAME);
+                        execution.processModelVisualizations().add(new ExternalArtifact(ExternalArtifact.Location.LOCAL_FILE_SYSTEM, bpmnPath.toString()));
                     }
 
                     rc.put("bpmnVisualization", visualization);
@@ -374,7 +386,7 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
         PipelinePersistenceLayer persistenceLayer = new PipelinePersistenceLayer();
 
         //Timeline persistence
-        persistenceLayer.<List<Timeline>>registerPersistence("timelines", (timelines)->{
+        persistenceLayer.<List<Timeline>, BasicExecution>registerPersistence("timelines", (timelines, execution)->{
             //Convert to List<JsonObject> for transit over eventbus
             List<JsonObject> json = timelines.stream().map(Timeline::toJson).collect(Collectors.toList());
 
@@ -390,7 +402,7 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
         }, PipelinePersistenceLayer.PersistenceType.ONCE);
 
         //Entity persistence
-        persistenceLayer.<List<JsonObject>>registerPersistence("entities", (entities)->{
+        persistenceLayer.<List<JsonObject>, BasicExecution>registerPersistence("entities", (entities, execution)->{
             final String entitiesString = entities.stream().map(entity->entity.getString("id")).collect(StringBuilder::new, (sb, id)->sb.append(id + ", "), StringBuilder::append).toString();
             elasticsearchService.saveIntoIndex(entities, timelineEntityIndex()).onSuccess(done->{
                 log.info("Entities {} persisted in elasticsearch index: {}", entitiesString, timelineEntityIndex());
@@ -403,23 +415,37 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
         /**
          * Metadata {@link BasicExecution} persistence
          */
-        persistenceLayer.<BasicExecution>registerPersistence("metadata", (execution)->{
+        persistenceLayer.<BasicExecution, BasicExecution>registerPersistence("metadata", (execution, ex)->{
             elasticsearchService.updateExecution(execution)
                     .onSuccess(done->log.info("Execution record updated!"))
                     .onFailure(err->log.error(err.getMessage(),err))
             ;
+
+            try{
+                var executionLocalRecordPath = Path.of(execution.dataPath(), EXECUTION_FILE_NAME);
+                if(Files.exists(executionLocalRecordPath)){ //Clear any old execution record.
+                    Files.delete(executionLocalRecordPath);
+                }
+                vertx.fileSystem().rxWriteFile(executionLocalRecordPath.toString(),Buffer.buffer(execution.toJson().encodePrettily())).subscribe();
+            } catch (IOException ioException) {
+                log.error("Error writing execution record to disk.");
+                log.error(ioException.getMessage(), ioException);
+
+            }
+
         }, PipelinePersistenceLayer.PersistenceType.ALWAYS);
 
         //ActivityLabeling persistence
-        persistenceLayer.<JsonObject>registerPersistence("activities", (activities)->{
+        persistenceLayer.<JsonObject, BasicExecution>registerPersistence("activities", (activities, execution)->{
             elasticsearchService.saveIntoIndex(List.of(activities), activityLabelIndex())
                     .onSuccess(done->log.info("Activity labels persisted!"))
                     .onFailure(err->log.error(err.getMessage(), err));
         }, PipelinePersistenceLayer.PersistenceType.ONCE);
 
         //BPMN visualization persistence
-        persistenceLayer.<Buffer>registerPersistence("bpmnVisualization", (data)->{
-            vertx.fileSystem().rxWriteFile("bpmn.png", data).subscribe(()->log.info("bpmn visualization saved!"));
+        persistenceLayer.<Buffer, BasicExecution>registerPersistence("bpmnVisualization", (data, execution)->{
+            ExternalArtifact bpmnArtifact = execution.processModelVisualizations().stream().filter(artifact->artifact.path().contains(BPMN_FILE_NAME)).findFirst().get();
+            vertx.fileSystem().rxWriteFile(bpmnArtifact.path(), data).subscribe(()->log.info("bpmn visualization saved!"));
         }, PipelinePersistenceLayer.PersistenceType.ONCE);
 
         return persistenceLayer;
