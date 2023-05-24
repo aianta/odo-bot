@@ -31,11 +31,40 @@ import static ca.ualberta.odobot.logpreprocessor.Constants.*;
 public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline implements PreprocessingPipeline {
 
     private static final Logger log = LoggerFactory.getLogger(SimplePreprocessingPipeline.class);
+    private Multimap<Class, SemanticArtifactExtractor> extractorMultimap = null;
 
     public SimplePreprocessingPipeline(Vertx vertx, UUID id, String slug, String name){
         super(vertx, slug);
         setId(id);
         setName(name);
+
+        //Semantic artifact extraction config
+        extractorMultimap = ArrayListMultimap.create();
+        extractorMultimap.put(ClickEvent.class, new SimpleClickEventTermsExtractor());
+        extractorMultimap.put(ClickEvent.class, new SimpleClickEventIdTermsExtractor());
+        extractorMultimap.put(ClickEvent.class, new SimpleClickEventCssClassTermsExtractor());
+        extractorMultimap.put(Effect.class, new NoZeroTermsEffectExtractor());
+        extractorMultimap.put(Effect.class, new SimpleEffectCssClassTermsExtractor());
+        extractorMultimap.put(Effect.class, new SimpleEffectIdTermsExtractor());
+        extractorMultimap.put(DataEntry.class, new SimpleDataEntryTermsExtractor());
+        extractorMultimap.put(DataEntry.class, new SimpleDataEntryCssClassTermsExtractor());
+        extractorMultimap.put(DataEntry.class, new SimpleDataEntryIdTermsExtractor());
+
+    }
+
+    public JsonObject toJson(){
+        JsonObject result = super.toJson();
+
+        result.put("class", getClass().getName());
+
+        JsonObject extractionConfig = new JsonObject();
+        extractorMultimap.forEach((timelineEntityClass, extractor)->{
+            extractionConfig.put(timelineEntityClass.getName(), extractionConfig.getJsonArray(timelineEntityClass.getName(), new JsonArray()).add(extractor.getClass().getName()));
+        });
+
+        result.put("extractionConfig", extractionConfig);
+
+        return result;
     }
 
     @Override
@@ -51,18 +80,6 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
                     //Timeline data structure construction
                     Timeline timeline = sequencer.parse(events);
                     timeline.getAnnotations().put("source-index", index);
-
-                    //Semantic artifact extraction config
-                    Multimap<Class,SemanticArtifactExtractor> extractorMultimap = ArrayListMultimap.create();
-                    extractorMultimap.put(ClickEvent.class, new SimpleClickEventTermsExtractor());
-                    extractorMultimap.put(ClickEvent.class, new SimpleClickEventIdTermsExtractor());
-                    extractorMultimap.put(ClickEvent.class, new SimpleClickEventCssClassTermsExtractor());
-                    extractorMultimap.put(Effect.class, new NoZeroTermsEffectExtractor());
-                    extractorMultimap.put(Effect.class, new SimpleEffectCssClassTermsExtractor());
-                    extractorMultimap.put(Effect.class, new SimpleEffectIdTermsExtractor());
-                    extractorMultimap.put(DataEntry.class, new SimpleDataEntryTermsExtractor());
-                    extractorMultimap.put(DataEntry.class, new SimpleDataEntryCssClassTermsExtractor());
-                    extractorMultimap.put(DataEntry.class, new SimpleDataEntryIdTermsExtractor());
 
 
                     /**
@@ -112,7 +129,10 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
 
         client.post(DEEP_SERVICE_PORT, DEEP_SERVICE_HOST,DEEP_SERVICE_ACTIVITY_LABELS_ENDPOINT)
                 .rxSendJsonObject(requestObject)
-                .doOnError(super::genericErrorHandler)
+                .doOnError(err->{
+                    promise.fail(err);
+                    super.genericErrorHandler(err);
+                })
                 .subscribe(response->{
                     JsonObject data = response.bodyAsJsonObject();
                     log.info("{}", data.encodePrettily());

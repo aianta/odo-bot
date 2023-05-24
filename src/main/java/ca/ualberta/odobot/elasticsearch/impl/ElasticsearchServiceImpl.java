@@ -99,6 +99,14 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
          *     https://www.elastic.co/guide/en/elasticsearch/reference/current/paginate-search-results.html#search-after
          */
         try{
+
+
+            boolean indexExists = client.indices().exists(e->e.index(index)).value();
+            if(!indexExists){
+                //If the index doesn't exist there is nothing to fetch.
+                return Future.succeededFuture(List.of());
+            }
+
             log.info("Creating PIT");
 
             //Index is specified through PIT request.
@@ -110,7 +118,7 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
                  * No sort info for the first request, that's what makes it the initial request.
                  * NOTE: DO NOT CONFUSE SORT INFO FOR SORT OPTIONS!!
                  */
-                log.info("Harvesting events from index: {}", index);
+                log.info("Harvesting documents from index: {}", index);
                 SearchRequest initialRequest = fetchAllRequest(pitResponse.id(), keepAliveValue, options, null);
 
                 SearchResponse<JsonData> search = client.search(initialRequest, JsonData.class);

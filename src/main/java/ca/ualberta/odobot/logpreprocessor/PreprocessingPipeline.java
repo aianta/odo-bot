@@ -8,7 +8,6 @@ import io.vertx.core.Future;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.core.buffer.Buffer;
-import io.vertx.rxjava3.ext.web.RoutingContext;
 
 import java.io.File;
 import java.util.List;
@@ -16,6 +15,8 @@ import java.util.Map;
 import java.util.UUID;
 
 public interface PreprocessingPipeline extends PipelineService {
+
+    JsonObject toJson();
 
     String name();
 

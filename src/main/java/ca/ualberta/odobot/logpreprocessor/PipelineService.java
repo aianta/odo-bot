@@ -1,7 +1,6 @@
 package ca.ualberta.odobot.logpreprocessor;
 
-import ca.ualberta.odobot.logpreprocessor.exceptions.BadRequest;
-import io.vertx.rxjava3.ext.web.Route;
+
 import io.vertx.rxjava3.ext.web.RoutingContext;
 
 public interface PipelineService {
@@ -19,8 +18,6 @@ public interface PipelineService {
     void activityLabelsHandler(RoutingContext rc);
 
     void timelineEntitiesHandler(RoutingContext rc);
-
-    void executeHandler(RoutingContext rc);
 
     void timelinesHandler(RoutingContext rc);
 

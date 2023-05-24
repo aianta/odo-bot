@@ -1,9 +1,11 @@
 package ca.ualberta.odobot.web;
 
 
+import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 import io.reactivex.rxjava3.core.Completable;
 
 import io.vertx.core.Future;
+import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.JsonArray;
@@ -30,8 +32,7 @@ import java.nio.file.Path;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-import static ca.ualberta.odobot.logpreprocessor.Constants.DEEP_SERVICE_HOST;
-import static ca.ualberta.odobot.logpreprocessor.Constants.DEEP_SERVICE_PORT;
+import static ca.ualberta.odobot.logpreprocessor.Constants.*;
 
 public class TimelineWebApp extends AbstractVerticle {
 
@@ -44,6 +45,8 @@ public class TimelineWebApp extends AbstractVerticle {
 
     private static final String DEEP_SERVICE_EMBEDDING_ENDPOINT = "/embeddings/";
     private static final String DEEP_SERVICE_DISTANCES_ENDPOINT = "/embeddings/distance";
+
+    private ElasticsearchService elasticsearchService;
 
     HttpServer server;
     Router mainRouter;
@@ -68,9 +71,11 @@ public class TimelineWebApp extends AbstractVerticle {
         client = WebClient.create(vertx);
 
         try{
+            log.info("Initializing Elasticsearch Service Proxy");
+            elasticsearchService = ElasticsearchService.createProxy(vertx.getDelegate(), ELASTICSEARCH_SERVICE_ADDRESS);
+
             log.info("Starting Timeline Web App");
-            log.info("Loading timelines and annotations...");
-            loadTimelinesAndAnnotations();
+
 
             HttpServerOptions options = new HttpServerOptions()
                     .setHost(HOST)
@@ -82,6 +87,7 @@ public class TimelineWebApp extends AbstractVerticle {
             api = Router.router(vertx);
 
             //Define API routes
+            api.route().method(HttpMethod.GET).path("/pipelines").handler(this::getPipelines);
             api.route().method(HttpMethod.GET).path("/timelines").handler(this::getTimelines);
             api.route().method(HttpMethod.GET).path("/curated/timelines").handler(this::getCuratedTimelines);
             api.route().method(HttpMethod.GET).path("/annotations/:timelineId/").handler(this::getAnnotation);
@@ -112,6 +118,14 @@ public class TimelineWebApp extends AbstractVerticle {
             log.error(e.getMessage(),e);
         }
         return super.rxStart();
+    }
+
+    void getPipelines(RoutingContext rc){
+        elasticsearchService.fetchAll(PIPELINES_INDEX)
+                .onSuccess(pipelines->{
+                    JsonArray response = pipelines.stream().collect(JsonArray::new, JsonArray::add,JsonArray::addAll);
+                    rc.response().setStatusCode(200).end(response.encode());
+                });
     }
 
     void getDistances(RoutingContext rc){
@@ -277,11 +291,15 @@ public class TimelineWebApp extends AbstractVerticle {
         return result;
     }
 
+    void getTimelines(RoutingContext rc){
+
+    }
+
     /**
      * Return a list of timelines available on the server.
      * @param rc
      */
-    void getTimelines(RoutingContext rc){
+    void getTimelinesOld(RoutingContext rc){
         rc.response().putHeader("Content-Type", "application/json")
                 .end(
                         timelines.entrySet().stream()
