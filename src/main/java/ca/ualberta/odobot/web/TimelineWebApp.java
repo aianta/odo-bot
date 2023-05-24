@@ -89,10 +89,23 @@ public class TimelineWebApp extends AbstractVerticle {
 
             //Define API routes
             api.route().method(HttpMethod.GET).path("/pipelines").handler(this::getPipelines);
-            api.route().method(HttpMethod.GET).path("/executions").handler(this::getExecutions);
             api.route().method(HttpMethod.GET).path("/pipelines/:pipelineId/timelines").handler(this::getTimelines);
+
+            api.route().method(HttpMethod.GET).path("/executions").handler(this::getExecutions);
+            api.route().method(HttpMethod.GET).path("/executions/:executionId/*").handler(this::resolveExecution);
+            api.route().method(HttpMethod.GET).path("/executions/:executionId/*").handler(this::resolvePipeline);
+            api.route().method(HttpMethod.GET).path("/executions/:executionId/timelines").handler(this::resolveTimelines);
             api.route().method(HttpMethod.GET).path("/executions/:executionId/timelines").handler(this::getExecutionTimelines);
+            api.route().method(HttpMethod.GET).path("/executions/:executionId/timelineEntities").handler(this::resolveTimelineEntities);
+            api.route().method(HttpMethod.GET).path("/executions/:executionId/timelineEntities").handler(this::getTimelineEntities);
+            api.route().method(HttpMethod.GET).path("/executions/:executionId/activityLabels").handler(this::resolveActivityLabels);
+            api.route().method(HttpMethod.GET).path("/executions/:executionId/activityLabels").handler(this::getActivityLabels);
+            api.route().method(HttpMethod.GET).path("/executions/:executionId/activity/:label/*").handler(this::resolveActivityLabels);
+            api.route().method(HttpMethod.GET).path("/executions/:executionId/activity/:label/*").handler(this::resolveTimelineEntities);
+            api.route().method(HttpMethod.GET).path("/executions/:executionId/activity/:label/timelineEntities").handler(this::lookupActivityLabel);
+
             api.route().failureHandler(rc->{
+                log.error(rc.failure().getMessage(), rc.failure());
                 JsonObject errObject = new JsonObject()
                         .put("error", rc.failure().getMessage());
                 rc.response().setStatusCode(rc.statusCode()).end(errObject.encode());
@@ -122,6 +135,102 @@ public class TimelineWebApp extends AbstractVerticle {
         return super.rxStart();
     }
 
+    void lookupActivityLabel(RoutingContext rc){
+        String labelToLookup = rc.pathParam("label");
+
+        JsonObject mappings = ((JsonObject)rc.get("activityLabels")).getJsonObject("mappings");
+        List<JsonObject> entities = rc.get("entities");
+
+        Set<String> entityIdsWithSpecifiedLabel = new HashSet<>();
+        mappings.forEach(entry->{
+            if(((String)entry.getValue()).equals(labelToLookup)){
+                entityIdsWithSpecifiedLabel.add(entry.getKey());
+            }
+        });
+
+        JsonArray response = entities.stream().filter(e->entityIdsWithSpecifiedLabel.contains(e.getString("id"))).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+        rc.response().setStatusCode(200).end(response.encode());
+    }
+
+    void getActivityLabels(RoutingContext rc){
+        rc.response().setStatusCode(200).end(((JsonObject)rc.get("activityLabels")).encode());
+    }
+
+    void resolveActivityLabels(RoutingContext rc){
+        JsonObject execution = rc.get("execution");
+        JsonObject pipeline = rc.get("pipeline");
+
+        String activityLabelingId = execution.getString("activityLabelingId");
+        elasticsearchService.fetchAll(pipeline.getString("activityLabelIndex")).compose(
+                activityLabelings->
+                        Future.succeededFuture(activityLabelings.stream().filter(l->l.getString("id").equals(activityLabelingId)).findFirst()
+                        .orElseThrow(()->new RuntimeException("Could not find activity labelling " + activityLabelingId + " for execution " + execution.getString("id") + " in pipeline " +  pipeline.getString("id"))))
+        ).onSuccess(activityLabeling->{
+            rc.put("activityLabels", activityLabeling);
+            rc.next();
+        }).onFailure(err->rc.fail(500, err));
+    }
+
+    void resolveTimelineEntities(RoutingContext rc){
+        JsonObject execution = rc.get("execution");
+        JsonObject pipeline = rc.get("pipeline");
+
+        Set<String> entityIds = execution.getJsonArray("entityIds").stream().map(o->(String)o).collect(Collectors.toSet());
+
+        elasticsearchService.fetchAll(pipeline.getString("timelineEntityIndex"))
+                .compose(entities->Future.succeededFuture(entities.stream().filter(e->entityIds.contains(e.getString("id"))).collect(Collectors.toList())))
+                .onSuccess(entities->{
+                    rc.put("entities", entities);
+                    rc.next();
+                })
+                .onFailure(err->rc.fail(500, err))
+        ;
+    }
+
+    void resolveTimelines(RoutingContext rc){
+        JsonObject execution = rc.get("execution");
+        JsonObject pipeline = rc.get("pipeline");
+
+        //Create a set of timeline ids involved in this execution
+        Set<String> timelineIds = execution.getJsonArray("timelineIds").stream().map(o->(String)o).collect(Collectors.toSet());
+
+        elasticsearchService.fetchAll(pipeline.getString("timelineIndex")) //Fetch all the timelines for this pipeline
+                .onSuccess(timelines->{
+                    List<JsonObject> result = timelines.stream().filter(t->timelineIds.contains(t.getString("id"))).collect(Collectors.toList());
+                    rc.put("timelines", result);
+                    rc.next();
+                }) //Return only the timelines involved in this execution
+                .onFailure(err->rc.fail(500, err));
+
+
+    }
+
+    void resolvePipeline(RoutingContext rc){
+        JsonObject execution = rc.get("execution");
+
+        elasticsearchService.fetchAll(PIPELINES_INDEX) //Fetch all pipelines
+                .compose(pipelines->Future.succeededFuture(pipelines.stream()
+                        .filter(p->p.getString("id").equals(execution.getString("pipelineId"))).findFirst()
+                        .orElseThrow(
+                                ()->new RuntimeException("PipelineId: " + execution.getString("pipelineId") +  " for execution: " +  execution.getString("id") + " could not be found!")))) //Filter out all pipelines except the one for this execution
+                .onSuccess(pipeline->{
+                    rc.put("pipeline", pipeline);
+                    rc.next();
+                }).onFailure(err->rc.fail(500, err));
+    }
+
+    void resolveExecution(RoutingContext rc){
+        String executionId = rc.pathParam("executionId");
+        elasticsearchService.fetchAll(EXECUTIONS_INDEX) //Fetch all executions
+                .compose(executions->Future.succeededFuture(executions.stream().filter(e->e.getString("id").equals(executionId.toString())).findFirst()
+                        .orElseThrow(()->new RuntimeException("Could not find execution with id " + executionId)))) //Filter out the execution for this request
+                .onSuccess(execution->{
+                    rc.put("execution", execution);
+                    rc.next();
+                })
+                .onFailure(err->rc.fail(500, err));
+
+    }
 
     void getExecutions(RoutingContext rc){
         elasticsearchService.fetchAll(EXECUTIONS_INDEX)
@@ -130,34 +239,8 @@ public class TimelineWebApp extends AbstractVerticle {
     }
 
     void getExecutionTimelines(RoutingContext rc){
-        UUID executionId = UUID.fromString(rc.pathParam("executionId"));
-
-        elasticsearchService.fetchAll(EXECUTIONS_INDEX) //Fetch all executions
-                .compose(executions->Future.succeededFuture(executions.stream().filter(e->e.getString("id").equals(executionId.toString())).findFirst().get())) //Filter out the execution for this request
-                .onSuccess(
-                execution->{
-                    //Create a set of timeline ids involved in this execution
-                    Set<String> timelineIds = execution.getJsonArray("timelineIds").stream().map(o->(String)o).collect(Collectors.toSet());
-
-                    elasticsearchService.fetchAll(PIPELINES_INDEX) //Fetch all pipelines
-                            .compose(pipelines->Future.succeededFuture(pipelines.stream()
-                                    .filter(p->p.getString("id").equals(execution.getString("pipelineId"))).findFirst()
-                                    .orElseThrow(
-                                            ()->new RuntimeException("PipelineId: " + execution.getString("pipelineId") +  " for execution: " +  execution.getString("id") + " could not be found!")))) //Filter out all pipelines except the one for this execution
-                            .compose(pipeline->elasticsearchService.fetchAll(pipeline.getString("timelineIndex"))) //Fetch all the timelines for this pipeline
-                            .compose(timelines->Future.succeededFuture(timelines.stream().filter(t->timelineIds.contains(t.getString("id"))).collect(Collectors.toList()))) //Return only the timelines involved in this execution
-                            .onSuccess(filteredTimelines->simpleJsonListResponse(filteredTimelines, rc))
-                            .onFailure(err->{
-                                log.error(err.getMessage(), err);
-                                rc.fail(500, err);
-                            })
-                    ;
-
-                }
-        ).onFailure(err->{
-            log.error(err.getMessage(), err);
-            rc.fail(500, err);
-                });
+        List<JsonObject> timelines = rc.get("timelines");
+        simpleJsonListResponse(timelines, rc);
     }
 
     void getTimelines(RoutingContext rc){
@@ -304,22 +387,8 @@ public class TimelineWebApp extends AbstractVerticle {
      * @param rc
      */
     void getTimelineEntities(RoutingContext rc){
-
-        List<String> symbols = rc.queryParam("symbol");
-
-        JsonArray result = null;
-        if(symbols.size() > 0){
-            result = getEntities(new EntityFilters.hasSymbolAndHasTerms(symbols));
-        }else{
-            result = getEntities(new EntityFilters.hasTerms());
-        }
-
-        rc.response().setStatusCode(200).putHeader("Content-Type", "application/json")
-                .end(
-                    result.encode()
-                );
-
-
+       List<JsonObject> entities = rc.get("entities");
+       simpleJsonListResponse(entities, rc);
     }
 
     private JsonArray getEntities(Predicate<JsonObject> filter){
