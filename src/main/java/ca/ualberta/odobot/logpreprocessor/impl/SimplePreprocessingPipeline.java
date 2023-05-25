@@ -158,18 +158,35 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
     }
 
     @Override
-    public Future<Buffer> makeModelVisualization(File xes) {
+    public Future<Map<String,Buffer>> makeModelVisualization(File xes) {
         log.info("Making visualization");
-        Promise<Buffer> promise = Promise.promise();
+        Promise<Map<String,Buffer>> promise = Promise.promise();
         vertx.fileSystem().rxReadFile(xes.toPath().toString())
                 .doOnError(err->log.error(err.getMessage(),err))
                 .subscribe(buffer->{
             client.post(DEEP_SERVICE_PORT, DEEP_SERVICE_HOST, DEEP_SERVICE_MODEL_ENDPOINT).rxSendBuffer(buffer)
-                    .doOnError(err->promise.fail(err))
                     .doOnSuccess(response->{
-                        Buffer visualization = response.bodyAsBuffer();
-                        promise.complete(visualization);
-                    }).subscribe();
+                        try{
+                            Map<String,Buffer> results = new HashMap<>();
+                            JsonObject modelVisualization = response.bodyAsJsonObject();
+                            log.info("model visualization response:");
+                            log.info("{}", modelVisualization.encodePrettily());
+
+                            results.put(BPMN_KEY, Buffer.buffer(Base64.getDecoder().decode(modelVisualization.getString(BPMN_KEY))));
+                            results.put(TREE_KEY, Buffer.buffer(Base64.getDecoder().decode(modelVisualization.getString(TREE_KEY))));
+                            results.put(DFG_KEY, Buffer.buffer(Base64.getDecoder().decode(modelVisualization.getString(DFG_KEY))));
+                            results.put(PETRI_KEY, Buffer.buffer(Base64.getDecoder().decode(modelVisualization.getString(PETRI_KEY))));
+                            results.put(TRANSITION_KEY, Buffer.buffer(Base64.getDecoder().decode(modelVisualization.getString(TRANSITION_KEY))));
+
+                            promise.complete(results);
+                        }catch (Exception e){
+                            log.error(e.getMessage(), e);
+                            promise.fail(e);
+                        }
+
+                    })
+                    .doOnError(err->promise.fail(err))
+                    .subscribe();
 
         });
         return promise.future();

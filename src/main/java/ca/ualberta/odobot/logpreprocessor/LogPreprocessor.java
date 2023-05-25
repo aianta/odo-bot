@@ -137,13 +137,15 @@ public class LogPreprocessor extends AbstractVerticle {
         executeRoute.handler(pipeline::afterExecution);
         executeRoute.handler(persistenceLayer::persistenceHandler);
         executeRoute.handler(rc->{
-            rc.response().setStatusCode(200).putHeader("Content-Type", "image/png").end((Buffer)rc.get("bpmnVisualization"));
+//            rc.response().setStatusCode(200).putHeader("Content-Type", "image/png").end((Buffer)rc.get("bpmnVisualization"));
+            rc.response().setStatusCode(200).putHeader("Content-Type", "application/json").end(((BasicExecution)rc.get("metadata")).toJson().encode());
         });
         executeRoute.failureHandler(rc->{
             log.error("Execute Route failure handler invoked!");
             log.error(rc.failure().getMessage(), rc.failure());
             BasicExecution execution = rc.get("metadata");
             execution.setStatus(new AbstractPreprocessingPipelineExecutionStatus.Failed(execution.status().data().mergeIn(new JsonObject().put("error", rc.failure().getMessage()))));
+            execution.stop();
             log.info("Updated basic execution: {}", execution.id().toString());
             rc.next();
         });
@@ -164,7 +166,7 @@ public class LogPreprocessor extends AbstractVerticle {
     }
 
     /**
-     * Clears the {@link #TIMELINES_INDEX} and {@link #TIMELINE_ENTITIES_INDEX} indices.
+     * Clears the {@link Constants#EXECUTIONS_INDEX} and {@link Constants#PIPELINES_INDEX} indices.
      * @param rc
      */
     private void clearIndices(RoutingContext rc){

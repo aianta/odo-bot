@@ -50,7 +50,7 @@ public interface PreprocessingPipeline extends PipelineService {
     Future<File> makeXes(JsonArray timelines, JsonObject activityLabels);
 
 
-    Future<Buffer> makeModelVisualization(File xes);
+    Future<Map<String,Buffer>> makeModelVisualization(File xes);
 
 
 

@@ -2,17 +2,17 @@ package ca.ualberta.odobot.logpreprocessor;
 
 import ca.ualberta.odobot.logpreprocessor.executions.ExternalArtifact;
 import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
+import io.vertx.rxjava3.core.Vertx;
+import io.vertx.rxjava3.core.buffer.Buffer;
 import io.vertx.rxjava3.ext.web.RoutingContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.ROOT_DATA_DIR;
 
@@ -32,6 +32,7 @@ public class PipelinePersistenceLayer {
     public enum PersistenceType {
         ONCE, ALWAYS
     }
+
 
     Map<String, BiConsumer> persistenceTargets = new HashMap<>();
     Map<String, PersistenceType> typeMap = new HashMap<>();

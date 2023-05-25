@@ -31,6 +31,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
+import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.*;
@@ -334,14 +335,28 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
 
 
         makeModelVisualization(xesInput).onSuccess(
-                visualization->{
+                visualizations->{
+
+
+
                     //Update execution metadata
                     if (execution != null){
                         var bpmnPath = Path.of(execution.dataPath(), BPMN_FILE_NAME);
+                        var treePath = Path.of(execution.dataPath(), TREE_FILE_NAME);
+                        var dfgPath = Path.of(execution.dataPath(), DFG_FILE_NAME);
+                        var petriPath = Path.of(execution.dataPath(), PETRI_FILE_NAME);
+                        var transitionPath = Path.of(execution.dataPath(), TRANSITION_FILE_NAME);
+
                         execution.processModelVisualizations().add(new ExternalArtifact(ExternalArtifact.Location.LOCAL_FILE_SYSTEM, bpmnPath.toString()));
+                        execution.processModelVisualizations().add(new ExternalArtifact(ExternalArtifact.Location.LOCAL_FILE_SYSTEM, treePath.toString()));
+                        execution.processModelVisualizations().add(new ExternalArtifact(ExternalArtifact.Location.LOCAL_FILE_SYSTEM, dfgPath.toString()));
+                        execution.processModelVisualizations().add(new ExternalArtifact(ExternalArtifact.Location.LOCAL_FILE_SYSTEM, petriPath.toString()));
+                        execution.processModelVisualizations().add(new ExternalArtifact(ExternalArtifact.Location.LOCAL_FILE_SYSTEM, transitionPath.toString()));
                     }
 
-                    rc.put("bpmnVisualization", visualization);
+                    //Pack visualization data into routing context
+                    visualizations.forEach((key, buffer)->rc.put(key, buffer));
+
                     rc.next();
 
                 }
@@ -442,13 +457,35 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
                     .onFailure(err->log.error(err.getMessage(), err));
         }, PipelinePersistenceLayer.PersistenceType.ONCE);
 
-        //BPMN visualization persistence
-        persistenceLayer.<Buffer, BasicExecution>registerPersistence("bpmnVisualization", (data, execution)->{
-            ExternalArtifact bpmnArtifact = execution.processModelVisualizations().stream().filter(artifact->artifact.path().contains(BPMN_FILE_NAME)).findFirst().get();
-            vertx.fileSystem().rxWriteFile(bpmnArtifact.path(), data).subscribe(()->log.info("bpmn visualization saved!"));
-        }, PipelinePersistenceLayer.PersistenceType.ONCE);
+        //Visualization persistence
+        persistenceLayer.registerPersistence(BPMN_KEY, new VisualizationPersistence(vertx, BPMN_FILE_NAME), PipelinePersistenceLayer.PersistenceType.ONCE);
+        persistenceLayer.registerPersistence(TREE_KEY, new VisualizationPersistence(vertx, TREE_FILE_NAME), PipelinePersistenceLayer.PersistenceType.ONCE);
+        persistenceLayer.registerPersistence(DFG_KEY, new VisualizationPersistence(vertx, DFG_FILE_NAME), PipelinePersistenceLayer.PersistenceType.ONCE);
+        persistenceLayer.registerPersistence(PETRI_KEY, new VisualizationPersistence(vertx, PETRI_FILE_NAME), PipelinePersistenceLayer.PersistenceType.ONCE);
+        persistenceLayer.registerPersistence(TRANSITION_KEY, new VisualizationPersistence(vertx,TRANSITION_FILE_NAME), PipelinePersistenceLayer.PersistenceType.ONCE);
+
 
         return persistenceLayer;
+    }
+
+    /**
+     * Helper class for persisting process model visualizations
+     */
+    private static class VisualizationPersistence implements BiConsumer<Buffer, BasicExecution> {
+
+        String fileName;
+        Vertx vertx;
+
+        public VisualizationPersistence(Vertx vertx,String artifactKeyword){
+            this.fileName = artifactKeyword;
+            this.vertx = vertx;
+        }
+
+        @Override
+        public void accept(Buffer buffer, BasicExecution execution) {
+            ExternalArtifact artifact = execution.processModelVisualizations().stream().filter(a->a.path().contains(fileName)).findFirst().orElseThrow(()-> new RuntimeException("Could not find artifact with fileName: " + fileName));
+            vertx.fileSystem().rxWriteFile(artifact.path(), buffer).subscribe(()->log.info("{} visualization saved!", fileName));
+        }
     }
 
     /**
