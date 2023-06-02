@@ -73,6 +73,12 @@ public interface PreprocessingPipelineExecution {
     List<ExternalArtifact> processModelVisualizations();
 
     /**
+     * Figures that show how the results of applying elbow method to determine optimal clustering.
+     * @return retrieval information for clustering results produced during this execution.
+     */
+    List<ExternalArtifact> clusteringResults();
+
+    /**
      * @return retrieval information for the process model produced during this execution.
      */
     ExternalArtifact processModel();

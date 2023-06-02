@@ -56,6 +56,7 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
     private String timelineEntityIndex;
     private String activityLabelIndex;
     private String processModelStatsIndex;
+    protected PipelinePersistenceLayer persistenceLayer;
 
     public AbstractPreprocessingPipeline(Vertx vertx, String slug){
         this.vertx = vertx;
@@ -279,8 +280,22 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
                     //Update execution metadata
                     if(execution != null){
                         execution.setActivityLabelingId(UUID.fromString(activityLabels.getString("id")));
+
+                        //Extract clustering results figures for each type of event, and put them in the routing context for persistence
+                        activityLabels.forEach(entry->{
+                            if(entry.getKey().startsWith(CLUSTERING_RESULTS_FIELD_PREFIX)){
+                                rc.put(entry.getKey(), Buffer.buffer(Base64.getDecoder().decode((String)entry.getValue())));
+                                execution.clusteringResults().add(new ExternalArtifact(ExternalArtifact.Location.LOCAL_FILE_SYSTEM, Path.of(execution.dataPath(), entry.getKey() + ".png").toString()));
+                                persistenceLayer.<Buffer, BasicExecution>registerPersistence(entry.getKey(), (buffer, exec)->{
+                                    ExternalArtifact artifact = exec.clusteringResults().stream().filter(a->a.path().contains(entry.getKey())).findFirst().orElseThrow(()->new RuntimeException("Couldn't find clustring result " + entry.getKey() + " to persist"));
+                                    vertx.fileSystem().rxWriteFile(artifact.path(), buffer).subscribe(()->log.info("{} clustering saved!", artifact.path()));
+                                }, PipelinePersistenceLayer.PersistenceType.ONCE );
+                            }
+                        });
+
                     }
                     rc.put("activities", activityLabels);
+
                     rc.next();
                 })
                 .onFailure(err->{
@@ -398,7 +413,12 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
     }
 
     public PipelinePersistenceLayer persistenceLayer(){
+        if(persistenceLayer != null){
+            return  persistenceLayer;
+        }
+
         PipelinePersistenceLayer persistenceLayer = new PipelinePersistenceLayer();
+        this.persistenceLayer = persistenceLayer;
 
         //Timeline persistence
         persistenceLayer.<List<Timeline>, BasicExecution>registerPersistence("timelines", (timelines, execution)->{

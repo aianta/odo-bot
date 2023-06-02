@@ -16,13 +16,19 @@ import java.util.stream.Collectors;
 public class RunnableUtils {
 
     private static final Logger log = LoggerFactory.getLogger(RunnableUtils.class);
-    private static String DATA_PATH = "groundbreaker-1-24-04-2023.json";
+    private static String DATA_PATH = "listener-test-1-02-05-2023.json";
 
     public static void main(String args []){
 
         List<JsonObject> events = loadEvents(DATA_PATH);
+        events.stream().filter(e->e.containsKey("eventDetails_domSnapshot"))
+                .map(e->new JsonObject(e.getString("eventDetails_domSnapshot")))
+                .map(e->e.getString("outerHTML"))
+                .forEach(log::info);
 
-        printTimeline(events, "groundbreaker-1");
+
+
+//        printTimeline(events, "groundbreaker-1");
 
 
     }

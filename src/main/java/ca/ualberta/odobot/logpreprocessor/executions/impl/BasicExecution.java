@@ -25,6 +25,7 @@ public class BasicExecution implements PreprocessingPipelineExecution {
     UUID activityLabelingId;
     ExternalArtifact xes;
     List<ExternalArtifact> visualizations = new ArrayList<>();
+    List<ExternalArtifact> clusteringResults = new ArrayList<>();
     Instant startTimestamp;
     Instant endTimestamp;
     UUID id;
@@ -115,6 +116,11 @@ public class BasicExecution implements PreprocessingPipelineExecution {
     @Override
     public List<ExternalArtifact> processModelVisualizations() {
         return visualizations;
+    }
+
+    @Override
+    public List<ExternalArtifact> clusteringResults(){
+        return clusteringResults;
     }
 
     @Override
