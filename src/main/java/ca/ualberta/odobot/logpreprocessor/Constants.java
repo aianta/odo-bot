@@ -4,7 +4,7 @@ public class Constants {
 
     public static final String TIMELINE_SERVICE_ADDRESS = "timeline-service";
     public static final String ELASTICSEARCH_SERVICE_ADDRESS = "elasticsearch-service";
-    public static final String DEEP_SERVICE_HOST = "172.21.148.137";
+    public static final String DEEP_SERVICE_HOST = "172.20.79.67";
     public static final int DEEP_SERVICE_PORT = 5000;
     public static final String DEEP_SERVICE_ACTIVITY_LABELS_ENDPOINT = "/activitylabels/";
     public static final String DEEP_SERVICE_MODEL_ENDPOINT = "/model/";
@@ -26,4 +26,5 @@ public class Constants {
     public static final String XES_FILE_NAME = "log.xes";
     public static final String EXECUTION_FILE_NAME = "execution.json";
     public static final String CLUSTERING_RESULTS_FIELD_PREFIX = "clustering_results_";
+    public static final String DEEP_SERVICE_ACTIVITY_LABELS_V2_ENDPOINT = "/activitylabels/v2/";
 }

@@ -3,6 +3,7 @@ package ca.ualberta.odobot.logpreprocessor;
 import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 import ca.ualberta.odobot.logpreprocessor.executions.impl.AbstractPreprocessingPipelineExecutionStatus;
 import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
+import ca.ualberta.odobot.logpreprocessor.impl.EnhancedEmbeddingPipeline;
 import ca.ualberta.odobot.logpreprocessor.impl.SimplePreprocessingPipeline;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 
@@ -12,7 +13,6 @@ import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.core.AbstractVerticle;
-import io.vertx.rxjava3.core.buffer.Buffer;
 import io.vertx.rxjava3.core.http.HttpServer;
 import io.vertx.rxjava3.ext.web.Route;
 import io.vertx.rxjava3.ext.web.Router;
@@ -80,6 +80,7 @@ public class LogPreprocessor extends AbstractVerticle {
                     );
 
                     mountPipeline(api, pipeline);
+
                 });
             }else{ //Otherwise create a new pipeline
                 //Create simple preprocessing pipeline
@@ -87,11 +88,18 @@ public class LogPreprocessor extends AbstractVerticle {
                         vertx, UUID.randomUUID(), "test", "test pipeline"
                 );
 
-                elasticsearchService.saveIntoIndex(List.of(simplePipeline.toJson()), PIPELINES_INDEX).onSuccess(done->{
-                    log.info("Registered pipeline in elasticsearch");
+                PreprocessingPipeline enhancedEmbeddingsPipeline = new EnhancedEmbeddingPipeline(
+                        vertx, UUID.randomUUID(), "embeddings-v2", "First pipeline to use the /activitylabels/v2/ deepservice endpoint"
+                );
+
+
+                elasticsearchService.saveIntoIndex(List.of(simplePipeline.toJson(), enhancedEmbeddingsPipeline.toJson()), PIPELINES_INDEX).onSuccess(done->{
+                    log.info("Registered pipeline(s) in elasticsearch");
                 });
 
+                mountPipeline(api, enhancedEmbeddingsPipeline);
                 mountPipeline(api, simplePipeline);
+
             }
 
 

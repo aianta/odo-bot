@@ -174,6 +174,7 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
     @Override
     public Future<Void> saveIntoIndex(List<JsonObject> items, String index) {
         try{
+
             BulkRequest.Builder br = new BulkRequest.Builder();
 
             items.forEach(document->{
@@ -247,7 +248,7 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
             Hit<JsonData> curr = it.next();
             resultsSoFar.add(JsonDataUtility.fromJsonData(curr.source()));
             sortInfo = curr.sort();
-            log.info("SortInfo: {}", sortInfo.toString());
+            //log.info("SortInfo: {}", sortInfo.toString());
         }
 
         //Update the search request with the last sort information from the last result.
