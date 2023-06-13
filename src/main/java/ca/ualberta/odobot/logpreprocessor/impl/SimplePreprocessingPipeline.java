@@ -118,28 +118,8 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
 
     @Override
     public Future<JsonObject> makeActivityLabels(List<JsonObject> entities) {
-        log.info("Making activity labels");
-        Promise<JsonObject> promise = Promise.promise();
-        JsonArray entitiesJson = entities.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
-
-        JsonObject requestObject = new JsonObject()
-                .put("id", UUID.randomUUID().toString()).put("entities", entitiesJson);
-
-        log.info("requestObject: {}", requestObject.encodePrettily());
-
-        client.post(DEEP_SERVICE_PORT, DEEP_SERVICE_HOST,DEEP_SERVICE_ACTIVITY_LABELS_ENDPOINT)
-                .rxSendJsonObject(requestObject)
-                .doOnError(err->{
-                    promise.fail(err);
-                    super.genericErrorHandler(err);
-                })
-                .subscribe(response->{
-                    JsonObject data = response.bodyAsJsonObject();
-                    log.info("{}", data.encodePrettily());
-                   promise.complete(data);
-                });
-
-        return promise.future();
+        log.info("Making activity labels with activity labels endpoint v1");
+        return callActivityLabelEndpoint(DEEP_SERVICE_ACTIVITY_LABELS_ENDPOINT, entities);
     }
 
     @Override

@@ -5,6 +5,7 @@ import ca.ualberta.odobot.logpreprocessor.executions.impl.AbstractPreprocessingP
 import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
 import ca.ualberta.odobot.logpreprocessor.impl.EnhancedEmbeddingPipeline;
 import ca.ualberta.odobot.logpreprocessor.impl.SimplePreprocessingPipeline;
+import ca.ualberta.odobot.logpreprocessor.impl.TFIDFPipeline;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 
 import io.reactivex.rxjava3.core.Completable;
@@ -13,6 +14,7 @@ import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.core.AbstractVerticle;
+import io.vertx.rxjava3.core.Vertx;
 import io.vertx.rxjava3.core.http.HttpServer;
 import io.vertx.rxjava3.ext.web.Route;
 import io.vertx.rxjava3.ext.web.Router;
@@ -25,7 +27,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 
@@ -39,6 +45,8 @@ public class LogPreprocessor extends AbstractVerticle {
     private static final int PORT = 8078;
 
     private static ElasticsearchService elasticsearchService;
+
+    private Set<Class> mountedPipelines = new HashSet<>();
 
     Router mainRouter;
     Router api;
@@ -71,15 +79,33 @@ public class LogPreprocessor extends AbstractVerticle {
                 .onSuccess(pipelineRecords->{
             if(pipelineRecords.size() > 0){ //If we found pipeline records.
                 pipelineRecords.forEach(record->{
-                    UUID id = UUID.fromString(record.getString("id"));
-                    String slug = record.getString("slug");
-                    String name = record.getString("name");
 
-                    PreprocessingPipeline pipeline = new SimplePreprocessingPipeline(
-                            vertx, id, slug, name
-                    );
+                    try{
+                        UUID id = UUID.fromString(record.getString("id"));
+                        String slug = record.getString("slug");
+                        String name = record.getString("name");
+                        String className = record.getString("class");
 
-                    mountPipeline(api, pipeline);
+                        Class clazz = Class.forName(className);
+                        Constructor constructor = clazz.getConstructor(Vertx.class, UUID.class, String.class, String.class );
+
+                        PreprocessingPipeline pipeline = (PreprocessingPipeline) constructor.newInstance(vertx, id, slug, name);
+
+//                        PreprocessingPipeline pipeline = new SimplePreprocessingPipeline(
+//                                vertx, id, slug, name
+//                        );
+
+                        mountPipeline(api, pipeline);
+                    }catch (ClassNotFoundException | NoSuchMethodException e){
+                        log.error(e.getMessage(), e);
+                    } catch (InvocationTargetException e) {
+                        log.error(e.getMessage(), e);
+                    } catch (InstantiationException e) {
+                        log.error(e.getMessage(), e);
+                    } catch (IllegalAccessException e) {
+                        log.error(e.getMessage(), e);
+                    }
+
 
                 });
             }else{ //Otherwise create a new pipeline
@@ -89,11 +115,14 @@ public class LogPreprocessor extends AbstractVerticle {
                 );
 
                 PreprocessingPipeline enhancedEmbeddingsPipeline = new EnhancedEmbeddingPipeline(
-                        vertx, UUID.randomUUID(), "embeddings-v2", "First pipeline to use the /activitylabels/v2/ deepservice endpoint"
+                        vertx, UUID.randomUUID(), "embeddings-v2", "First pipeline to use the /activitylabels/v2/ deep service endpoint"
                 );
 
+                PreprocessingPipeline tfidfPipeline = new TFIDFPipeline(
+                        vertx, UUID.randomUUID(), "activity-labels-v3", "First pipeline to use tfidf /activitylabels/v3/ deep service endpoint"
+                );
 
-                elasticsearchService.saveIntoIndex(List.of(simplePipeline.toJson(), enhancedEmbeddingsPipeline.toJson()), PIPELINES_INDEX).onSuccess(done->{
+                elasticsearchService.saveIntoIndex(List.of(simplePipeline.toJson(), enhancedEmbeddingsPipeline.toJson(), tfidfPipeline.toJson()), PIPELINES_INDEX).onSuccess(done->{
                     log.info("Registered pipeline(s) in elasticsearch");
                 });
 
@@ -128,6 +157,13 @@ public class LogPreprocessor extends AbstractVerticle {
      * @param pipeline the pipeline to mount
      */
     private void mountPipeline(Router router, PreprocessingPipeline pipeline){
+        if(mountedPipelines.contains(pipeline.getClass())){
+            log.info("Pipeline with class {} already mounted.", pipeline.getClass().getName());
+            return;
+        }
+        mountedPipelines.add(pipeline.getClass());
+        log.info("Mounting [{}] {} - {}", pipeline.id().toString(), pipeline.slug(), pipeline.getClass().getName() );
+
         PipelinePersistenceLayer persistenceLayer = pipeline.persistenceLayer();
         Route executeRoute = api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + pipeline.slug() + "/execute");
 

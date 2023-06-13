@@ -60,6 +60,9 @@ public class BasicExecution implements PreprocessingPipelineExecution {
         JsonArray visualizations = input.getJsonArray("visualizations");
         this.visualizations = visualizations.stream().map(o->(JsonObject)o).map(ExternalArtifact::fromJson).collect(Collectors.toList());
 
+        JsonArray clusteringResults = input.getJsonArray("clusteringResults");
+        this.clusteringResults = clusteringResults.stream().map(o->(JsonObject)o).map(ExternalArtifact::fromJson).collect(Collectors.toList());
+
         this.startTimestamp = input.containsKey("startTimestamp")?Instant.ofEpochMilli(input.getLong("startTimestamp")):null;
         this.endTimestamp = input.containsKey("endTimestamp")?Instant.ofEpochMilli(input.getLong("endTimestamp")):null;
         this.status = AbstractPreprocessingPipelineExecutionStatus.fromJson(input.getJsonObject("status"));
@@ -167,6 +170,7 @@ public class BasicExecution implements PreprocessingPipelineExecution {
                 .put("timelineIds", timelineIds().stream().map(UUID::toString).collect(JsonArray::new, JsonArray::add, JsonArray::addAll))
                 .put("entityIds", entityIds.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll))
                 .put("visualizations", visualizations.stream().map(record->record.toJson()).collect(JsonArray::new, JsonArray::add, JsonArray::addAll))
+                .put("clusteringResults", clusteringResults().stream().map(record->record.toJson()).collect(JsonArray::new, JsonArray::add, JsonArray::addAll))
                 .put("status", status().toJson());
 
         if(dataPath() != null){

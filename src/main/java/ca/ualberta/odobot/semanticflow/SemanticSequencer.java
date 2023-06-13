@@ -126,28 +126,38 @@ public class SemanticSequencer {
                 }
                 break;
             case "customEvent":
-                if(event.getString("eventDetails_name").equals("DOM_EFFECT")){
-                    DomEffect domEffect = domEffectMapper.map(event);
+                switch (InteractionType.getType(event.getString("eventDetails_name"))){
+                    case DOM_EFFECT -> {
+                        DomEffect domEffect = domEffectMapper.map(event);
 
-                    if(domEffect == null) {return;} //TODO - I wonder why this was necessary
-                    domEffect.setTimestamp(ZonedDateTime.parse(event.getString(TIMESTAMP_FIELD), timeFormatter));
-                    /**
-                        Check if the last entity in the timeline is an {@link Effect},
-                        if so, add this domEffect to it. Otherwise, create a new Effect
-                        and add this domEffect to it before adding the created Effect to the timeline.
-                     */
-                    if(line.last() != null && line.last() instanceof Effect){
-                        Effect effect = (Effect) line.last();
-                        effect.add(domEffect);
+                        if(domEffect == null) {return;} //TODO - I wonder why this was necessary
+                        domEffect.setTimestamp(ZonedDateTime.parse(event.getString(TIMESTAMP_FIELD), timeFormatter));
+                        /**
+                         Check if the last entity in the timeline is an {@link Effect},
+                         if so, add this domEffect to it. Otherwise, create a new Effect
+                         and add this domEffect to it before adding the created Effect to the timeline.
+                         */
+                        if(line.last() != null && line.last() instanceof Effect){
+                            Effect effect = (Effect) line.last();
+                            effect.add(domEffect);
+                        }
+
+                        if(line.last() == null || !(line.last() instanceof Effect)){
+                            Effect effect = new Effect();
+                            effect.add(domEffect);
+                            line.add(effect);
+                        }
+
+                        log.info("handled DOM_EFFECT");
                     }
+                    case NETWORK_EVENT -> {
 
-                    if(line.last() == null || !(line.last() instanceof Effect)){
-                        Effect effect = new Effect();
-                        effect.add(domEffect);
-                        line.add(effect);
+                        log.info("TODO: Process Network Event!");
+
                     }
                 }
-                log.info("handled DOM_EFFECT");
+
+
         }
     }
 }

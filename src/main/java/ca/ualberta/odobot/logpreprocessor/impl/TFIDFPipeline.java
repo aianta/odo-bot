@@ -14,16 +14,17 @@ import java.util.UUID;
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.*;
 
-public class EnhancedEmbeddingPipeline extends SimplePreprocessingPipeline implements PreprocessingPipeline {
-    private static final Logger log = LoggerFactory.getLogger(EnhancedEmbeddingPipeline.class);
+public class TFIDFPipeline extends SimplePreprocessingPipeline implements PreprocessingPipeline {
 
-    public EnhancedEmbeddingPipeline(Vertx vertx, UUID id, String slug, String name) {
+    private static final Logger log = LoggerFactory.getLogger(TFIDFPipeline.class);
+
+    public TFIDFPipeline(Vertx vertx, UUID id, String slug, String name) {
         super(vertx, id, slug, name);
     }
 
+    @Override
     public Future<JsonObject> makeActivityLabels(List<JsonObject> entities){
-        log.info("Making activity labels with enhanced embeddings deep service endpoint");
-        return callActivityLabelEndpoint(DEEP_SERVICE_ACTIVITY_LABELS_V2_ENDPOINT, entities);
-
+        log.info("Making activity labels with embeddings v3 (tf-idf) deep service endpoint");
+       return callActivityLabelEndpoint(DEEP_SERVICE_ACTIVITY_LABELS_V3_ENDPOINT, entities);
     }
 }

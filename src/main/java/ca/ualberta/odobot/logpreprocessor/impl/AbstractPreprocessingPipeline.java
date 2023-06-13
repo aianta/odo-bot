@@ -15,6 +15,8 @@ import ca.ualberta.odobot.semanticflow.model.Timeline;
 
 import io.vertx.core.CompositeFuture;
 
+import io.vertx.core.Future;
+import io.vertx.core.Promise;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.core.Vertx;
@@ -166,7 +168,44 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
     }
 
     public void afterExecution(RoutingContext rc){
+
         BasicExecution execution = rc.get("metadata");
+
+        /**
+         * Look up all activity labels and print out JSON files with underlying events for each label
+         */
+        List<JsonObject> entities = rc.get("entities");
+        JsonObject mappings = ((JsonObject)rc.get("activities")).getJsonObject("mappings");
+        Set<String> uniqueActivityLabels = mappings.stream()
+                .map(entry->entry.getValue())
+                .map(value->(String)value)
+                .collect(Collectors.toSet());
+
+        for (String label: uniqueActivityLabels){
+
+            Set<String> entityIdsWithSpecifiedLabel = new HashSet<>();
+            mappings.forEach(entry->{
+                if(((String)entry.getValue()).equals(label)){
+                    entityIdsWithSpecifiedLabel.add(entry.getKey());
+                }
+            });
+
+            JsonArray clusteredEntities = entities.stream().filter(e->entityIdsWithSpecifiedLabel.contains(e.getString("id"))).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+            String artifactName = "underlying_" + label + ".json";
+            rc.put(artifactName, clusteredEntities);
+
+            execution.clusteringResults().add(new ExternalArtifact(ExternalArtifact.Location.LOCAL_FILE_SYSTEM, Path.of(execution.dataPath(), artifactName).toString()));
+            persistenceLayer.<JsonArray, BasicExecution>registerPersistence(artifactName, (jsonArray, exec)->{
+                ExternalArtifact artifact = exec.clusteringResults().stream().filter(a->a.path().endsWith(artifactName)).findFirst().orElseThrow(()->new RuntimeException(("Couldn't find clustering result " + artifactName + " to persist!")));
+                vertx.fileSystem().rxWriteFile(artifact.path(), Buffer.buffer(jsonArray.encode())).subscribe(()->log.info("{} saved! ", artifactName ));
+            }, PipelinePersistenceLayer.PersistenceType.ONCE);
+
+        }
+
+        /**
+         * Update the execution metadata
+         */
+
         execution.stop();
         execution.setStatus(new AbstractPreprocessingPipelineExecutionStatus.Complete(execution.status().data()));
         rc.next();
@@ -522,5 +561,30 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
                     log.error(err.getMessage(),err);
                     rc.response().setStatusCode(500).end();
                 });
+    }
+
+    protected Future<JsonObject> callActivityLabelEndpoint(String endpoint, List<JsonObject> entities){
+
+        Promise<JsonObject> promise = Promise.promise();
+
+        JsonArray entitiesJson = entities.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+
+        JsonObject requestObject = new JsonObject()
+                .put("id", UUID.randomUUID().toString()).put("entities", entitiesJson);
+
+//        log.info("requestObject: {}", requestObject.encodePrettily());
+
+        client.post(DEEP_SERVICE_PORT, DEEP_SERVICE_HOST, endpoint )
+                .rxSendJsonObject(requestObject)
+                .doOnError(err->{
+                    promise.fail(err);
+                    genericErrorHandler(err);
+                }).subscribe(response->{
+                    JsonObject data = response.bodyAsJsonObject();
+                    log.info("{}", data.encodePrettily());
+                    promise.complete(data);
+                });
+
+        return promise.future();
     }
 }
