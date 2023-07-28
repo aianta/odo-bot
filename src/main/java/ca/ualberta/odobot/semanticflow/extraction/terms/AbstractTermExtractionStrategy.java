@@ -25,6 +25,9 @@ public abstract class AbstractTermExtractionStrategy implements TermExtractionSt
 
 
     public List<CoreLabel> extractTerms(String input){
+        if(input.isBlank()){
+            return List.of();
+        }
         List<CoreLabel> result = tokenize(input);
         return allowDuplicates? result:removeDuplicates(result);
     }
@@ -50,7 +53,7 @@ public abstract class AbstractTermExtractionStrategy implements TermExtractionSt
         CoreDocument document = new CoreDocument(input);
         pipeline.annotate(document);
         for(CoreLabel tok: document.tokens()){
-            log.debug("{} {}",tok.word(), tok.tag());
+            //log.debug("{} {}",tok.word(), tok.tag());
             result.add(tok);
         }
 

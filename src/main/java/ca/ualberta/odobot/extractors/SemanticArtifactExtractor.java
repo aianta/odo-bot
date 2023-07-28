@@ -1,7 +1,7 @@
 package ca.ualberta.odobot.extractors;
 
+import ca.ualberta.odobot.semanticflow.model.Timeline;
 import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
-import io.vertx.core.json.JsonArray;
 
 public interface SemanticArtifactExtractor<T extends TimelineEntity> {
 
@@ -11,7 +11,7 @@ public interface SemanticArtifactExtractor<T extends TimelineEntity> {
      */
     String artifactName();
 
-    Object extract(T entity);
+    Object extract(T entity, int index, Timeline timeline);
 
 
 

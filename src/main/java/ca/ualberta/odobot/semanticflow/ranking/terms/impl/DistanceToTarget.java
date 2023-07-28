@@ -191,7 +191,7 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
      * @param src
      * @param tgt
      */
-    private Integer dijkstra(Document document, Element src, Element tgt){
+    public static Integer dijkstra(Document document, Element src, Element tgt){
 
         /**
          * Initalize Dijkstra
@@ -244,7 +244,7 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
 
     }
 
-    private Elements neighbours(Element e){
+    private static Elements neighbours(Element e){
         Elements result = new Elements();
         if(e.hasParent()){
             result.add(e.parent());

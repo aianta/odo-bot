@@ -5,7 +5,7 @@ import ca.ualberta.odobot.semanticflow.extraction.terms.SourceFunctions;
 import ca.ualberta.odobot.semanticflow.extraction.terms.impl.BasicStanfordNLPStrategy;
 import ca.ualberta.odobot.semanticflow.model.DomEffect;
 import ca.ualberta.odobot.semanticflow.model.Effect;
-import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
+import ca.ualberta.odobot.semanticflow.model.Timeline;
 import ca.ualberta.odobot.semanticflow.ranking.terms.TermRankingStrategy;
 import ca.ualberta.odobot.semanticflow.ranking.terms.impl.NoRanking;
 import io.vertx.core.json.JsonArray;
@@ -22,7 +22,7 @@ public class SimpleEffectCssClassTermsExtractor implements SemanticArtifactExtra
     }
 
     @Override
-    public Object extract(Effect entity) {
+    public Object extract(Effect entity, int index, Timeline timeline) {
         TermRankingStrategy rankingStrategy = new NoRanking();
         BasicStanfordNLPStrategy strategy = new BasicStanfordNLPStrategy();
         strategy.allowDuplicates(false);

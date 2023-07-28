@@ -167,6 +167,8 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
         return this.processModelStatsIndex;
     }
 
+    public abstract Future<JsonObject> makeActivityLabels(List<JsonObject> entities);
+
     public void afterExecution(RoutingContext rc){
 
         BasicExecution execution = rc.get("metadata");

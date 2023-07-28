@@ -31,7 +31,7 @@ import static ca.ualberta.odobot.logpreprocessor.Constants.*;
 public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline implements PreprocessingPipeline {
 
     private static final Logger log = LoggerFactory.getLogger(SimplePreprocessingPipeline.class);
-    private Multimap<Class, SemanticArtifactExtractor> extractorMultimap = null;
+    protected Multimap<Class, SemanticArtifactExtractor> extractorMultimap = null;
 
     public SimplePreprocessingPipeline(Vertx vertx, UUID id, String slug, String name){
         super(vertx, slug);
@@ -49,6 +49,7 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
         extractorMultimap.put(DataEntry.class, new SimpleDataEntryTermsExtractor());
         extractorMultimap.put(DataEntry.class, new SimpleDataEntryCssClassTermsExtractor());
         extractorMultimap.put(DataEntry.class, new SimpleDataEntryIdTermsExtractor());
+        extractorMultimap.put(DataEntry.class, new LocalizedDataEntryTermsExtractor());
 
     }
 
@@ -77,25 +78,32 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
         eventsMap.forEach(
                 (index, events)->{
 
-                    //Timeline data structure construction
-                    Timeline timeline = sequencer.parse(events);
-                    timeline.getAnnotations().put("source-index", index);
+                    try{
+                        //Timeline data structure construction
+                        Timeline timeline = sequencer.parse(events);
+                        timeline.getAnnotations().put("source-index", index);
 
 
-                    /**
-                     * Semantic artifact extraction:
-                     *
-                     * Go through each timeline entity and get all matching extractors for that entity's class.
-                     * Then apply each extractor to the entity and add it's output to the entity's semantic artifacts.
-                     */
-                    timeline.forEach(entity -> {
-                        Collection<SemanticArtifactExtractor> entityExtractors = extractorMultimap.get(entity.getClass());
-                        entityExtractors.forEach(extractor->
-                                entity.getSemanticArtifacts().put(extractor.artifactName(), extractor.extract(entity)));
+                        /**
+                         * Semantic artifact extraction:
+                         *
+                         * Go through each timeline entity and get all matching extractors for that entity's class.
+                         * Then apply each extractor to the entity and add it's output to the entity's semantic artifacts.
+                         */
+                        ListIterator<TimelineEntity> it = timeline.listIterator();
+                        while (it.hasNext()){
+                            TimelineEntity entity = it.next();
+                            Collection<SemanticArtifactExtractor> entityExtractors = extractorMultimap.get(entity.getClass());
+                            entityExtractors.forEach(extractor->
+                                    entity.getSemanticArtifacts().put(extractor.artifactName(), extractor.extract(entity,it.previousIndex(),timeline)));
+                        }
 
-                    });
+                        results.add(timeline);
+                    }catch (Exception e){
+                        log.error(e.getMessage(), e);
+                        promise.fail(e);
+                    }
 
-                    results.add(timeline);
 
                 }
         );

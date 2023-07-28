@@ -3,6 +3,7 @@ package ca.ualberta.odobot.extractors.impl;
 import ca.ualberta.odobot.extractors.SemanticArtifactExtractor;
 import ca.ualberta.odobot.semanticflow.extraction.terms.impl.BasicStanfordNLPStrategy;
 import ca.ualberta.odobot.semanticflow.model.DataEntry;
+import ca.ualberta.odobot.semanticflow.model.Timeline;
 import ca.ualberta.odobot.semanticflow.ranking.terms.impl.DistanceToTarget;
 import io.vertx.core.json.JsonArray;
 
@@ -13,7 +14,7 @@ public class SimpleDataEntryTermsExtractor implements SemanticArtifactExtractor<
     }
 
     @Override
-    public Object extract(DataEntry entity) {
+    public Object extract(DataEntry entity, int index, Timeline timeline) {
         BasicStanfordNLPStrategy strategy = new BasicStanfordNLPStrategy();
         strategy.allowDuplicates(false);
         DistanceToTarget rankingStrategy = new DistanceToTarget();

@@ -3,9 +3,7 @@ package ca.ualberta.odobot.logpreprocessor;
 import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 import ca.ualberta.odobot.logpreprocessor.executions.impl.AbstractPreprocessingPipelineExecutionStatus;
 import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
-import ca.ualberta.odobot.logpreprocessor.impl.EnhancedEmbeddingPipeline;
-import ca.ualberta.odobot.logpreprocessor.impl.SimplePreprocessingPipeline;
-import ca.ualberta.odobot.logpreprocessor.impl.TFIDFPipeline;
+import ca.ualberta.odobot.logpreprocessor.impl.*;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 
 import io.reactivex.rxjava3.core.Completable;
@@ -91,9 +89,6 @@ public class LogPreprocessor extends AbstractVerticle {
 
                         PreprocessingPipeline pipeline = (PreprocessingPipeline) constructor.newInstance(vertx, id, slug, name);
 
-//                        PreprocessingPipeline pipeline = new SimplePreprocessingPipeline(
-//                                vertx, id, slug, name
-//                        );
 
                         mountPipeline(api, pipeline);
                     }catch (ClassNotFoundException | NoSuchMethodException e){
@@ -105,6 +100,14 @@ public class LogPreprocessor extends AbstractVerticle {
                     } catch (IllegalAccessException e) {
                         log.error(e.getMessage(), e);
                     }
+
+//                    PreprocessingPipeline tfidfTemporalPipeline = new TFIDFTemporalPipeline(
+//                            vertx, UUID.randomUUID(), "tfidf-temporal-v1", "First tfidf pipeline to add info about previous and next entities."
+//                    );
+//                    mountPipeline(api, tfidfTemporalPipeline);
+//                    log.info("Mounted temporal pipeline!");
+//
+//                    elasticsearchService.saveIntoIndex(List.of(tfidfTemporalPipeline.toJson()), PIPELINES_INDEX).onSuccess(saved->log.info("saved temporal pipeline to index"));
 
 
                 });
@@ -122,12 +125,29 @@ public class LogPreprocessor extends AbstractVerticle {
                         vertx, UUID.randomUUID(), "activity-labels-v3", "First pipeline to use tfidf /activitylabels/v3/ deep service endpoint"
                 );
 
-                elasticsearchService.saveIntoIndex(List.of(simplePipeline.toJson(), enhancedEmbeddingsPipeline.toJson(), tfidfPipeline.toJson()), PIPELINES_INDEX).onSuccess(done->{
+                PreprocessingPipeline temporalPipeline = new TemporalPipeline(
+                        vertx, UUID.randomUUID(), "temporal-v1", "First pipeline to add info about previous and next entities."
+                );
+
+                PreprocessingPipeline tfidfTemporalPipeline = new TFIDFPipeline(
+                        vertx, UUID.randomUUID(), "tfidf-temporal-v1", "First tfidf pipeline to add info about previous and next entities."
+                );
+
+                elasticsearchService.saveIntoIndex(List.of(
+                        simplePipeline.toJson(),
+                        enhancedEmbeddingsPipeline.toJson(),
+                        tfidfPipeline.toJson(),
+                        temporalPipeline.toJson(),
+                        tfidfTemporalPipeline.toJson()
+                ), PIPELINES_INDEX).onSuccess(done->{
                     log.info("Registered pipeline(s) in elasticsearch");
                 });
 
                 mountPipeline(api, enhancedEmbeddingsPipeline);
                 mountPipeline(api, simplePipeline);
+                mountPipeline(api, tfidfPipeline);
+                mountPipeline(api, temporalPipeline);
+                mountPipeline(api, tfidfTemporalPipeline);
 
             }
 

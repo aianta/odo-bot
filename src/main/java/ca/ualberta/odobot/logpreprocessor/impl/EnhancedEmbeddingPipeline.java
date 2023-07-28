@@ -2,8 +2,7 @@ package ca.ualberta.odobot.logpreprocessor.impl;
 
 import ca.ualberta.odobot.logpreprocessor.PreprocessingPipeline;
 import io.vertx.core.Future;
-import io.vertx.core.Promise;
-import io.vertx.core.json.JsonArray;
+
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.core.Vertx;
 import org.slf4j.Logger;
@@ -20,6 +19,7 @@ public class EnhancedEmbeddingPipeline extends SimplePreprocessingPipeline imple
     public EnhancedEmbeddingPipeline(Vertx vertx, UUID id, String slug, String name) {
         super(vertx, id, slug, name);
     }
+
 
     public Future<JsonObject> makeActivityLabels(List<JsonObject> entities){
         log.info("Making activity labels with enhanced embeddings deep service endpoint");
