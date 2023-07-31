@@ -29,6 +29,7 @@ public class BasicExecution implements PreprocessingPipelineExecution {
     Instant startTimestamp;
     Instant endTimestamp;
     UUID id;
+    String pipelineClass;
     UUID pipelineId;
     String dataPath;
 
@@ -160,11 +161,14 @@ public class BasicExecution implements PreprocessingPipelineExecution {
         return pipelineId;
     }
 
+    public String pipelineClass(){return pipelineClass;}
+
     @Override
     public JsonObject toJson() {
         JsonObject result = new JsonObject()
                 .put("id", id.toString())
                 .put("pipelineId", pipelineId().toString())
+                .put("pipelineClass", pipelineClass())
                 .put("indexTimelineMappings", indexTimelineJson())
                 .put("inputIndices", inputIndices().stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll))
                 .put("timelineIds", timelineIds().stream().map(UUID::toString).collect(JsonArray::new, JsonArray::add, JsonArray::addAll))
@@ -206,6 +210,10 @@ public class BasicExecution implements PreprocessingPipelineExecution {
         JsonObject result = new JsonObject();
         indexToTimelineMap.forEach((index,id)->result.put(index, id.toString()));
         return result;
+    }
+
+    public  void setPipelineClass(String pipelineClass){
+        this.pipelineClass = pipelineClass;
     }
 
     public void setActivityLabelingId(UUID activityLabelingId) {

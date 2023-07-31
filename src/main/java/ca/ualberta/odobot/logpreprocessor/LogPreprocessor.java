@@ -101,16 +101,20 @@ public class LogPreprocessor extends AbstractVerticle {
                         log.error(e.getMessage(), e);
                     }
 
-//                    PreprocessingPipeline tfidfTemporalPipeline = new TFIDFTemporalPipeline(
-//                            vertx, UUID.randomUUID(), "tfidf-temporal-v1", "First tfidf pipeline to add info about previous and next entities."
-//                    );
-//                    mountPipeline(api, tfidfTemporalPipeline);
-//                    log.info("Mounted temporal pipeline!");
-//
-//                    elasticsearchService.saveIntoIndex(List.of(tfidfTemporalPipeline.toJson()), PIPELINES_INDEX).onSuccess(saved->log.info("saved temporal pipeline to index"));
 
 
                 });
+
+                //ADD NEW PIPELINES HERE
+//                PreprocessingPipeline effectOverhaulPipeline = new EffectOverhaulPipeline(
+//                        vertx, UUID.randomUUID(), "effect-overhaul-v1", "Split Effect representation in 'added' and 'removed' lists to allow more meaningful embedding."
+//                );
+//
+//                mountPipeline(api, effectOverhaulPipeline);
+//                elasticsearchService.saveIntoIndex(List.of(effectOverhaulPipeline.toJson()),PIPELINES_INDEX).onSuccess(saved->log.info("saved effect overhaul pipeline to index"));
+//
+
+
             }else{ //Otherwise create a new pipeline
                 //Create simple preprocessing pipeline
                 PreprocessingPipeline simplePipeline = new SimplePreprocessingPipeline(
@@ -133,12 +137,17 @@ public class LogPreprocessor extends AbstractVerticle {
                         vertx, UUID.randomUUID(), "tfidf-temporal-v1", "First tfidf pipeline to add info about previous and next entities."
                 );
 
+                PreprocessingPipeline effectOverhaulPipeline = new EffectOverhaulPipeline(
+                        vertx, UUID.randomUUID(), "effect-overhaul-v1", "Split Effect representation in 'added' and 'removed' lists to allow more meaningful embedding."
+                );
+
                 elasticsearchService.saveIntoIndex(List.of(
                         simplePipeline.toJson(),
                         enhancedEmbeddingsPipeline.toJson(),
                         tfidfPipeline.toJson(),
                         temporalPipeline.toJson(),
-                        tfidfTemporalPipeline.toJson()
+                        tfidfTemporalPipeline.toJson(),
+                        effectOverhaulPipeline.toJson()
                 ), PIPELINES_INDEX).onSuccess(done->{
                     log.info("Registered pipeline(s) in elasticsearch");
                 });
@@ -148,6 +157,7 @@ public class LogPreprocessor extends AbstractVerticle {
                 mountPipeline(api, tfidfPipeline);
                 mountPipeline(api, temporalPipeline);
                 mountPipeline(api, tfidfTemporalPipeline);
+                mountPipeline(api, effectOverhaulPipeline);
 
             }
 

@@ -5,6 +5,7 @@ import ca.ualberta.odobot.extractors.impl.*;
 import ca.ualberta.odobot.logpreprocessor.PreprocessingPipeline;
 import ca.ualberta.odobot.logpreprocessor.xes.XesTransformer;
 import ca.ualberta.odobot.semanticflow.SemanticSequencer;
+import ca.ualberta.odobot.semanticflow.extraction.terms.SourceFunctions;
 import ca.ualberta.odobot.semanticflow.model.*;
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Multimap;
@@ -38,14 +39,17 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
         setId(id);
         setName(name);
 
+        EffectExtractor effectCssTermsExtractor = new EffectExtractor("cssClassTerms", (effect)->effect.domEffectMadeVisible().iterator(), SourceFunctions.TARGET_ELEMENT_CSS_CLASSES);
+        EffectExtractor effectIdTermsExtractor = new EffectExtractor("idTerms", (effect)->effect.domEffectMadeVisible().iterator(), SourceFunctions.TARGET_ELEMENT_ID);
+
         //Semantic artifact extraction config
         extractorMultimap = ArrayListMultimap.create();
         extractorMultimap.put(ClickEvent.class, new SimpleClickEventTermsExtractor());
         extractorMultimap.put(ClickEvent.class, new SimpleClickEventIdTermsExtractor());
         extractorMultimap.put(ClickEvent.class, new SimpleClickEventCssClassTermsExtractor());
         extractorMultimap.put(Effect.class, new NoZeroTermsEffectExtractor());
-        extractorMultimap.put(Effect.class, new SimpleEffectCssClassTermsExtractor());
-        extractorMultimap.put(Effect.class, new SimpleEffectIdTermsExtractor());
+        extractorMultimap.put(Effect.class, effectCssTermsExtractor);
+        extractorMultimap.put(Effect.class, effectIdTermsExtractor);
         extractorMultimap.put(DataEntry.class, new SimpleDataEntryTermsExtractor());
         extractorMultimap.put(DataEntry.class, new SimpleDataEntryCssClassTermsExtractor());
         extractorMultimap.put(DataEntry.class, new SimpleDataEntryIdTermsExtractor());

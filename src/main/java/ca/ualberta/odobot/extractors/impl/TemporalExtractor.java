@@ -1,6 +1,7 @@
 package ca.ualberta.odobot.extractors.impl;
 
 import ca.ualberta.odobot.extractors.SemanticArtifactExtractor;
+import ca.ualberta.odobot.semanticflow.model.Effect;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
 import com.google.common.collect.Multimap;
@@ -62,6 +63,13 @@ public class TemporalExtractor<T extends TimelineEntity> implements SemanticArti
         entityExtractors.forEach(extractor->{
             shadow.put(extractor.artifactName(), extractor.extract(target, index + offset, timeline));
         });
+
+        //TODO - re-enable if you figure out how to handle max token busting with roberta.
+//        if(entity instanceof Effect){
+//            Effect effect = (Effect) entity;
+//            shadow.put("madeVisible", Effect.toJson(effect.madeVisible()));
+//            shadow.put("madeInvisible", Effect.toJson(effect.madeInvisible()));
+//        }
 
 
         return shadow;

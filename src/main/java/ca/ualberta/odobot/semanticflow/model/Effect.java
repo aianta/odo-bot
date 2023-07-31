@@ -84,7 +84,7 @@ public class Effect extends ArrayList<DomEffect> implements TimelineEntity {
                 .collect(Collectors.toSet());
     }
 
-    private static JsonArray toJson(Set<Element> elementSet){
+    public static JsonArray toJson(Set<Element> elementSet){
         return elementSet.stream().map(Element::html).collect(
                 JsonArray::new,
                 JsonArray::add,

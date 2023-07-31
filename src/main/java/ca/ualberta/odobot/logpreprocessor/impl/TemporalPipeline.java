@@ -15,7 +15,7 @@ import io.vertx.rxjava3.core.Vertx;
 import java.util.List;
 import java.util.UUID;
 
-public class TemporalPipeline extends EnhancedEmbeddingPipeline implements PreprocessingPipeline {
+public class TemporalPipeline extends EffectOverhaulPipeline implements PreprocessingPipeline {
 
     public TemporalPipeline(Vertx vertx, UUID id, String slug, String name) {
         super(vertx, id, slug, name);

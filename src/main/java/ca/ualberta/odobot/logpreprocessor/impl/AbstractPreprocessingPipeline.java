@@ -217,6 +217,7 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
         //Create metadata record for the execution
         BasicExecution execution = new BasicExecution();
         execution.setId(UUID.randomUUID());
+        execution.setPipelineClass(getClass().getName());
         execution.setPipelineId(id());
         execution.setStatus(new AbstractPreprocessingPipelineExecutionStatus.InProgress());
         execution.status().data().put("step", "beforeExecution"); //Update execution step
