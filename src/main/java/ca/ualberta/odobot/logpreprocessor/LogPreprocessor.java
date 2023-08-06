@@ -6,9 +6,11 @@ import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
 import ca.ualberta.odobot.logpreprocessor.impl.*;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 
+import co.elastic.clients.elasticsearch.nodes.Http;
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerOptions;
+import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.core.AbstractVerticle;
@@ -225,6 +227,15 @@ public class LogPreprocessor extends AbstractVerticle {
         });
         executeRoute.failureHandler(persistenceLayer::persistenceHandler); //Update record keeping for failure.
         executeRoute.failureHandler(rc->rc.response().setStatusCode(500).end(rc.failure().getMessage()));
+
+        Route entitiesRoute = router.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + pipeline.slug() + "/entities");
+        entitiesRoute.handler(pipeline::timelinesHandler);
+        entitiesRoute.handler(pipeline::timelineEntitiesHandler);
+        entitiesRoute.handler(rc->{
+            List<JsonObject> entities = rc.get("entities");
+            JsonObject responseData = new JsonObject().put("entities", entities.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
+            rc.response().setStatusCode(200).putHeader("Content-Type", "application/json").end(responseData.encode());
+        });
 
         router.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + pipeline.slug() + "/timelines").handler(pipeline::timelinesHandler);
         router.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + pipeline.slug() + "/timelines").handler(rc->{

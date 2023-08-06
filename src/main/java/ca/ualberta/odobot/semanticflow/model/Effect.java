@@ -28,6 +28,10 @@ public class Effect extends ArrayList<DomEffect> implements TimelineEntity {
         return "E";
     }
 
+    public Set<String> getBaseURIs(){
+        return this.stream().map(DomEffect::getBaseURI).collect(Collectors.toSet());
+    }
+
     public Set<Element> netVisible(){
         Set<Element> netVisible  = madeVisible();
         netVisible.removeAll(madeInvisible());

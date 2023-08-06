@@ -47,13 +47,19 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
         extractorMultimap.put(ClickEvent.class, new SimpleClickEventTermsExtractor());
         extractorMultimap.put(ClickEvent.class, new SimpleClickEventIdTermsExtractor());
         extractorMultimap.put(ClickEvent.class, new SimpleClickEventCssClassTermsExtractor());
+        extractorMultimap.put(ClickEvent.class, new ClickEventBaseURIExtractor());
+        extractorMultimap.put(ClickEvent.class, new NextIdExtractor());
         extractorMultimap.put(Effect.class, new NoZeroTermsEffectExtractor());
         extractorMultimap.put(Effect.class, effectCssTermsExtractor);
         extractorMultimap.put(Effect.class, effectIdTermsExtractor);
+        extractorMultimap.put(Effect.class, new EffectBaseURIExtractor());
+        extractorMultimap.put(Effect.class, new NextIdExtractor());
         extractorMultimap.put(DataEntry.class, new SimpleDataEntryTermsExtractor());
         extractorMultimap.put(DataEntry.class, new SimpleDataEntryCssClassTermsExtractor());
         extractorMultimap.put(DataEntry.class, new SimpleDataEntryIdTermsExtractor());
         extractorMultimap.put(DataEntry.class, new LocalizedDataEntryTermsExtractor());
+        extractorMultimap.put(DataEntry.class, new DataEntryBaseURIExtractor());
+        extractorMultimap.put(DataEntry.class, new NextIdExtractor());
 
     }
 
