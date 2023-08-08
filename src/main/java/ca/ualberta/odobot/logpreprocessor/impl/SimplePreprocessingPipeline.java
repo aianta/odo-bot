@@ -169,8 +169,9 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
                             JsonObject modelVisualization = response.bodyAsJsonObject();
                             log.info("model visualization response:");
                             log.info("{}", modelVisualization.encodePrettily());
-
-                            results.put(BPMN_KEY, Buffer.buffer(Base64.getDecoder().decode(modelVisualization.getString(BPMN_KEY))));
+                            if (modelVisualization.containsKey(BPMN_KEY)){
+                                results.put(BPMN_KEY, Buffer.buffer(Base64.getDecoder().decode(modelVisualization.getString(BPMN_KEY))));
+                            }
                             results.put(TREE_KEY, Buffer.buffer(Base64.getDecoder().decode(modelVisualization.getString(TREE_KEY))));
                             results.put(DFG_KEY, Buffer.buffer(Base64.getDecoder().decode(modelVisualization.getString(DFG_KEY))));
                             results.put(PETRI_KEY, Buffer.buffer(Base64.getDecoder().decode(modelVisualization.getString(PETRI_KEY))));

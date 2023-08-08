@@ -108,13 +108,13 @@ public class LogPreprocessor extends AbstractVerticle {
                 });
 
                 //ADD NEW PIPELINES HERE
-//                PreprocessingPipeline effectOverhaulPipeline = new EffectOverhaulPipeline(
-//                        vertx, UUID.randomUUID(), "effect-overhaul-v1", "Split Effect representation in 'added' and 'removed' lists to allow more meaningful embedding."
+//                PreprocessingPipeline hierarchicalPipeline = new HierarchicalClusteringPipeline(
+//                        vertx, UUID.randomUUID(), "hierarchical-v1", "Hierarchical clustering technique that blends domain knowledge from the DOM with unsupervised learning to determine activity labels. "
 //                );
 //
-//                mountPipeline(api, effectOverhaulPipeline);
-//                elasticsearchService.saveIntoIndex(List.of(effectOverhaulPipeline.toJson()),PIPELINES_INDEX).onSuccess(saved->log.info("saved effect overhaul pipeline to index"));
-//
+//                mountPipeline(api, hierarchicalPipeline);
+//                elasticsearchService.saveIntoIndex(List.of(hierarchicalPipeline.toJson()),PIPELINES_INDEX).onSuccess(saved->log.info("saved effect overhaul pipeline to index"));
+
 
 
             }else{ //Otherwise create a new pipeline
@@ -143,13 +143,18 @@ public class LogPreprocessor extends AbstractVerticle {
                         vertx, UUID.randomUUID(), "effect-overhaul-v1", "Split Effect representation in 'added' and 'removed' lists to allow more meaningful embedding."
                 );
 
+                PreprocessingPipeline hierarchicalPipeline = new HierarchicalClusteringPipeline(
+                        vertx, UUID.randomUUID(), "hierarchical-v1", "Hierarchical clustering technique that blends domain knowledge from the DOM with unsupervised learning to determine activity labels. "
+                );
+
                 elasticsearchService.saveIntoIndex(List.of(
                         simplePipeline.toJson(),
                         enhancedEmbeddingsPipeline.toJson(),
                         tfidfPipeline.toJson(),
                         temporalPipeline.toJson(),
                         tfidfTemporalPipeline.toJson(),
-                        effectOverhaulPipeline.toJson()
+                        effectOverhaulPipeline.toJson(),
+                        hierarchicalPipeline.toJson()
                 ), PIPELINES_INDEX).onSuccess(done->{
                     log.info("Registered pipeline(s) in elasticsearch");
                 });

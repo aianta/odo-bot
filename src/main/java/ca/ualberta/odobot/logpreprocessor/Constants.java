@@ -27,4 +27,5 @@ public class Constants {
     public static final String CLUSTERING_RESULTS_FIELD_PREFIX = "clustering_results_";
     public static final String DEEP_SERVICE_ACTIVITY_LABELS_V2_ENDPOINT = "/activitylabels/v2/";
     public static final String DEEP_SERVICE_ACTIVITY_LABELS_V3_ENDPOINT = "/activitylabels/v3/";
+    public static final String DEEP_SERVICE_ACTIVITY_LABELS_V4_ENDPOINT = "/activitylabels/v4/";
 }

@@ -395,16 +395,20 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
                 visualizations->{
 
 
-
                     //Update execution metadata
                     if (execution != null){
-                        var bpmnPath = Path.of(execution.dataPath(), BPMN_FILE_NAME);
+                        if (visualizations.containsKey(BPMN_KEY)){
+                            var bpmnPath = Path.of(execution.dataPath(), BPMN_FILE_NAME);
+                            execution.processModelVisualizations().add(new ExternalArtifact(ExternalArtifact.Location.LOCAL_FILE_SYSTEM, bpmnPath.toString()));
+                        }
+
+
                         var treePath = Path.of(execution.dataPath(), TREE_FILE_NAME);
                         var dfgPath = Path.of(execution.dataPath(), DFG_FILE_NAME);
                         var petriPath = Path.of(execution.dataPath(), PETRI_FILE_NAME);
                         var transitionPath = Path.of(execution.dataPath(), TRANSITION_FILE_NAME);
 
-                        execution.processModelVisualizations().add(new ExternalArtifact(ExternalArtifact.Location.LOCAL_FILE_SYSTEM, bpmnPath.toString()));
+
                         execution.processModelVisualizations().add(new ExternalArtifact(ExternalArtifact.Location.LOCAL_FILE_SYSTEM, treePath.toString()));
                         execution.processModelVisualizations().add(new ExternalArtifact(ExternalArtifact.Location.LOCAL_FILE_SYSTEM, dfgPath.toString()));
                         execution.processModelVisualizations().add(new ExternalArtifact(ExternalArtifact.Location.LOCAL_FILE_SYSTEM, petriPath.toString()));
