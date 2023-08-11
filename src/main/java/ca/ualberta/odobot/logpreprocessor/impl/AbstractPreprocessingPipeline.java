@@ -317,6 +317,8 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
             execution.status().data().put("step", "activityLabelsHandler");
         }
 
+        //Filter out network events as they are fixed points, and thus don't require embedding/clustering.
+        entities = entities.stream().filter(entity->!entity.getString("symbol").equals("NET")).collect(Collectors.toList());
 
         makeActivityLabels(entities).onSuccess(activityLabels->{
                     //Update execution metadata

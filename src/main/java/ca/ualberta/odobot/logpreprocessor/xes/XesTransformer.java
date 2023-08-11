@@ -62,7 +62,8 @@ public class XesTransformer {
         //Define trace attributes
         XAttributeID id = factory.createAttributeID("id", XID.parse(timeline.getString("id")),null);
         //TODO -> This should be the actual session id, which, currently isn't included in the timeline json. Need to fix this.
-        //TODO -> As of May 18, 2023: DO NOT FIX THIS, session ids may be broken, use timeline id's for now!!
+        // As of May 18, 2023: DO NOT FIX THIS, session ids may be broken, use timeline id's for now!!
+        // They're broken because, LogUI gets reinjected into the page on every page load, so the session id is reset. This is an odo sight problem to deal with eventually.
         XAttributeLiteral caseId = factory.createAttributeLiteral("sessionId", timeline.getString("id"), XConceptExtension.instance());
 
         //Create trace attribute map
@@ -80,7 +81,12 @@ public class XesTransformer {
                     XAttributeID eventId = factory.createAttributeID("id", XID.parse(UUID.randomUUID().toString()), null);
                     XAttributeLiteral timelineId = factory.createAttributeLiteral("_t_id", entity.getString("id"), null);
                     XAttributeTimestamp timestamp = factory.createAttributeTimestamp("timestamp", entity.getLong("timestamp_milli"), null);
-                    XAttributeLiteral activity = factory.createAttributeLiteral("activity", activityLabelMappings.getJsonObject("mappings").getString(entity.getString("id")), XConceptExtension.instance());
+
+                    XAttributeLiteral activity = factory.createAttributeLiteral("activity",
+                            entity.containsKey("_activityLabel")? //If the entity is a fixed point (ie: Network Events)
+                                    entity.getString("_activityLabel"): // then use it's self-provided activity label.
+                                    activityLabelMappings.getJsonObject("mappings").getString(entity.getString("id")),//Otherwise, use the activity label mappings.
+                            XConceptExtension.instance());
 
 
                     XAttributeMap eventAttributes = factory.createAttributeMap();

@@ -7,6 +7,7 @@ import ca.ualberta.odobot.semanticflow.exceptions.MissingTimestamp;
 import ca.ualberta.odobot.semanticflow.mappers.impl.ClickEventMapper;
 import ca.ualberta.odobot.semanticflow.mappers.impl.DomEffectMapper;
 import ca.ualberta.odobot.semanticflow.mappers.impl.InputChangeMapper;
+import ca.ualberta.odobot.semanticflow.mappers.impl.NetworkEventMapper;
 import ca.ualberta.odobot.semanticflow.model.*;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -37,6 +38,7 @@ public class SemanticSequencer {
     private DomEffectMapper domEffectMapper = new DomEffectMapper();
     private ClickEventMapper clickEventMapper = new ClickEventMapper();
     private InputChangeMapper inputChangeMapper = new InputChangeMapper();
+    private NetworkEventMapper networkEventMapper = new NetworkEventMapper();
 
     private Timeline line;
 
@@ -152,7 +154,13 @@ public class SemanticSequencer {
                     }
                     case NETWORK_EVENT -> {
 
-                        log.info("TODO: Process Network Event!");
+                        NetworkEvent networkEvent = networkEventMapper.map(event);
+                        networkEvent.setTimestamp(ZonedDateTime.parse(event.getString(TIMESTAMP_FIELD), timeFormatter));
+                        //TODO - Temporarily ignore all GET requests. See 'Integrating Network Events # Network Event Summarization Options' in obsidian for details
+                        if(!networkEvent.getMethod().toLowerCase().equals("get")){
+                            line.add(networkEvent);
+                        }
+                        log.info("Handled NETWORK_EVENT");
 
                     }
                 }
