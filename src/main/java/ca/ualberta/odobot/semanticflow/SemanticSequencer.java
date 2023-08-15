@@ -89,7 +89,8 @@ public class SemanticSequencer {
 
     private void parse(JsonObject event)  {
 
-
+        log.info("eventType: {}", event.getString("eventType"));
+        log.info("eventDetails_name: {}", event.getString("eventDetails_name"));
         switch (event.getString("eventType")){
             case "interactionEvent":
                 switch (InteractionType.getType(event.getString("eventDetails_name"))){
@@ -134,6 +135,7 @@ public class SemanticSequencer {
 
                         if(domEffect == null) {return;} //TODO - I wonder why this was necessary
                         domEffect.setTimestamp(ZonedDateTime.parse(event.getString(TIMESTAMP_FIELD), timeFormatter));
+
                         /**
                          Check if the last entity in the timeline is an {@link Effect},
                          if so, add this domEffect to it. Otherwise, create a new Effect

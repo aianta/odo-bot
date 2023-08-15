@@ -19,6 +19,7 @@ import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import io.vertx.rxjava3.RxHelper;
 import io.vertx.rxjava3.core.Vertx;
 import io.vertx.rxjava3.core.buffer.Buffer;
 
@@ -230,7 +231,6 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
     public void timelinesHandler(RoutingContext rc) {
 
 
-
         List<String> esIndices = rc.queryParam("index");
         rc.put("esIndices", esIndices);
 
@@ -241,6 +241,8 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
          */
         JsonArray sortOptions = new JsonArray()
                 .add(new JsonObject().put(TIMESTAMP_FIELD, "asc"));
+
+
 
         //Fetch the event logs corresponding with every index requested
         CompositeFuture.all(
@@ -255,8 +257,26 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
             }
             rc.put("rawEventsMap", eventlogsMap);
 
+            //Construct timelines for each index on separate threads.
+            List<Future<Timeline>> timelineFutures = new ArrayList<>();
+            eventlogsMap.forEach((sourceIndex, events)->{
+                timelineFutures.add(
+                vertx.getDelegate().executeBlocking(blocking->{
+                    //Pass the sourceIndex, and timeline events to the implementing subclass for processing.
+                    makeTimeline(sourceIndex, events)
+                            .onSuccess(timeline->blocking.complete(timeline))
+                            .onFailure(err->blocking.fail(err));
+                },false));
+            });
+
+
+            return Future.all(timelineFutures)
+                    .compose(result-> Future.succeededFuture(result.<Timeline>list()));
+
+
+
             //Pass the eventlogMap to the implementing subclass for processing.
-            return makeTimelines(eventlogsMap);
+//            return makeTimelines(eventlogsMap);
 
         }).onSuccess(timelines->{
 

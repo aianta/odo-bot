@@ -41,24 +41,28 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
 
         EffectExtractor effectCssTermsExtractor = new EffectExtractor("cssClassTerms", (effect)->effect.domEffectMadeVisible().iterator(), SourceFunctions.TARGET_ELEMENT_CSS_CLASSES);
         EffectExtractor effectIdTermsExtractor = new EffectExtractor("idTerms", (effect)->effect.domEffectMadeVisible().iterator(), SourceFunctions.TARGET_ELEMENT_ID);
+        EffectExtractor effectTagExtractor = new EffectExtractor("tags", (effect)->effect.domEffectMadeVisible().iterator(), SourceFunctions.TARGET_ELEMENT_TAG);
+
+
 
         //Semantic artifact extraction config
         extractorMultimap = ArrayListMultimap.create();
         extractorMultimap.put(ClickEvent.class, new SimpleClickEventTermsExtractor());
         extractorMultimap.put(ClickEvent.class, new SimpleClickEventIdTermsExtractor());
         extractorMultimap.put(ClickEvent.class, new SimpleClickEventCssClassTermsExtractor());
-        extractorMultimap.put(ClickEvent.class, new ClickEventBaseURIExtractor());
+        extractorMultimap.put(ClickEvent.class, new NumericFreeExtractor(new ClickEventBaseURIExtractor()));
         extractorMultimap.put(ClickEvent.class, new NextIdExtractor());
         extractorMultimap.put(Effect.class, new NoZeroTermsEffectExtractor());
         extractorMultimap.put(Effect.class, effectCssTermsExtractor);
         extractorMultimap.put(Effect.class, effectIdTermsExtractor);
-        extractorMultimap.put(Effect.class, new EffectBaseURIExtractor());
+        extractorMultimap.put(Effect.class, effectTagExtractor);
+        extractorMultimap.put(Effect.class, new NumericFreeExtractor(new EffectBaseURIExtractor()));
         extractorMultimap.put(Effect.class, new NextIdExtractor());
         extractorMultimap.put(DataEntry.class, new SimpleDataEntryTermsExtractor());
         extractorMultimap.put(DataEntry.class, new SimpleDataEntryCssClassTermsExtractor());
         extractorMultimap.put(DataEntry.class, new SimpleDataEntryIdTermsExtractor());
         extractorMultimap.put(DataEntry.class, new LocalizedDataEntryTermsExtractor());
-        extractorMultimap.put(DataEntry.class, new DataEntryBaseURIExtractor());
+        extractorMultimap.put(DataEntry.class, new NumericFreeExtractor(new DataEntryBaseURIExtractor()));
         extractorMultimap.put(DataEntry.class, new NextIdExtractor());
 
     }
@@ -76,6 +80,31 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
         result.put("extractionConfig", extractionConfig);
 
         return result;
+    }
+
+    public Future<Timeline> makeTimeline(String sourceIndex, List<JsonObject> events){
+
+        SemanticSequencer sequencer = new SemanticSequencer();
+        //Timeline data structure construction
+        Timeline timeline = sequencer.parse(events);
+        timeline.getAnnotations().put("source-index", sourceIndex);
+
+
+        /**
+         * Semantic artifact extraction:
+         *
+         * Go through each timeline entity and get all matching extractors for that entity's class.
+         * Then apply each extractor to the entity and add it's output to the entity's semantic artifacts.
+         */
+        ListIterator<TimelineEntity> it = timeline.listIterator();
+        while (it.hasNext()){
+            TimelineEntity entity = it.next();
+            Collection<SemanticArtifactExtractor> entityExtractors = extractorMultimap.get(entity.getClass());
+            entityExtractors.forEach(extractor->
+                    entity.getSemanticArtifacts().put(extractor.artifactName(), extractor.extract(entity,it.previousIndex(),timeline)));
+        }
+
+        return Future.succeededFuture(timeline);
     }
 
     @Override

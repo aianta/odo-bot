@@ -68,14 +68,14 @@ public class LocalizedDataEntryTermsExtractor extends SimpleDataEntryTermsExtrac
 
 
         Element form = formOptional.get();
-        log.info("Collecting terms and fields from form.");
+        //log.info("Collecting terms and fields from form.");
         TermsAndFieldsCollector collector = new TermsAndFieldsCollector();
         NodeTraversor.traverse(collector, form);
 
         List<Element> formTerms = collector.getTerms();
         List<Element> inputFields = collector.getInputFields();
 
-        log.info("Computing distances between fields and terms.");
+        //log.info("Computing distances between fields and terms.");
         Map<Element, Integer> inputElementTerms = new HashMap<>();
 
         formTerms.forEach(t->{
@@ -84,13 +84,13 @@ public class LocalizedDataEntryTermsExtractor extends SimpleDataEntryTermsExtrac
             inputFields.forEach(field->{
 
                 Integer dist = DistanceToTarget.dijkstra(document, t, field);
-                log.info("Distance of {} for {} to {}", dist, t.ownText(), field.outerHtml());
+                //log.info("Distance of {} for {} to {}", dist, t.ownText(), field.outerHtml());
                 distanceToTerm.put(field,dist );
             });
 
-            log.info("# fields processed for term: {}", distanceToTerm.size());
+            //log.info("# fields processed for term: {}", distanceToTerm.size());
             List<Map.Entry<Element, Integer>> ordered = new ArrayList<>(distanceToTerm.entrySet());
-            log.info("Created ordered: {}", ordered);
+            //log.info("Created ordered: {}", ordered);
             /**
              * Sort in ascending order by value such that the text field the shortest distance away from
              * the term appears first in the list.
@@ -101,22 +101,22 @@ public class LocalizedDataEntryTermsExtractor extends SimpleDataEntryTermsExtrac
                 log.error(e.getMessage(), e);
             }
 
-            log.info("{}", ordered);
+            //log.info("{}", ordered);
 
             /**
              * If our targetInput element is at the minimum distance from this term when compared to all other inputs,
              * add the term to the result.
              */
-            log.info("Target input field: {}\nordered.get(0):{}\n", inputElement.outerHtml(), ordered.get(0).getKey().outerHtml());
+            //log.info("Target input field: {}\nordered.get(0):{}\n", inputElement.outerHtml(), ordered.get(0).getKey().outerHtml());
             Integer minDistance = ordered.get(0).getValue();
             Iterator<Map.Entry<Element, Integer>> it = ordered.iterator();
             //This while loop is necessary in cases where multiple fields are at the minimum distance.
             while (it.hasNext()){
                 Map.Entry<Element,Integer> curr = it.next();
-                log.info("Record: {}", curr);
+                //log.info("Record: {}", curr);
                 Integer currDistance = curr.getValue();
                 if(currDistance == minDistance && curr.getKey().equals(inputElement)){
-                    log.info("Adding {} term for {}", t.ownText(), inputElement.outerHtml());
+                    //log.info("Adding {} term for {}", t.ownText(), inputElement.outerHtml());
                     inputElementTerms.put(t, minDistance);
                 }
             }
@@ -128,7 +128,7 @@ public class LocalizedDataEntryTermsExtractor extends SimpleDataEntryTermsExtrac
         inputElementTermsList.sort(Comparator.comparingInt(Map.Entry::getValue));
 
         List<String> result = inputElementTermsList.stream().map(entry->entry.getKey().ownText()).limit(1).collect(Collectors.toList());
-        log.info("result: {}", result);
+        //log.info("result: {}", result);
         return result;
     }
 

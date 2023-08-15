@@ -6,6 +6,9 @@ import java.util.function.Function;
 
 public enum SourceFunctions {
 
+    TARGET_ELEMENT_TAG(
+            (artifact)->artifact.getTargetElement().tagName()
+    ),
     TARGET_ELEMENT_TEXT(
             (artifact)->artifact.getTargetElement().text()
     ),

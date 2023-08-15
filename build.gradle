@@ -14,8 +14,9 @@ repositories {
 }
 
 vertx{
+    launcher = "ca.ualberta.odobot.Launcher"
     mainVerticle = "ca.ualberta.odobot.MainVerticle"
-    vertxVersion = "4.4.1"
+    vertxVersion = "4.4.4"
     redeploy = false
 //    jvmArgs = ["-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"]
 }

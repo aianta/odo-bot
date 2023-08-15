@@ -91,7 +91,7 @@ public class NetworkEvent extends AbstractArtifact implements TimelineEntity, Fi
     }
 
     public String getPath(){
-        return url.getPath();
+        return url.getPath().replaceAll("[0-9]+", "*");
     }
 
     public String getQuery(){

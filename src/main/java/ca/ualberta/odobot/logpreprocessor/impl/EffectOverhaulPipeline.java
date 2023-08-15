@@ -22,6 +22,8 @@ public class EffectOverhaulPipeline  extends EnhancedEmbeddingPipeline implement
         EffectExtractor removedCssTerms = new EffectExtractor("cssClassTerms_removed", (effect)->effect.domEffectMadeInvisible().iterator(), SourceFunctions.TARGET_ELEMENT_CSS_CLASSES);
         EffectExtractor addedIdTerms = new EffectExtractor("idTerms_added", (effect)->effect.domEffectMadeVisible().iterator(), SourceFunctions.TARGET_ELEMENT_ID);
         EffectExtractor removedIdTerms = new EffectExtractor("idTerms_removed", (effect)->effect.domEffectMadeInvisible().iterator(), SourceFunctions.TARGET_ELEMENT_ID);
+        EffectExtractor addedTagTerms = new EffectExtractor("tags_added", (effect)->effect.domEffectMadeVisible().iterator(), SourceFunctions.TARGET_ELEMENT_TAG);
+        EffectExtractor removedTagTerms = new EffectExtractor("tags_removed", (effect)->effect.domEffectMadeInvisible().iterator(), SourceFunctions.TARGET_ELEMENT_TAG);
 
         //Clear all extractors for effects
         extractorMultimap.removeAll(Effect.class);
@@ -35,5 +37,7 @@ public class EffectOverhaulPipeline  extends EnhancedEmbeddingPipeline implement
         extractorMultimap.put(Effect.class, removedIdTerms);
         extractorMultimap.put(Effect.class, new EffectBaseURIExtractor());
         extractorMultimap.put(Effect.class, new NextIdExtractor());
+        extractorMultimap.put(Effect.class, addedTagTerms);
+        extractorMultimap.put(Effect.class, removedTagTerms);
     }
 }

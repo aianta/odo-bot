@@ -37,6 +37,8 @@ public interface PreprocessingPipeline extends PipelineService {
 
     Future<List<Timeline>> makeTimelines(Map<String, List<JsonObject>> eventsMap);
 
+    Future<Timeline> makeTimeline(String sourceIndex, List<JsonObject> events);
+
 
 
     Future<List<TimelineEntity>> makeEntities(List<Timeline> timelines);

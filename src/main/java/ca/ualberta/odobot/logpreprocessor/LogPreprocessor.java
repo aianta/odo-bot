@@ -53,6 +53,7 @@ public class LogPreprocessor extends AbstractVerticle {
     HttpServer server;
 
     public Completable rxStart(){
+
         //Init Http Server
         HttpServerOptions options = new HttpServerOptions()
                 .setHost(HOST)

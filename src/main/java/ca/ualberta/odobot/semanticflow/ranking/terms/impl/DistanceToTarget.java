@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -59,7 +60,7 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
 
     public enum MatchingFunction{
         OWN_TEXT(
-                (element,regex)->element.getElementsMatchingOwnText(regex)
+                (element,regex)->element.getElementsMatchingOwnText(Pattern.quote(regex))
         );
 
         public BiFunction<Element,String,Elements> function;

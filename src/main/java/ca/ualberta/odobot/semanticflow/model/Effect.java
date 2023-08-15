@@ -170,4 +170,5 @@ public class Effect extends ArrayList<DomEffect> implements TimelineEntity {
         }
         return allTerms.stream().toList();
     }
+
 }
