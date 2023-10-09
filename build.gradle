@@ -84,6 +84,11 @@ dependencies {
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.12.3'
 
     /**
+     * CrawlJAX
+     */
+    implementation 'com.crawljax:crawljax-core:5.2.3'
+
+    /**
      * Logging
      */
     // https://mvnrepository.com/artifact/org.slf4j/slf4j-simple

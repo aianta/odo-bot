@@ -102,6 +102,27 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
             Collection<SemanticArtifactExtractor> entityExtractors = extractorMultimap.get(entity.getClass());
             entityExtractors.forEach(extractor->
                     entity.getSemanticArtifacts().put(extractor.artifactName(), extractor.extract(entity,it.previousIndex(),timeline)));
+
+            /**
+             * Need to prevent giving deep-service entities with no embeddable semantic artifacts.
+             * IE: one of the term lists below has to have a non-empty list of terms.
+             */
+            Set<String> mustHaveOne = Set.of("idTerms", "cssClassTerms", "terms" ,"terms_added", "terms_removed", "cssClassTerms_added", "cssClassTerms_removed", "idTerms_added", "idTerms_removed");
+            Iterator<Map.Entry<String,Object>> semanticArtifactsIterator = entity.getSemanticArtifacts().iterator();
+            while (semanticArtifactsIterator.hasNext()){
+                Map.Entry<String,Object> entry = semanticArtifactsIterator.next();
+                if (mustHaveOne.contains(entry.getKey())){
+                    JsonArray value = entity.getSemanticArtifacts().getJsonArray(entry.getKey());
+                    if (!value.isEmpty()){
+                        break;
+                    }
+                }
+                //If we got to the end of the artifacts for this entity, and none of the mustHaveOne artifacts were found with values in their json arrays, remove the entity.
+                if(!semanticArtifactsIterator.hasNext()){
+                    it.remove();
+                }
+            }
+
         }
 
         return Future.succeededFuture(timeline);

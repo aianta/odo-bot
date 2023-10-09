@@ -7,7 +7,7 @@ import java.util.Set;
 
 public enum InteractionType{
 
-    CLICK(Set.of("LINK_CLICK","TD_CLICK","BUTTON_CLICK_ACTUAL","BTN_CLICK")),
+    CLICK(Set.of("LINK_CLICK","TD_CLICK","BUTTON_CLICK_ACTUAL","BTN_CLICK", "LIST_ITEM_CLICK")),
     INPUT(Set.of("INPUT_CHANGE")),
     NETWORK_EVENT(Set.of("NETWORK_EVENT")),
     DOM_EFFECT(Set.of("DOM_EFFECT"));

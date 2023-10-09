@@ -3,6 +3,7 @@ package ca.ualberta.odobot.logpreprocessor.impl;
 import ca.ualberta.odobot.extractors.impl.EffectBaseURIExtractor;
 import ca.ualberta.odobot.extractors.impl.EffectExtractor;
 import ca.ualberta.odobot.extractors.impl.NextIdExtractor;
+import ca.ualberta.odobot.extractors.impl.NumericFreeExtractor;
 import ca.ualberta.odobot.logpreprocessor.PreprocessingPipeline;
 import ca.ualberta.odobot.semanticflow.extraction.terms.SourceFunctions;
 import ca.ualberta.odobot.semanticflow.model.Effect;
@@ -35,7 +36,7 @@ public class EffectOverhaulPipeline  extends EnhancedEmbeddingPipeline implement
         extractorMultimap.put(Effect.class, removedCssTerms);
         extractorMultimap.put(Effect.class, addedIdTerms);
         extractorMultimap.put(Effect.class, removedIdTerms);
-        extractorMultimap.put(Effect.class, new EffectBaseURIExtractor());
+        extractorMultimap.put(Effect.class, new NumericFreeExtractor(new EffectBaseURIExtractor()));
         extractorMultimap.put(Effect.class, new NextIdExtractor());
         extractorMultimap.put(Effect.class, addedTagTerms);
         extractorMultimap.put(Effect.class, removedTagTerms);
