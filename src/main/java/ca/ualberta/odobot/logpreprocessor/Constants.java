@@ -4,7 +4,7 @@ public class Constants {
 
 
     public static final String ELASTICSEARCH_SERVICE_ADDRESS = "elasticsearch-service";
-    public static final String DEEP_SERVICE_HOST = "172.28.134.61";
+    public static final String DEEP_SERVICE_HOST = "172.27.72.120";
     public static final int DEEP_SERVICE_PORT = 5000;
     public static final String DEEP_SERVICE_ACTIVITY_LABELS_ENDPOINT = "/activitylabels/";
     public static final String DEEP_SERVICE_MODEL_ENDPOINT = "/model/";

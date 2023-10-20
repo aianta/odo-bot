@@ -2,6 +2,7 @@ package ca.ualberta.odobot.semanticflow.mappers.impl;
 
 import ca.ualberta.odobot.semanticflow.mappers.JsonMapper;
 import ca.ualberta.odobot.semanticflow.model.NetworkEvent;
+import io.vertx.core.json.DecodeException;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
@@ -15,22 +16,48 @@ public class NetworkEventMapper extends JsonMapper<NetworkEvent>{
     public NetworkEvent map(JsonObject event) {
 
         NetworkEvent result = new NetworkEvent();
-        result.setServerIPAddress(event.getString("eventDetails_serverIPAddress"));
         result.setFlightId(event.getString("flightID"));
         result.setLogUISessionId(event.getString("sessionID"));
 
-        JsonObject response = new JsonObject(event.getString("eventDetails_response"));
-        result.setResponse(response);
-        result.setStatusCode(response.getInteger("status"));
+        if(event.containsKey("eventDetails_requestBody") && !event.getString("eventDetails_requestBody").equals("null")){
+
+            try{
+                JsonObject request = new JsonObject(event.getString("eventDetails_requestBody"));
+                result.setRequestObject(request);
+            }catch (DecodeException de){
+                JsonArray requestArray = new JsonArray(event.getString("eventDetails_requestBody"));
+                result.setRequestArray(requestArray);
+            }
+
+        }
+
+        if(event.containsKey("eventDetails_responseBody")){
+            try{
+                JsonObject response = new JsonObject(event.getString("eventDetails_responseBody"));
+                result.setResponseObject(response);
+            }catch (DecodeException de){
 
 
-        JsonObject request = new JsonObject(event.getString("eventDetails_request"));
-        JsonArray requestHeaders = request.getJsonArray("headers");
-        result.setRequest(request);
-        result.setMethod(request.getString("method"));
-        result.setUrl(request.getString("url"));
-        result.setHost(getHeaderField("Host", requestHeaders));
-        result.setUserAgent(getHeaderField("User-Agent", requestHeaders));
+                JsonArray responseArray = new JsonArray(event.getString("eventDetails_responseBody"));
+                result.setResponseArray(responseArray);
+            }
+
+
+        }
+
+        long timestamp = Long.parseLong(event.getString("eventDetails_timeStamp"));
+        int requestId = event.getInteger("eventDetails_requestId");
+        result.setMillisecondTimestamp(timestamp);
+        result.setRequestId(requestId);
+
+        String documentUrl = event.getString("eventDetails_documentUrl");
+        String url = event.getString("eventDetails_url");
+        String type = event.getString("eventDetails_type");
+
+        result.setType(type);
+        result.setDocumentUrl(documentUrl);
+        result.setMethod(event.getString("eventDetails_method"));
+        result.setUrl(url);
 
         return result;
 

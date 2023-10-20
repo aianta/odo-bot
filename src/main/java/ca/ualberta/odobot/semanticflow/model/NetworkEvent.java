@@ -7,49 +7,72 @@ import org.slf4j.LoggerFactory;
 
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.time.ZonedDateTime;
 
 public class NetworkEvent extends AbstractArtifact implements TimelineEntity, FixedPoint{
 
     private static final Logger log = LoggerFactory.getLogger(NetworkEvent.class);
 
-    private String serverIPAddress;
+    private JsonObject requestObject;
 
-    private JsonObject response;
-    private int statusCode;
+    private JsonArray requestArray;
+    private int requestId;
+    private String documentUrl;
+    private String type;
+
+    private long millisecondTimestamp;
+    private JsonObject responseObject;
+
+    private JsonArray responseArray;
+
     private String flightId;
-    private JsonObject request;
+
     private String method;
     private URL url;
 
-    private String userAgent;
-    private String host;
+
     private String logUISessionId;
 
-    public String getServerIPAddress() {
-        return serverIPAddress;
+    public String getType() {
+        return type;
     }
 
-    public void setServerIPAddress(String serverIPAddress) {
-        this.serverIPAddress = serverIPAddress;
+    public void setType(String type) {
+        this.type = type;
     }
 
-    public JsonObject getResponse() {
-        return response;
+
+    public int getRequestId() {
+        return requestId;
     }
 
-    public void setResponse(JsonObject response) {
-        this.response = response;
+    public void setRequestId(int requestId) {
+        this.requestId = requestId;
     }
 
-    public int getStatusCode() {
-        return statusCode;
+    public long getMillisecondTimestamp() {
+        return millisecondTimestamp;
     }
 
-    public void setStatusCode(int statusCode) {
-        this.statusCode = statusCode;
+    public void setMillisecondTimestamp(long millisecondTimestamp) {
+        this.millisecondTimestamp = millisecondTimestamp;
     }
 
+    public JsonObject getResponseObject() {
+        return responseObject;
+    }
+
+    public void setResponseObject(JsonObject responseObject) {
+        this.responseObject = responseObject;
+    }
+
+
+    public String getDocumentUrl() {
+        return documentUrl;
+    }
+
+    public void setDocumentUrl(String documentUrl) {
+        this.documentUrl = documentUrl;
+    }
 
     public String getFlightId() {
         return flightId;
@@ -59,12 +82,12 @@ public class NetworkEvent extends AbstractArtifact implements TimelineEntity, Fi
         this.flightId = flightId;
     }
 
-    public JsonObject getRequest() {
-        return request;
+    public JsonArray getRequestArray() {
+        return requestArray;
     }
 
-    public void setRequest(JsonObject request) {
-        this.request = request;
+    public void setRequestArray(JsonArray requestArray) {
+        this.requestArray = requestArray;
     }
 
     public String getMethod() {
@@ -98,25 +121,27 @@ public class NetworkEvent extends AbstractArtifact implements TimelineEntity, Fi
         return url.getQuery();
     }
 
-    public String getHost() {
-        return host;
+    public JsonArray getResponseArray() {
+        return responseArray;
     }
 
-    public void setHost(String host) {
-        this.host = host;
+    public void setResponseArray(JsonArray responseArray) {
+        this.responseArray = responseArray;
+    }
+
+    public JsonObject getRequestObject() {
+        return requestObject;
+    }
+
+    public void setRequestObject(JsonObject requestObject) {
+        this.requestObject = requestObject;
     }
 
     public String getLogUISessionId() {
         return logUISessionId;
     }
 
-    public String getUserAgent() {
-        return userAgent;
-    }
 
-    public void setUserAgent(String userAgent) {
-        this.userAgent = userAgent;
-    }
 
     public void setLogUISessionId(String logUISessionId) {
         this.logUISessionId = logUISessionId;
@@ -134,18 +159,37 @@ public class NetworkEvent extends AbstractArtifact implements TimelineEntity, Fi
 
     @Override
     public JsonObject toJson() {
-        return new JsonObject()
-                .put("serverIPAddress", getServerIPAddress())
-                .put("host", getHost())
+         JsonObject result = new JsonObject()
                 .put("method", getMethod())
                 .put("path", getPath())
                 .put("query", getQuery())
-                .put("statusCode", getStatusCode())
+                .put("firefoxRequestId", getRequestId())
+                .put("documentUrl", getDocumentUrl())
+                .put("url", getUrl())
+                .put("type", getType())
                 .put("timestamp", getTimestamp().toString())
                 .put("logUISessionId", getLogUISessionId())
                 .put("flightId", getFlightId())
-                .put("_activityLabel", getActivityLabel())
-                .put("userAgent", getUserAgent());
+                .put("_activityLabel", getActivityLabel());
+
+         if (getResponseObject() != null){
+             result.put("response", getResponseObject());
+         }
+
+         if(getResponseArray() != null){
+             result.put("response", getResponseArray());
+         }
+
+         if(getRequestObject() != null){
+             result.put("request", getRequestObject());
+         }
+
+         if(getRequestArray() != null){
+             result.put("request", getRequestArray());
+         }
+
+
+        return result;
     }
 
     @Override

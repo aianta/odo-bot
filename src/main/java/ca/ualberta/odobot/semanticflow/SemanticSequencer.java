@@ -156,13 +156,20 @@ public class SemanticSequencer {
                     }
                     case NETWORK_EVENT -> {
 
-                        NetworkEvent networkEvent = networkEventMapper.map(event);
-                        networkEvent.setTimestamp(ZonedDateTime.parse(event.getString(TIMESTAMP_FIELD), timeFormatter));
-                        //TODO - Temporarily ignore all GET requests. See 'Integrating Network Events # Network Event Summarization Options' in obsidian for details
-                        if(!networkEvent.getMethod().toLowerCase().equals("get")){
-                            line.add(networkEvent);
-                        }
-                        log.info("Handled NETWORK_EVENT");
+//                        try{
+                            log.info(event.encodePrettily());
+                            NetworkEvent networkEvent = networkEventMapper.map(event);
+                            networkEvent.setTimestamp(ZonedDateTime.parse(event.getString(TIMESTAMP_FIELD), timeFormatter));
+                            //TODO - Temporarily ignore all GET requests. See 'Integrating Network Events # Network Event Summarization Options' in obsidian for details
+                            if(!networkEvent.getMethod().toLowerCase().equals("get")){
+                                line.add(networkEvent);
+                            }
+                            log.info("Handled NETWORK_EVENT");
+//                        }catch (Exception e){
+//                            log.error(e.getMessage(), e);
+//                        }
+
+
 
                     }
                 }

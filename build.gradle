@@ -87,6 +87,9 @@ dependencies {
      * CrawlJAX
      */
     implementation 'com.crawljax:crawljax-core:5.2.3'
+    // https://mvnrepository.com/artifact/com.crawljax.plugins/crawloverview-plugin
+    implementation group: 'com.crawljax.plugins', name: 'crawloverview-plugin', version: '5.2.3'
+
 
     /**
      * Logging
