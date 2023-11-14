@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.logpreprocessor;
 
+import ca.ualberta.odobot.domsequencing.DOMSequencingService;
 import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 import ca.ualberta.odobot.logpreprocessor.executions.impl.AbstractPreprocessingPipelineExecutionStatus;
 import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
@@ -46,6 +47,8 @@ public class LogPreprocessor extends AbstractVerticle {
 
     private static ElasticsearchService elasticsearchService;
 
+    private static DOMSequencingService domSequencingService;
+
     private Set<Class> mountedPipelines = new HashSet<>();
 
     Router mainRouter;
@@ -63,6 +66,12 @@ public class LogPreprocessor extends AbstractVerticle {
         server = vertx.createHttpServer(options);
         mainRouter = Router.router(vertx);
         api = Router.router(vertx);
+
+        //Init DOMSequencing Service
+        domSequencingService = DOMSequencingService.create();
+        new ServiceBinder(vertx.getDelegate())
+                .setAddress(DOMSEQUENCING_SERVICE_ADDRESS)
+                .register(DOMSequencingService.class, domSequencingService);
 
         //Init Elasticsearch Service
         elasticsearchService = ElasticsearchService.create(vertx.getDelegate(), "localhost", 9200);
@@ -177,6 +186,9 @@ public class LogPreprocessor extends AbstractVerticle {
         api.route().method(HttpMethod.DELETE).path("/indices/:target").handler(this::clearIndex);
         api.route().method(HttpMethod.DELETE).path("/indices").handler(this::clearIndices);
 
+        api.route().method(HttpMethod.GET).path("/DOMSequences").handler(this::getDOMSequences);
+        api.route().method(HttpMethod.DELETE).path("/DOMSequences").handler(this::clearDOMSequences);
+
         //Mount handlers to main router
         mainRouter.route().handler(LoggerHandler.create());
         mainRouter.route().handler(BodyHandler.create());
@@ -279,6 +291,33 @@ public class LogPreprocessor extends AbstractVerticle {
                     log.error(err.getMessage(),err);
                     rc.response().setStatusCode(500).end();
                 })
+        ;
+    }
+
+    private void getDOMSequences(RoutingContext rc){
+
+        domSequencingService.getSequences().onSuccess(jsonSequences->{
+
+            JsonArray result;
+            if(rc.request().params().contains("stringOnly") && Boolean.parseBoolean(rc.request().getParam("stringOnly"))){
+                result = jsonSequences.stream()
+                        .map(sequenceData->sequenceData.getString("sequence"))
+                        .collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+            }else{
+                result = jsonSequences.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+            }
+
+           rc.response().setStatusCode(200).end(result.encodePrettily());
+        }).onFailure(err->{
+            log.error(err.getMessage(), err);
+            rc.response().setStatusCode(500).end();
+        });
+    }
+
+    private void clearDOMSequences(RoutingContext rc){
+        domSequencingService.clearSequences()
+                .onSuccess(done->rc.response().setStatusCode(200).end())
+                .onFailure(err->{log.error(err.getMessage(), err); rc.response().setStatusCode(500).end();})
         ;
     }
 

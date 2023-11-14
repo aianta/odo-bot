@@ -193,6 +193,8 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
 
             if(result.errors()){
                 log.error("Bulk insert request resulted in errors!");
+                log.error("Attempted to insert the following items: ");
+                items.forEach(item->log.error("{}", item.encodePrettily()));
                 for(BulkResponseItem item: result.items()){
                     if(item.error() != null){
                         log.error("{}", item.error().reason());

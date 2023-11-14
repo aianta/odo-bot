@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.logpreprocessor.impl;
 
+import ca.ualberta.odobot.domsequencing.DOMSequencingService;
 import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 import ca.ualberta.odobot.logpreprocessor.PipelinePersistenceLayer;
 import ca.ualberta.odobot.logpreprocessor.PipelineService;
@@ -47,6 +48,8 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
     private static final Logger log = LoggerFactory.getLogger(AbstractPreprocessingPipeline.class);
 
     protected ElasticsearchService elasticsearchService;
+    protected DOMSequencingService domSequencingService;
+
     protected Vertx vertx;
 
     WebClient client;
@@ -68,7 +71,7 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
          * across a distributed deployment.
          */
         elasticsearchService = ElasticsearchService.createProxy(vertx.getDelegate(), ELASTICSEARCH_SERVICE_ADDRESS);
-
+        domSequencingService = DOMSequencingService.createProxy(vertx.getDelegate(), DOMSEQUENCING_SERVICE_ADDRESS);
 
         client = WebClient.create(vertx);
 

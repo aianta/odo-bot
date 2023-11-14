@@ -22,6 +22,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 
 public class SemanticSequencer {
@@ -41,6 +42,21 @@ public class SemanticSequencer {
     private NetworkEventMapper networkEventMapper = new NetworkEventMapper();
 
     private Timeline line;
+
+    /**
+     * A consuming function to invoke when an artifact is mapped during sequencing
+     */
+    private Consumer<AbstractArtifact> artifactConsumer;
+
+    /**
+     * Allows caller to specify a consuming function to invoke whenever an {@link AbstractArtifact} is mapped as part of the sequencing process.
+     * @param consumer the consuming function to invoke when an artifact is mapped during sequencing
+     */
+    public void setOnArtifact(Consumer<AbstractArtifact> consumer){
+        this.artifactConsumer = consumer;
+    }
+
+
 
     public Timeline parse(List<JsonObject> events){
         line = new Timeline();
@@ -98,12 +114,22 @@ public class SemanticSequencer {
                         ClickEvent clickEvent = clickEventMapper.map(event);
                         clickEvent.setTimestamp(ZonedDateTime.parse(event.getString(TIMESTAMP_FIELD), timeFormatter));
                         line.add(clickEvent);
+
+                        if(artifactConsumer != null){ //If we have an artifact consumer set
+                            artifactConsumer.accept(clickEvent); //Invoke them with the newly processed artifact.
+                        }
+
                         log.info("handled CLICK");
 
                     }
                     case INPUT -> {
                         InputChange inputChange = inputChangeMapper.map(event);
                         inputChange.setTimestamp(ZonedDateTime.parse(event.getString(TIMESTAMP_FIELD), timeFormatter));
+
+                        if(artifactConsumer != null){ //If we have an artifact consumer set
+                            artifactConsumer.accept(inputChange); //Invoke them with the newly processed artifact.
+                        }
+
                         /**  Check if the last entity in the timeline is a {@link DataEntry},
                          * if so, add this input change to it. Otherwise, create a new
                          * DataEntry and add this input change to it before adding the created DataEntry to the timeline. */
@@ -131,46 +157,53 @@ public class SemanticSequencer {
             case "customEvent":
                 switch (InteractionType.getType(event.getString("eventDetails_name"))){
                     case DOM_EFFECT -> {
-                        DomEffect domEffect = domEffectMapper.map(event);
+                        try{
+                            DomEffect domEffect = domEffectMapper.map(event);
 
-                        if(domEffect == null) {return;} //TODO - I wonder why this was necessary
-                        domEffect.setTimestamp(ZonedDateTime.parse(event.getString(TIMESTAMP_FIELD), timeFormatter));
+                            if(domEffect == null) {return;} //TODO - I wonder why this was necessary
+                            domEffect.setTimestamp(ZonedDateTime.parse(event.getString(TIMESTAMP_FIELD), timeFormatter));
 
-                        /**
-                         Check if the last entity in the timeline is an {@link Effect},
-                         if so, add this domEffect to it. Otherwise, create a new Effect
-                         and add this domEffect to it before adding the created Effect to the timeline.
-                         */
-                        if(line.last() != null && line.last() instanceof Effect){
-                            Effect effect = (Effect) line.last();
-                            effect.add(domEffect);
+                            if(artifactConsumer != null){//If we have an artifact consumer set
+                                artifactConsumer.accept(domEffect);//Invoke them with the newly processed artifact.
+                            }
+
+                            /**
+                             Check if the last entity in the timeline is an {@link Effect},
+                             if so, add this domEffect to it. Otherwise, create a new Effect
+                             and add this domEffect to it before adding the created Effect to the timeline.
+                             */
+                            if(line.last() != null && line.last() instanceof Effect){
+                                Effect effect = (Effect) line.last();
+                                effect.add(domEffect);
+                            }
+
+                            if(line.last() == null || !(line.last() instanceof Effect)){
+                                Effect effect = new Effect();
+                                effect.add(domEffect);
+                                line.add(effect);
+                            }
+
+                            log.info("handled DOM_EFFECT");
+                        }catch (Exception e){
+                            log.error(e.getMessage(), e);
                         }
 
-                        if(line.last() == null || !(line.last() instanceof Effect)){
-                            Effect effect = new Effect();
-                            effect.add(domEffect);
-                            line.add(effect);
-                        }
-
-                        log.info("handled DOM_EFFECT");
                     }
                     case NETWORK_EVENT -> {
 
-//                        try{
-                            log.info(event.encodePrettily());
                             NetworkEvent networkEvent = networkEventMapper.map(event);
                             networkEvent.setTimestamp(ZonedDateTime.parse(event.getString(TIMESTAMP_FIELD), timeFormatter));
-                            //TODO - Temporarily ignore all GET requests. See 'Integrating Network Events # Network Event Summarization Options' in obsidian for details
-                            if(!networkEvent.getMethod().toLowerCase().equals("get")){
-                                line.add(networkEvent);
+
+                            if(artifactConsumer != null){ //If we have an artifact consumer set
+                                artifactConsumer.accept(networkEvent); //Invoke them with the newly processed artifact.
                             }
+
+                            log.info("{} - {}", networkEvent.getMethod(), networkEvent.getUrl());
+                            //TODO - Temporarily ignore all GET requests. See 'Integrating Network Events # Network Event Summarization Options' in obsidian for details
+                            //if(!networkEvent.getMethod().toLowerCase().equals("get")){
+                                line.add(networkEvent);
+
                             log.info("Handled NETWORK_EVENT");
-//                        }catch (Exception e){
-//                            log.error(e.getMessage(), e);
-//                        }
-
-
-
                     }
                 }
 

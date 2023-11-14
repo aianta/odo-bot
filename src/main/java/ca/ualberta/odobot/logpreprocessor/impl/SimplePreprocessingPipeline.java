@@ -85,6 +85,12 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
     public Future<Timeline> makeTimeline(String sourceIndex, List<JsonObject> events){
 
         SemanticSequencer sequencer = new SemanticSequencer();
+        sequencer.setOnArtifact(artifact -> {
+            if(artifact.getDomSnapshot() != null){
+                domSequencingService.process(artifact.getDomSnapshot().outerHtml());
+            }
+        });
+
         //Timeline data structure construction
         Timeline timeline = sequencer.parse(events);
         timeline.getAnnotations().put("source-index", sourceIndex);
@@ -98,36 +104,42 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
          */
         ListIterator<TimelineEntity> it = timeline.listIterator();
         while (it.hasNext()){
-            TimelineEntity entity = it.next();
-            Collection<SemanticArtifactExtractor> entityExtractors = extractorMultimap.get(entity.getClass());
-            entityExtractors.forEach(extractor->
-                    entity.getSemanticArtifacts().put(extractor.artifactName(), extractor.extract(entity,it.previousIndex(),timeline)));
+            try{
+                TimelineEntity entity = it.next();
+                Collection<SemanticArtifactExtractor> entityExtractors = extractorMultimap.get(entity.getClass());
+                entityExtractors.forEach(extractor->
+                        entity.getSemanticArtifacts().put(extractor.artifactName(), extractor.extract(entity,it.previousIndex(),timeline)));
 
-            /**
-             * Need to prevent giving deep-service entities with no embeddable semantic artifacts.
-             * IE: one of the term lists below has to have a non-empty list of terms.
-             */
-            Set<String> mustHaveOne = Set.of("idTerms", "cssClassTerms", "terms" ,"terms_added", "terms_removed", "cssClassTerms_added", "cssClassTerms_removed", "idTerms_added", "idTerms_removed");
-            Iterator<Map.Entry<String,Object>> semanticArtifactsIterator = entity.getSemanticArtifacts().iterator();
-            while (semanticArtifactsIterator.hasNext()){
-                Map.Entry<String,Object> entry = semanticArtifactsIterator.next();
-                if (mustHaveOne.contains(entry.getKey())){
-                    JsonArray value = entity.getSemanticArtifacts().getJsonArray(entry.getKey());
-                    if (!value.isEmpty()){
-                        break;
+                /**
+                 * Need to prevent giving deep-service entities with no embeddable semantic artifacts.
+                 * IE: one of the term lists below has to have a non-empty list of terms.
+                 */
+                Set<String> mustHaveOne = Set.of("idTerms", "cssClassTerms", "terms" ,"terms_added", "terms_removed", "cssClassTerms_added", "cssClassTerms_removed", "idTerms_added", "idTerms_removed");
+                Iterator<Map.Entry<String,Object>> semanticArtifactsIterator = entity.getSemanticArtifacts().iterator();
+                while (semanticArtifactsIterator.hasNext()){
+                    Map.Entry<String,Object> entry = semanticArtifactsIterator.next();
+                    if (mustHaveOne.contains(entry.getKey())){
+                        JsonArray value = entity.getSemanticArtifacts().getJsonArray(entry.getKey());
+                        if (!value.isEmpty()){
+                            break;
+                        }
+                    }
+                    //If we got to the end of the artifacts for this entity, and none of the mustHaveOne artifacts were found with values in their json arrays, remove the entity.
+                    if(!semanticArtifactsIterator.hasNext()){
+                        it.remove();
                     }
                 }
-                //If we got to the end of the artifacts for this entity, and none of the mustHaveOne artifacts were found with values in their json arrays, remove the entity.
-                if(!semanticArtifactsIterator.hasNext()){
-                    it.remove();
-                }
+            }catch (Exception e){
+                log.error(e.getMessage(),e);
             }
+
 
         }
 
         return Future.succeededFuture(timeline);
     }
 
+    @Deprecated
     @Override
     public Future<List<Timeline>> makeTimelines(Map<String, List<JsonObject>> eventsMap) {
         Promise<List<Timeline>> promise = Promise.promise();

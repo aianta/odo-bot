@@ -33,6 +33,7 @@ public abstract class AbstractTermExtractionStrategy implements TermExtractionSt
     }
 
     public <T extends AbstractArtifact> List<CoreLabel> extractTerms(T artifact, Function<T, String> sourceText){
+        log.info("targetArtifact xpath: {}", artifact.getXpath());
         return extractTerms(sourceText.apply(artifact));
     }
 
