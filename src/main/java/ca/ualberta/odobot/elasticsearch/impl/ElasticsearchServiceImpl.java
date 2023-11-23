@@ -143,7 +143,7 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
             }
 
         }catch (IOException ioe){
-            log.error("Error fetching documents from es index: {} with sort options: \n{}", index, sortOptions.encodePrettily());
+            log.error("Error fetching documents from es index: {} with sort options: \n{}", index, sortOptions == null?"null":sortOptions.encodePrettily());
             log.error(ioe.getMessage(), ioe);
             return Future.failedFuture(ioe);
         }

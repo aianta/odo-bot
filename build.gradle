@@ -35,6 +35,10 @@ dependencies {
     annotationProcessor 'io.vertx:vertx-codegen:4.4.1:processor'
     annotationProcessor 'io.vertx:vertx-service-proxy:4.4.1'
 
+    // https://mvnrepository.com/artifact/org.apache.commons/commons-lang3
+    implementation group: 'org.apache.commons', name: 'commons-lang3', version: '3.13.0'
+
+
     /**
      * OpenXES implementation
      * https://www.xes-standard.org/openxes/download

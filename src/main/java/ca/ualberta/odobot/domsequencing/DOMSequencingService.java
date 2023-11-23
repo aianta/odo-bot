@@ -7,6 +7,7 @@ import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
 
 import java.util.List;
+import java.util.Set;
 
 @ProxyGen
 public interface DOMSequencingService {
@@ -24,5 +25,17 @@ public interface DOMSequencingService {
     Future<List<JsonObject>> getSequences();
 
     Future<Void> clearSequences();
+
+    Future<Void> testPatternExtraction(List<JsonObject> data);
+
+    Future<String> getGlobalManifest();
+
+    Future<String> cssQuery(Set<String> query);
+
+    Future<String> getDirectlyFollowsManifest();
+
+    Future<String> getEncodedSequences();
+
+    Future<String> decodeSequences(String encodedSequences);
 
 }

@@ -34,6 +34,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.*;
@@ -56,68 +57,69 @@ public class LogPreprocessor extends AbstractVerticle {
     HttpServer server;
 
     public Completable rxStart(){
-
-        //Init Http Server
-        HttpServerOptions options = new HttpServerOptions()
-                .setHost(HOST)
-                .setPort(PORT)
-                .setSsl(false);
-
-        server = vertx.createHttpServer(options);
-        mainRouter = Router.router(vertx);
-        api = Router.router(vertx);
-
-        //Init DOMSequencing Service
-        domSequencingService = DOMSequencingService.create();
-        new ServiceBinder(vertx.getDelegate())
-                .setAddress(DOMSEQUENCING_SERVICE_ADDRESS)
-                .register(DOMSequencingService.class, domSequencingService);
-
-        //Init Elasticsearch Service
-        elasticsearchService = ElasticsearchService.create(vertx.getDelegate(), "localhost", 9200);
-        new ServiceBinder(vertx.getDelegate())
-                .setAddress(ELASTICSEARCH_SERVICE_ADDRESS)
-                .register(ElasticsearchService.class, elasticsearchService);
+        try {
 
 
-        /**
-         * Load up pipelines as defined in elasticsearch records.
-         * NOTE: Experimental
-         */
-        elasticsearchService.fetchAll(PIPELINES_INDEX)
-                .onFailure(err->log.error(err.getMessage(),err))
-                .onSuccess(pipelineRecords->{
-            if(pipelineRecords.size() > 0){ //If we found pipeline records.
-                pipelineRecords.forEach(record->{
+            //Init Http Server
+            HttpServerOptions options = new HttpServerOptions()
+                    .setHost(HOST)
+                    .setPort(PORT)
+                    .setSsl(false);
 
-                    try{
-                        UUID id = UUID.fromString(record.getString("id"));
-                        String slug = record.getString("slug");
-                        String name = record.getString("name");
-                        String className = record.getString("class");
+            server = vertx.createHttpServer(options);
+            mainRouter = Router.router(vertx);
+            api = Router.router(vertx);
 
-                        Class clazz = Class.forName(className);
-                        Constructor constructor = clazz.getConstructor(Vertx.class, UUID.class, String.class, String.class );
+            //Init DOMSequencing Service
+            domSequencingService = DOMSequencingService.create();
+            new ServiceBinder(vertx.getDelegate())
+                    .setAddress(DOMSEQUENCING_SERVICE_ADDRESS)
+                    .register(DOMSequencingService.class, domSequencingService);
 
-                        PreprocessingPipeline pipeline = (PreprocessingPipeline) constructor.newInstance(vertx, id, slug, name);
-
-
-                        mountPipeline(api, pipeline);
-                    }catch (ClassNotFoundException | NoSuchMethodException e){
-                        log.error(e.getMessage(), e);
-                    } catch (InvocationTargetException e) {
-                        log.error(e.getMessage(), e);
-                    } catch (InstantiationException e) {
-                        log.error(e.getMessage(), e);
-                    } catch (IllegalAccessException e) {
-                        log.error(e.getMessage(), e);
-                    }
+            //Init Elasticsearch Service
+            elasticsearchService = ElasticsearchService.create(vertx.getDelegate(), "localhost", 9200);
+            new ServiceBinder(vertx.getDelegate())
+                    .setAddress(ELASTICSEARCH_SERVICE_ADDRESS)
+                    .register(ElasticsearchService.class, elasticsearchService);
 
 
+            /**
+             * Load up pipelines as defined in elasticsearch records.
+             * NOTE: Experimental
+             */
+            elasticsearchService.fetchAll(PIPELINES_INDEX)
+                    .onFailure(err -> log.error(err.getMessage(), err))
+                    .onSuccess(pipelineRecords -> {
+                        if (pipelineRecords.size() > 0) { //If we found pipeline records.
+                            pipelineRecords.forEach(record -> {
 
-                });
+                                try {
+                                    UUID id = UUID.fromString(record.getString("id"));
+                                    String slug = record.getString("slug");
+                                    String name = record.getString("name");
+                                    String className = record.getString("class");
 
-                //ADD NEW PIPELINES HERE
+                                    Class clazz = Class.forName(className);
+                                    Constructor constructor = clazz.getConstructor(Vertx.class, UUID.class, String.class, String.class);
+
+                                    PreprocessingPipeline pipeline = (PreprocessingPipeline) constructor.newInstance(vertx, id, slug, name);
+
+
+                                    mountPipeline(api, pipeline);
+                                } catch (ClassNotFoundException | NoSuchMethodException e) {
+                                    log.error(e.getMessage(), e);
+                                } catch (InvocationTargetException e) {
+                                    log.error(e.getMessage(), e);
+                                } catch (InstantiationException e) {
+                                    log.error(e.getMessage(), e);
+                                } catch (IllegalAccessException e) {
+                                    log.error(e.getMessage(), e);
+                                }
+
+
+                            });
+
+                            //ADD NEW PIPELINES HERE
 //                PreprocessingPipeline hierarchicalPipeline = new HierarchicalClusteringPipeline(
 //                        vertx, UUID.randomUUID(), "hierarchical-v1", "Hierarchical clustering technique that blends domain knowledge from the DOM with unsupervised learning to determine activity labels. "
 //                );
@@ -126,77 +128,90 @@ public class LogPreprocessor extends AbstractVerticle {
 //                elasticsearchService.saveIntoIndex(List.of(hierarchicalPipeline.toJson()),PIPELINES_INDEX).onSuccess(saved->log.info("saved effect overhaul pipeline to index"));
 
 
+                        } else { //Otherwise create a new pipeline
+                            //Create simple preprocessing pipeline
+                            PreprocessingPipeline simplePipeline = new SimplePreprocessingPipeline(
+                                    vertx, UUID.randomUUID(), "test", "test pipeline"
+                            );
 
-            }else{ //Otherwise create a new pipeline
-                //Create simple preprocessing pipeline
-                PreprocessingPipeline simplePipeline = new SimplePreprocessingPipeline(
-                        vertx, UUID.randomUUID(), "test", "test pipeline"
-                );
+                            PreprocessingPipeline enhancedEmbeddingsPipeline = new EnhancedEmbeddingPipeline(
+                                    vertx, UUID.randomUUID(), "embeddings-v2", "First pipeline to use the /activitylabels/v2/ deep service endpoint"
+                            );
 
-                PreprocessingPipeline enhancedEmbeddingsPipeline = new EnhancedEmbeddingPipeline(
-                        vertx, UUID.randomUUID(), "embeddings-v2", "First pipeline to use the /activitylabels/v2/ deep service endpoint"
-                );
+                            PreprocessingPipeline tfidfPipeline = new TFIDFPipeline(
+                                    vertx, UUID.randomUUID(), "activity-labels-v3", "First pipeline to use tfidf /activitylabels/v3/ deep service endpoint"
+                            );
 
-                PreprocessingPipeline tfidfPipeline = new TFIDFPipeline(
-                        vertx, UUID.randomUUID(), "activity-labels-v3", "First pipeline to use tfidf /activitylabels/v3/ deep service endpoint"
-                );
+                            PreprocessingPipeline temporalPipeline = new TemporalPipeline(
+                                    vertx, UUID.randomUUID(), "temporal-v1", "First pipeline to add info about previous and next entities."
+                            );
 
-                PreprocessingPipeline temporalPipeline = new TemporalPipeline(
-                        vertx, UUID.randomUUID(), "temporal-v1", "First pipeline to add info about previous and next entities."
-                );
+                            PreprocessingPipeline tfidfTemporalPipeline = new TFIDFPipeline(
+                                    vertx, UUID.randomUUID(), "tfidf-temporal-v1", "First tfidf pipeline to add info about previous and next entities."
+                            );
 
-                PreprocessingPipeline tfidfTemporalPipeline = new TFIDFPipeline(
-                        vertx, UUID.randomUUID(), "tfidf-temporal-v1", "First tfidf pipeline to add info about previous and next entities."
-                );
+                            PreprocessingPipeline effectOverhaulPipeline = new EffectOverhaulPipeline(
+                                    vertx, UUID.randomUUID(), "effect-overhaul-v1", "Split Effect representation in 'added' and 'removed' lists to allow more meaningful embedding."
+                            );
 
-                PreprocessingPipeline effectOverhaulPipeline = new EffectOverhaulPipeline(
-                        vertx, UUID.randomUUID(), "effect-overhaul-v1", "Split Effect representation in 'added' and 'removed' lists to allow more meaningful embedding."
-                );
+                            PreprocessingPipeline hierarchicalPipeline = new HierarchicalClusteringPipeline(
+                                    vertx, UUID.randomUUID(), "hierarchical-v1", "Hierarchical clustering technique that blends domain knowledge from the DOM with unsupervised learning to determine activity labels. "
+                            );
 
-                PreprocessingPipeline hierarchicalPipeline = new HierarchicalClusteringPipeline(
-                        vertx, UUID.randomUUID(), "hierarchical-v1", "Hierarchical clustering technique that blends domain knowledge from the DOM with unsupervised learning to determine activity labels. "
-                );
+                            elasticsearchService.saveIntoIndex(List.of(
+                                    simplePipeline.toJson(),
+                                    enhancedEmbeddingsPipeline.toJson(),
+                                    tfidfPipeline.toJson(),
+                                    temporalPipeline.toJson(),
+                                    tfidfTemporalPipeline.toJson(),
+                                    effectOverhaulPipeline.toJson(),
+                                    hierarchicalPipeline.toJson()
+                            ), PIPELINES_INDEX).onSuccess(done -> {
+                                log.info("Registered pipeline(s) in elasticsearch");
+                            });
 
-                elasticsearchService.saveIntoIndex(List.of(
-                        simplePipeline.toJson(),
-                        enhancedEmbeddingsPipeline.toJson(),
-                        tfidfPipeline.toJson(),
-                        temporalPipeline.toJson(),
-                        tfidfTemporalPipeline.toJson(),
-                        effectOverhaulPipeline.toJson(),
-                        hierarchicalPipeline.toJson()
-                ), PIPELINES_INDEX).onSuccess(done->{
-                    log.info("Registered pipeline(s) in elasticsearch");
-                });
+                            mountPipeline(api, enhancedEmbeddingsPipeline);
+                            mountPipeline(api, simplePipeline);
+                            mountPipeline(api, tfidfPipeline);
+                            mountPipeline(api, temporalPipeline);
+                            mountPipeline(api, tfidfTemporalPipeline);
+                            mountPipeline(api, effectOverhaulPipeline);
 
-                mountPipeline(api, enhancedEmbeddingsPipeline);
-                mountPipeline(api, simplePipeline);
-                mountPipeline(api, tfidfPipeline);
-                mountPipeline(api, temporalPipeline);
-                mountPipeline(api, tfidfTemporalPipeline);
-                mountPipeline(api, effectOverhaulPipeline);
-
-            }
-
-
-        });
+                        }
 
 
-        //Define API routes
-        api.route().method(HttpMethod.DELETE).path("/indices/:target").handler(this::clearIndex);
-        api.route().method(HttpMethod.DELETE).path("/indices").handler(this::clearIndices);
+                    });
 
-        api.route().method(HttpMethod.GET).path("/DOMSequences").handler(this::getDOMSequences);
-        api.route().method(HttpMethod.DELETE).path("/DOMSequences").handler(this::clearDOMSequences);
 
-        //Mount handlers to main router
-        mainRouter.route().handler(LoggerHandler.create());
-        mainRouter.route().handler(BodyHandler.create());
-        mainRouter.route().handler(rc->{rc.response().putHeader("Access-Control-Allow-Origin", "*"); rc.next();});
-        mainRouter.route(API_PATH_PREFIX).subRouter(api);
+            //Define API routes
+            api.route().method(HttpMethod.DELETE).path("/indices/:target").handler(this::clearIndex);
+            api.route().method(HttpMethod.DELETE).path("/indices").handler(this::clearIndices);
 
-        server.requestHandler(mainRouter).listen(PORT);
-        log.info("LogPreprocessor Server started on port: {}", PORT);
+            api.route().method(HttpMethod.GET).path("/DOMSequences").handler(this::getDOMSequences);
+            api.route().method(HttpMethod.DELETE).path("/DOMSequences").handler(this::clearDOMSequences);
+            api.route().method(HttpMethod.POST).path("/DOMSequences/patterns").handler(this::testPatternExtraction);
+            api.route().method(HttpMethod.GET).path("/DOMSequences/encoded").handler(this::getEncodedSequences);
+            api.route().method(HttpMethod.POST).path("/DOMSequences/decode").handler(this::getDecodedSequences);
+            api.route().method(HttpMethod.POST).path("/css/query").handler(this::executeCSSQuery);
+            api.route().method(HttpMethod.GET).path("/css/").handler(this::getGlobalManifest);
+            api.route().method(HttpMethod.GET).path("/css/follows").handler(this::getDirectlyFollowsManifest);
+
+
+            //Mount handlers to main router
+            mainRouter.route().handler(LoggerHandler.create());
+            mainRouter.route().handler(BodyHandler.create());
+            mainRouter.route().handler(rc -> {
+                rc.response().putHeader("Access-Control-Allow-Origin", "*");
+                rc.next();
+            });
+            mainRouter.route(API_PATH_PREFIX).subRouter(api);
+
+            server.requestHandler(mainRouter).listen(PORT);
+            log.info("LogPreprocessor Server started on port: {}", PORT);
+
+        }catch (Exception e){
+            log.error(e.getMessage(), e);
+        }
 
         return super.rxStart();
     }
@@ -300,6 +315,9 @@ public class LogPreprocessor extends AbstractVerticle {
 
             JsonArray result;
             if(rc.request().params().contains("stringOnly") && Boolean.parseBoolean(rc.request().getParam("stringOnly"))){
+
+
+
                 result = jsonSequences.stream()
                         .map(sequenceData->sequenceData.getString("sequence"))
                         .collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
@@ -314,11 +332,62 @@ public class LogPreprocessor extends AbstractVerticle {
         });
     }
 
+    private void executeCSSQuery(RoutingContext rc){
+        JsonArray classes = rc.body().asJsonArray();
+        Set<String> query = classes.stream().map(o->(String)o).collect(Collectors.toSet());
+        domSequencingService.cssQuery(query)
+                .onSuccess(result->rc.response().setStatusCode(200).end(result))
+                .onFailure(err->{
+                    log.error(err.getMessage(), err);
+                    rc.response().setStatusCode(500).end(err.getMessage());
+                });
+
+    }
+
+    private void getDirectlyFollowsManifest(RoutingContext rc){
+        domSequencingService.getDirectlyFollowsManifest().onSuccess(data->rc.response().setStatusCode(200).end(data));
+    }
+
+    private void getGlobalManifest(RoutingContext rc){
+        domSequencingService.getGlobalManifest()
+                .onSuccess(data->rc.response().setStatusCode(200).end(data));
+    }
+
     private void clearDOMSequences(RoutingContext rc){
         domSequencingService.clearSequences()
                 .onSuccess(done->rc.response().setStatusCode(200).end())
                 .onFailure(err->{log.error(err.getMessage(), err); rc.response().setStatusCode(500).end();})
         ;
+    }
+
+    private void getEncodedSequences(RoutingContext rc){
+        domSequencingService.getEncodedSequences()
+                .onSuccess(result->rc.response().setStatusCode(200).end(result))
+                .onFailure(err->{
+                    log.error(err.getMessage(), err);
+                    rc.response().setStatusCode(500).end();
+                });
+    }
+
+    private void getDecodedSequences(RoutingContext rc){
+        String encodedSequences = rc.body().asString();
+
+        domSequencingService.decodeSequences(encodedSequences)
+                .onSuccess(result->rc.response().setStatusCode(200).end(result))
+                .onFailure(err->{
+                    log.error(err.getMessage(), err);
+                    rc.response().setStatusCode(500).end();
+                });
+    }
+
+    private void testPatternExtraction(RoutingContext rc){
+        JsonArray sequences = rc.body().asJsonArray();
+        List<JsonObject> data = sequences.stream().map(o->(JsonObject)o).collect(Collectors.toList());
+        domSequencingService.testPatternExtraction(data).onSuccess(done->rc.response().setStatusCode(200).end())
+                .onFailure(err->{
+                    log.error(err.getMessage(), err);
+                    rc.response().setStatusCode(500).end();
+                });
     }
 
 
