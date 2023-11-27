@@ -117,9 +117,9 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
 
         log.debug("targetElement: {}", targetElement);
 
-        List<CoreLabel> terms = extractionStrategy.extractTerms(artifact, (a)->a.getDomSnapshot().body().text());
+
         //Term extraction
-        List<String> sTerms = extractionStrategy.extractTerms(
+        List<String> terms = extractionStrategy.extractTerms(
                 artifact, //The artifact to extract terms from
                 (a)->a.getDomSnapshot().body().text(), //The source function to apply to the artifact to get a raw string to extract from.
                 //Transformation to be applied to resulting CoreLabel
@@ -134,10 +134,10 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
         );
 
         log.debug("terms size: {}", terms.size());
-        log.debug("'Event' count: {}",terms.stream().filter(term->term.word().equals("Event")).count());
+        log.debug("'Event' count: {}",terms.stream().filter(term->term.equals("Event")).count());
 
 
-        List<RankedTerm> result = sTerms.stream()
+        List<RankedTerm> result = terms.stream()
                 .map(term->{
             log.debug("Looking for: {}", term);
 
