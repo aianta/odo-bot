@@ -9,6 +9,8 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 public abstract class AbstractTermExtractionStrategy implements TermExtractionStrategy {
     private static final Logger log = LoggerFactory.getLogger(AbstractTermExtractionStrategy.class);
@@ -30,6 +32,14 @@ public abstract class AbstractTermExtractionStrategy implements TermExtractionSt
         }
         List<CoreLabel> result = tokenize(input);
         return allowDuplicates? result:removeDuplicates(result);
+    }
+
+    public <T extends AbstractArtifact> List<String> extractTerms(T artifact, Function<T, String> sourceText, Function<CoreLabel, CoreLabel> transformFunction, Predicate<CoreLabel> filterFunction){
+        List<CoreLabel> result = extractTerms(sourceText.apply(artifact));
+        return result.stream().filter(filterFunction)
+                .map(transformFunction)
+                .map(term->term.word())
+                .collect(Collectors.toList());
     }
 
     public <T extends AbstractArtifact> List<CoreLabel> extractTerms(T artifact, Function<T, String> sourceText){

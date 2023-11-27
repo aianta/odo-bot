@@ -118,19 +118,30 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
         log.debug("targetElement: {}", targetElement);
 
         List<CoreLabel> terms = extractionStrategy.extractTerms(artifact, (a)->a.getDomSnapshot().body().text());
+        //Term extraction
+        List<String> sTerms = extractionStrategy.extractTerms(
+                artifact, //The artifact to extract terms from
+                (a)->a.getDomSnapshot().body().text(), //The source function to apply to the artifact to get a raw string to extract from.
+                //Transformation to be applied to resulting CoreLabel
+                coreLabel -> {
+                    if(coreLabel.tag().equals("SYM")){ //Handle case where we're looking for '+' or some other symbol.
+                        coreLabel.setWord("\\"+coreLabel.word());
+                    }
+                    return coreLabel;
+                }
+                ,
+                (term)->ALLOWED_PARTS_OF_SPEECH.contains(term.tag()) //Filtering to be applied to the core label results
+        );
 
         log.debug("terms size: {}", terms.size());
         log.debug("'Event' count: {}",terms.stream().filter(term->term.word().equals("Event")).count());
 
-        List<RankedTerm> result = terms.stream()
-                //TODO - working with CoreLabel's here makes TermRankingStrategies tightly coupled with the BasicStanfordNLPStrategy, should move filtering logic to extraction strategy.
-                .filter(term->ALLOWED_PARTS_OF_SPEECH.contains(term.tag()))
-                .map(term->{
-            log.debug("Looking for: {}", term.word());
 
-            Elements elements = matchingFunction.apply(body,
-                    term.tag().equals("SYM")?("\\"+term.word()):term.word() //Handle case where we're looking for '+' or some other symbol.
-            );
+        List<RankedTerm> result = sTerms.stream()
+                .map(term->{
+            log.debug("Looking for: {}", term);
+
+            Elements elements = matchingFunction.apply(body, term);
 
             log.debug("Found {} elements", elements.size());
 
@@ -178,11 +189,11 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
         });
 
         result.forEach(term->{
-            log.debug("{} - {}", term.term().word(), term.ranking());
+            log.debug("{} - {}", term.term(), term.ranking());
         });
 
 
-        return result.stream().map(value->value.term().word()).collect(Collectors.toList());
+        return result.stream().map(value->value.term()).collect(Collectors.toList());
     }
 
 
