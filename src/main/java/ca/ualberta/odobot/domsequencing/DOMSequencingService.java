@@ -38,4 +38,6 @@ public interface DOMSequencingService {
 
     Future<String> decodeSequences(String encodedSequences);
 
+    Future<String> getEntitiesAndActions();
+
 }

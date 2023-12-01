@@ -11,3 +11,4 @@ calendar*.json
 *.png
 *.xes
 crawljax_out
+*.csv

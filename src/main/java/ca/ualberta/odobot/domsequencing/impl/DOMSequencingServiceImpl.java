@@ -1,6 +1,11 @@
 package ca.ualberta.odobot.domsequencing.impl;
 
 import ca.ualberta.odobot.domsequencing.*;
+import ca.ualberta.odobot.semanticflow.extraction.terms.annotators.EnglishWordAnnotator;
+import edu.stanford.nlp.ling.CoreAnnotations;
+import edu.stanford.nlp.ling.CoreLabel;
+import edu.stanford.nlp.pipeline.CoreDocument;
+import edu.stanford.nlp.pipeline.StanfordCoreNLP;
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;
 
@@ -18,10 +23,6 @@ public class DOMSequencingServiceImpl implements DOMSequencingService {
 
     private static final Logger log = LoggerFactory.getLogger(DOMSequencingServiceImpl.class);
 
-    private enum SequenceFormat{
-        NUMERIC, STRING, NO_CLASSES
-    }
-
     List<DOMSequence> database = new ArrayList<>();
 
     Map<DOMSegment, Integer> encodingTable = new HashMap<>();
@@ -32,11 +33,32 @@ public class DOMSequencingServiceImpl implements DOMSequencingService {
 
     DirectlyFollowsManifest globalDirectlyFollowsManifest = new DirectlyFollowsManifest();
 
+    Map<String, Integer> entityMap = new HashMap<>();
+    Map<String,Integer> actionMap = new HashMap<>();
+
+    StanfordCoreNLP pipeline = null;
+
+    public DOMSequencingServiceImpl(){
+        Properties properties = new Properties();
+        properties.setProperty("englishWords.wordnetHome", "C:\\Program Files (x86)\\WordNet\\2.1");
+        properties.setProperty("customAnnotatorClass.englishWords", "ca.ualberta.odobot.semanticflow.extraction.terms.annotators.EnglishWordAnnotator");
+        properties.setProperty("annotators", "tokenize,ssplit,pos,lemma,englishWords");
+        properties.setProperty("tokenize.options", "splitHyphenated=true");
+
+        pipeline = new StanfordCoreNLP(properties);
+    }
+
 
     @Override
     public Future<JsonObject> process(String html) {
 
         Document doc = Jsoup.parse(html);
+
+
+        doNLP(doc);
+
+
+
         DOMVisitor visitor = new DOMVisitor();
         doc.traverse(visitor);
 
@@ -50,6 +72,85 @@ public class DOMSequencingServiceImpl implements DOMSequencingService {
         database.add(sequence);
 
         return Future.succeededFuture(sequence.toJson());
+    }
+
+    public void doMoreNLP(){
+        globalManifest.forEach((classString,cssClass)->{
+
+            String input = classString.replaceAll("-", " ");
+            input = input.replace("_", " ");
+
+            CoreDocument document = new CoreDocument(classString);
+            pipeline.annotate(document);
+
+            for(CoreLabel tok: document.annotation().get(CoreAnnotations.TokensAnnotation.class)){
+                if(tok.get(EnglishWordAnnotator.class)){
+                    //The token is an english word
+                    if(EnglishWordAnnotator.NOUN.contains(tok.tag())){
+                        int count = entityMap.getOrDefault(tok.lemma().toLowerCase(), 0);
+                        entityMap.put(tok.lemma().toLowerCase(), ++count);
+                    }
+                    if(EnglishWordAnnotator.VERB.contains(tok.tag())){
+                        int count = actionMap.getOrDefault(tok.lemma().toLowerCase(), 0);
+                        actionMap.put(tok.lemma().toLowerCase(), ++count);
+                    }
+
+                }
+            }
+        });
+    }
+
+    public void doNLP (Document htmlRoot){
+        String nlpInput = htmlRoot.body().text();
+
+        //Process the body
+        CoreDocument document = new CoreDocument(nlpInput);
+        pipeline.annotate(document);
+
+        for(CoreLabel tok: document.annotation().get(CoreAnnotations.TokensAnnotation.class)){
+            if(tok.get(EnglishWordAnnotator.class)){
+                //The token is an english word
+                if(EnglishWordAnnotator.NOUN.contains(tok.tag())){
+                    int count = entityMap.getOrDefault(tok.lemma().toLowerCase(), 0);
+                    entityMap.put(tok.lemma().toLowerCase(), ++count);
+                }
+                if(EnglishWordAnnotator.VERB.contains(tok.tag())){
+                    int count = actionMap.getOrDefault(tok.lemma().toLowerCase(), 0);
+                    actionMap.put(tok.lemma().toLowerCase(), ++count);
+                }
+
+            }
+        }
+
+
+
+    }
+
+    public Future<String> getEntitiesAndActions(){
+
+        doMoreNLP();
+
+
+        //https://stackoverflow.com/questions/109383/sort-a-mapkey-value-by-values
+        Map<String,Integer> sortedEntities = entityMap.entrySet().stream()
+                .sorted(Collections.reverseOrder(Map.Entry.comparingByValue()))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (e1, e2) -> e1, LinkedHashMap::new));
+
+        Map<String,Integer> sortedActions = actionMap.entrySet().stream()
+                .sorted(Collections.reverseOrder(Map.Entry.comparingByValue()))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (e1, e2) -> e1, LinkedHashMap::new));
+
+        StringBuilder sb = new StringBuilder();
+        sortedEntities.forEach((entity, frequency)->{
+            sb.append(Integer.toString(frequency) + "\t->\t" + entity + "\n");
+        });
+
+        sortedActions.forEach((action, frequency)->{
+            sb.append(Integer.toString(frequency) + "\t->\t" + action + "\n");
+        });
+
+        return Future.succeededFuture(sb.toString());
+
     }
 
     public Future<String> getGlobalManifest(){

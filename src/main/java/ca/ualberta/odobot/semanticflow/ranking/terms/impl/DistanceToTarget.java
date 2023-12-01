@@ -1,6 +1,7 @@
 package ca.ualberta.odobot.semanticflow.ranking.terms.impl;
 
 import ca.ualberta.odobot.semanticflow.extraction.terms.TermExtractionStrategy;
+import ca.ualberta.odobot.semanticflow.extraction.terms.annotators.EnglishWordAnnotator;
 import ca.ualberta.odobot.semanticflow.ranking.terms.TermRankingStrategy;
 import ca.ualberta.odobot.semanticflow.model.AbstractArtifact;
 import edu.stanford.nlp.ling.CoreLabel;

@@ -1,6 +1,8 @@
 package ca.ualberta.odobot.semanticflow.extraction.terms;
 
+import ca.ualberta.odobot.semanticflow.extraction.terms.annotators.EnglishWordAnnotator;
 import ca.ualberta.odobot.semanticflow.model.AbstractArtifact;
+import edu.stanford.nlp.ling.CoreAnnotations;
 import edu.stanford.nlp.ling.CoreLabel;
 import edu.stanford.nlp.pipeline.CoreDocument;
 import edu.stanford.nlp.pipeline.StanfordCoreNLP;
@@ -49,10 +51,16 @@ public abstract class AbstractTermExtractionStrategy implements TermExtractionSt
 
     protected List<CoreLabel> tokenize(String input){
         List<CoreLabel> result = new ArrayList<>();
+
+        input = input.replaceAll("_", " "); //Replace underscores with spaces
+
         log.info("Tokenizing: {}", input);
 
         Properties properties = new Properties();
-        properties.setProperty("annotators", "tokenize,ssplit,pos");
+        properties.setProperty("englishWords.wordnetHome", "C:\\Program Files (x86)\\WordNet\\2.1");
+        properties.setProperty("customAnnotatorClass.englishWords", "ca.ualberta.odobot.semanticflow.extraction.terms.annotators.EnglishWordAnnotator");
+        properties.setProperty("annotators", "tokenize,ssplit,pos,lemma,englishWords");
+
         /**
          * For more information on options check the following links:
          * https://stanfordnlp.github.io/CoreNLP/tokenize.html
@@ -63,8 +71,13 @@ public abstract class AbstractTermExtractionStrategy implements TermExtractionSt
         StanfordCoreNLP pipeline = new StanfordCoreNLP(properties);
         CoreDocument document = new CoreDocument(input);
         pipeline.annotate(document);
-        for(CoreLabel tok: document.tokens()){
-            //log.debug("{} {}",tok.word(), tok.tag());
+        for(CoreLabel tok: document.annotation().get(CoreAnnotations.TokensAnnotation.class)){
+            log.info("{} {} isEnglishWord: {}",tok.word(), tok.tag(), tok.get(EnglishWordAnnotator.class));
+            if(!tok.containsKey(EnglishWordAnnotator.class) || tok.get(EnglishWordAnnotator.class) == null ){
+                throw new RuntimeException("Missing englishWord Annotation!");
+
+            }
+
             result.add(tok);
         }
 

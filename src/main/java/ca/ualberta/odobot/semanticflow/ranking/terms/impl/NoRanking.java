@@ -14,9 +14,15 @@ import java.util.stream.Collectors;
  * @author Alexandru Ianta
  */
 public class NoRanking implements TermRankingStrategy<AbstractArtifact> {
+//    @Override
+//    public <T extends AbstractArtifact> List<String> getTerms(T artifact, TermExtractionStrategy extractionStrategy, Function<T, String> source) {
+//        return extractionStrategy.extractTerms(artifact, source)
+//                .stream().map(CoreLabel::word).collect(Collectors.toList());
+//    }
+
     @Override
     public <T extends AbstractArtifact> List<String> getTerms(T artifact, TermExtractionStrategy extractionStrategy, Function<T, String> source) {
-        return extractionStrategy.extractTerms(artifact, source)
-                .stream().map(CoreLabel::word).collect(Collectors.toList());
+        return List.of(extractionStrategy.extractTerms(artifact, source)
+                .stream().map(CoreLabel::word).collect(StringBuilder::new, (sb, s)->sb.append(s + " "), StringBuilder::append).toString());
     }
 }

@@ -66,10 +66,15 @@ public class SemanticSequencer {
             try {
                 validate(event);
                 parse(event);
-            } catch (MissingSessionId | InvalidSessionId | MissingTimestamp | InvalidTimestamp e) {
+            } catch (MissingSessionId | InvalidSessionId | MissingTimestamp | InvalidTimestamp  e) {
                 log.error(e.getMessage(),e);
                 log.error("Stopping parse!");
-                return null;
+                throw new RuntimeException(e);
+
+            }catch (Exception e){
+                log.error(e.getMessage(),e);
+                log.error("Stopping parse!");
+                throw new RuntimeException(e);
             }
         }
 

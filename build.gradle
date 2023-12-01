@@ -45,6 +45,13 @@ dependencies {
      * https://www.xes-standard.org/openxes/developerguide
      */
     implementation files('libs/OpenXES-20211004.jar')
+
+    /**
+     * JavaWordNet interface
+     * https://projects.csail.mit.edu/jwi/
+     */
+    implementation files("libs/edu.mit.jwi_2.4.0.jar")
+
     /**
      * For XML serialization.
      * http://code.deckfour.org/Spex/
@@ -84,6 +91,9 @@ dependencies {
     implementation "edu.stanford.nlp:stanford-corenlp:$corenlp_version"
     implementation "edu.stanford.nlp:stanford-corenlp:$corenlp_version:models"
     implementation "edu.stanford.nlp:stanford-corenlp:$corenlp_version:models-english"
+
+    // https://mvnrepository.com/artifact/org.apache.commons/commons-csv
+    implementation group: 'org.apache.commons', name: 'commons-csv', version: '1.10.0'
 
     /**
      * Elasticsearch

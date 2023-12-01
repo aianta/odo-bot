@@ -195,6 +195,7 @@ public class LogPreprocessor extends AbstractVerticle {
             api.route().method(HttpMethod.POST).path("/css/query").handler(this::executeCSSQuery);
             api.route().method(HttpMethod.GET).path("/css/").handler(this::getGlobalManifest);
             api.route().method(HttpMethod.GET).path("/css/follows").handler(this::getDirectlyFollowsManifest);
+            api.route().method(HttpMethod.GET).path("/dom/entitiesAndActions").handler(this::getEntitiesAndActions);
 
 
             //Mount handlers to main router
@@ -346,6 +347,10 @@ public class LogPreprocessor extends AbstractVerticle {
 
     private void getDirectlyFollowsManifest(RoutingContext rc){
         domSequencingService.getDirectlyFollowsManifest().onSuccess(data->rc.response().setStatusCode(200).end(data));
+    }
+
+    private void getEntitiesAndActions(RoutingContext rc){
+        domSequencingService.getEntitiesAndActions().onSuccess(data->rc.response().setStatusCode(200).end(data));
     }
 
     private void getGlobalManifest(RoutingContext rc){
