@@ -218,7 +218,7 @@ public class SemanticSequencer {
                                         .onSuccess(databaseOperations->{
                                            DbOps ops = new DbOps(databaseOperations);
                                            log.info("Got DbOps!");
-
+                                            networkEvent.setDbOps(ops);
                                         });
                             }
 
@@ -231,4 +231,6 @@ public class SemanticSequencer {
 
         }
     }
+
+
 }

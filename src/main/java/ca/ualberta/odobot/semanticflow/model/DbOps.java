@@ -1,6 +1,8 @@
 package ca.ualberta.odobot.semanticflow.model;
 
 import ca.ualberta.odobot.sqlite.impl.DbLogEntry;
+import io.vertx.core.json.JsonArray;
+import io.vertx.core.json.JsonObject;
 import org.slf4j.LoggerFactory;
 import org.slf4j.Logger;
 
@@ -12,9 +14,9 @@ import java.util.stream.Collectors;
 public class DbOps extends ArrayList<DbLogEntry> {
     private static final Logger log = LoggerFactory.getLogger(DbOps.class);
 
-    enum Verb{
+    public enum Verb{
         CREATE(Set.of()),
-        EDIT(Set.of("edit","modify","update", "change")),
+        EDIT(Set.of("edit","modify","update", "change", "save")),
         DELETE(Set.of("delete", "remove", "destroy", "trash"));
 
         Set<String> associatedTerms;
@@ -69,13 +71,14 @@ public class DbOps extends ArrayList<DbLogEntry> {
      */
     public String computeSubject(Function<String, Double> auxilliarySupportFunction){
 
-        return  computeSupport(auxilliarySupportFunction)
+        Optional<Map.Entry<String,Double>> subjectEntry = computeSupport(auxilliarySupportFunction)
                 .entrySet().stream()
                 .sorted(Collections.reverseOrder(Map.Entry.comparingByValue()))
                 .limit(1)
-                .findFirst()
-                .get()
-                .getKey();
+                .findFirst();
+
+        return subjectEntry.isPresent()?subjectEntry.get().getKey():null;
+
     }
 
 
@@ -125,11 +128,15 @@ public class DbOps extends ArrayList<DbLogEntry> {
             throw new RuntimeException("Cannot find schema prefix because there are no underlying DbLogEntries");
         }
 
-        return get(0).objectName().split(".")[0];
+        return get(0).objectName().split("\\.")[0];
     }
 
     private String getTableName(DbLogEntry entry){
-        return entry.objectName().split(".")[1];
+        return entry.objectName().split("\\.")[1];
+    }
+
+    public JsonArray toJson(){
+        return stream().map(entry->entry.toJson()).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
     }
 
 }

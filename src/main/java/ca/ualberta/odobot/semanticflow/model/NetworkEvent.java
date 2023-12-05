@@ -37,8 +37,18 @@ public class NetworkEvent extends AbstractArtifact implements TimelineEntity, Fi
     private String method;
     private URL url;
 
+    private DbOps dbOps;
+
 
     private String logUISessionId;
+
+    public DbOps getDbOps() {
+        return dbOps;
+    }
+
+    public void setDbOps(DbOps dbOps) {
+        this.dbOps = dbOps;
+    }
 
     public ZonedDateTime getResponseHeaderDate(){
         if (responseHeaders == null){
@@ -232,6 +242,10 @@ public class NetworkEvent extends AbstractArtifact implements TimelineEntity, Fi
 
          if(getResponseHeaders() != null){
              result.put("responseHeaders", getResponseHeaders());
+         }
+
+         if(dbOps != null){
+             result.put("dbOps", dbOps.toJson());
          }
 
         return result;
