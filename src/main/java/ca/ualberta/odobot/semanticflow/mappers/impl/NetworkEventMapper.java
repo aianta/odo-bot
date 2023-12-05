@@ -19,6 +19,22 @@ public class NetworkEventMapper extends JsonMapper<NetworkEvent>{
         result.setFlightId(event.getString("flightID"));
         result.setLogUISessionId(event.getString("sessionID"));
 
+        //Extract request headers
+        if(event.containsKey("eventDetails_requestHeaders") && !event.getString("eventDetails_requestHeaders").equals("null")){
+
+            result.setRequestHeaders(new JsonObject(event.getString("eventDetails_requestHeaders")));
+
+        }
+
+        //Extract response headers
+        if(event.containsKey("eventDetails_responseHeaders") && !event.getString("eventDetails_responseHeaders").equals("null")){
+
+            result.setResponseHeaders(new JsonObject(event.getString("eventDetails_responseHeaders")));
+
+        }
+
+
+        //Extract request body
         if(event.containsKey("eventDetails_requestBody") && !event.getString("eventDetails_requestBody").equals("null")){
 
             try{
@@ -31,6 +47,8 @@ public class NetworkEventMapper extends JsonMapper<NetworkEvent>{
 
         }
 
+
+        //Extract response body
         if(event.containsKey("eventDetails_responseBody")){
             try{
                 JsonObject response = new JsonObject(event.getString("eventDetails_responseBody"));

@@ -100,7 +100,7 @@ public class EnglishWordAnnotator implements Annotator, CoreAnnotation<Boolean> 
             return POS.VERB;
         }
 
-        log.error("Unrecognized part of speech tag: {}", tag);
+        log.debug("Unrecognized part of speech tag: {}", tag);
         return null;
     }
 

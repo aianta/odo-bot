@@ -9,19 +9,19 @@ import ca.ualberta.odobot.semanticflow.mappers.impl.DomEffectMapper;
 import ca.ualberta.odobot.semanticflow.mappers.impl.InputChangeMapper;
 import ca.ualberta.odobot.semanticflow.mappers.impl.NetworkEventMapper;
 import ca.ualberta.odobot.semanticflow.model.*;
-import io.vertx.core.json.JsonArray;
+import ca.ualberta.odobot.sqlite.impl.DbLogEntry;
+import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
 
@@ -48,6 +48,8 @@ public class SemanticSequencer {
      */
     private Consumer<AbstractArtifact> artifactConsumer;
 
+    private BiFunction<Long, Long, Future<List<DbLogEntry>>> databaseLogsSeekerFunction;
+
     /**
      * Allows caller to specify a consuming function to invoke whenever an {@link AbstractArtifact} is mapped as part of the sequencing process.
      * @param consumer the consuming function to invoke when an artifact is mapped during sequencing
@@ -56,6 +58,9 @@ public class SemanticSequencer {
         this.artifactConsumer = consumer;
     }
 
+    public void setDatabaseLogsSeekerFunction(BiFunction<Long,Long,Future<List<DbLogEntry>>> function){
+        this.databaseLogsSeekerFunction = function;
+    }
 
 
     public Timeline parse(List<JsonObject> events){
@@ -206,6 +211,17 @@ public class SemanticSequencer {
                             log.info("{} - {}", networkEvent.getMethod(), networkEvent.getUrl());
                             //TODO - Temporarily ignore all GET requests. See 'Integrating Network Events # Network Event Summarization Options' in obsidian for details
                             //if(!networkEvent.getMethod().toLowerCase().equals("get")){
+
+                            //For any network request other than GETs, let's find associated database logs.
+                            if(!networkEvent.getMethod().toLowerCase().equals("get") && databaseLogsSeekerFunction != null){
+                                databaseLogsSeekerFunction.apply(networkEvent.getMillisecondTimestamp(),500l)
+                                        .onSuccess(databaseOperations->{
+                                           DbOps ops = new DbOps(databaseOperations);
+                                           log.info("Got DbOps!");
+
+                                        });
+                            }
+
                                 line.add(networkEvent);
 
                             log.info("Handled NETWORK_EVENT");

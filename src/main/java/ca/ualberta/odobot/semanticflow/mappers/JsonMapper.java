@@ -34,10 +34,27 @@ public abstract class JsonMapper<T extends AbstractArtifact> {
     protected Element extractElement(String html){
 
         /**
-         * Handle dangling tbody special case.
+         * Handle dangling table components special cases.
+         * Note: Do not include closing angle bracket on opening tag in startsWith, to allow for html attributes.
          */
-        if(html.startsWith("<tbody>") && html.endsWith("</tbody>")){
-            return handleTbodyFragment(html);
+        if(html.startsWith("<tbody") && html.endsWith("</tbody>")){
+            return handleTableFragment(html, "tbody");
+        }
+
+        if(html.startsWith("<thead") && html.endsWith("</thead>")){
+            return handleTableFragment(html, "thead");
+        }
+
+        if(html.startsWith("<tr") && html.endsWith("</tr>")){
+            return handleTableFragment(html, "tr");
+        }
+
+        if(html.startsWith("<th") && html.endsWith("</th>")){
+            return handleTableFragment(html, "th");
+        }
+
+        if(html.startsWith("<td") && html.endsWith("</td>")){
+            return handleTableFragment(html, "td");
         }
 
         Document doc = Jsoup.parseBodyFragment(html);
@@ -46,6 +63,9 @@ public abstract class JsonMapper<T extends AbstractArtifact> {
             log.warn("ParsedDocument: {}\n", doc.outerHtml());
             doc.body().children().forEach(child->log.warn("{}",child));
         }
+
+        log.info("Extracted element from:\n {}", html);
+
         return doc.body().firstElementChild();
     }
 
@@ -53,15 +73,20 @@ public abstract class JsonMapper<T extends AbstractArtifact> {
      * JSoup doesn't care to parse <tbody></tbody>, not enclosed in <table></table> so handle that as a special case.
      * @return
      */
-    private Element handleTbodyFragment(String html){
+    private Element handleTableFragment(String html, String targetTag){
         String wrap = "<table>" + html + "</table>" ;
         Document doc = Jsoup.parseBodyFragment(wrap);
-        Element tbody = doc.body().firstElementChild().firstElementChild();
-        if(!tbody.tagName().equals("tbody")){
-            log.warn("Couldn't handle TBODY");
+        Element target = doc.body().firstElementChild();
+        while (!target.tagName().equals(targetTag) && target.firstElementChild() != null){
+            target = target.firstElementChild();
+        }
+
+//        Element target = doc.body().firstElementChild().firstElementChild();
+        if(!target.tagName().equals(targetTag)){
+            log.warn("Couldn't handle {}", targetTag);
             return null;
         }
-        return tbody;
+        return target;
     }
 
 }

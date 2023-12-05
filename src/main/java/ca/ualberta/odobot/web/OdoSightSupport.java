@@ -1,6 +1,7 @@
 package ca.ualberta.odobot.web;
 
 import ca.ualberta.odobot.sqlite.LogParser;
+import ca.ualberta.odobot.sqlite.SqliteService;
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerOptions;
@@ -25,6 +26,8 @@ import java.util.Date;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
+import static ca.ualberta.odobot.logpreprocessor.Constants.SQLITE_SERVICE_ADDRESS;
+
 public class OdoSightSupport extends AbstractVerticle {
 
     private static final Logger log = LoggerFactory.getLogger(OdoSightSupport.class);
@@ -37,6 +40,8 @@ public class OdoSightSupport extends AbstractVerticle {
 
     private static final String DATABASE_LOG_NAME_SUFFIX = ".csv";
 
+    private SqliteService sqliteService;
+
     HttpServer server;
     Router router;
 
@@ -44,6 +49,9 @@ public class OdoSightSupport extends AbstractVerticle {
     public Completable rxStart(){
 
         log.info("Starting Odo Sight Support Server at {}:{}", HOST, PORT);
+
+        log.info("Initializing Sqlite Service Proxy");
+        sqliteService = SqliteService.createProxy(vertx.getDelegate(), SQLITE_SERVICE_ADDRESS);
 
         HttpServerOptions options = new HttpServerOptions()
                 .setHost(HOST)
@@ -133,15 +141,17 @@ public class OdoSightSupport extends AbstractVerticle {
             String dayString = f.format(new Date());
 
             String logPath = DATABASE_LOG_NAME_PREFIX + dayString + DATABASE_LOG_NAME_SUFFIX;
-            LogParser logParser = new LogParser(logEntry->log.info("{}", logEntry.toJson().encodePrettily()));
+            LogParser logParser = new LogParser(logEntry->sqliteService.insertLogEntry(logEntry.toJson()));
             logParser.parseDatabaseLogFile(logPath);
+            log.info("Parsed {} database audit log entries", logParser.parseCount);
+
 
 
         }).subscribe();
 //
-//        rc.next();
+        rc.next();
 
-        rc.response().setStatusCode(201).end();
+        //rc.response().setStatusCode(201).end();
     }
 
 

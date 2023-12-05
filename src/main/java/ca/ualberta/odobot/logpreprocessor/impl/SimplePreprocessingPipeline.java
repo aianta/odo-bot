@@ -7,6 +7,7 @@ import ca.ualberta.odobot.logpreprocessor.xes.XesTransformer;
 import ca.ualberta.odobot.semanticflow.SemanticSequencer;
 import ca.ualberta.odobot.semanticflow.extraction.terms.SourceFunctions;
 import ca.ualberta.odobot.semanticflow.model.*;
+import ca.ualberta.odobot.sqlite.impl.DbLogEntry;
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Multimap;
 
@@ -24,6 +25,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.util.*;
+import java.util.stream.Collectors;
 
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.*;
@@ -90,6 +92,13 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
                 domSequencingService.process(artifact.getDomSnapshot().outerHtml());
             }
         });
+
+        sequencer.setDatabaseLogsSeekerFunction((timestamp, range)->sqliteService.selectLogs(timestamp, range).compose(
+                jsonArray->Future.succeededFuture(jsonArray.stream()
+                        .map(o->(JsonObject)o)
+                        .map(DbLogEntry::fromJson)
+                        .collect(Collectors.toList()))
+        ));
 
         //Timeline data structure construction
         Timeline timeline = sequencer.parse(events);

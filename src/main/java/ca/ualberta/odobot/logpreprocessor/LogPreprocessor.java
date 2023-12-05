@@ -7,6 +7,7 @@ import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
 import ca.ualberta.odobot.logpreprocessor.impl.*;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 
+import ca.ualberta.odobot.sqlite.SqliteService;
 import co.elastic.clients.elasticsearch.nodes.Http;
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.http.HttpMethod;
@@ -50,6 +51,8 @@ public class LogPreprocessor extends AbstractVerticle {
 
     private static DOMSequencingService domSequencingService;
 
+    private static SqliteService sqliteService;
+
     private Set<Class> mountedPipelines = new HashSet<>();
 
     Router mainRouter;
@@ -69,6 +72,13 @@ public class LogPreprocessor extends AbstractVerticle {
             server = vertx.createHttpServer(options);
             mainRouter = Router.router(vertx);
             api = Router.router(vertx);
+
+            //Init SQLite Service
+            sqliteService = SqliteService.create(vertx.getDelegate());
+            new ServiceBinder(vertx.getDelegate())
+                    .setAddress(SQLITE_SERVICE_ADDRESS)
+                    .register(SqliteService.class, sqliteService);
+
 
             //Init DOMSequencing Service
             domSequencingService = DOMSequencingService.create();

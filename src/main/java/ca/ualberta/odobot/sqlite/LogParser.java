@@ -1,6 +1,6 @@
 package ca.ualberta.odobot.sqlite;
 
-import ca.ualberta.odobot.sqlite.impl.DBLogEntry;
+import ca.ualberta.odobot.sqlite.impl.DbLogEntry;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVRecord;
 import org.slf4j.Logger;
@@ -12,8 +12,6 @@ import java.io.IOException;
 import java.io.Reader;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -23,9 +21,11 @@ public class LogParser {
     private static final Logger log = LoggerFactory.getLogger(LogParser.class);
     public static final DateTimeFormatter timestampFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd kk:mm:ss.SSS zzz");
     private static final Pattern statementPattern = Pattern.compile("(?<=\")[\\S\\s]*(?=\")");
-    Consumer<DBLogEntry> logEntryConsumer;
+    Consumer<DbLogEntry> logEntryConsumer;
 
-    public LogParser(Consumer<DBLogEntry> onLogEntry){
+    public int parseCount = 0;
+
+    public LogParser(Consumer<DbLogEntry> onLogEntry){
         logEntryConsumer = onLogEntry;
     }
 
@@ -64,12 +64,12 @@ public class LogParser {
                 String objectName = parts[6];
                 String parameters = parts[parts.length - 2];
 
-                log.info("Extracting statement from: {}", message);
+                log.debug("Extracting statement from: {}", message);
                 Matcher matcher = statementPattern.matcher(message);
                 matcher.find();
                 String statement = matcher.group(0);
 
-                DBLogEntry logEntry = new DBLogEntry(
+                DbLogEntry logEntry = new DbLogEntry(
                         key,
                         timestamp,
                         timestamp.toInstant().toEpochMilli(),
@@ -82,6 +82,7 @@ public class LogParser {
                 );
 
                 logEntryConsumer.accept(logEntry);
+                parseCount++;
             }
 
         } catch (FileNotFoundException e) {

@@ -2,10 +2,11 @@ package ca.ualberta.odobot.sqlite.impl;
 
 import ca.ualberta.odobot.sqlite.LogParser;
 import io.vertx.core.json.JsonObject;
+import io.vertx.sqlclient.Row;
 
 import java.time.ZonedDateTime;
 
-public record DBLogEntry (
+public record DbLogEntry(
         String key,
         ZonedDateTime timestamp,
         long timestampMilli,
@@ -17,9 +18,27 @@ public record DBLogEntry (
         String parameter
         ) {
 
-    public static DBLogEntry fromJson(JsonObject json){
+    public static DbLogEntry fromRow(Row row){
 
-        DBLogEntry result = new DBLogEntry(
+        DbLogEntry result = new DbLogEntry(
+                row.getString("key_value"),
+                ZonedDateTime.parse(row.getString("timestamp"), LogParser.timestampFormat),
+                row.getLong("timestamp_milli"),
+                row.getString("type"),
+                row.getString("command"),
+                row.getString("object_type"),
+                row.getString("object_name"),
+                row.getString("statement"),
+                row.getString("parameter")
+        );
+
+        return result;
+
+    }
+
+    public static DbLogEntry fromJson(JsonObject json){
+
+        DbLogEntry result = new DbLogEntry(
                 json.getString("key"),
                 ZonedDateTime.parse(json.getString("timestamp"), LogParser.timestampFormat),
                 json.getLong("timestampMilli"),

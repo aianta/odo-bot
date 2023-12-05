@@ -14,6 +14,8 @@ import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
 
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 
+import ca.ualberta.odobot.sqlite.SqliteService;
+import ca.ualberta.odobot.sqlite.impl.SqliteServiceImpl;
 import io.vertx.core.CompositeFuture;
 
 import io.vertx.core.Future;
@@ -50,6 +52,8 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
     protected ElasticsearchService elasticsearchService;
     protected DOMSequencingService domSequencingService;
 
+    protected SqliteService sqliteService;
+
     protected Vertx vertx;
 
     WebClient client;
@@ -72,6 +76,8 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
          */
         elasticsearchService = ElasticsearchService.createProxy(vertx.getDelegate(), ELASTICSEARCH_SERVICE_ADDRESS);
         domSequencingService = DOMSequencingService.createProxy(vertx.getDelegate(), DOMSEQUENCING_SERVICE_ADDRESS);
+        sqliteService = SqliteService.createProxy(vertx.getDelegate(), SQLITE_SERVICE_ADDRESS);
+
 
         client = WebClient.create(vertx);
 
