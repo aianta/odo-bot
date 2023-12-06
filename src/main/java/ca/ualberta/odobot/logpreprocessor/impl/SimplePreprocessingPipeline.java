@@ -7,6 +7,9 @@ import ca.ualberta.odobot.logpreprocessor.xes.XesTransformer;
 import ca.ualberta.odobot.semanticflow.SemanticSequencer;
 import ca.ualberta.odobot.semanticflow.extraction.terms.SourceFunctions;
 import ca.ualberta.odobot.semanticflow.model.*;
+import ca.ualberta.odobot.semanticflow.model.semantictrace.SemanticTrace;
+import ca.ualberta.odobot.semanticflow.model.semantictrace.strategy.BaseStrategy;
+import ca.ualberta.odobot.semanticflow.model.semantictrace.strategy.SemanticTraceConstructionStrategy;
 import ca.ualberta.odobot.sqlite.impl.DbLogEntry;
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Multimap;
@@ -93,13 +96,6 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
             }
         });
 
-        sequencer.setDatabaseLogsSeekerFunction((timestamp, range)->sqliteService.selectLogs(timestamp, range).compose(
-                jsonArray->Future.succeededFuture(jsonArray.stream()
-                        .map(o->(JsonObject)o)
-                        .map(DbLogEntry::fromJson)
-                        .collect(Collectors.toList()))
-        ));
-
         //Timeline data structure construction
         Timeline timeline = sequencer.parse(events);
         timeline.getAnnotations().put("source-index", sourceIndex);
@@ -145,59 +141,17 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
 
         }
 
-        //Process DbOps
 
-        ListIterator<TimelineEntity> dbOpsIterator = timeline.listIterator();
-        ClickEvent lastClickEvent = null;
-        while (dbOpsIterator.hasNext()){
-            try{
-                TimelineEntity entity = dbOpsIterator.next();
-                if(entity instanceof ClickEvent){
-                    lastClickEvent = (ClickEvent) entity;
-                }
-
-                if (entity instanceof NetworkEvent){
-                    NetworkEvent networkEvent = (NetworkEvent) entity;
-                    if(!networkEvent.getMethod().toLowerCase().equals("get")){
-                        ClickEvent finalLastClickEvent = lastClickEvent;
-                        sqliteService.selectLogs(networkEvent.getMillisecondTimestamp(), 500).onSuccess(databaseOperations->{
-
-                            try{
-                                DbOps ops = new DbOps(databaseOperations.stream().map(o->(JsonObject)o).map(DbLogEntry::fromJson).collect(Collectors.toList()));
-
-                                TermSupportAnalyzer.TermSupportAnalyzerBuilder builder = new TermSupportAnalyzer.TermSupportAnalyzerBuilder(ops, networkEvent);
-                                if(finalLastClickEvent != null){
-                                    builder.nearestPreceedingClickEvent(finalLastClickEvent);
-                                }
-
-                                TermSupportAnalyzer analyzer = builder.build();
-                                String subject = ops.computeSubject(analyzer::getTermSupport);
-
-                                if(subject == null){
-                                    log.info("No support for a subject for this network event.");
-                                }else{
-                                    DbOps.Verb verb = ops.computeVerb(analyzer::getTermSupport, analyzer::getTermSupport);
-
-                                    log.info("SEMANTIC LABEL: {} {}", verb.toString(), subject);
-                                }
-
-
-                            }catch (Exception innerE){
-                                log.error(innerE.getMessage(), innerE);
-                            }
-
-
-                        });
-                    }
-
-                }
-            }catch (Exception e){
-                log.error(e.getMessage(),e);
-            }
-        }
 
 
         return Future.succeededFuture(timeline);
+    }
+
+    public Future<SemanticTrace> makeSemanticTrace(Timeline timeline){
+
+        SemanticTraceConstructionStrategy strategy = new BaseStrategy(sqliteService);
+        return strategy.construct(timeline);
+
     }
 
     @Deprecated

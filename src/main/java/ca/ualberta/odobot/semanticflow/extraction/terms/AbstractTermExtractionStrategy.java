@@ -22,6 +22,28 @@ public abstract class AbstractTermExtractionStrategy implements TermExtractionSt
      */
     protected boolean allowDuplicates = true;
 
+    static StanfordCoreNLP pipeline = null;
+
+    public AbstractTermExtractionStrategy(){
+        if(pipeline == null){
+            Properties properties = new Properties();
+            properties.setProperty("englishWords.wordnetHome", "C:\\Program Files (x86)\\WordNet\\2.1");
+            properties.setProperty("customAnnotatorClass.englishWords", "ca.ualberta.odobot.semanticflow.extraction.terms.annotators.EnglishWordAnnotator");
+            properties.setProperty("annotators", "tokenize,ssplit,pos,lemma,englishWords");
+
+            /**
+             * For more information on options check the following links:
+             * https://stanfordnlp.github.io/CoreNLP/tokenize.html
+             * https://nlp.stanford.edu/nlp/javadoc/javanlp/edu/stanford/nlp/process/PTBTokenizer.html
+             */
+            properties.setProperty("tokenize.options", "splitHyphenated=true");
+
+            pipeline = new StanfordCoreNLP(properties);
+        }
+
+
+    }
+
 
     public void allowDuplicates(boolean allowDuplicates) {
         this.allowDuplicates = allowDuplicates;
@@ -45,7 +67,7 @@ public abstract class AbstractTermExtractionStrategy implements TermExtractionSt
     }
 
     public <T extends AbstractArtifact> List<CoreLabel> extractTerms(T artifact, Function<T, String> sourceText){
-        log.info("targetArtifact xpath: {}", artifact.getXpath());
+        log.debug("targetArtifact xpath: {}", artifact.getXpath());
         return extractTerms(sourceText.apply(artifact));
     }
 
@@ -54,25 +76,12 @@ public abstract class AbstractTermExtractionStrategy implements TermExtractionSt
 
         input = input.replaceAll("_", " "); //Replace underscores with spaces
 
-        log.info("Tokenizing: {}", input);
+        log.debug("Tokenizing: {}", input);
 
-        Properties properties = new Properties();
-        properties.setProperty("englishWords.wordnetHome", "C:\\Program Files (x86)\\WordNet\\2.1");
-        properties.setProperty("customAnnotatorClass.englishWords", "ca.ualberta.odobot.semanticflow.extraction.terms.annotators.EnglishWordAnnotator");
-        properties.setProperty("annotators", "tokenize,ssplit,pos,lemma,englishWords");
-
-        /**
-         * For more information on options check the following links:
-         * https://stanfordnlp.github.io/CoreNLP/tokenize.html
-         * https://nlp.stanford.edu/nlp/javadoc/javanlp/edu/stanford/nlp/process/PTBTokenizer.html
-         */
-        properties.setProperty("tokenize.options", "splitHyphenated=true");
-
-        StanfordCoreNLP pipeline = new StanfordCoreNLP(properties);
         CoreDocument document = new CoreDocument(input);
         pipeline.annotate(document);
         for(CoreLabel tok: document.annotation().get(CoreAnnotations.TokensAnnotation.class)){
-            log.info("{} {} isEnglishWord: {}",tok.word(), tok.tag(), tok.get(EnglishWordAnnotator.class));
+            //log.info("{} {} isEnglishWord: {}",tok.word(), tok.tag(), tok.get(EnglishWordAnnotator.class));
             if(!tok.containsKey(EnglishWordAnnotator.class) || tok.get(EnglishWordAnnotator.class) == null ){
                 throw new RuntimeException("Missing englishWord Annotation!");
 

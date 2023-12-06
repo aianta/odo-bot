@@ -6,6 +6,7 @@ import edu.stanford.nlp.ling.CoreLabel;
 import edu.stanford.nlp.pipeline.CoreDocument;
 import edu.stanford.nlp.pipeline.StanfordCoreNLP;
 import io.vertx.core.json.JsonArray;
+import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,11 +30,15 @@ public class TermSupportAnalyzer {
 
     private StanfordCoreNLP nlpPipeline;
 
+    //Contains details about how support was computed for audit/debugging/analysis purposes. NOTE: is updated on every getTermSupport()
+    private JsonArray supportDetailsHistory = new JsonArray();
+
     public static class TermSupportAnalyzerBuilder{
         private final DbOps dbOps;
         private final NetworkEvent networkEvent;
 
         private ClickEvent nearestPreceedingClickEvent;
+
 
         public TermSupportAnalyzerBuilder(DbOps originOps, NetworkEvent originNetworkEvent){
             dbOps = originOps;
@@ -64,6 +69,10 @@ public class TermSupportAnalyzer {
         this.nlpPipeline = new StanfordCoreNLP(properties);
     }
 
+    public void resetSupportDetailsHistory(){
+        supportDetailsHistory = new JsonArray();
+    }
+
 
     /**
      * For a given term, this function returns how much 'support'
@@ -77,33 +86,50 @@ public class TermSupportAnalyzer {
      * @return
      */
     public Double getTermSupport(String term){
+        JsonObject supportDetails = new JsonObject(); // Reset the support details object
+        supportDetails.put("inputTerm", term);
+
         log.info("Getting support for: {}", term);
         try{
             term = term.toLowerCase();
             List<String> lemmatizedTerms = computeLemmatizedTermTokens(term);
             log.info("lemmatized terms: {}", lemmatizedTerms.toString());
-
+            supportDetails.put("lemmatizedInputTerms", lemmatizedTerms.stream().collect(JsonArray::new, JsonArray::add, JsonArray::add));
 
             /* Begin by looking for instances of the term in the origin network event.
              * Places to search:
              *  -> path
              *  -> documentUrl (if not null)
              */
-            String path = originNetworkEvent.getPath();
-            String [] pathSplit = path.split("/");
-            String pathInput = Arrays.stream(pathSplit).filter(part->!part.equals("*")).collect(StringBuilder::new, (sb, s)->sb.append(s + " ") , StringBuilder::append).toString();
+            supportDetails.put("originNetworkEvent", originNetworkEvent.getId().toString());
 
+            String path = originNetworkEvent.getPath();
+            supportDetails.put("path", path);
+
+            String [] pathSplit = path.split("/");
+
+            String pathInput = Arrays.stream(pathSplit).filter(part->!part.equals("*")).collect(StringBuilder::new, (sb, s)->sb.append(s + " ") , StringBuilder::append).toString();
+            supportDetails.put("pathInput", pathInput);
+
+            log.info("pathInput: {}", pathInput);
             Double pathSupport = getSupport(lemmatizedTerms, pathInput);
+            supportDetails.put("pathSupport", pathSupport);
+
 
             Double documentUrlSupport = null;
-
+            supportDetails.put("documentUrlExists", false);
             if(originNetworkEvent.getDocumentUrl() != null){
+                supportDetails.put("documentUrlExists", true);
                 String documentUrl = originNetworkEvent.getDocumentUrl();
+                supportDetails.put("documentUrl", documentUrl);
                 URL documentUrlObject = new URL(documentUrl);
                 String documentPath = documentUrlObject.getPath();
+                supportDetails.put("documentPath", documentPath);
                 String [] docPathSplit = documentPath.split("/");
-                String docPathInput = Arrays.stream(pathSplit).collect(StringBuilder::new,(sb,s)->sb.append(s + " "),StringBuilder::append).toString();
+                String docPathInput = Arrays.stream(docPathSplit).collect(StringBuilder::new,(sb,s)->sb.append(s + " "),StringBuilder::append).toString();
+                supportDetails.put("documentPathInput", docPathInput);
                 documentUrlSupport = getSupport(lemmatizedTerms, docPathInput);
+                supportDetails.put("documentUrlSupport", documentUrlSupport);
             }
 
             /* If available look for instances of the term in the nearest preceeding click event.
@@ -113,21 +139,31 @@ public class TermSupportAnalyzer {
              *      -> terms*     * make the score given for matches here proportional to the distance of the matching term.
              */
             Double preceedingClickEventSupport = null;
+            supportDetails.put("preceedingClickEventExists", false);
             if(nearestPreceedingClickEvent != null){
+                supportDetails.put("preceedingClickEventExists", true);
+
                 //Accumulate support from baseURI
                 String baseURI = nearestPreceedingClickEvent.getBaseURI();
-                String [] basePathSplit = baseURI.split("/");
+                supportDetails.put("baseUri", baseURI);
+                String baseUriPath = new URL(baseURI).getPath();
+                String [] basePathSplit = baseUriPath.split("/");
                 String baseUriInput = Arrays.stream(basePathSplit).filter(part->!part.equals("*")).collect(StringBuilder::new, (sb,s)->sb.append(s + " "), StringBuilder::append).toString();
+                supportDetails.put("baseUriInput", baseUriInput);
                 preceedingClickEventSupport = getSupport(lemmatizedTerms, baseUriInput);
+                supportDetails.put("baseUriSupport", preceedingClickEventSupport);
 
                 //Accumulate support from cssClassTerms
                 if (nearestPreceedingClickEvent.getSemanticArtifacts() != null && nearestPreceedingClickEvent.getSemanticArtifacts().containsKey("cssClassTerms")){
                     JsonArray cssClassTerms = nearestPreceedingClickEvent.getSemanticArtifacts().getJsonArray("cssClassTerms");
+                    supportDetails.put("cssClassTerms", cssClassTerms);
                     Iterator<Object> cssClassTermIterator = cssClassTerms.iterator();
                     while (cssClassTermIterator.hasNext()){
                         String cssClassTermEntry = (String)cssClassTermIterator.next();
                         preceedingClickEventSupport += getSupport(lemmatizedTerms, cssClassTermEntry);
                     }
+                    supportDetails.put("cssClassTermsSupport", preceedingClickEventSupport - supportDetails.getDouble("baseUriSupport"));
+
                 }
 
                 //Accumulate support from terms
@@ -137,7 +173,10 @@ public class TermSupportAnalyzer {
                  * to the position in the terms list. So matching an instance at the top of the list should net more support than matching terms
                  * lower on the list.
                  */
+
                 if(nearestPreceedingClickEvent.getSemanticArtifacts() != null && nearestPreceedingClickEvent.getSemanticArtifacts().containsKey("terms")){
+                    JsonArray matchedTerms = new JsonArray(); //For bookkeeping
+
                     JsonArray textTerms = nearestPreceedingClickEvent.getSemanticArtifacts().getJsonArray("terms");
                     LinkedHashMap<String, Double> supportMap = new LinkedHashMap<>();
                     lemmatizedTerms.forEach(t->supportMap.put(t, 0.0));
@@ -156,7 +195,13 @@ public class TermSupportAnalyzer {
                                 if(textTermToken.get(EnglishWordAnnotator.class) && textTermToken.lemma().toLowerCase().equals(lemmatizedTerm)){
                                     double currSupport = supportMap.getOrDefault(lemmatizedTerm, 0.0);
 
-                                    double supportToAdd = (textTerms.size() - index)/textTerms.size();
+                                    double supportToAdd = ((double) textTerms.size() - (double) index)/(double)textTerms.size();
+
+                                    matchedTerms.add(new JsonObject()
+                                            .put("inputTerm", lemmatizedTerm )
+                                            .put("clickEventTerm", textTermToken.lemma().toLowerCase())
+                                            .put("supportContribution", supportToAdd)
+                                    );
 
                                     supportMap.put(lemmatizedTerm, currSupport + supportToAdd );
                                 }
@@ -165,7 +210,10 @@ public class TermSupportAnalyzer {
                         }
                     }
 
-                    preceedingClickEventSupport += supportMap.entrySet().stream().sorted(Map.Entry.comparingByValue()).findFirst().get().getValue();
+                    preceedingClickEventSupport += supportMap.entrySet().stream().sorted(Collections.reverseOrder(Map.Entry.comparingByValue())).findFirst().get().getValue();
+                    supportDetails.put("matchedClickEventTerms", matchedTerms);
+                    supportDetails.put("clickEventTermsSupport", preceedingClickEventSupport - (supportDetails.getDouble("baseUriSupport") - supportDetails.getDouble("cssClassTermsSupport")));
+                    supportDetails.put("preceedingClickEventSupport", preceedingClickEventSupport);
 
                 }
 
@@ -183,6 +231,9 @@ public class TermSupportAnalyzer {
                 totalSupport+=preceedingClickEventSupport;
             }
             log.info("total support: {}", totalSupport);
+            supportDetails.put("totalSupport", totalSupport);
+
+            supportDetailsHistory.add(supportDetails);
 
             return totalSupport;
 
@@ -213,7 +264,7 @@ public class TermSupportAnalyzer {
          * lemmatized terms would be ['assignment', 'override', 'student'], if we then find 'assignment' 10 times, 'override' 3 times, and
          * 'student' 6 times, the overall support would be 3.
          */
-        int pathSupport = frequencyMap.entrySet().stream().sorted(Map.Entry.comparingByValue()).findFirst().get().getValue();
+        int pathSupport = frequencyMap.entrySet().stream().sorted(Collections.reverseOrder(Map.Entry.comparingByValue())).findFirst().get().getValue();
         return pathSupport;
     }
 
@@ -229,4 +280,7 @@ public class TermSupportAnalyzer {
         return result;
     }
 
+    public JsonArray getSupportDetailsHistory() {
+        return supportDetailsHistory;
+    }
 }

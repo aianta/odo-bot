@@ -26,6 +26,9 @@ public class DbOps extends ArrayList<DbLogEntry> {
         }
     }
 
+    public JsonArray subjectSupport = new JsonArray();
+    public JsonArray verbSupport = new JsonArray();
+
     public DbOps(){super();}
 
     public DbOps(List<DbLogEntry> entries){
@@ -89,6 +92,7 @@ public class DbOps extends ArrayList<DbLogEntry> {
         final LinkedHashMap<String, Double> totalSupport = new LinkedHashMap<>();
         databaseSupport.forEach((candidate, frequency)->{
             Double candidateSupport = frequency.doubleValue() * auxilliarySupportFunction.apply(candidate);
+
             if (candidateSupport != 0){ //Eliminate candidates with 0 support
                 totalSupport.put(candidate, candidateSupport);
             }

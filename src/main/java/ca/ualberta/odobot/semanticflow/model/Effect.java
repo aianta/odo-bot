@@ -84,7 +84,7 @@ public class Effect extends ArrayList<DomEffect> implements TimelineEntity {
     private Set<Element> getElementSet(Predicate<? super DomEffect> predicate){
         return stream()
                 .filter(predicate)
-                .peek(domEffect -> log.info("DomEffect[{}] [EffectElementNull:{}]: {} ", domEffect.getAction().toString() ,domEffect.getEffectElement() == null, domEffect.xpath))
+                //.peek(domEffect -> log.info("DomEffect[{}] [EffectElementNull:{}]: {} ", domEffect.getAction().toString() ,domEffect.getEffectElement() == null, domEffect.xpath))
                 .map(DomEffect::getEffectElement)
                 .collect(Collectors.toSet());
     }

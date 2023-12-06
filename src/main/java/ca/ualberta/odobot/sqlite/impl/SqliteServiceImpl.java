@@ -46,6 +46,7 @@ public class SqliteServiceImpl implements SqliteService {
             JsonArray logs = new JsonArray();
 
             results.forEach(row->logs.add(DbLogEntry.fromRow(row).toJson()));
+            log.info("returning {} db logs for timestamp {} and range {}", logs.size(), timestampMilli, range);
 
             promise.complete(logs);
         }).onFailure(err->{

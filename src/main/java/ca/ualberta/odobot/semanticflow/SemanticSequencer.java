@@ -48,7 +48,6 @@ public class SemanticSequencer {
      */
     private Consumer<AbstractArtifact> artifactConsumer;
 
-    private BiFunction<Long, Long, Future<List<DbLogEntry>>> databaseLogsSeekerFunction;
 
     /**
      * Allows caller to specify a consuming function to invoke whenever an {@link AbstractArtifact} is mapped as part of the sequencing process.
@@ -58,9 +57,6 @@ public class SemanticSequencer {
         this.artifactConsumer = consumer;
     }
 
-    public void setDatabaseLogsSeekerFunction(BiFunction<Long,Long,Future<List<DbLogEntry>>> function){
-        this.databaseLogsSeekerFunction = function;
-    }
 
 
     public Timeline parse(List<JsonObject> events){
@@ -211,16 +207,6 @@ public class SemanticSequencer {
                             log.info("{} - {}", networkEvent.getMethod(), networkEvent.getUrl());
                             //TODO - Temporarily ignore all GET requests. See 'Integrating Network Events # Network Event Summarization Options' in obsidian for details
                             //if(!networkEvent.getMethod().toLowerCase().equals("get")){
-
-                            //For any network request other than GETs, let's find associated database logs.
-                            if(!networkEvent.getMethod().toLowerCase().equals("get") && databaseLogsSeekerFunction != null){
-                                databaseLogsSeekerFunction.apply(networkEvent.getMillisecondTimestamp(),500l)
-                                        .onSuccess(databaseOperations->{
-                                           DbOps ops = new DbOps(databaseOperations);
-                                           log.info("Got DbOps!");
-                                            networkEvent.setDbOps(ops);
-                                        });
-                            }
 
                                 line.add(networkEvent);
 

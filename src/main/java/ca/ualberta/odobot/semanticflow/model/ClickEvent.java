@@ -28,6 +28,7 @@ public class ClickEvent extends AbstractArtifact implements TimelineEntity {
 
 
     public JsonObject toJson(){
+
         return new JsonObject()
                 .put("xpath", getXpath());
     }
