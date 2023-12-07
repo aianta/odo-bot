@@ -40,4 +40,6 @@ public interface DOMSequencingService {
 
     Future<String> getEntitiesAndActions();
 
+    Future<List<String>> getTexts(String html);
+
 }

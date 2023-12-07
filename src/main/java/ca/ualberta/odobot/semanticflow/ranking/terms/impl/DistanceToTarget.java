@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -32,6 +33,9 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
             "POS","PRP","PRP$","RB","RBR","RBS","RP","SYM","TO","UH","VB","VBD","VBG","VBN","VBP",
             "VBZ","WDT","WP","WP$","WRB"
     );
+
+    private static final Pattern numbers = Pattern.compile("[0-9]+");
+    private static final Pattern logicalTextRegion = Pattern.compile("(?<=[>])([a-zA-Z0-9?!;.,\\\"\\\"\\(\\)\\s]+)(?=[<])");
 
     private BiFunction<Element,String, Elements> matchingFunction;
 
@@ -120,19 +124,21 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
 
 
         //Term extraction
-        List<String> terms = extractionStrategy.extractTerms(
-                artifact, //The artifact to extract terms from
-                (a)->a.getDomSnapshot().body().text(), //The source function to apply to the artifact to get a raw string to extract from.
-                //Transformation to be applied to resulting CoreLabel
-                coreLabel -> {
-                    if(coreLabel.tag().equals("SYM")){ //Handle case where we're looking for '+' or some other symbol.
-                        coreLabel.setWord("\\"+coreLabel.word());
-                    }
-                    return coreLabel;
-                }
-                ,
-                (term)->ALLOWED_PARTS_OF_SPEECH.contains(term.tag()) //Filtering to be applied to the core label results
-        );
+//        List<String> terms = extractionStrategy.extractTerms(
+//                artifact, //The artifact to extract terms from
+//                (a)->a.getDomSnapshot().body().text(), //The source function to apply to the artifact to get a raw string to extract from.
+//                //Transformation to be applied to resulting CoreLabel
+//                coreLabel -> {
+//                    if(coreLabel.tag().equals("SYM")){ //Handle case where we're looking for '+' or some other symbol.
+//                        coreLabel.setWord("\\"+coreLabel.word());
+//                    }
+//                    return coreLabel;
+//                }
+//                ,
+//                (term)->ALLOWED_PARTS_OF_SPEECH.contains(term.tag()) //Filtering to be applied to the core label results
+//        );
+        List<String> terms = getLogicalTextRegions(body.outerHtml());
+
 
         log.debug("terms size: {}", terms.size());
         log.debug("'Event' count: {}",terms.stream().filter(term->term.equals("Event")).count());
@@ -264,5 +270,21 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
         }
         result.addAll(e.children());
         return result;
+    }
+
+    private static List<String> getLogicalTextRegions(String html){
+        List<String> results = new ArrayList<>();
+        Matcher matcher = logicalTextRegion.matcher(html);
+
+        while (matcher.find()){
+            String content = matcher.group(0);
+            content = content.trim();
+            if(content.isEmpty() | content.isBlank() | content.length() == 1 | numbers.matcher(content).matches()){
+                continue; //Don't add blank/empty strings, or strings of length 1.
+            }
+            results.add(content);
+        }
+
+        return results;
     }
 }

@@ -205,6 +205,7 @@ public class LogPreprocessor extends AbstractVerticle {
             api.route().method(HttpMethod.GET).path("/css/").handler(this::getGlobalManifest);
             api.route().method(HttpMethod.GET).path("/css/follows").handler(this::getDirectlyFollowsManifest);
             api.route().method(HttpMethod.GET).path("/dom/entitiesAndActions").handler(this::getEntitiesAndActions);
+            api.route().method(HttpMethod.POST).path("/texts").handler(this::getTexts);
 
 
             //Mount handlers to main router
@@ -416,6 +417,12 @@ public class LogPreprocessor extends AbstractVerticle {
                     log.error(err.getMessage(), err);
                     rc.response().setStatusCode(500).end();
                 });
+    }
+
+    private void getTexts(RoutingContext rc){
+        String htmlInput = rc.body().asString();
+        domSequencingService.getTexts(htmlInput).onSuccess(results->
+                rc.response().setStatusCode(200).end(results.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode()));
     }
 
 

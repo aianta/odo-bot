@@ -15,8 +15,11 @@ import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.print.Doc;
 import java.util.*;
 import java.util.function.BiConsumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public class DOMSequencingServiceImpl implements DOMSequencingService {
@@ -48,6 +51,29 @@ public class DOMSequencingServiceImpl implements DOMSequencingService {
         pipeline = new StanfordCoreNLP(properties);
     }
 
+
+    public Future<List<String>> getTexts(String html){
+
+        Pattern numbers = Pattern.compile("[0-9]+");
+        Pattern pattern = Pattern.compile("(?<=[>])([a-zA-Z0-9?!;.,\\\"\\\"\\(\\)\\s]+)(?=[<])");
+        Matcher matcher = pattern.matcher(html);
+
+        List<String> results = new ArrayList<>();
+        log.info("Looking for texts with regex!");
+        while(matcher.find()){
+
+            String content = matcher.group(0);
+            content = content.trim();
+            if(content.isEmpty() | content.isBlank() | content.length() == 1 | numbers.matcher(content).matches()){
+                continue; //Don't add blank/empty strings, or strings of length 1.
+            }
+            results.add(content);
+
+        }
+
+        return Future.succeededFuture(results);
+
+    }
 
     @Override
     public Future<JsonObject> process(String html) {
