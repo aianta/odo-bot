@@ -74,6 +74,120 @@ public class TermSupportAnalyzer {
     }
 
 
+    public double getNGramSupport(List<String> ngram){
+
+        ngram = preprocessNgram(ngram); //lemmatize lowercase
+
+        try{
+
+            Double pathSupport = computeNetworkPathSupport(ngram);
+            log.info("pathSupport: {}", pathSupport);
+
+            Double documentUrlSupport = null;
+            if(originNetworkEvent.getDocumentUrl() != null){
+                documentUrlSupport = computeDocumentURLSupport(ngram);
+                log.info("documentUrlSupport: {}", documentUrlSupport);
+            }
+
+            Double preceedingClickEventSupport = null;
+            if(nearestPreceedingClickEvent !=null){
+                //Accumulate support from baseURI
+                Double clickBaseURISupport = computeBaseURISupport(ngram);
+                log.info("clickBaseURISupport: {}", clickBaseURISupport);
+                preceedingClickEventSupport = clickBaseURISupport;
+
+                //Accumulate support from cssClassTerms
+                if(nearestPreceedingClickEvent.getSemanticArtifacts() != null && nearestPreceedingClickEvent.getSemanticArtifacts().containsKey("cssClassTerms")){
+                    Double cssClassTermSupport = computeCssClassTermsSupport(ngram);
+                    log.info("cssClassTermSupport: {}", cssClassTermSupport);
+                    preceedingClickEventSupport += cssClassTermSupport;
+                }
+
+                //Accumulate support from terms
+                if(nearestPreceedingClickEvent.getSemanticArtifacts() != null && nearestPreceedingClickEvent.getSemanticArtifacts().containsKey("terms")){
+                    Double termsSupport = computeTermsSupport(ngram);
+                    log.info("termsSupport: {}", termsSupport);
+                    preceedingClickEventSupport += termsSupport;
+
+                }
+
+
+            }
+
+            double totalSupport = pathSupport;
+            if(documentUrlSupport != null){
+                totalSupport += documentUrlSupport;
+            }
+            if(preceedingClickEventSupport != null){
+                totalSupport += preceedingClickEventSupport;
+            }
+
+            log.info("total support: {}", totalSupport);
+
+            return totalSupport;
+
+        } catch (MalformedURLException e) {
+            log.error("Bad document URL! {}", originNetworkEvent.getDocumentUrl());
+            throw new RuntimeException(e);
+        }
+
+    }
+
+    private double computeTermsSupport(List<String> ngrams){
+        double result = 0.0;
+        JsonArray textTerms = nearestPreceedingClickEvent.getSemanticArtifacts().getJsonArray("terms");
+        ListIterator<String> it = textTerms.stream().map(o->(String)o).collect(Collectors.toList()).listIterator();
+        while (it.hasNext()){
+            int index = it.nextIndex();
+            String textTermEntry = it.next();
+
+            double support = getSupport2(ngrams, textTermEntry);
+            double supportToAdd = (((double) textTerms.size() - (double) index)/(double) textTerms.size())* support;
+            result += supportToAdd;
+        }
+
+        return result;
+    }
+
+    private double computeNetworkPathSupport(List<String> ngram){
+        String path = originNetworkEvent.getPath();
+        String [] pathSplit = path.split("/");
+        String pathInput = Arrays.stream(pathSplit).filter(part->!part.equals("*")).collect(StringBuilder::new, (sb, s)->sb.append(s + " ") , StringBuilder::append).toString();
+        Double pathSupport = getSupport2(ngram, pathInput);
+        return pathSupport;
+    }
+
+    private double computeDocumentURLSupport(List<String> ngram) throws MalformedURLException {
+        String documentUrl = originNetworkEvent.getDocumentUrl();
+        String documentPath = new URL(documentUrl).getPath();
+        String [] documentPathSplit = documentPath.split("/");
+        String documentPathInput = Arrays.stream(documentPathSplit).collect(StringBuilder::new,(sb,s)->sb.append(s + " "),StringBuilder::append).toString();
+        Double result = getSupport2(ngram, documentPathInput);
+        return result;
+    }
+
+    private double computeBaseURISupport(List<String> ngram) throws MalformedURLException {
+        String baseUri = nearestPreceedingClickEvent.getBaseURI();
+        String baseUriPath = new URL(baseUri).getPath();
+        String [] baseUriSplit = baseUriPath.split("/");
+        String baseUriInput = Arrays.stream(baseUriSplit).filter(part->!part.equals("*")).collect(StringBuilder::new, (sb,s)->sb.append(s + " "), StringBuilder::append).toString();
+
+        Double clickBaseURISupport = getSupport2(ngram, baseUriInput);
+        return clickBaseURISupport;
+    }
+
+    private double computeCssClassTermsSupport(List<String> ngram){
+        double result = 0.0;
+        JsonArray cssClassTerms = nearestPreceedingClickEvent.getSemanticArtifacts().getJsonArray("cssClassTerms");
+        Iterator<Object> cssClassTermIterator = cssClassTerms.iterator();
+        while (cssClassTermIterator.hasNext()){
+            String cssClassTermEntry = (String) cssClassTermIterator.next();
+            result += getSupport2(ngram, cssClassTermEntry );
+        }
+
+        return result;
+    }
+
     /**
      * For a given term, this function returns how much 'support'
      * there is for the term.
@@ -244,6 +358,54 @@ public class TermSupportAnalyzer {
 
     }
 
+    private double getSupport2(List<String> ngram, String target){
+
+        CoreDocument document = new CoreDocument(target);
+        nlpPipeline.annotate(document);
+
+
+        List<CoreLabel> targetLabels = document.annotation().get(CoreAnnotations.TokensAnnotation.class);
+        Iterator<CoreLabel> targetIterator = targetLabels.iterator();
+        Iterator<String> ngramIterator = ngram.iterator();
+
+        int numMatches = 0;
+        boolean matchedLast = false;
+        while (targetIterator.hasNext()){
+            CoreLabel reference = targetIterator.next();
+
+            if(ngramIterator.hasNext()){
+                String sample = ngramIterator.next();
+
+                if(sample.equals(reference.lemma().toLowerCase())){
+                    matchedLast = true;
+                }else{
+
+                    matchedLast = false;
+                    ngramIterator = ngram.iterator(); //Reset the n-gram iterator after a mismatch
+                }
+
+            }else if(matchedLast){
+                matchedLast = false;
+                numMatches++;
+                ngramIterator = ngram.iterator(); //Reset the n-gram iterator after a match.
+
+                if(ngramIterator.next().equals(reference.lemma().toLowerCase())){
+                    matchedLast = true;
+                }else{
+                    ngramIterator = ngram.iterator();
+                }
+
+            }
+        }
+
+        if(matchedLast){
+            numMatches++;
+        }
+
+        return (double) numMatches;
+
+    }
+
     private double getSupport(List<String> lemmatizedTerms, String targetRegion){
         LinkedHashMap<String, Integer> frequencyMap = new LinkedHashMap<>();
         lemmatizedTerms.forEach(term->frequencyMap.put(term, 0));
@@ -278,6 +440,21 @@ public class TermSupportAnalyzer {
         }
 
         return result;
+    }
+
+    private List<String> preprocessNgram(List<String> ngram){
+        List<String> result = new ArrayList<>();
+
+        ngram.forEach(s->{
+            CoreDocument document = new CoreDocument(s);
+            nlpPipeline.annotate(document);
+            for(CoreLabel token: document.annotation().get(CoreAnnotations.TokensAnnotation.class)){
+                result.add(token.lemma().toLowerCase());
+            }
+        });
+
+        return result;
+
     }
 
     public JsonArray getSupportDetailsHistory() {

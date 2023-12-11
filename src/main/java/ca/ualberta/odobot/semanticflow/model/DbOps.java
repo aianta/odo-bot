@@ -1,6 +1,7 @@
 package ca.ualberta.odobot.semanticflow.model;
 
 import ca.ualberta.odobot.sqlite.impl.DbLogEntry;
+import io.vertx.codegen.doc.Tag;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.LoggerFactory;
@@ -15,7 +16,7 @@ public class DbOps extends ArrayList<DbLogEntry> {
     private static final Logger log = LoggerFactory.getLogger(DbOps.class);
 
     public enum Verb{
-        CREATE(Set.of()),
+        CREATE(Set.of("new", "create", "add","insert")),
         EDIT(Set.of("edit","modify","update", "change", "save")),
         DELETE(Set.of("delete", "remove", "destroy", "trash"));
 
@@ -124,6 +125,52 @@ public class DbOps extends ArrayList<DbLogEntry> {
                         Map.Entry::getKey, Map.Entry::getValue, (e1, e2)->e1, LinkedHashMap::new));
 
         return sorted;
+    }
+
+
+    public LinkedHashMap<Verb, List<List<String>>> getVerbGrams(){
+        LinkedHashMap result = new LinkedHashMap();
+        result.put(Verb.CREATE, Verb.CREATE.associatedTerms.stream().map(s->List.of(s)).collect(Collectors.toList()));
+        result.put(Verb.EDIT, Verb.EDIT.associatedTerms.stream().map(s->List.of(s)).collect(Collectors.toList()));
+        result.put(Verb.DELETE, Verb.DELETE.associatedTerms.stream().map(s->List.of(s)).collect(Collectors.toList()));
+
+        return result;
+    }
+
+    /**
+     * Note: this is not an exhaustive list of n-grams
+     * TODO: make a more comprehensive set of n-grams
+     * @return
+     */
+    public LinkedHashMap<String, List<List<String>>> getTableNGrams(){
+        LinkedHashMap map = new LinkedHashMap();
+        forEach(entry -> {
+            String tableName = getTableName(entry);
+
+            String [] components = tableName.split("_");
+
+            List<List<String>> result = new ArrayList<>();
+
+            List<List<String>> oneGrams = Arrays.stream(components).map(s->List.of(s)).collect(Collectors.toList());
+
+            result.addAll(oneGrams);
+
+            List<String> fullGram = Arrays.stream(components).collect(Collectors.toList());
+
+            result.add(fullGram);
+
+            map.put(tableName, result);
+
+        });
+
+        return map;
+    }
+
+    public boolean hasInsert(String tableName){
+        if(tableName == null){
+            return false;
+        }
+        return stream().anyMatch(logEntry-> getTableName(logEntry).equals(tableName) &&  logEntry.command().equals("INSERT"));
     }
 
     private String getSchemaPrefix(){

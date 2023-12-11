@@ -8,6 +8,7 @@ import ca.ualberta.odobot.semanticflow.SemanticSequencer;
 import ca.ualberta.odobot.semanticflow.extraction.terms.SourceFunctions;
 import ca.ualberta.odobot.semanticflow.model.*;
 import ca.ualberta.odobot.semanticflow.model.semantictrace.SemanticTrace;
+import ca.ualberta.odobot.semanticflow.model.semantictrace.strategy.AlphaStrategy;
 import ca.ualberta.odobot.semanticflow.model.semantictrace.strategy.BaseStrategy;
 import ca.ualberta.odobot.semanticflow.model.semantictrace.strategy.SemanticTraceConstructionStrategy;
 import ca.ualberta.odobot.sqlite.impl.DbLogEntry;
@@ -149,7 +150,7 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
 
     public Future<SemanticTrace> makeSemanticTrace(Timeline timeline){
 
-        SemanticTraceConstructionStrategy strategy = new BaseStrategy(sqliteService);
+        SemanticTraceConstructionStrategy strategy = new AlphaStrategy(sqliteService);
         return strategy.construct(timeline);
 
     }
