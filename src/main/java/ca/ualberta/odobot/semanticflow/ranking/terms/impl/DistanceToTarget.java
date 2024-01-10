@@ -1,6 +1,7 @@
 package ca.ualberta.odobot.semanticflow.ranking.terms.impl;
 
 import ca.ualberta.odobot.semanticflow.extraction.terms.TermExtractionStrategy;
+import ca.ualberta.odobot.semanticflow.extraction.terms.annotators.EnglishWordAnnotator;
 import ca.ualberta.odobot.semanticflow.ranking.terms.TermRankingStrategy;
 import ca.ualberta.odobot.semanticflow.model.AbstractArtifact;
 import edu.stanford.nlp.ling.CoreLabel;
@@ -14,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.function.BiFunction;
 import java.util.function.Function;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -31,6 +33,9 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
             "POS","PRP","PRP$","RB","RBR","RBS","RP","SYM","TO","UH","VB","VBD","VBG","VBN","VBP",
             "VBZ","WDT","WP","WP$","WRB"
     );
+
+    private static final Pattern numbers = Pattern.compile("[0-9]+");
+    private static final Pattern logicalTextRegion = Pattern.compile("(?<=[>])([a-zA-Z0-9?!;.,\\\"\\\"\\(\\)\\s]+)(?=[<])");
 
     private BiFunction<Element,String, Elements> matchingFunction;
 
@@ -117,20 +122,33 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
 
         log.debug("targetElement: {}", targetElement);
 
-        List<CoreLabel> terms = extractionStrategy.extractTerms(artifact, (a)->a.getDomSnapshot().body().text());
+
+        //Term extraction
+//        List<String> terms = extractionStrategy.extractTerms(
+//                artifact, //The artifact to extract terms from
+//                (a)->a.getDomSnapshot().body().text(), //The source function to apply to the artifact to get a raw string to extract from.
+//                //Transformation to be applied to resulting CoreLabel
+//                coreLabel -> {
+//                    if(coreLabel.tag().equals("SYM")){ //Handle case where we're looking for '+' or some other symbol.
+//                        coreLabel.setWord("\\"+coreLabel.word());
+//                    }
+//                    return coreLabel;
+//                }
+//                ,
+//                (term)->ALLOWED_PARTS_OF_SPEECH.contains(term.tag()) //Filtering to be applied to the core label results
+//        );
+        List<String> terms = getLogicalTextRegions(body.outerHtml());
+
 
         log.debug("terms size: {}", terms.size());
-        log.debug("'Event' count: {}",terms.stream().filter(term->term.word().equals("Event")).count());
+        log.debug("'Event' count: {}",terms.stream().filter(term->term.equals("Event")).count());
+
 
         List<RankedTerm> result = terms.stream()
-                //TODO - working with CoreLabel's here makes TermRankingStrategies tightly coupled with the BasicStanfordNLPStrategy, should move filtering logic to extraction strategy.
-                .filter(term->ALLOWED_PARTS_OF_SPEECH.contains(term.tag()))
                 .map(term->{
-            log.debug("Looking for: {}", term.word());
+            log.debug("Looking for: {}", term);
 
-            Elements elements = matchingFunction.apply(body,
-                    term.tag().equals("SYM")?("\\"+term.word()):term.word() //Handle case where we're looking for '+' or some other symbol.
-            );
+            Elements elements = matchingFunction.apply(body, term);
 
             log.debug("Found {} elements", elements.size());
 
@@ -178,11 +196,11 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
         });
 
         result.forEach(term->{
-            log.debug("{} - {}", term.term().word(), term.ranking());
+            log.debug("{} - {}", term.term(), term.ranking());
         });
 
 
-        return result.stream().map(value->value.term().word()).collect(Collectors.toList());
+        return result.stream().map(value->value.term()).collect(Collectors.toList());
     }
 
 
@@ -252,5 +270,21 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
         }
         result.addAll(e.children());
         return result;
+    }
+
+    private static List<String> getLogicalTextRegions(String html){
+        List<String> results = new ArrayList<>();
+        Matcher matcher = logicalTextRegion.matcher(html);
+
+        while (matcher.find()){
+            String content = matcher.group(0);
+            content = content.trim();
+            if(content.isEmpty() | content.isBlank() | content.length() == 1 | numbers.matcher(content).matches()){
+                continue; //Don't add blank/empty strings, or strings of length 1.
+            }
+            results.add(content);
+        }
+
+        return results;
     }
 }

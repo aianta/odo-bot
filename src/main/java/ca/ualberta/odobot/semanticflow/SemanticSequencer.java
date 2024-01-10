@@ -9,19 +9,19 @@ import ca.ualberta.odobot.semanticflow.mappers.impl.DomEffectMapper;
 import ca.ualberta.odobot.semanticflow.mappers.impl.InputChangeMapper;
 import ca.ualberta.odobot.semanticflow.mappers.impl.NetworkEventMapper;
 import ca.ualberta.odobot.semanticflow.model.*;
-import io.vertx.core.json.JsonArray;
+import ca.ualberta.odobot.sqlite.impl.DbLogEntry;
+import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
 
@@ -48,6 +48,7 @@ public class SemanticSequencer {
      */
     private Consumer<AbstractArtifact> artifactConsumer;
 
+
     /**
      * Allows caller to specify a consuming function to invoke whenever an {@link AbstractArtifact} is mapped as part of the sequencing process.
      * @param consumer the consuming function to invoke when an artifact is mapped during sequencing
@@ -66,10 +67,15 @@ public class SemanticSequencer {
             try {
                 validate(event);
                 parse(event);
-            } catch (MissingSessionId | InvalidSessionId | MissingTimestamp | InvalidTimestamp e) {
+            } catch (MissingSessionId | InvalidSessionId | MissingTimestamp | InvalidTimestamp  e) {
                 log.error(e.getMessage(),e);
                 log.error("Stopping parse!");
-                return null;
+                throw new RuntimeException(e);
+
+            }catch (Exception e){
+                log.error(e.getMessage(),e);
+                log.error("Stopping parse!");
+                throw new RuntimeException(e);
             }
         }
 
@@ -201,6 +207,7 @@ public class SemanticSequencer {
                             log.info("{} - {}", networkEvent.getMethod(), networkEvent.getUrl());
                             //TODO - Temporarily ignore all GET requests. See 'Integrating Network Events # Network Event Summarization Options' in obsidian for details
                             //if(!networkEvent.getMethod().toLowerCase().equals("get")){
+
                                 line.add(networkEvent);
 
                             log.info("Handled NETWORK_EVENT");
@@ -210,4 +217,6 @@ public class SemanticSequencer {
 
         }
     }
+
+
 }

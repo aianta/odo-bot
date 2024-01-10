@@ -7,10 +7,14 @@ import org.slf4j.LoggerFactory;
 
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 
 public class NetworkEvent extends AbstractArtifact implements TimelineEntity, FixedPoint{
 
     private static final Logger log = LoggerFactory.getLogger(NetworkEvent.class);
+
+    private static final DateTimeFormatter responseHeaderDateFormat = DateTimeFormatter.ofPattern("EEE, dd MMM yyyy HH:mm:ss zzz");
 
     private JsonObject requestObject;
 
@@ -24,13 +28,43 @@ public class NetworkEvent extends AbstractArtifact implements TimelineEntity, Fi
 
     private JsonArray responseArray;
 
+    private JsonObject requestHeaders;
+
+    private JsonObject responseHeaders;
+
     private String flightId;
 
     private String method;
     private URL url;
 
+    private DbOps dbOps;
+
 
     private String logUISessionId;
+
+    public DbOps getDbOps() {
+        return dbOps;
+    }
+
+    public void setDbOps(DbOps dbOps) {
+        this.dbOps = dbOps;
+    }
+
+    public ZonedDateTime getResponseHeaderDate(){
+        if (responseHeaders == null){
+            log.warn("Could not get response header date because responseHeaders are null");
+            return null;
+        }
+
+        if(!getResponseHeaders().containsKey("Date")){
+            log.warn("Could not get response header date because responseHeaders is missing the 'Date' key.");
+            return null;
+        }
+
+        String dateString = getResponseHeaders().getString("Date");
+
+        return ZonedDateTime.parse(dateString, responseHeaderDateFormat);
+    }
 
     public String getType() {
         return type;
@@ -141,7 +175,21 @@ public class NetworkEvent extends AbstractArtifact implements TimelineEntity, Fi
         return logUISessionId;
     }
 
+    public JsonObject getRequestHeaders() {
+        return requestHeaders;
+    }
 
+    public void setRequestHeaders(JsonObject requestHeaders) {
+        this.requestHeaders = requestHeaders;
+    }
+
+    public JsonObject getResponseHeaders() {
+        return responseHeaders;
+    }
+
+    public void setResponseHeaders(JsonObject responseHeaders) {
+        this.responseHeaders = responseHeaders;
+    }
 
     public void setLogUISessionId(String logUISessionId) {
         this.logUISessionId = logUISessionId;
@@ -188,6 +236,17 @@ public class NetworkEvent extends AbstractArtifact implements TimelineEntity, Fi
              result.put("request", getRequestArray());
          }
 
+         if(getRequestHeaders() != null){
+             result.put("requestHeaders", getRequestHeaders());
+         }
+
+         if(getResponseHeaders() != null){
+             result.put("responseHeaders", getResponseHeaders());
+         }
+
+         if(dbOps != null){
+             result.put("dbOps", dbOps.toJson());
+         }
 
         return result;
     }

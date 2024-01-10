@@ -4,12 +4,11 @@ import org.jsoup.nodes.Element;
 import org.jsoup.nodes.Node;
 import org.jsoup.select.NodeVisitor;
 
-import java.util.Map;
-import java.util.Set;
-import java.util.TreeMap;
+import java.util.*;
 
 public class DOMVisitor implements NodeVisitor {
 
+    List<String> texts = new ArrayList<>();
     DOMSequence sequence = new DOMSequence();
     CSSManifest cssManifest = new CSSManifest();
 

@@ -1,5 +1,7 @@
 package ca.ualberta.odobot.web;
 
+import ca.ualberta.odobot.sqlite.LogParser;
+import ca.ualberta.odobot.sqlite.SqliteService;
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerOptions;
@@ -18,9 +20,13 @@ import org.slf4j.LoggerFactory;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+
+import static ca.ualberta.odobot.logpreprocessor.Constants.SQLITE_SERVICE_ADDRESS;
 
 public class OdoSightSupport extends AbstractVerticle {
 
@@ -28,6 +34,13 @@ public class OdoSightSupport extends AbstractVerticle {
     private static final String HOST = "0.0.0.0";
     private static final int PORT = 8079;
     private static final String SCRAPE_SCRIPT_PATH = "/home/aianta/shock_and_awe/es-local/scrape_mongo.sh";
+    private static final String DATABASE_CONTAINER_NAME = "canvas-lms-postgres-1";
+    private static final String DATABASE_LOGS_PATH = "/var/lib/postgresql/data/log/";
+    private static final String DATABASE_LOG_NAME_PREFIX = "db_log_";
+
+    private static final String DATABASE_LOG_NAME_SUFFIX = ".csv";
+
+    private SqliteService sqliteService;
 
     HttpServer server;
     Router router;
@@ -36,6 +49,9 @@ public class OdoSightSupport extends AbstractVerticle {
     public Completable rxStart(){
 
         log.info("Starting Odo Sight Support Server at {}:{}", HOST, PORT);
+
+        log.info("Initializing Sqlite Service Proxy");
+        sqliteService = SqliteService.createProxy(vertx.getDelegate(), SQLITE_SERVICE_ADDRESS);
 
         HttpServerOptions options = new HttpServerOptions()
                 .setHost(HOST)
@@ -50,7 +66,9 @@ public class OdoSightSupport extends AbstractVerticle {
         router.route().handler(BodyHandler.create());
         router.route().handler(rc->{rc.response().putHeader("Access-Control-Allow-Origin", "*");rc.next();});
         router.route().method(HttpMethod.GET).path("/odo-sight/alive").handler(rc->rc.response().setStatusCode(200).end());
+        router.route().method(HttpMethod.POST).path("/odo-sight/scrape-mongo").handler(this::scrapeAuditLogs);
         router.route().method(HttpMethod.POST).path("/odo-sight/scrape-mongo").handler(this::scrapeMongo);
+
 
         server.requestHandler(router).listen(PORT);
 
@@ -85,11 +103,56 @@ public class OdoSightSupport extends AbstractVerticle {
             log.info("Scrape script invoke complete!");
         }).subscribe();
 
+
         rc.response().setStatusCode(201).end();
 
 
     }
 
+    public void scrapeAuditLogs(RoutingContext rc){
+
+        vertx.executeBlocking(blocking->{
+
+            try{
+                log.info("Fetching database audit logs from docker container!");
+
+                SimpleDateFormat f = new SimpleDateFormat("EEE");
+                String dayString = f.format(new Date());
+
+                String src = DATABASE_CONTAINER_NAME + ":" + DATABASE_LOGS_PATH + DATABASE_LOG_NAME_PREFIX + dayString + DATABASE_LOG_NAME_SUFFIX;
+
+                ProcessBuilder pb = new ProcessBuilder("wsl", "docker", "cp", src, "." );
+                pb.inheritIO();
+                Process scrapeProcess = pb.start();
+                scrapeProcess.waitFor(15, TimeUnit.SECONDS);
+
+                blocking.complete();
+            } catch (IOException | InterruptedException ioException) {
+                log.error(ioException.getMessage(), ioException);
+            }
+
+
+
+        }).doAfterTerminate(()->{
+            log.info("Database audit logs retrieved!");
+            log.info("Parsing!");
+
+            SimpleDateFormat f = new SimpleDateFormat("EEE");
+            String dayString = f.format(new Date());
+
+            String logPath = DATABASE_LOG_NAME_PREFIX + dayString + DATABASE_LOG_NAME_SUFFIX;
+            LogParser logParser = new LogParser(logEntry->sqliteService.insertLogEntry(logEntry.toJson()));
+            logParser.parseDatabaseLogFile(logPath);
+            log.info("Parsed {} database audit log entries", logParser.parseCount);
+
+
+
+        }).subscribe();
+//
+        rc.next();
+
+        //rc.response().setStatusCode(201).end();
+    }
 
 
 }

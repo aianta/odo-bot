@@ -21,6 +21,8 @@ public interface PipelineService {
 
     void timelinesHandler(RoutingContext rc);
 
+    void semanticTraceHandler(RoutingContext rc);
+
     void purgePipeline(RoutingContext rc);
 
     void transienceHandler(RoutingContext rc);

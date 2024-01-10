@@ -2,7 +2,9 @@ package ca.ualberta.odobot.logpreprocessor;
 
 public class Constants {
 
+    public static final String SQLITE_CONNECTION_STRING = "jdbc:sqlite:odobot.db";
 
+    public static final String SQLITE_SERVICE_ADDRESS = "sqlite-service";
     public static final String DOMSEQUENCING_SERVICE_ADDRESS = "domsequencing-service";
     public static final String ELASTICSEARCH_SERVICE_ADDRESS = "elasticsearch-service";
     public static final String DEEP_SERVICE_HOST = "172.31.208.70";

@@ -14,18 +14,21 @@ import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
 
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 
+import ca.ualberta.odobot.semanticflow.model.semantictrace.SemanticTrace;
+import ca.ualberta.odobot.sqlite.SqliteService;
 import io.vertx.core.CompositeFuture;
 
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
+import io.vertx.core.eventbus.DeliveryOptions;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
-import io.vertx.rxjava3.RxHelper;
 import io.vertx.rxjava3.core.Vertx;
 import io.vertx.rxjava3.core.buffer.Buffer;
 
 import io.vertx.rxjava3.ext.web.RoutingContext;
 import io.vertx.rxjava3.ext.web.client.WebClient;
+import io.vertx.serviceproxy.ServiceProxyBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,6 +53,8 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
     protected ElasticsearchService elasticsearchService;
     protected DOMSequencingService domSequencingService;
 
+    protected SqliteService sqliteService;
+
     protected Vertx vertx;
 
     WebClient client;
@@ -72,6 +77,14 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
          */
         elasticsearchService = ElasticsearchService.createProxy(vertx.getDelegate(), ELASTICSEARCH_SERVICE_ADDRESS);
         domSequencingService = DOMSequencingService.createProxy(vertx.getDelegate(), DOMSEQUENCING_SERVICE_ADDRESS);
+        //sqliteService = SqliteService.createProxy(vertx.getDelegate(), SQLITE_SERVICE_ADDRESS);
+
+        ServiceProxyBuilder dbProxyBuilder = new ServiceProxyBuilder(vertx.getDelegate())
+                .setAddress(SQLITE_SERVICE_ADDRESS);
+        dbProxyBuilder.setOptions(new DeliveryOptions().setSendTimeout(3600000)); //1hr timeout
+
+        sqliteService = dbProxyBuilder.build(SqliteService.class);
+
 
         client = WebClient.create(vertx);
 
@@ -329,6 +342,38 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
         //Put the extracted entities back into the routing context
         rc.put("entities", entityJson);
         rc.next();
+    }
+
+    public void semanticTraceHandler(RoutingContext rc){
+        //Update bookkeeping for this execution
+        BasicExecution execution = rc.get("metadata");
+        if(execution != null){
+            execution.status().data().put("step", "semanticLabelingHandler");
+        }
+
+        //Get the timelines to process
+        List<Timeline> timelines = rc.get("timelines");
+
+        //Make semantic labels for each timeline in a separate thread.
+        List<Future> timelineFutures = timelines.stream()
+                .map(timeline->{
+                    return vertx.getDelegate().<SemanticTrace>executeBlocking(blocking->{
+                        makeSemanticTrace(timeline)
+                                .onSuccess(result->blocking.complete(result))
+                                .onFailure(err->blocking.fail(err));
+                    }, false);
+                })
+                .collect(Collectors.toList());
+
+        //Wait for all timelines to finish processing
+        CompositeFuture.all(timelineFutures)
+                .onSuccess(results->{
+                    //Then put the processed, updated timelines in the routing context and call the next handler.
+                    List<SemanticTrace> semanticTraces = results.<SemanticTrace>list();
+                    rc.put("semanticTraces", semanticTraces);
+
+                    rc.next();
+                });
     }
 
     @Override

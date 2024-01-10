@@ -7,11 +7,11 @@ import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
 import ca.ualberta.odobot.logpreprocessor.impl.*;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 
-import co.elastic.clients.elasticsearch.nodes.Http;
+import ca.ualberta.odobot.semanticflow.model.semantictrace.SemanticTrace;
+import ca.ualberta.odobot.sqlite.SqliteService;
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerOptions;
-import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.core.AbstractVerticle;
@@ -50,6 +50,8 @@ public class LogPreprocessor extends AbstractVerticle {
 
     private static DOMSequencingService domSequencingService;
 
+    private static SqliteService sqliteService;
+
     private Set<Class> mountedPipelines = new HashSet<>();
 
     Router mainRouter;
@@ -69,6 +71,13 @@ public class LogPreprocessor extends AbstractVerticle {
             server = vertx.createHttpServer(options);
             mainRouter = Router.router(vertx);
             api = Router.router(vertx);
+
+            //Init SQLite Service
+            sqliteService = SqliteService.create(vertx.getDelegate());
+            new ServiceBinder(vertx.getDelegate())
+                    .setAddress(SQLITE_SERVICE_ADDRESS)
+                    .register(SqliteService.class, sqliteService);
+
 
             //Init DOMSequencing Service
             domSequencingService = DOMSequencingService.create();
@@ -195,6 +204,9 @@ public class LogPreprocessor extends AbstractVerticle {
             api.route().method(HttpMethod.POST).path("/css/query").handler(this::executeCSSQuery);
             api.route().method(HttpMethod.GET).path("/css/").handler(this::getGlobalManifest);
             api.route().method(HttpMethod.GET).path("/css/follows").handler(this::getDirectlyFollowsManifest);
+            api.route().method(HttpMethod.GET).path("/dom/entitiesAndActions").handler(this::getEntitiesAndActions);
+            api.route().method(HttpMethod.POST).path("/texts").handler(this::getTexts);
+            api.route().method(HttpMethod.GET).path("/DOMSequences/hashed").handler(this::getHashedSequences);
 
 
             //Mount handlers to main router
@@ -230,11 +242,14 @@ public class LogPreprocessor extends AbstractVerticle {
         log.info("Mounting [{}] {} - {}", pipeline.id().toString(), pipeline.slug(), pipeline.getClass().getName() );
 
         PipelinePersistenceLayer persistenceLayer = pipeline.persistenceLayer();
+
+        //Setup the pipeline execution route
         Route executeRoute = api.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + pipeline.slug() + "/execute");
 
         executeRoute.handler(pipeline::beforeExecution);
         executeRoute.handler(pipeline::transienceHandler);
         executeRoute.handler(pipeline::timelinesHandler);
+        executeRoute.handler(pipeline::semanticTraceHandler);
         executeRoute.handler(persistenceLayer::persistenceHandler);
         executeRoute.handler(pipeline::timelineEntitiesHandler);
         executeRoute.handler(persistenceLayer::persistenceHandler);
@@ -261,6 +276,7 @@ public class LogPreprocessor extends AbstractVerticle {
         executeRoute.failureHandler(persistenceLayer::persistenceHandler); //Update record keeping for failure.
         executeRoute.failureHandler(rc->rc.response().setStatusCode(500).end(rc.failure().getMessage()));
 
+        //Set up the pipeline entities route
         Route entitiesRoute = router.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + pipeline.slug() + "/entities");
         entitiesRoute.handler(pipeline::timelinesHandler);
         entitiesRoute.handler(pipeline::timelineEntitiesHandler);
@@ -268,6 +284,16 @@ public class LogPreprocessor extends AbstractVerticle {
             List<JsonObject> entities = rc.get("entities");
             JsonObject responseData = new JsonObject().put("entities", entities.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
             rc.response().setStatusCode(200).putHeader("Content-Type", "application/json").end(responseData.encode());
+        });
+
+        //Setup the pipeline semantic traces route
+        Route semanticTracesRoute = router.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + pipeline.slug() + "/semanticTraces");
+        semanticTracesRoute.handler(pipeline::timelinesHandler);
+        semanticTracesRoute.handler(pipeline::semanticTraceHandler);
+        semanticTracesRoute.handler(rc->{
+            List<SemanticTrace> semanticTraces = rc.get("semanticTraces");
+            JsonArray response = semanticTraces.stream().map(SemanticTrace::toJson).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+            rc.response().setStatusCode(200).putHeader("Content-Type", "application/json").end(response.encode());
         });
 
         router.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + pipeline.slug() + "/timelines").handler(pipeline::timelinesHandler);
@@ -348,6 +374,10 @@ public class LogPreprocessor extends AbstractVerticle {
         domSequencingService.getDirectlyFollowsManifest().onSuccess(data->rc.response().setStatusCode(200).end(data));
     }
 
+    private void getEntitiesAndActions(RoutingContext rc){
+        domSequencingService.getEntitiesAndActions().onSuccess(data->rc.response().setStatusCode(200).end(data));
+    }
+
     private void getGlobalManifest(RoutingContext rc){
         domSequencingService.getGlobalManifest()
                 .onSuccess(data->rc.response().setStatusCode(200).end(data));
@@ -358,6 +388,15 @@ public class LogPreprocessor extends AbstractVerticle {
                 .onSuccess(done->rc.response().setStatusCode(200).end())
                 .onFailure(err->{log.error(err.getMessage(), err); rc.response().setStatusCode(500).end();})
         ;
+    }
+
+    private void getHashedSequences(RoutingContext rc){
+        domSequencingService.getHashedSequences()
+                .onSuccess(result->rc.response().setStatusCode(200).end(result.encode()))
+                .onFailure(err->{
+                    log.error(err.getMessage(), err);
+                    rc.response().setStatusCode(500).end();
+                });
     }
 
     private void getEncodedSequences(RoutingContext rc){
@@ -389,6 +428,14 @@ public class LogPreprocessor extends AbstractVerticle {
                     rc.response().setStatusCode(500).end();
                 });
     }
+
+    private void getTexts(RoutingContext rc){
+        String htmlInput = rc.body().asString();
+        domSequencingService.getTexts(htmlInput).onSuccess(results->
+                rc.response().setStatusCode(200).end(results.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode()));
+    }
+
+
 
 
 }

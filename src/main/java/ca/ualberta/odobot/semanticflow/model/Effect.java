@@ -84,12 +84,14 @@ public class Effect extends ArrayList<DomEffect> implements TimelineEntity {
     private Set<Element> getElementSet(Predicate<? super DomEffect> predicate){
         return stream()
                 .filter(predicate)
+                //.peek(domEffect -> log.info("DomEffect[{}] [EffectElementNull:{}]: {} ", domEffect.getAction().toString() ,domEffect.getEffectElement() == null, domEffect.xpath))
                 .map(DomEffect::getEffectElement)
                 .collect(Collectors.toSet());
     }
 
     public static JsonArray toJson(Set<Element> elementSet){
-        return elementSet.stream().map(Element::html).collect(
+        return elementSet.stream()
+                .map(Element::html).collect(
                 JsonArray::new,
                 JsonArray::add,
                 JsonArray::addAll

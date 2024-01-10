@@ -7,6 +7,11 @@ import ca.ualberta.odobot.logpreprocessor.xes.XesTransformer;
 import ca.ualberta.odobot.semanticflow.SemanticSequencer;
 import ca.ualberta.odobot.semanticflow.extraction.terms.SourceFunctions;
 import ca.ualberta.odobot.semanticflow.model.*;
+import ca.ualberta.odobot.semanticflow.model.semantictrace.SemanticTrace;
+import ca.ualberta.odobot.semanticflow.model.semantictrace.strategy.AlphaStrategy;
+import ca.ualberta.odobot.semanticflow.model.semantictrace.strategy.BaseStrategy;
+import ca.ualberta.odobot.semanticflow.model.semantictrace.strategy.SemanticTraceConstructionStrategy;
+import ca.ualberta.odobot.sqlite.impl.DbLogEntry;
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Multimap;
 
@@ -24,6 +29,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.util.*;
+import java.util.stream.Collectors;
 
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.*;
@@ -136,7 +142,17 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
 
         }
 
+
+
+
         return Future.succeededFuture(timeline);
+    }
+
+    public Future<SemanticTrace> makeSemanticTrace(Timeline timeline){
+
+        SemanticTraceConstructionStrategy strategy = new AlphaStrategy(sqliteService);
+        return strategy.construct(timeline);
+
     }
 
     @Deprecated
