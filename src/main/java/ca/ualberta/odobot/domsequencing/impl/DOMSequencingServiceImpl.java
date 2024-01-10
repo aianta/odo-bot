@@ -263,6 +263,20 @@ public class DOMSequencingServiceImpl implements DOMSequencingService {
 
     }
 
+    public Future<JsonArray> hashAndFlattenDOM(String html){
+        Document doc = Jsoup.parse(html);
+
+        DOMVisitor visitor = new DOMVisitor();
+        doc.traverse(visitor);
+
+        double [] hashedDOM = visitor.getSequence().toHashSequence();
+
+        return Future.succeededFuture(
+                Arrays.stream(hashedDOM).collect(JsonArray::new, JsonArray::add, JsonArray::addAll)
+        );
+
+    }
+
     public Future<String> getEncodedSequences(){
         encodingTable.clear();
         decodingTable.clear();

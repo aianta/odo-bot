@@ -12,9 +12,11 @@ import ca.ualberta.odobot.semanticflow.model.semantictrace.strategy.AlphaStrateg
 import ca.ualberta.odobot.semanticflow.model.semantictrace.strategy.BaseStrategy;
 import ca.ualberta.odobot.semanticflow.model.semantictrace.strategy.SemanticTraceConstructionStrategy;
 import ca.ualberta.odobot.sqlite.impl.DbLogEntry;
+import ca.ualberta.odobot.sqlite.impl.TrainingExemplar;
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Multimap;
 
+import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -23,6 +25,8 @@ import io.vertx.rxjava3.core.Vertx;
 
 import io.vertx.rxjava3.core.buffer.Buffer;
 
+import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.lang3.builder.HashCodeBuilder;
 import org.deckfour.xes.model.XLog;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -152,6 +156,86 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
 
         SemanticTraceConstructionStrategy strategy = new AlphaStrategy(sqliteService);
         return strategy.construct(timeline);
+
+    }
+
+    /**
+     * Captures training exemplars from timelines.
+     * Note: must run after {@link #makeSemanticTrace(Timeline)} as it requires network events to have populated database operations
+     * @param timeline
+     * @return
+     */
+    public Future<Void> captureTrainingExemplars(Timeline timeline){
+
+        List<Future> exemplarFutures = new ArrayList<>();
+
+        Iterator<TimelineEntity> it = timeline.iterator();
+
+        ClickEvent lastClickEvent = null;
+
+        while (it.hasNext()){
+
+            TimelineEntity entity = it.next();
+
+            if (entity instanceof ClickEvent){
+                lastClickEvent = (ClickEvent) entity;
+            }
+
+            if(entity instanceof NetworkEvent){
+                NetworkEvent networkEvent = (NetworkEvent) entity;
+                if(lastClickEvent != null){
+
+                    ClickEvent finalLastClickEvent = lastClickEvent;
+                    exemplarFutures.add(
+                            domSequencingService.hashAndFlattenDOM(lastClickEvent.getDomSnapshot().outerHtml())
+                                    .compose(hashedDOMJsonArray->{
+
+                                        double [] hashedDOM = hashedDOMJsonArray.stream().mapToDouble(entry->(double) entry).toArray();
+
+                                        //Construct terms portion of feature vector
+                                        double [] hashedTerms = finalLastClickEvent.getSemanticArtifacts().getJsonArray("terms")
+                                                .stream().map(o->(String)o)
+                                                .mapToDouble(term->
+                                                        new HashCodeBuilder(41,83)
+                                                                .append(term)
+                                                                .toHashCode()
+                                                ).toArray();
+
+
+
+
+                                        double [] featureVector = ArrayUtils.addAll(hashedDOM, hashedTerms);
+
+                                        String dbOpsString = networkEvent.getDbOps().stringRepresentation();
+
+                                        int label = new HashCodeBuilder(63, 87)
+                                                .append(dbOpsString)
+                                                .toHashCode();
+
+                                        TrainingExemplar exemplar = new TrainingExemplar(
+                                                UUID.randomUUID(),
+                                                timeline.getAnnotations().getString("source-index"),
+                                                featureVector,
+                                                label,
+                                                "test",
+                                                new JsonObject()
+                                                        .put("dbOpsString",dbOpsString)
+                                        );
+
+                                        return sqliteService.saveTrainingExemplar(exemplar.toJson())
+                                                .onSuccess(done->log.info("saved training exemplar"))
+                                                .onFailure(err->log.error(err.getMessage(), err));
+
+                                    })
+                    );
+
+
+                }
+
+            }
+        }
+
+        return CompositeFuture.all(exemplarFutures).compose(done->Future.succeededFuture());
 
     }
 

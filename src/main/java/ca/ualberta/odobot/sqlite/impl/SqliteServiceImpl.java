@@ -12,6 +12,8 @@ import io.vertx.sqlclient.Tuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Arrays;
+
 import static ca.ualberta.odobot.logpreprocessor.Constants.SQLITE_CONNECTION_STRING;
 
 
@@ -30,6 +32,7 @@ public class SqliteServiceImpl implements SqliteService {
         pool = JDBCPool.pool(vertx, config);
 
         createLogTable();
+        createTrainingDatasetTable();
     }
 
     public Future<JsonArray> selectLogs(long timestampMilli, long range){
@@ -91,6 +94,62 @@ public class SqliteServiceImpl implements SqliteService {
         });
 
         return promise.future();
+    }
+
+    public Future<Void> saveTrainingExemplar(JsonObject json){
+        return saveExemplar(TrainingExemplar.fromJson(json));
+    }
+
+    private Future<Void> saveExemplar(TrainingExemplar exemplar){
+
+        Promise<Void> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            INSERT INTO training_dataset (
+                id, source, feature_vector, label, dataset_name, extras
+            ) VALUES (?,?,?,?,?,?);
+        """).execute(Tuple.of(
+                exemplar.id().toString(),
+                exemplar.source(),
+                Arrays.stream(exemplar.featureVector()).mapToObj(Double::toString).collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode(),
+                exemplar.label(),
+                exemplar.datasetName(),
+                exemplar.extras().encode()
+        ),result->{
+            if(result.succeeded()){
+                promise.complete();
+            }else{
+                promise.fail(result.cause());
+            }
+        });
+
+        return promise.future();
+
+    }
+
+    private Future<Void> createTrainingDatasetTable(){
+        Promise<Void> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            CREATE TABLE IF NOT EXISTS training_dataset (
+                id text PRIMARY KEY,
+                source text,
+                feature_vector text,
+                label numeric,
+                dataset_name text,
+                extras text
+            )
+        
+        """).execute(result->{
+            if(result.succeeded()){
+                promise.complete();
+            }else{
+                promise.fail(result.cause());
+            }
+        });
+
+        return promise.future();
+
     }
 
     private Future<Void> createLogTable(){

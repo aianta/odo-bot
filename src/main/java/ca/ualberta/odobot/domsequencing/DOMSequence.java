@@ -104,6 +104,10 @@ public class DOMSequence extends ArrayList<DOMSegment> {
         return sb.toString();
     }
 
+    public double [] toHashSequence(){
+        return stream().map(DOMSegment::hashCode).mapToDouble(code->(double) code).toArray();
+    }
+
 //    public String toString(){
 //        StringBuilder sb = new StringBuilder();
 //        sb.append("|");

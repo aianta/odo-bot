@@ -42,6 +42,8 @@ public interface PreprocessingPipeline extends PipelineService {
 
     Future<SemanticTrace> makeSemanticTrace(Timeline timeline);
 
+    Future<Void> captureTrainingExemplars(Timeline timeline);
+
 
     Future<List<TimelineEntity>> makeEntities(List<Timeline> timelines);
 

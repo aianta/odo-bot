@@ -23,6 +23,8 @@ public interface PipelineService {
 
     void semanticTraceHandler(RoutingContext rc);
 
+    void captureTrainingExemplarsHandler(RoutingContext rc);
+
     void purgePipeline(RoutingContext rc);
 
     void transienceHandler(RoutingContext rc);

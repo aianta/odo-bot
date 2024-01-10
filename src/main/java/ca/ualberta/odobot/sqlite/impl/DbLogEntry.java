@@ -65,6 +65,7 @@ public record DbLogEntry(
                 .put("statement", statement)
                 .put("parameter", parameter);
 
+
         return result;
     }
 

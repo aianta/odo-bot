@@ -18,6 +18,7 @@ public interface SqliteService {
         return new SqliteServiceVertxEBProxy(vertx, address);
     }
 
+    Future<Void> saveTrainingExemplar(JsonObject json);
 
     Future<Void> insertLogEntry(JsonObject json);
 

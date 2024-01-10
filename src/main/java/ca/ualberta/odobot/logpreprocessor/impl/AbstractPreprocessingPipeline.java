@@ -344,6 +344,29 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
         rc.next();
     }
 
+    public void captureTrainingExemplarsHandler(RoutingContext rc){
+
+        //Update bookkeeping for this execution
+        BasicExecution execution = rc.get("metadata");
+        if(execution != null){
+            execution.status().data().put("step", "captureTrainingExemplarsHandler");
+        }
+
+        //TODO: in the spirit of consistency, collect the captured exemplars into a list and store them in the routing context
+        List<Timeline> timelines = rc.get("timelines");
+        timelines.forEach(timeline->{
+            vertx.getDelegate().executeBlocking(blocking->{
+                captureTrainingExemplars(timeline)
+                        .onSuccess(done->blocking.complete())
+                        .onFailure(err->blocking.fail(err));
+
+            });
+        });
+
+        rc.next();
+
+    }
+
     public void semanticTraceHandler(RoutingContext rc){
         //Update bookkeeping for this execution
         BasicExecution execution = rc.get("metadata");

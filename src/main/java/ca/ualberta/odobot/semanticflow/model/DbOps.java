@@ -4,6 +4,7 @@ import ca.ualberta.odobot.sqlite.impl.DbLogEntry;
 import io.vertx.codegen.doc.Tag;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import org.apache.commons.lang3.builder.HashCodeBuilder;
 import org.slf4j.LoggerFactory;
 import org.slf4j.Logger;
 
@@ -186,8 +187,27 @@ public class DbOps extends ArrayList<DbLogEntry> {
         return entry.objectName().split("\\.")[1];
     }
 
-    public JsonArray toJson(){
-        return stream().map(entry->entry.toJson()).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+    public String stringRepresentation(){
+        return stream().map(entry->entry.command() + " " +  entry.objectName())
+                .collect(StringBuilder::new, (sb,s)->sb.append(s + " "), StringBuilder::append)
+                .toString().trim();
+    }
+
+    public JsonObject toJson(){
+
+        String stringRepresentation = stringRepresentation();
+
+        int hashCode = new HashCodeBuilder(19, 31)
+                .append(stringRepresentation)
+                .toHashCode();
+
+        JsonArray entries = stream().map(entry->entry.toJson()).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+
+
+        return new JsonObject()
+                .put("str", stringRepresentation)
+                .put("hashCode", hashCode)
+                .put("entries", entries);
     }
 
 }

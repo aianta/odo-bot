@@ -290,6 +290,7 @@ public class LogPreprocessor extends AbstractVerticle {
         Route semanticTracesRoute = router.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + pipeline.slug() + "/semanticTraces");
         semanticTracesRoute.handler(pipeline::timelinesHandler);
         semanticTracesRoute.handler(pipeline::semanticTraceHandler);
+        semanticTracesRoute.handler(pipeline::captureTrainingExemplarsHandler);
         semanticTracesRoute.handler(rc->{
             List<SemanticTrace> semanticTraces = rc.get("semanticTraces");
             JsonArray response = semanticTraces.stream().map(SemanticTrace::toJson).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);

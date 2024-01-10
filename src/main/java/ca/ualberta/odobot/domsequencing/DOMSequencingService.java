@@ -45,4 +45,6 @@ public interface DOMSequencingService {
 
     Future<JsonObject> getHashedSequences();
 
+    Future<JsonArray> hashAndFlattenDOM(String html);
+
 }
