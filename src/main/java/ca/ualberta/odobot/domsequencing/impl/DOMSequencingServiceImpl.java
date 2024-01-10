@@ -7,6 +7,7 @@ import edu.stanford.nlp.ling.CoreLabel;
 import edu.stanford.nlp.pipeline.CoreDocument;
 import edu.stanford.nlp.pipeline.StanfordCoreNLP;
 import io.vertx.core.Future;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
 import org.jsoup.Jsoup;
@@ -234,6 +235,31 @@ public class DOMSequencingServiceImpl implements DOMSequencingService {
                 .collect(DOMSequence::new, DOMSequence::add, DOMSequence::addAll);
 
         return decodedSequence;
+
+    }
+
+    public Future<JsonObject> getHashedSequences(){
+        Set<DOMSegment> alphabet = new HashSet<>();
+        database.forEach(sequence->sequence.forEach(segment->alphabet.add(segment)));
+        log.info("{} segments in the alphabet.", alphabet.size());
+
+        Map<DOMSegment, Integer> map = new HashMap<>();
+
+        alphabet.forEach(segment->map.put(segment, segment.hashCode()));
+
+        JsonArray hashedSequences = database.stream()
+                .map(sequence->sequence.stream()
+                            .map(map::get)
+                            .collect(JsonArray::new, JsonArray::add, JsonArray::addAll)
+                ).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+
+        JsonObject mapping = new JsonObject();
+        map.forEach((segment,code)->mapping.put(segment.tag()+"["+segment.className()+"]", code));
+        log.info("{} mapping rules", mapping.size());
+
+        return Future.succeededFuture(new JsonObject()
+                .put("mapping", mapping)
+                .put("sequences", hashedSequences));
 
     }
 

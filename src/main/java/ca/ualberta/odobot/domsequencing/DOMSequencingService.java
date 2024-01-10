@@ -4,6 +4,7 @@ import ca.ualberta.odobot.domsequencing.impl.DOMSequencingServiceImpl;
 import io.vertx.codegen.annotations.ProxyGen;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
 import java.util.List;
@@ -41,5 +42,7 @@ public interface DOMSequencingService {
     Future<String> getEntitiesAndActions();
 
     Future<List<String>> getTexts(String html);
+
+    Future<JsonObject> getHashedSequences();
 
 }

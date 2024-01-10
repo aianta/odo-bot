@@ -206,6 +206,7 @@ public class LogPreprocessor extends AbstractVerticle {
             api.route().method(HttpMethod.GET).path("/css/follows").handler(this::getDirectlyFollowsManifest);
             api.route().method(HttpMethod.GET).path("/dom/entitiesAndActions").handler(this::getEntitiesAndActions);
             api.route().method(HttpMethod.POST).path("/texts").handler(this::getTexts);
+            api.route().method(HttpMethod.GET).path("/DOMSequences/hashed").handler(this::getHashedSequences);
 
 
             //Mount handlers to main router
@@ -389,6 +390,15 @@ public class LogPreprocessor extends AbstractVerticle {
         ;
     }
 
+    private void getHashedSequences(RoutingContext rc){
+        domSequencingService.getHashedSequences()
+                .onSuccess(result->rc.response().setStatusCode(200).end(result.encode()))
+                .onFailure(err->{
+                    log.error(err.getMessage(), err);
+                    rc.response().setStatusCode(500).end();
+                });
+    }
+
     private void getEncodedSequences(RoutingContext rc){
         domSequencingService.getEncodedSequences()
                 .onSuccess(result->rc.response().setStatusCode(200).end(result))
@@ -424,6 +434,8 @@ public class LogPreprocessor extends AbstractVerticle {
         domSequencingService.getTexts(htmlInput).onSuccess(results->
                 rc.response().setStatusCode(200).end(results.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode()));
     }
+
+
 
 
 }
