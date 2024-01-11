@@ -14,6 +14,7 @@ import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
 
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 
+import ca.ualberta.odobot.semanticflow.model.TrainingMaterials;
 import ca.ualberta.odobot.semanticflow.model.semantictrace.SemanticTrace;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import io.vertx.core.CompositeFuture;
@@ -344,26 +345,54 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
         rc.next();
     }
 
-    public void captureTrainingExemplarsHandler(RoutingContext rc){
+    public void makeTrainingExemplarsHandler(RoutingContext rc){
+        //Update bookkeeping for this execution
+        BasicExecution execution = rc.get("metadata");
+        if(execution != null){
+            execution.status().data().put("step", "makeTrainingExemplarsHandler");
+        }
+
+        List<TrainingMaterials> materials = rc.get("trainingMaterials");
+        makeTrainingExemplars(materials).onSuccess(exemplars->{
+            rc.put("trainingExemplars", exemplars);
+
+            rc.next();
+        });
+
+    }
+
+    public void captureTrainingMaterialsHandler(RoutingContext rc){
 
         //Update bookkeeping for this execution
         BasicExecution execution = rc.get("metadata");
         if(execution != null){
-            execution.status().data().put("step", "captureTrainingExemplarsHandler");
+            execution.status().data().put("step", "captureTrainingMaterialsHandler");
         }
 
-        //TODO: in the spirit of consistency, collect the captured exemplars into a list and store them in the routing context
+        //Get training materials from every timeline
         List<Timeline> timelines = rc.get("timelines");
-        timelines.forEach(timeline->{
-            vertx.getDelegate().executeBlocking(blocking->{
-                captureTrainingExemplars(timeline)
-                        .onSuccess(done->blocking.complete())
+
+        log.info("Gathering training materials from {} timelines", timelines.size());
+
+        List<Future<List<TrainingMaterials>>> materials = timelines.stream().map(timeline->{
+            return vertx.getDelegate().<List<TrainingMaterials>>executeBlocking(blocking->{
+                captureTrainingMaterials(timeline)
+                        .onSuccess(done->{
+                            blocking.complete(done);
+                        })
                         .onFailure(err->blocking.fail(err));
-
             });
-        });
+        }).collect(Collectors.toList());
 
-        rc.next();
+
+        //Collect the materials harvested from every timeline into a single materials list
+        Future.all(materials).onSuccess(data->{
+            List<TrainingMaterials> dataset = new ArrayList<>();
+            data.<List<TrainingMaterials>>list().forEach(materialsList->dataset.addAll(materialsList));
+            log.info("{} training materials found!", dataset.size());
+            rc.put("trainingMaterials", dataset);
+            rc.next();
+        });
 
     }
 
@@ -394,6 +423,8 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
                     //Then put the processed, updated timelines in the routing context and call the next handler.
                     List<SemanticTrace> semanticTraces = results.<SemanticTrace>list();
                     rc.put("semanticTraces", semanticTraces);
+
+                    log.info("{} semantic traces", semanticTraces.size());
 
                     rc.next();
                 });

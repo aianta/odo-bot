@@ -4,7 +4,9 @@ package ca.ualberta.odobot.logpreprocessor;
 import ca.ualberta.odobot.logpreprocessor.executions.PreprocessingPipelineExecution;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
+import ca.ualberta.odobot.semanticflow.model.TrainingMaterials;
 import ca.ualberta.odobot.semanticflow.model.semantictrace.SemanticTrace;
+import ca.ualberta.odobot.sqlite.impl.TrainingExemplar;
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -42,7 +44,9 @@ public interface PreprocessingPipeline extends PipelineService {
 
     Future<SemanticTrace> makeSemanticTrace(Timeline timeline);
 
-    Future<Void> captureTrainingExemplars(Timeline timeline);
+    Future<List<TrainingMaterials>> captureTrainingMaterials(Timeline timeline);
+
+    Future<List<TrainingExemplar>> makeTrainingExemplars(List<TrainingMaterials> materials);
 
 
     Future<List<TimelineEntity>> makeEntities(List<Timeline> timelines);

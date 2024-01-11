@@ -14,6 +14,7 @@ public record TrainingExemplar(
 
         int label,
         String datasetName,
+
         JsonObject extras
 ) {
 
@@ -46,6 +47,7 @@ public record TrainingExemplar(
                 .put("featureVector", Arrays.stream(featureVector()).collect(JsonArray::new, JsonArray::add, JsonArray::addAll))
                 .put("label", label())
                 .put("datasetName", datasetName())
+                .put("featureVectorSize", featureVector().length)
                 .put("extras", extras)
         ;
         return result;

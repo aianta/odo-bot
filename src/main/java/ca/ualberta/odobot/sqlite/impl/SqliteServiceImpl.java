@@ -106,14 +106,15 @@ public class SqliteServiceImpl implements SqliteService {
 
         pool.preparedQuery("""
             INSERT INTO training_dataset (
-                id, source, feature_vector, label, dataset_name, extras
-            ) VALUES (?,?,?,?,?,?);
+                id, source, feature_vector, label, dataset_name, feature_vector_size, extras
+            ) VALUES (?,?,?,?,?,?,?);
         """).execute(Tuple.of(
                 exemplar.id().toString(),
                 exemplar.source(),
                 Arrays.stream(exemplar.featureVector()).mapToObj(Double::toString).collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode(),
                 exemplar.label(),
                 exemplar.datasetName(),
+                exemplar.featureVector().length,
                 exemplar.extras().encode()
         ),result->{
             if(result.succeeded()){
@@ -137,6 +138,7 @@ public class SqliteServiceImpl implements SqliteService {
                 feature_vector text,
                 label numeric,
                 dataset_name text,
+                feature_vector_size numeric,
                 extras text
             )
         

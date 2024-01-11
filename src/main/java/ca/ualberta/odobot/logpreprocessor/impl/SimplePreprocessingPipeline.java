@@ -160,14 +160,73 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
     }
 
     /**
-     * Captures training exemplars from timelines.
+     * Given a list of training materials constructs properly formatted feature vectors and saves them to the database.
+     * @param materials
+     * @return
+     */
+    public Future<List<TrainingExemplar>> makeTrainingExemplars(List<TrainingMaterials> materials){
+
+        List<TrainingExemplar> result = new ArrayList<>();
+
+        int maxTreeSize = 0;
+        int maxTermsSize = 0;
+
+        //Iterate through all the training materials and find the max size of the two double arrays that will make up the feature vector
+        Iterator<TrainingMaterials> iterator = materials.iterator();
+        while (iterator.hasNext()){
+            TrainingMaterials curr = iterator.next();
+            if(curr.getHashedDOMTree().length > maxTreeSize){
+                maxTreeSize = curr.getHashedDOMTree().length;
+            }
+            if(curr.getHashedTerms().length > maxTermsSize){
+                maxTermsSize = curr.getHashedTerms().length;
+            }
+        }
+
+        //Reset the iterator and pad all double arrays to the maximum size.
+        iterator = materials.iterator();
+
+        while (iterator.hasNext()){
+            TrainingMaterials curr = iterator.next();
+
+            int paddingSize = maxTreeSize - curr.getHashedDOMTree().length;
+            double [] padding = new double[paddingSize];
+
+            double [] treeComponent = ArrayUtils.addAll(curr.getHashedDOMTree(), padding);
+
+            paddingSize = maxTermsSize - curr.getHashedTerms().length;
+            padding = new double[paddingSize];
+
+            double [] termsComponent = ArrayUtils.addAll(curr.getHashedTerms(), padding);
+
+            double [] featureVector = ArrayUtils.addAll(treeComponent, termsComponent);
+
+            TrainingExemplar exemplar = new TrainingExemplar(
+                    curr.getExemplarId(),
+                    curr.getSource(),
+                    featureVector,
+                    curr.getLabel(),
+                    curr.getDatasetName(),
+                    curr.getExtras()
+            );
+            sqliteService.saveTrainingExemplar(exemplar.toJson());
+            result.add(exemplar);
+
+        }
+
+        return Future.succeededFuture(result);
+    }
+
+    /**
+     * Captures training materials from timelines, these are later converted into training exemplars by {@link #makeTrainingExemplars(List)}.
+     *
      * Note: must run after {@link #makeSemanticTrace(Timeline)} as it requires network events to have populated database operations
      * @param timeline
      * @return
      */
-    public Future<Void> captureTrainingExemplars(Timeline timeline){
+    public Future<List<TrainingMaterials>> captureTrainingMaterials(Timeline timeline){
 
-        List<Future> exemplarFutures = new ArrayList<>();
+        List<Future> futures = new ArrayList<>();
 
         Iterator<TimelineEntity> it = timeline.iterator();
 
@@ -181,52 +240,20 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
                 lastClickEvent = (ClickEvent) entity;
             }
 
-            if(entity instanceof NetworkEvent){
+            /**
+             * Only non-get requests will have database operations. See {@link AlphaStrategy#construct(Timeline)}
+             */
+            if(entity instanceof NetworkEvent && !((NetworkEvent) entity).getMethod().toLowerCase().equals("get")){
                 NetworkEvent networkEvent = (NetworkEvent) entity;
                 if(lastClickEvent != null){
 
                     ClickEvent finalLastClickEvent = lastClickEvent;
-                    exemplarFutures.add(
-                            domSequencingService.hashAndFlattenDOM(lastClickEvent.getDomSnapshot().outerHtml())
-                                    .compose(hashedDOMJsonArray->{
 
-                                        double [] hashedDOM = hashedDOMJsonArray.stream().mapToDouble(entry->(double) entry).toArray();
+                    TrainingMaterials materials = new TrainingMaterials(lastClickEvent, networkEvent, timeline.getAnnotations().getString("source-index"), "test");
+                    materials.setTreeHashingFunction((html)->domSequencingService.hashAndFlattenDOM(html));
 
-                                        //Construct terms portion of feature vector
-                                        double [] hashedTerms = finalLastClickEvent.getSemanticArtifacts().getJsonArray("terms")
-                                                .stream().map(o->(String)o)
-                                                .mapToDouble(term->
-                                                        new HashCodeBuilder(41,83)
-                                                                .append(term)
-                                                                .toHashCode()
-                                                ).toArray();
-
-
-
-
-                                        double [] featureVector = ArrayUtils.addAll(hashedDOM, hashedTerms);
-
-                                        String dbOpsString = networkEvent.getDbOps().stringRepresentation();
-
-                                        int label = new HashCodeBuilder(63, 87)
-                                                .append(dbOpsString)
-                                                .toHashCode();
-
-                                        TrainingExemplar exemplar = new TrainingExemplar(
-                                                UUID.randomUUID(),
-                                                timeline.getAnnotations().getString("source-index"),
-                                                featureVector,
-                                                label,
-                                                "test",
-                                                new JsonObject()
-                                                        .put("dbOpsString",dbOpsString)
-                                        );
-
-                                        return sqliteService.saveTrainingExemplar(exemplar.toJson())
-                                                .onSuccess(done->log.info("saved training exemplar"))
-                                                .onFailure(err->log.error(err.getMessage(), err));
-
-                                    })
+                    futures.add(
+                            materials.harvestData().onFailure(err->log.error(err.getMessage(), err))
                     );
 
 
@@ -235,7 +262,12 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
             }
         }
 
-        return CompositeFuture.all(exemplarFutures).compose(done->Future.succeededFuture());
+        return CompositeFuture.all(futures).onFailure(err->log.error(err.getMessage(), err)).compose(done->
+                {
+                    log.info(" {} Training materials harvested!", done.list().size());
+                    return Future.succeededFuture(done.list());
+                }
+                );
 
     }
 
