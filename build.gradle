@@ -108,6 +108,13 @@ dependencies {
     // https://mvnrepository.com/artifact/com.crawljax.plugins/crawloverview-plugin
     implementation group: 'com.crawljax.plugins', name: 'crawloverview-plugin', version: '5.2.3'
 
+    /**
+     * Kyro for TPG serialization
+     */
+    // https://mvnrepository.com/artifact/com.esotericsoftware.kryo/kryo5
+    implementation group: 'com.esotericsoftware.kryo', name: 'kryo5', version: '5.5.0'
+
+
 
     /**
      * Logging

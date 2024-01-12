@@ -30,7 +30,7 @@ public record TrainingExemplar(
         );
     }
 
-    static TrainingExemplar fromJson(JsonObject json){
+    public static TrainingExemplar fromJson(JsonObject json){
         return new TrainingExemplar(
                 UUID.fromString(json.getString("id")),
                 json.getString("source"),
