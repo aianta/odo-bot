@@ -306,6 +306,7 @@ public class LogPreprocessor extends AbstractVerticle {
         semanticTracesRoute.handler(rc->{
             List<TrainingExemplar> trainingDataset = rc.get("trainingExemplars");
             JsonObject trainingConfig = new JsonObject()
+                    .put("trainingTaskName", "testTask")
                     .put("numGenerations", 10000)
                     .put("mutationRoundsPerGeneration",  5)
                     .put("seed", "0")
