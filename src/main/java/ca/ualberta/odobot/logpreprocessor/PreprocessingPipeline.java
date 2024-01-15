@@ -44,7 +44,7 @@ public interface PreprocessingPipeline extends PipelineService {
 
     Future<SemanticTrace> makeSemanticTrace(Timeline timeline);
 
-    Future<List<TrainingMaterials>> captureTrainingMaterials(Timeline timeline);
+    Future<List<TrainingMaterials>> captureTrainingMaterials(Timeline timeline, String datasetName);
 
     Future<List<TrainingExemplar>> makeTrainingExemplars(List<TrainingMaterials> materials);
 

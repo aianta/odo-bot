@@ -96,6 +96,28 @@ public class SqliteServiceImpl implements SqliteService {
         return promise.future();
     }
 
+
+    public Future<JsonArray> loadTrainingDataset(String datasetName){
+        Promise<JsonArray> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            SELECT * FROM training_dataset WHERE dataset_name = ?;
+        """).execute(Tuple.of(datasetName), result->{
+           if(result.succeeded()){
+               JsonArray dataset = new JsonArray();
+               result.result().forEach(row->dataset.add(TrainingExemplar.fromRow(row).toJson()));
+
+               promise.complete(dataset);
+           }else{
+               log.error(result.cause().getMessage(), result.cause());
+               promise.fail(result.cause());
+           }
+        });
+
+
+        return promise.future();
+    }
+
     public Future<Void> saveTrainingExemplar(JsonObject json){
         return saveExemplar(TrainingExemplar.fromJson(json));
     }

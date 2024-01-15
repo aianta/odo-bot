@@ -4,106 +4,90 @@ import ca.ualberta.odobot.sqlite.impl.TrainingExemplar;
 import ca.ualberta.odobot.tpg.TPGAlgorithm;
 import ca.ualberta.odobot.tpg.TPGLearn;
 import ca.ualberta.odobot.tpg.service.TPGService;
+import ca.ualberta.odobot.tpg.teams.Team;
 import ca.ualberta.odobot.tpg.util.SaveLoad;
 import io.vertx.core.Future;
+import io.vertx.core.Promise;
+import io.vertx.core.Vertx;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Arrays;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Set;
+import java.io.IOException;
+import java.util.*;
+import java.util.concurrent.FutureTask;
 import java.util.stream.Collectors;
 
 public class TPGServiceImpl implements TPGService {
 
     private static final Logger log = LoggerFactory.getLogger(TPGServiceImpl.class);
 
+    private SaveLoad saveLoad;
+
+
+    public TPGServiceImpl(){
+
+        this.saveLoad = new SaveLoad();
+
+    }
+
     @Override
-    public Future<JsonObject> train(JsonObject config, List<JsonObject> data) {
+    public Future<JsonObject> train(JsonObject config, JsonArray data) {
+        Promise<TPGAlgorithm> promise = Promise.promise();
+        List<TrainingExemplar> dataset = data.stream().map(o->TrainingExemplar.fromJson((JsonObject)o)).collect(Collectors.toList());
 
-        List<TrainingExemplar> dataset = data.stream().map(o->TrainingExemplar.fromJson(o)).collect(Collectors.toList());
+        log.info("Starting training task on a new thread");
+        /**
+         * For more details about using a callable with the Thread class see:
+         * https://stackoverflow.com/questions/25231149/can-i-use-callable-threads-without-executorservice
+         */
+        TrainingTask task = new TrainingTask( promise, config, dataset);
+        Thread thread = new Thread(task);
+        thread.start();
 
-        TPGAlgorithm tpgAlgorithm = TPGAlgorithm.getInstance(config, null, "learn");
+        return promise.future().compose(this::saveChampion);
+    }
 
-        TPGLearn tpg = tpgAlgorithm.getTPGLearn();
+    @Override
+    public Future<Void> identify(JsonObject config, JsonObject exemplarJson) {
+        TrainingExemplar exemplar = TrainingExemplar.fromJson(exemplarJson);
 
-        long [] actions = generateActions(dataset);
+        String championPath = config.getString("championPath");
+        try{
+            Team champion  = saveLoad.loadTeam(championPath);
 
-        tpg.setActions(actions);
+            double [] registerArray = champion.getAction(new HashSet<>(), exemplar.featureVector());
 
-        tpg.initialize();
-
-        double reward = 0.0;
-
-        log.info("Training...");
-
-        log.info("remaining teams: {}", tpg.remainingTeams());
-
-        for (int i = 0; i < config.getInteger("numGenerations"); i++){
-
-
-            //Let every team classify
-            while (tpg.remainingTeams() > 0){
-                log.info("Team {}", tpg.getCurrTeamID());
-
-                //reset reward to 0 for each team that classifies
-                reward = 0.0;
-
-                //Go through the training exemplars
-                Iterator<TrainingExemplar> it = dataset.iterator();
-                while (it.hasNext()){
-
-                    TrainingExemplar exemplar = it.next();
-
-                    double [] registerArray = tpg.participate(exemplar.featureVector());
-
-                    double action = registerArray[registerArray.length-1];
-
-                    long predictedLabel = actions[(int)Math.floor(Math.abs(action))%actions.length];
-
-                    reward += score(predictedLabel, exemplar);
-                }
-
-                log.info("Score: {} datasetSize:{}", reward, dataset.size());
-                tpg.reward(config.getString("trainingTaskName"), reward);
-
-                log.info("************************************");
-                log.info("remaining teams: {}", tpg.remainingTeams());
-                log.info("************************************");
-            }
-
-            log.info("Generation " + tpg.getEpochs() + " complete.");
-
-            //Perform selection
-            tpg.selection();
-            tpg.generateNewTeams(config.getLong("mutationRoundsPerGeneration"));
-            tpg.nextEpoch();
-
+            log.info("Champion produced register array: {}", registerArray);
+        }catch (IOException ioe){
+            log.error(ioe.getMessage(), ioe);
+            return Future.failedFuture(ioe);
         }
 
 
-
-
-        return Future.succeededFuture(new JsonObject());
+        return Future.succeededFuture();
     }
 
-    private double score(long predictedLabel, TrainingExemplar exemplar){
-        if(predictedLabel == (long)exemplar.label()){
-            return 1.0;
-        }else{
-            return 0.0;
+    private Future<JsonObject> saveChampion(TPGAlgorithm trainedTPG){
+
+        try{
+
+
+        TPGLearn tpgLearn = trainedTPG.getTPGLearn();
+        Team champion = tpgLearn.getRootTeams().get(0);
+
+        String championPath = saveLoad.saveTeam(champion, tpgLearn.getEpochs(), 0, "./tpg/champions/");
+
+
+        return Future.succeededFuture(new JsonObject()
+                .put("championPath", championPath)
+        );
+        }catch (Exception e){
+            log.error(e.getMessage(), e);
+            return Future.failedFuture(e);
         }
     }
 
-    private long [] generateActions(List<TrainingExemplar> dataset){
 
-        //Compile a set of unique labels for this dataset.
-        Set<Long> uniqueLabels = dataset.stream()
-                .map(exemplar->(long)exemplar.label())
-                .collect(Collectors.toSet());
-
-        return uniqueLabels.stream().mapToLong(label->label).toArray();
-    }
 }

@@ -369,14 +369,21 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
             execution.status().data().put("step", "captureTrainingMaterialsHandler");
         }
 
+        //Get the name of the training dataset we're capturing materials for if it exists
+        String datasetName = rc.request().getParam("dataset");
+        if(datasetName == null){
+            datasetName = "default"; //Add to the default dataset if no dataset is otherwise specified.
+        }
+
         //Get training materials from every timeline
         List<Timeline> timelines = rc.get("timelines");
 
         log.info("Gathering training materials from {} timelines", timelines.size());
 
+        String finalDatasetName = datasetName;
         List<Future<List<TrainingMaterials>>> materials = timelines.stream().map(timeline->{
             return vertx.getDelegate().<List<TrainingMaterials>>executeBlocking(blocking->{
-                captureTrainingMaterials(timeline)
+                captureTrainingMaterials(timeline, finalDatasetName)
                         .onSuccess(done->{
                             blocking.complete(done);
                         })

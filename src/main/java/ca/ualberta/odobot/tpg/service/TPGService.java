@@ -5,6 +5,7 @@ import ca.ualberta.odobot.tpg.service.impl.TPGServiceImpl;
 import io.vertx.codegen.annotations.ProxyGen;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
 import java.util.List;
@@ -24,6 +25,8 @@ public interface TPGService {
      * @param dataset List of JsonObject representations of training exemplars
      * @return
      */
-    Future<JsonObject> train(JsonObject config, List<JsonObject> dataset);
+    Future<JsonObject> train(JsonObject config, JsonArray dataset);
+
+    Future<Void> identify(JsonObject config, JsonObject exemplar);
 
 }

@@ -3,7 +3,6 @@ package ca.ualberta.odobot.tpg.util;
 import com.esotericsoftware.kryo.kryo5.Kryo;
 import com.esotericsoftware.kryo.kryo5.io.Input;
 import com.esotericsoftware.kryo.kryo5.io.Output;
-import ca.ualberta.odobot.tpg.*;
 import ca.ualberta.odobot.tpg.actions.Action;
 import ca.ualberta.odobot.tpg.actions.ActionLabel;
 import ca.ualberta.odobot.tpg.actions.ActionProgram;
@@ -98,7 +97,7 @@ public class SaveLoad {
 		output.close();
 	}
 
-	public void saveTeam(Team t, long epochs, int rank, String destinationFolder) throws FileNotFoundException
+	public String saveTeam(Team t, long epochs, int rank, String destinationFolder) throws FileNotFoundException
 	{
 		//sets the location where the file will be saved.
 		System.out.println("\nsaveTeam called with filepath " + destinationFolder);
@@ -125,7 +124,7 @@ public class SaveLoad {
 		//close the output.
 		output.close();
 
-
+		return folderWithFile;
 	}
 
 	public TPGAlgorithm resumeLearning(String path) throws FileNotFoundException

@@ -52,8 +52,6 @@ public class LogPreprocessor extends AbstractVerticle {
 
     private static DOMSequencingService domSequencingService;
 
-    private static TPGService tpgService;
-
     private static SqliteService sqliteService;
 
     private Set<Class> mountedPipelines = new HashSet<>();
@@ -83,13 +81,6 @@ public class LogPreprocessor extends AbstractVerticle {
                     .register(SqliteService.class, sqliteService);
 
 
-            //Init TPGService
-            tpgService = TPGService.create();
-            new ServiceBinder(vertx.getDelegate())
-                    .setAddress(TPG_SERVICE_ADDRESS)
-                    .register(TPGService.class, tpgService);
-
-
             //Init DOMSequencing Service
             domSequencingService = DOMSequencingService.create();
             new ServiceBinder(vertx.getDelegate())
@@ -100,6 +91,7 @@ public class LogPreprocessor extends AbstractVerticle {
             elasticsearchService = ElasticsearchService.create(vertx.getDelegate(), "localhost", 9200);
             new ServiceBinder(vertx.getDelegate())
                     .setAddress(ELASTICSEARCH_SERVICE_ADDRESS)
+                    .setTimeoutSeconds(86400)
                     .register(ElasticsearchService.class, elasticsearchService);
 
 
@@ -303,36 +295,7 @@ public class LogPreprocessor extends AbstractVerticle {
         semanticTracesRoute.handler(pipeline::semanticTraceHandler);
         semanticTracesRoute.handler(pipeline::captureTrainingMaterialsHandler);
         semanticTracesRoute.handler(pipeline::makeTrainingExemplarsHandler);
-        semanticTracesRoute.handler(rc->{
-            List<TrainingExemplar> trainingDataset = rc.get("trainingExemplars");
-            JsonObject trainingConfig = new JsonObject()
-                    .put("trainingTaskName", "testTask")
-                    .put("numGenerations", 10000)
-                    .put("mutationRoundsPerGeneration",  5)
-                    .put("seed", "0")
-                    .put("teamPopSize", "360")
-                    .put("teamGap", "0.5")
-                    .put("probLearnerDelete", "0.7")
-                    .put("probLearnerAdd", "0.7")
-                    .put("probMutateAction", "0.33")
-                    .put("probActionIsTeam", "0.5")
-                    .put("maximumTeamSize", "5")
-                    .put("maximumProgramSize", "256")
-                    .put("probProgramDelete", "0.5")
-                    .put("probProgramAdd", "0.5")
-                    .put("probProgramSwap", "0.5")
-                    .put("probProgramMutate", "0.5")
-                    .put("maximumActionProgramSize", "256")
-                    .put("probActionProgramDelete", "0.5")
-                    .put("probActionProgramAdd", "0.5")
-                    .put("probActionProgramSwap", "0.5")
-                    .put("probActionProgramMutate", "0.5")
-                    .put("numberofActionRegisters", "1");
-            tpgService.train(trainingConfig, trainingDataset.stream().map(TrainingExemplar::toJson).collect(Collectors.toList()))
-                    .onSuccess(done->log.info("Train method on TPG service invoked successfully!"));
 
-            rc.next();
-        });
         semanticTracesRoute.handler(rc->{
             List<SemanticTrace> semanticTraces = rc.get("semanticTraces");
             JsonArray response = semanticTraces.stream().map(SemanticTrace::toJson).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);

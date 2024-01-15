@@ -25,7 +25,7 @@ public record TrainingExemplar(
                 row.getString("source"),
                 new JsonArray(row.getString("feature_vector")).stream().mapToDouble(entry->Double.parseDouble((String)entry)).toArray(),
                 row.getInteger("label"),
-                row.getString("datataset_name"),
+                row.getString("dataset_name"),
                 new JsonObject(row.getString("extras"))
         );
     }

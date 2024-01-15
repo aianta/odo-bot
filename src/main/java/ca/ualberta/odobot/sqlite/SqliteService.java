@@ -20,6 +20,16 @@ public interface SqliteService {
 
     Future<Void> saveTrainingExemplar(JsonObject json);
 
+    /**
+     * Returns the list of {@link ca.ualberta.odobot.sqlite.impl.TrainingExemplar} in json form
+     * that belong to the training dataset with the specified name.
+     *
+     * Dataset names should be defined during log preprocessing.
+     * @param datasetName
+     * @return
+     */
+    Future<JsonArray> loadTrainingDataset(String datasetName);
+
     Future<Void> insertLogEntry(JsonObject json);
 
     Future<JsonArray> selectLogs(long timestampMilli, long range);

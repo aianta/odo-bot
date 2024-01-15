@@ -169,6 +169,9 @@ public class TPGLearn
     // Fully initialize the TPG algorithm and wait for the learning process to start
     public boolean initialize()
     {
+        try{
+
+
         // Create an initial population of Teams and Learners
         if( !initializePopulations() )
             return false;
@@ -182,8 +185,14 @@ public class TPGLearn
         // All the Teams are generated, so move to generation 0
         epochs++;
 
+        }catch (Exception e){
+            e.printStackTrace();
+        }
         // Everything completed successfully; return true
         return true;
+
+
+
     }
 
     // Generate a population of Teams and Learners to completion
@@ -206,6 +215,10 @@ public class TPGLearn
         // Generate a number of teams equal to the keep threshold
         for( int i=0; i < teamsToKeep; i++ )
         {
+
+            if(actions.size() == 0){
+                throw new RuntimeException("No actions set!");
+            }
 
             // Get two different random actions
             action1 = (long)(TPGAlgorithm.RNG.nextDouble() * actions.size());

@@ -224,7 +224,7 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
      * @param timeline
      * @return
      */
-    public Future<List<TrainingMaterials>> captureTrainingMaterials(Timeline timeline){
+    public Future<List<TrainingMaterials>> captureTrainingMaterials(Timeline timeline, String datasetName){
 
         List<Future> futures = new ArrayList<>();
 
@@ -249,7 +249,7 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
 
                     ClickEvent finalLastClickEvent = lastClickEvent;
 
-                    TrainingMaterials materials = new TrainingMaterials(lastClickEvent, networkEvent, timeline.getAnnotations().getString("source-index"), "test");
+                    TrainingMaterials materials = new TrainingMaterials(lastClickEvent, networkEvent, timeline.getAnnotations().getString("source-index"), datasetName);
                     materials.setTreeHashingFunction((html)->domSequencingService.hashAndFlattenDOM(html));
 
                     futures.add(
