@@ -13,3 +13,4 @@ calendar*.json
 crawljax_out
 *.csv
 *.db
+*.bin
