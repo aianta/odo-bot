@@ -8,6 +8,8 @@ import org.apache.commons.lang3.builder.HashCodeBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;
 
@@ -33,7 +35,7 @@ public class TrainingMaterials {
 
     String source;
 
-    int label;
+    int []  labels = new int [3];
 
     String datasetName;
 
@@ -59,12 +61,51 @@ public class TrainingMaterials {
                         .mapToDouble(term->new HashCodeBuilder(41,83).append(term).toHashCode()).toArray();
                 log.info("Got hashed terms array: {}", hashedTerms.length);
 
-                String dbOpsString = networkEvent.getDbOps().stringRepresentation();
-                label = new HashCodeBuilder(63, 87)
-                        .append(dbOpsString)
-                        .toHashCode();
 
-                log.info("Constructed Label! {}", label);
+                int pathHash = hashString(networkEvent.getPath());
+                labels[0] = pathHash;
+                extras.put("path", networkEvent.getPath());
+                extras.put("pathHash", pathHash);
+
+
+                String requestComponent = makeRequestString(networkEvent);
+                String responseComponent = makeResponseString(networkEvent);
+
+
+                if(requestComponent != null){
+                    int requestHash = hashString(requestComponent);
+                    labels[1] = requestHash;
+                    extras.put("requestComponent", requestComponent);
+                    extras.put("requestHash", requestHash);
+                }else{
+                    extras.put("requestComponent", "null");
+                    extras.put("requestHash", 0);
+                    labels[1] = 0;
+                }
+
+                if(responseComponent != null){
+                    int responseHash = hashString(responseComponent);
+                    labels[2] = responseHash;
+                    extras.put("responseComponent", responseComponent);
+                    extras.put("responseHash", responseHash);
+                }else{
+                    extras.put("responseComponent" ,"null");
+                    extras.put("responseHash",0);
+                    labels[2] = 0;
+                }
+
+//                String networkHashString = networkHashStringBuilder.toString().trim();
+//                label = new HashCodeBuilder(63, 87)
+//                        .append(networkHashString)
+//                        .toHashCode();
+
+
+                String dbOpsString = networkEvent.getDbOps().stringRepresentation();
+//                label = new HashCodeBuilder(63, 87)
+//                        .append(dbOpsString)
+//                        .toHashCode();
+
+                log.info("Constructed Label! {}", labels.toString());
 
                 extras.put("dbOpsString", dbOpsString);
 
@@ -78,8 +119,8 @@ public class TrainingMaterials {
 
     }
 
-    public int getLabel() {
-        return label;
+    public int [] getLabels() {
+        return labels;
     }
 
     public double[] getHashedTerms() {
@@ -140,5 +181,72 @@ public class TrainingMaterials {
 
     public JsonObject getExtras() {
         return extras;
+    }
+
+    private String makeRequestString(NetworkEvent event){
+
+        if(event.getRequestObject() != null){
+            return makeHashStringFromObject(event.getRequestObject());
+        }
+
+        if(event.getRequestArray() != null){
+            return makeHashStringFromArray(event.getRequestArray());
+        }
+
+        log.warn("Network Event request had no body.");
+        return null;
+    }
+
+    private String makeResponseString(NetworkEvent event){
+        if(event.getResponseObject() != null){
+            return makeHashStringFromObject(event.getResponseObject());
+        }
+
+        if(event.getResponseArray() != null){
+            return makeHashStringFromArray(event.getResponseArray());
+        }
+
+        log.warn("Network Event response had no body.");
+        return null;
+    }
+
+    private String makeHashStringFromObject(JsonObject input){
+
+        return input.fieldNames()
+                .stream()
+                .sorted()
+                .collect(
+                        StringBuilder::new,
+                        ((stringBuilder, s) -> stringBuilder.append(s + " ")),
+                        StringBuilder::append
+                ).toString().trim();
+    }
+
+    private String makeHashStringFromArray(JsonArray input){
+
+        JsonObject firstJsonObject = input.stream()
+                .filter(o->o instanceof JsonObject)
+                .map(o->(JsonObject)o)
+                .findFirst().orElse(null);
+
+        if(firstJsonObject == null){
+            log.warn("No json object in input json array!");
+            return null;
+        }
+
+        return firstJsonObject.fieldNames()
+                .stream()
+                .sorted()
+                .collect(
+                        StringBuilder::new,
+                        ((stringBuilder, s) -> stringBuilder.append(s + " ") ),
+                        StringBuilder::append
+                ).toString().trim();
+    }
+
+    int hashString(String s){
+        return new HashCodeBuilder(63, 87)
+                .append(s)
+                .toHashCode();
     }
 }

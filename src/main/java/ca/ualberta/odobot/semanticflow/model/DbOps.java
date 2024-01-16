@@ -189,6 +189,8 @@ public class DbOps extends ArrayList<DbLogEntry> {
 
     public String stringRepresentation(){
         return stream().map(entry->entry.command() + " " +  entry.objectName())
+                .distinct()
+                .sorted() //Lexicographical sort since temporally there is nonsense here.
                 .collect(StringBuilder::new, (sb,s)->sb.append(s + " "), StringBuilder::append)
                 .toString().trim();
     }

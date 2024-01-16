@@ -34,7 +34,7 @@ public class AlphaStrategy extends AbstractStrategy implements SemanticTraceCons
         //Process DbOps by iterating through the entities in this timeline.
         ListIterator<TimelineEntity> dbOpsIterator = timeline.listIterator();
 
-        //Keep track of the closest preceeding click event
+        //Keep track of the closest preceding click event
         ClickEvent lastClickEvent = null;
 
         List<Future> semanticLabelFutures = new ArrayList<>();

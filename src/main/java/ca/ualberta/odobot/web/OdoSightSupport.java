@@ -142,8 +142,10 @@ public class OdoSightSupport extends AbstractVerticle {
 
             String logPath = DATABASE_LOG_NAME_PREFIX + dayString + DATABASE_LOG_NAME_SUFFIX;
             LogParser logParser = new LogParser(logEntry->sqliteService.insertLogEntry(logEntry.toJson()));
-            logParser.parseDatabaseLogFile(logPath);
-            log.info("Parsed {} database audit log entries", logParser.parseCount);
+            logParser.parseDatabaseLogFile(logPath)
+                    .onSuccess(done->log.info("Parsed {} database audit log entries", logParser.parseCount))
+                    .onFailure(err->log.error(err.getMessage(), err));
+            ;
 
 
 

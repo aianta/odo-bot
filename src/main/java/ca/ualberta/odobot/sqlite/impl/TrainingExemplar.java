@@ -7,12 +7,13 @@ import io.vertx.sqlclient.Row;
 import java.util.Arrays;
 import java.util.UUID;
 
+
 public record TrainingExemplar(
         UUID id,
         String source,
         double [] featureVector,
 
-        int label,
+        int [] labels,
         String datasetName,
 
         JsonObject extras
@@ -24,7 +25,7 @@ public record TrainingExemplar(
                 UUID.fromString(row.getString("id")),
                 row.getString("source"),
                 new JsonArray(row.getString("feature_vector")).stream().mapToDouble(entry->Double.parseDouble((String)entry)).toArray(),
-                row.getInteger("label"),
+                new JsonArray(row.getString("label")).stream().mapToInt(entry->Integer.parseInt((String)entry)).toArray(),
                 row.getString("dataset_name"),
                 new JsonObject(row.getString("extras"))
         );
@@ -35,7 +36,7 @@ public record TrainingExemplar(
                 UUID.fromString(json.getString("id")),
                 json.getString("source"),
                 json.getJsonArray("featureVector").stream().mapToDouble(entry->(double) entry).toArray(),
-                json.getInteger("label"),
+                json.getJsonArray("labels").stream().mapToInt(entry->(int) entry).toArray(),
                 json.getString("datasetName"),
                 json.getJsonObject("extras")
         );
@@ -45,7 +46,7 @@ public record TrainingExemplar(
         result.put("id", id().toString())
                 .put("source", source())
                 .put("featureVector", Arrays.stream(featureVector()).collect(JsonArray::new, JsonArray::add, JsonArray::addAll))
-                .put("label", label())
+                .put("labels", Arrays.stream(labels()).collect(JsonArray::new, JsonArray::add, JsonArray::addAll))
                 .put("datasetName", datasetName())
                 .put("featureVectorSize", featureVector().length)
                 .put("extras", extras)

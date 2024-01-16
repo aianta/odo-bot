@@ -10,11 +10,11 @@ import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Iterator;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.Callable;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
+import java.util.stream.DoubleStream;
 
 public class TrainingTask implements Runnable {
 
@@ -43,9 +43,14 @@ public class TrainingTask implements Runnable {
 
         log.info("Created TPGAlgorithm and TPGLearn objects");
 
-        long [] actions = generateActions(dataset);
+        long [] urlActions = generateActions(dataset,0);
+        long [] requestActions = generateActions(dataset, 1);
+        long [] responseActions = generateActions(dataset, 2);
 
-        tpg.setActions(actions);
+        /*
+         *  Set some dummy actions, these won't actually be used unless config.getString("numberofActionRegisters") is "-1".
+         */
+        tpg.setActions(new long [] {0L, 1L, 2L, 3L, 4L, 5L});
 
         tpg.initialize();
 
@@ -57,10 +62,10 @@ public class TrainingTask implements Runnable {
 
         for (int i = 0; i < config.getInteger("numGenerations"); i++){
 
-
+            Map<String, Double> generationScoreSummary = new LinkedHashMap<>();
             //Let every team classify
             while (tpg.remainingTeams() > 0){
-                log.info("Team {}", tpg.getCurrTeamID());
+//                log.info("Team {}", tpg.getCurrTeamID());
 
                 //reset reward to 0 for each team that classifies
                 reward = 0.0;
@@ -73,22 +78,42 @@ public class TrainingTask implements Runnable {
 
                     double [] registerArray = tpg.participate(exemplar.featureVector());
 
-                    double action = registerArray[registerArray.length-1];
+                    double [] action = Arrays.copyOf(registerArray, Integer.parseInt(config.getString("numberofActionRegisters")) );
 
-                    long predictedLabel = actions[(int)Math.floor(Math.abs(action))%actions.length];
+                    long [] predictedLabel = new long [3];
+                    predictedLabel[0] = urlActions[(int)Math.floor(Math.abs(action[0]))%urlActions.length];
+                    predictedLabel[1] = requestActions[(int)Math.floor(Math.abs(action[1]))%requestActions.length];
+                    predictedLabel[2] = responseActions[(int)Math.floor(Math.abs(action[2]))%responseActions.length];
+
 
                     reward += score(predictedLabel, exemplar);
                 }
 
-                log.info("Score: {} datasetSize:{}", reward, dataset.size());
+
+                generationScoreSummary.put(Long.toString(tpg.getCurrTeamID()), reward);
+
+//                log.info("Score: {} maxScore:{}", reward, dataset.size()*3);
                 tpg.reward(config.getString("trainingTaskName"), reward);
 
-                log.info("************************************");
-                log.info("remaining teams: {}", tpg.remainingTeams());
-                log.info("************************************");
+//                log.info("************************************");
+//                log.info("remaining teams: {}", tpg.remainingTeams());
+//                log.info("************************************");
             }
 
-            log.info("Generation " + tpg.getEpochs() + " complete.");
+
+            List<Map.Entry<String,Double>> generationResults = new ArrayList(generationScoreSummary.entrySet());
+            generationResults.sort(Map.Entry.comparingByValue());
+            generationResults.forEach(entry->log.info("Team {}\t{}", entry.getKey(), entry.getValue()));
+
+
+            Supplier<DoubleStream> generationScoresSupplier = ()->generationResults.stream().mapToDouble(entry->entry.getValue());
+
+            double generationAverage = generationScoresSupplier.get().average().getAsDouble();
+            double generationMin = generationScoresSupplier.get().min().getAsDouble();
+            double generationMax = generationScoresSupplier.get().max().getAsDouble();
+
+            log.info("Generation {} complete. Scores [Min: {}, Avg: {}, Max: {}] Maximum possible score: {}",tpg.getEpochs() , generationMin, generationAverage, generationMax, dataset.size()*3);
+
 
             //Perform selection
             tpg.selection();
@@ -104,22 +129,42 @@ public class TrainingTask implements Runnable {
         }
     }
 
-    private double score(long predictedLabel, TrainingExemplar exemplar){
-        if(predictedLabel == (long)exemplar.label()){
-            return 1.0;
-        }else{
-            return 0.0;
+    private double score(long [] predictedLabel, TrainingExemplar exemplar){
+        long [] correctLabel = Arrays.stream(exemplar.labels()).mapToLong(i->(long)i).toArray();
+
+        double score = 0.0;
+
+
+        if(predictedLabel[0] == correctLabel[0]){
+            score += 1.0;
         }
+        if(predictedLabel[1] == correctLabel[1]){
+            score += 1.0;
+        }
+        if(predictedLabel[2] == correctLabel[2]){
+            score += 1.0;
+        }
+
+        return score;
     }
 
-    private long [] generateActions(List<TrainingExemplar> dataset){
+    /**
+     * Generate an array of possible actions along a specific dimension of exemplar labels.
+     *
+     * That is, if we have a labels array of size 3, and there are 6 distinct values labels[0] across all
+     * exemplars, then we will generate a long [6] when dimension is set to 0.
+     * @param dataset
+     * @param dimension
+     * @return
+     */
+    private long [] generateActions(List<TrainingExemplar> dataset, int dimension){
 
         //Compile a set of unique labels for this dataset.
-        Set<Long> uniqueLabels = dataset.stream()
-                .map(exemplar->(long)exemplar.label())
-                .collect(Collectors.toSet());
+        return dataset.stream()
+                .distinct()
+                .map(exemplar->(long)exemplar.labels()[dimension])
+                .mapToLong(l->(long)l).toArray();
 
-        return uniqueLabels.stream().mapToLong(label->label).toArray();
     }
 
 }

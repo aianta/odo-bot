@@ -1,6 +1,7 @@
 package ca.ualberta.odobot.sqlite;
 
 import ca.ualberta.odobot.sqlite.impl.DbLogEntry;
+import io.vertx.core.Future;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVRecord;
 import org.slf4j.Logger;
@@ -13,6 +14,7 @@ import java.io.Reader;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -21,19 +23,21 @@ public class LogParser {
     private static final Logger log = LoggerFactory.getLogger(LogParser.class);
     public static final DateTimeFormatter timestampFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd kk:mm:ss.SSS zzz");
     private static final Pattern statementPattern = Pattern.compile("(?<=\")[\\S\\s]*(?=\")");
-    Consumer<DbLogEntry> logEntryConsumer;
+    Function<DbLogEntry, Future> logEntryConsumer;
 
     public int parseCount = 0;
 
-    public LogParser(Consumer<DbLogEntry> onLogEntry){
+    public LogParser(Function<DbLogEntry, Future> onLogEntry){
         logEntryConsumer = onLogEntry;
     }
 
-    public void parseDatabaseLogFile(String path){
-
+    public Future<Void> parseDatabaseLogFile(String path){
+        Future insertFuture = null;
         try{
             Reader in = new FileReader(path);
             Iterable<CSVRecord> records = CSVFormat.DEFAULT.parse(in);
+
+
 
             for(CSVRecord record: records){
 
@@ -69,6 +73,7 @@ public class LogParser {
                 matcher.find();
                 String statement = matcher.group(0);
 
+
                 DbLogEntry logEntry = new DbLogEntry(
                         key,
                         timestamp,
@@ -81,7 +86,12 @@ public class LogParser {
                         parameters
                 );
 
-                logEntryConsumer.accept(logEntry);
+                if(insertFuture == null){
+                    insertFuture = logEntryConsumer.apply(logEntry);
+                }else{
+                    insertFuture.compose(done->logEntryConsumer.apply(logEntry));
+                }
+
                 parseCount++;
             }
 
@@ -91,7 +101,7 @@ public class LogParser {
             throw new RuntimeException(e);
         }
 
-
+        return insertFuture == null?Future.failedFuture("insert future was null!"): insertFuture;
     }
 
 

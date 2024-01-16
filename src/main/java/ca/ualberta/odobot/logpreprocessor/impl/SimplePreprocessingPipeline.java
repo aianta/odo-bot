@@ -205,7 +205,7 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
                     curr.getExemplarId(),
                     curr.getSource(),
                     featureVector,
-                    curr.getLabel(),
+                    curr.getLabels(),
                     curr.getDatasetName(),
                     curr.getExtras()
             );

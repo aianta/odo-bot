@@ -13,6 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
+import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.SQLITE_CONNECTION_STRING;
 
@@ -134,7 +135,7 @@ public class SqliteServiceImpl implements SqliteService {
                 exemplar.id().toString(),
                 exemplar.source(),
                 Arrays.stream(exemplar.featureVector()).mapToObj(Double::toString).collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode(),
-                exemplar.label(),
+                Arrays.stream(exemplar.labels()).mapToObj(Integer::toString).collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode(),
                 exemplar.datasetName(),
                 exemplar.featureVector().length,
                 exemplar.extras().encode()
@@ -158,7 +159,7 @@ public class SqliteServiceImpl implements SqliteService {
                 id text PRIMARY KEY,
                 source text,
                 feature_vector text,
-                label numeric,
+                label text,
                 dataset_name text,
                 feature_vector_size numeric,
                 extras text
