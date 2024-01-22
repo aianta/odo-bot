@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.tpg;
 
+import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import ca.ualberta.odobot.sqlite.impl.TrainingExemplar;
 import ca.ualberta.odobot.tpg.service.TPGService;
@@ -24,8 +25,7 @@ import org.slf4j.LoggerFactory;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import static ca.ualberta.odobot.logpreprocessor.Constants.SQLITE_SERVICE_ADDRESS;
-import static ca.ualberta.odobot.logpreprocessor.Constants.TPG_SERVICE_ADDRESS;
+import static ca.ualberta.odobot.logpreprocessor.Constants.*;
 
 /**
  * @author Alexandru Ianta
@@ -40,7 +40,7 @@ public class TPGVerticle extends AbstractVerticle {
     private static final String API_PATH_PREFIX = "/api/*";
 
     private TPGService tpgService;
-
+    private ElasticsearchService elasticsearchService;
     private SqliteService db;
 
     HttpServer server;
@@ -52,8 +52,13 @@ public class TPGVerticle extends AbstractVerticle {
     public Completable rxStart(){
         try{
 
+            //Initialize Elasticsearch Service proxy
+            ServiceProxyBuilder elasticsearchServiceProxyBuilder = new ServiceProxyBuilder(vertx.getDelegate())
+                    .setAddress(ELASTICSEARCH_SERVICE_ADDRESS);
+            elasticsearchService = elasticsearchServiceProxyBuilder.build(ElasticsearchService.class);
+
             //Initalize TPGService
-            tpgService = TPGService.create();
+            tpgService = TPGService.create(elasticsearchService);
             new ServiceBinder(vertx.getDelegate())
                     .setAddress(TPG_SERVICE_ADDRESS)
                     .register(TPGService.class, tpgService);

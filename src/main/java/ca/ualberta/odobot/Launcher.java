@@ -10,7 +10,7 @@ public class Launcher extends io.vertx.core.Launcher {
     public void beforeStartingVertx(VertxOptions options) {
 //        options.setBlockedThreadCheckInterval(10);
 //        options.setBlockedThreadCheckIntervalUnit(TimeUnit.MINUTES);
-        options.setWorkerPoolSize(14)
+        options.setWorkerPoolSize(4)
                 .setMaxEventLoopExecuteTime(10)
                 .setMaxEventLoopExecuteTimeUnit(TimeUnit.MINUTES)
                 .setMaxWorkerExecuteTime(10)

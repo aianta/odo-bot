@@ -3,14 +3,14 @@ package ca.ualberta.odobot.tpg;
 
 import java.util.*;
 
-import ca.ualberta.odobot.tpg.TPGAlgorithm;
-import ca.ualberta.odobot.tpg.Instruction;
+
 
 import ca.ualberta.odobot.tpg.actions.Action;
 import ca.ualberta.odobot.tpg.learners.Learner;
 import ca.ualberta.odobot.tpg.teams.Team;
 import ca.ualberta.odobot.tpg.util.Miscellaneous;
 import ca.ualberta.odobot.tpg.util.OpenDouble;
+
 
 
 public class TPGLearn
@@ -172,18 +172,18 @@ public class TPGLearn
         try{
 
 
-        // Create an initial population of Teams and Learners
-        if( !initializePopulations() )
-            return false;
+            // Create an initial population of Teams and Learners
+            if( !initializePopulations() )
+                return false;
 
-        // Create a new linked list to act as a queue for the remaining Teams to act
-        teamQueue = new LinkedList<Team>();
+            // Create a new linked list to act as a queue for the remaining Teams to act
+            teamQueue = new LinkedList<Team>();
 
-        // Add all the current root Teams to the Team queue
-        teamQueue.addAll(rootTeams);
+            // Add all the current root Teams to the Team queue
+            teamQueue.addAll(rootTeams);
 
-        // All the Teams are generated, so move to generation 0
-        epochs++;
+            // All the Teams are generated, so move to generation 0
+            epochs++;
 
         }catch (Exception e){
             e.printStackTrace();
@@ -563,7 +563,7 @@ public class TPGLearn
                         do
                         {
                             actionTeam = teams.get((int)(TPGAlgorithm.RNG.nextDouble() * teams.size()));
-                        } while( rootTeams.size() <= 5 && rootTeams.contains(actionTeam) );
+                        } while( (rootTeams.size() <= 5 && rootTeams.contains(actionTeam)) || rootTeams.get(0).equals(actionTeam) );
 
                         // Create a new Action with the Team as the action
                         action = new Action( l.getActionObject() );

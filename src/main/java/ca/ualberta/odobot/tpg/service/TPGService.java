@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.tpg.service;
 
+import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 import ca.ualberta.odobot.sqlite.impl.TrainingExemplar;
 import ca.ualberta.odobot.tpg.service.impl.TPGServiceImpl;
 import io.vertx.codegen.annotations.ProxyGen;
@@ -13,7 +14,7 @@ import java.util.List;
 @ProxyGen
 public interface TPGService {
 
-    static TPGService create(){ return new TPGServiceImpl(); }
+    static TPGService create(ElasticsearchService elasticsearchService){ return new TPGServiceImpl(elasticsearchService); }
 
     static TPGService createProxy(Vertx vertx, String address){
         return new TPGServiceVertxEBProxy(vertx,address);

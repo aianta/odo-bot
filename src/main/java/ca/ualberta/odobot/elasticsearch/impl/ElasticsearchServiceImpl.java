@@ -6,6 +6,7 @@ import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
 import ca.ualberta.odobot.semanticflow.JsonDataUtility;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.*;
+import co.elastic.clients.elasticsearch._types.mapping.DateProperty;
 import co.elastic.clients.elasticsearch.core.*;
 
 import co.elastic.clients.elasticsearch.core.bulk.BulkResponseItem;
@@ -174,6 +175,19 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
     @Override
     public Future<Void> saveIntoIndex(List<JsonObject> items, String index) {
         try{
+
+            boolean indexExists = client.indices().exists(e->e.index(index)).value();
+
+            if(!indexExists){
+                //If the index doesn't exist, create one
+                client.indices().create(create->create
+                        .index(index)
+                        .mappings(mapping->mapping
+                                        .properties("timestamp", value->
+                                                value.date(d->d.format("basic_date_time"))
+                                ))
+                );
+            }
 
             BulkRequest.Builder br = new BulkRequest.Builder();
 

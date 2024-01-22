@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.tpg.service.impl;
 
+import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 import ca.ualberta.odobot.sqlite.impl.TrainingExemplar;
 import ca.ualberta.odobot.tpg.TPGAlgorithm;
 import ca.ualberta.odobot.tpg.TPGLearn;
@@ -25,9 +26,10 @@ public class TPGServiceImpl implements TPGService {
 
     private SaveLoad saveLoad;
 
+    private ElasticsearchService elasticsearchService;
 
-    public TPGServiceImpl(){
-
+    public TPGServiceImpl(ElasticsearchService elasticsearchService){
+        this.elasticsearchService = elasticsearchService;
         this.saveLoad = new SaveLoad();
 
     }
@@ -42,7 +44,7 @@ public class TPGServiceImpl implements TPGService {
          * For more details about using a callable with the Thread class see:
          * https://stackoverflow.com/questions/25231149/can-i-use-callable-threads-without-executorservice
          */
-        TrainingTask task = new TrainingTask( promise, config, dataset);
+        TrainingTask task = new TrainingTask( promise, config, elasticsearchService, dataset);
         Thread thread = new Thread(task);
         thread.start();
 

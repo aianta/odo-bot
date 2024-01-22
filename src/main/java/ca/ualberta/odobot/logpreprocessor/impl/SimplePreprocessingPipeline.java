@@ -95,11 +95,11 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
     public Future<Timeline> makeTimeline(String sourceIndex, List<JsonObject> events){
 
         SemanticSequencer sequencer = new SemanticSequencer();
-        sequencer.setOnArtifact(artifact -> {
-            if(artifact.getDomSnapshot() != null){
-                domSequencingService.process(artifact.getDomSnapshot().outerHtml());
-            }
-        });
+//        sequencer.setOnArtifact(artifact -> {
+//            if(artifact.getDomSnapshot() != null){
+//                domSequencingService.process(artifact.getDomSnapshot().outerHtml());
+//            }
+//        });
 
         //Timeline data structure construction
         Timeline timeline = sequencer.parse(events);
