@@ -8,10 +8,12 @@ import ca.ualberta.odobot.tpg.analysis.metrics.*;
 import ca.ualberta.odobot.tpg.teams.Team;
 import io.vertx.core.Promise;
 import io.vertx.core.json.JsonObject;
+import org.apache.commons.collections.map.HashedMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import java.util.stream.DoubleStream;
 
 public class TrainingTask implements Runnable {
@@ -20,6 +22,8 @@ public class TrainingTask implements Runnable {
     private static final String ES_INDEX_RUNS = "tpg-service-training-runs";
     private static final String ES_INDEX_TRAINING_FITNESS = "tpg-service-training-fitness";
     private static final String ES_INDEX_CHAMPION_TEST_FITNESS = "tpg-service-champions-test-fitness";
+
+    private static final String ES_INDEX_LABEL_CLASSIFICATION = "tpg-service-label-classifications";
     JsonObject config;
     List<TrainingExemplar> dataset;
 
@@ -202,11 +206,21 @@ public class TrainingTask implements Runnable {
         for (int i = 0; i < config.getInteger("numGenerations"); i++){
 
 
-
+            //Initialize data structures for tracking various metrics
             Map<String, Double> generationScoreSummary = new LinkedHashMap<>();
+
+
+            //Collect runtime parameters into a metric to send to elasticsearch
+            RuntimeParameters runtimeParameters = new RuntimeParameters();
+            runtimeParameters.numRootTeams = tpg.rootTeams.size();
+            runtimeParameters.generation = Optional.of((long)i);
+            runtimeParameters.numLearners = tpg.learners.size();
+
             //Let every team classify
             while (tpg.remainingTeams() > 0){
 
+                //Initialize data structure to track label-specific classification performance
+                Map<Integer,LabelClassificationMetric> labelClassificationMap = new HashMap<>();
 
                 //reset reward to 0 for each team that classifies
                 double reward = 0.0;
@@ -224,19 +238,49 @@ public class TrainingTask implements Runnable {
                     long [] predictedLabel = new long [1];
                     predictedLabel[0] = pathActions[(int)Math.floor(Math.abs(action[0]))%pathActions.length];
 
+                    /** Tabulate the number of times a particular label is correctly classified
+                     * We store this statistic in a {@link LabelClassificationMetric } object.
+                     * The hashmap {@link labelClassificationMap } contains LabelClassificationMetrics for each label.
+                     * So we fetch the appropriate object for the current training exemplar, and call its corresponding
+                     * {@link LabelClassificationMetric#addCorrect()} or {@link LabelClassificationMetric#addIncorrect()} method.
+                     *
+                     * Then we update the hashmap.
+                     * */
+                    LabelClassificationMetric labelClassificationMetric = labelClassificationMap.getOrDefault(exemplar.labels()[0], new LabelClassificationMetric(exemplar.extras().getString("path"), exemplar.labels()[0]));
 
                     if(isCorrect(predictedLabel[0], exemplar)){
                         correct+=1;
+                        labelClassificationMetric.addCorrect();
+                    }else{
+                        labelClassificationMetric.addIncorrect();
                     }
+                    labelClassificationMetric.context = MetricContext.TRAINING;
+                    labelClassificationMetric.teamId = Optional.of(tpg.getCurrTeamID());
+                    labelClassificationMap.put(exemplar.labels()[0], labelClassificationMetric);
+
                     //NOTE: this reward is overwritten by classification % later.
                     reward += score(predictedLabel, exemplar);
                 }
 
-
+                //Compute reward to give to the current team
                 reward = ((double)correct/(double)trainingData.size())*100.0;
                 generationScoreSummary.put(Long.toString(tpg.getCurrTeamID()), reward);
                 tpg.reward(config.getString("trainingTaskName"), reward);
 
+                //Send label classification metrics to elasticsearch.
+                List<JsonObject> labelClassificationData = labelClassificationMap.entrySet()
+                        .stream()
+                        .map(entry->new MetricBuilder()
+                                .addComponent(runMetric)
+                                .addComponent(parametersMetric)
+                                .addComponent(datasetMetric)
+                                .addComponent(runtimeParameters)
+                                .addComponent(entry.getValue())
+                                .build()
+                        ).collect(Collectors.toList());
+                elasticsearchService.saveIntoIndex(labelClassificationData, ES_INDEX_LABEL_CLASSIFICATION)
+                        .onSuccess(done->log.info("Saved label classification data for team {}", tpg.getCurrTeamID()))
+                        .onFailure(err->log.error(err.getMessage(), err));
 
             }
 
@@ -246,11 +290,7 @@ public class TrainingTask implements Runnable {
             generationResults.sort(Map.Entry.comparingByValue());
             generationResults.forEach(entry->log.info("Team {}\t{}", entry.getKey(), entry.getValue()));
 
-            //Collect runtime parameters into a metric to send to elasticsearch
-            RuntimeParameters runtimeParameters = new RuntimeParameters();
-            runtimeParameters.numRootTeams = tpg.rootTeams.size();
-            runtimeParameters.generation = Optional.of((long)i);
-            runtimeParameters.numLearners = tpg.learners.size();
+
 
 
             //Compute fitness statistics
@@ -266,7 +306,7 @@ public class TrainingTask implements Runnable {
             fitnessMetric.minimum = Optional.of(generationMin);
             fitnessMetric.mean = Optional.of(generationAverage);
             fitnessMetric.maximum = Optional.of(generationMax);
-            fitnessMetric.type = FitnessMetric.FitnessMetricType.TRAINING;
+            fitnessMetric.type = MetricContext.TRAINING;
 
             JsonObject genData = new MetricBuilder().addComponent(runMetric).addComponent(datasetMetric).addComponent(runtimeParameters).addComponent(parametersMetric).addComponent(fitnessMetric).build();
             elasticsearchService.saveIntoIndex(List.of(genData), ES_INDEX_TRAINING_FITNESS)
@@ -287,45 +327,93 @@ public class TrainingTask implements Runnable {
 
         //Testing
         List<Team> rootTeams = tpgAlgorithm.getTPGLearn().getRootTeams();
+
+        //Initialize data structures for tracking various metrics
         Map<String,Double> championScores = new LinkedHashMap<>();
+
+
         Iterator<Team> it = rootTeams.iterator();
 
         while (it.hasNext()){
+            //currTeam is the champion to test
             Team currTeam = it.next();
+
+            //Initialize data structures for tracking label-specific classification performance
+            Map<Integer, LabelClassificationMetric> labelClassificationMap = new HashMap<>();
+
 
             Iterator<TrainingExemplar> testDataIterator = testData.iterator();
             double reward = 0.0;
             int correct = 0;
-            while (testDataIterator.hasNext()){
+            while (testDataIterator.hasNext()) {
                 TrainingExemplar currExemplar = testDataIterator.next();
-                double [] registerArray = currTeam.getAction(new HashSet<>(), currExemplar.featureVector());
+                double[] registerArray = currTeam.getAction(new HashSet<>(), currExemplar.featureVector());
 
-                double [] action = Arrays.copyOf(registerArray, Integer.parseInt(config.getString("numberofActionRegisters")) );
+                double[] action = Arrays.copyOf(registerArray, Integer.parseInt(config.getString("numberofActionRegisters")));
 
-                long [] predictedLabel = new long [1];
-                predictedLabel[0] = pathActions[(int)Math.floor(Math.abs(action[0]))%pathActions.length];
+                long[] predictedLabel = new long[1];
+                predictedLabel[0] = pathActions[(int) Math.floor(Math.abs(action[0])) % pathActions.length];
 
-                if(isCorrect(predictedLabel[0], currExemplar)){
-                    correct+=1;
+                /** Tabulate the number of times a particular label is correctly classified
+                 * We store this statistic in a {@link LabelClassificationMetric } object.
+                 * The hashmap {@link labelClassificationMap } contains LabelClassificationMetrics for each label.
+                 * So we fetch the appropriate object for the current training exemplar, and call its corresponding
+                 * {@link LabelClassificationMetric#addCorrect()} or {@link LabelClassificationMetric#addIncorrect()} method.
+                 *
+                 * Then we update the hashmap.
+                 * */
+                LabelClassificationMetric labelClassificationMetric = labelClassificationMap.getOrDefault(currExemplar.labels()[0], new LabelClassificationMetric(currExemplar.extras().getString("path"), currExemplar.labels()[0]));
+
+                if (isCorrect(predictedLabel[0], currExemplar)) {
+                    correct += 1;
+                    labelClassificationMetric.addCorrect();
+                } else {
+                    labelClassificationMetric.addIncorrect();
                 }
+                labelClassificationMetric.context = MetricContext.TEST;
+                labelClassificationMetric.teamId = Optional.of(currTeam.ID);
+                labelClassificationMap.put(currExemplar.labels()[0], labelClassificationMetric);
 
+                //NOTE: gets overriden by % classification later.
                 reward += score(predictedLabel, currExemplar);
 
             }
 
             reward = ((double)correct/(double)trainingData.size())*100.0;
             championScores.put(Long.toString(currTeam.ID), reward);
+
+            /**
+             * Send label classification results to elasticsearch
+             */
+            List<JsonObject> labelClassificationData = labelClassificationMap.entrySet()
+                    .stream()
+                    .map(entry->new MetricBuilder()
+                            .addComponent(runMetric)
+                            .addComponent(parametersMetric)
+                            .addComponent(datasetMetric)
+                            .addComponent(entry.getValue())
+                            .build()
+                    ).collect(Collectors.toList());
+            elasticsearchService.saveIntoIndex(labelClassificationData, ES_INDEX_LABEL_CLASSIFICATION)
+                    .onSuccess(done->log.info("Saved label classification metrics during testing to elasticsearch!"))
+                    .onFailure(err->log.error(err.getMessage(), err));
         }
 
         //Sort test results
         List<Map.Entry<String,Double>> testResults = new ArrayList<>(championScores.entrySet());
         testResults.sort(Map.Entry.comparingByValue());
+
+
+
+        /**
+         * Send champion test results to elastic search
+         */
         List<JsonObject> championResults = new ArrayList<>();
         testResults.forEach(entry->{
             log.info("Champion {} \t{}", entry.getKey(), entry.getValue());
 
             FitnessMetric testResultMetric = new FitnessMetric();
-            testResultMetric.type = FitnessMetric.FitnessMetricType.TEST;
+            testResultMetric.type = MetricContext.TEST;
             testResultMetric.teamId = Optional.of(Long.parseLong(entry.getKey()));
             testResultMetric.score = Optional.of(entry.getValue());
             testResultMetric.generation = Optional.of(config.getLong("numGenerations"));
@@ -339,6 +427,8 @@ public class TrainingTask implements Runnable {
                 .onSuccess(done->log.info("Successfully saved champion test results!"))
                 .onFailure(err->log.error(err.getMessage(), err));
 
+
+        //Compute some stats for the whole champion population
         Supplier<DoubleStream> testScoresSupplier = ()->testResults.stream().mapToDouble(entry->entry.getValue());
 
         double championAverage = testScoresSupplier.get().average().getAsDouble();

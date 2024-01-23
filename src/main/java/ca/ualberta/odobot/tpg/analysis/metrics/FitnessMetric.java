@@ -16,10 +16,7 @@ public class FitnessMetric implements MetricComponent{
 
     public Optional<Double> score = Optional.empty();
 
-    public FitnessMetricType type;
-    public enum FitnessMetricType{
-        TRAINING, TEST
-    }
+    public MetricContext type;
 
     public Optional<Long> generation  = Optional.empty();
     public Optional<Long> teamId  = Optional.empty();
@@ -49,14 +46,15 @@ public class FitnessMetric implements MetricComponent{
                 Optional.empty()
         ;
 
-        this.type = FitnessMetricType.valueOf(data.getString(JSON_PREFIX + "type"));
+        this.type = MetricContext.valueOf(data.getString(JSON_PREFIX + "type"));
 
         this.generation = data.containsKey(JSON_PREFIX + "generation")?
                 Optional.of(data.getLong(JSON_PREFIX+"generation")):
                 Optional.empty();
 
+        //Team id should be encoded as a string, as we treat it more like a label in Kibana/Elasticsearch during analysis.
         this.teamId = data.containsKey(JSON_PREFIX + "teamId")?
-                Optional.of(data.getLong(JSON_PREFIX + "teamId")):
+                Optional.of(Long.parseLong(data.getString(JSON_PREFIX + "teamId"))):
                 Optional.empty();
     }
 
@@ -86,7 +84,8 @@ public class FitnessMetric implements MetricComponent{
         }
 
         if(teamId.isPresent()){
-            result.put(JSON_PREFIX + "teamId", teamId.get() );
+            //Team id should be encoded as a string, as we treat it more like a label in Kibana/Elasticsearch during analysis.
+            result.put(JSON_PREFIX + "teamId", Long.toString(teamId.get()) );
         }
 
         return result;
