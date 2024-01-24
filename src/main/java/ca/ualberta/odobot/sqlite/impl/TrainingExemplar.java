@@ -54,5 +54,7 @@ public record TrainingExemplar(
         return result;
     }
 
-
+    public long getLabel(){
+        return labels()[0];
+    }
 }

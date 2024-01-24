@@ -8,7 +8,6 @@ import ca.ualberta.odobot.tpg.analysis.metrics.*;
 import ca.ualberta.odobot.tpg.teams.Team;
 import io.vertx.core.Promise;
 import io.vertx.core.json.JsonObject;
-import org.apache.commons.collections.map.HashedMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.*;
@@ -16,9 +15,9 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.DoubleStream;
 
-public class TrainingTask implements Runnable {
+public class TrainingTaskImpl implements Runnable {
 
-    private static final Logger log = LoggerFactory.getLogger(TrainingTask.class);
+    private static final Logger log = LoggerFactory.getLogger(TrainingTaskImpl.class);
     private static final String ES_INDEX_RUNS = "tpg-service-training-runs";
     private static final String ES_INDEX_TRAINING_FITNESS = "tpg-service-training-fitness";
     private static final String ES_INDEX_CHAMPION_TEST_FITNESS = "tpg-service-champions-test-fitness";
@@ -34,24 +33,21 @@ public class TrainingTask implements Runnable {
     Promise<TPGAlgorithm> taskPromise;
 
 
+    public RunMetric getRunMetric() {
+        return runMetric;
+    }
+
     //Analytics
     RunMetric runMetric;
     DatasetMetric datasetMetric;
 
 
 
-    public TrainingTask( Promise<TPGAlgorithm> promise, JsonObject config, ElasticsearchService elasticsearchService, List<TrainingExemplar> trainingDataset){
+    public TrainingTaskImpl(Promise<TPGAlgorithm> promise, JsonObject config, ElasticsearchService elasticsearchService, List<TrainingExemplar> trainingDataset){
         this.taskPromise = promise;
         this.dataset = trainingDataset;
         this.config = config;
         this.elasticsearchService = elasticsearchService;
-
-        //Some extremely basic validation
-        if(config.getInteger("testSamplesPerLabel") >= config.getInteger("samplesPerLabel")){
-            log.error("testSamplesPerLabel ({}) is greater or equal to the number of samplesPerLabel({}) ",config.getInteger("testSamplesPerLabel"),config.getInteger("samplesPerLabel")  );
-            throw new RuntimeException("Invalid training task configuration!");
-        }
-
 
         int originalDatasetSize = trainingDataset.size();
 
@@ -182,6 +178,10 @@ public class TrainingTask implements Runnable {
         log.info("{} requestActions", requestActions.length);
         log.info("{} responseActions", responseActions.length);
 
+        boolean focusOnOneLabel = config.getBoolean("focusOnOneLabel", false);
+        int focusLabel = config.getInteger("focusLabel", -1);
+
+
         /*
          *  Set some dummy actions, these won't actually be used unless config.getString("numberofActionRegisters") is "-1".
          */
@@ -248,7 +248,14 @@ public class TrainingTask implements Runnable {
                      * */
                     LabelClassificationMetric labelClassificationMetric = labelClassificationMap.getOrDefault(exemplar.labels()[0], new LabelClassificationMetric(exemplar.extras().getString("path"), exemplar.labels()[0]));
 
-                    if(isCorrect(predictedLabel[0], exemplar)){
+                    boolean isCorrect = false;
+                    if(focusOnOneLabel){
+                        isCorrect = isCorrect(predictedLabel[0], exemplar, focusLabel);
+                    }else{
+                        isCorrect = isCorrect(predictedLabel[0], exemplar);
+                    }
+
+                    if(isCorrect){
                         correct+=1;
                         labelClassificationMetric.addCorrect();
                     }else{
@@ -263,7 +270,14 @@ public class TrainingTask implements Runnable {
                 }
 
                 //Compute reward to give to the current team
-                reward = ((double)correct/(double)trainingData.size())*100.0;
+//                reward = ((double)correct/(double)trainingData.size())*100.0;
+
+                if(focusOnOneLabel){
+                    reward = ((double)correct/(double)datasetMetric.numberOfSamplesPerLabelInTrainingDataset)*100.0;
+                }else{
+                    reward = ((double)correct/(double)trainingData.size())*100.0;
+                }
+
                 generationScoreSummary.put(Long.toString(tpg.getCurrTeamID()), reward);
                 tpg.reward(config.getString("trainingTaskName"), reward);
 
@@ -283,6 +297,7 @@ public class TrainingTask implements Runnable {
                         .onFailure(err->log.error(err.getMessage(), err));
 
             }
+
 
             tpg.rootTeams.forEach(rootTeam->generationScoreSummary.put(Long.toString(rootTeam.ID), rootTeam.getOutcomeByKey(config.getString("trainingTaskName"))));
 
@@ -363,8 +378,15 @@ public class TrainingTask implements Runnable {
                  * Then we update the hashmap.
                  * */
                 LabelClassificationMetric labelClassificationMetric = labelClassificationMap.getOrDefault(currExemplar.labels()[0], new LabelClassificationMetric(currExemplar.extras().getString("path"), currExemplar.labels()[0]));
+                boolean isCorrect = false;
 
-                if (isCorrect(predictedLabel[0], currExemplar)) {
+                if(focusOnOneLabel){
+                    isCorrect = isCorrect(predictedLabel[0], currExemplar, focusLabel);
+                }else{
+                    isCorrect = isCorrect(predictedLabel[0], currExemplar);
+                }
+
+                if (isCorrect) {
                     correct += 1;
                     labelClassificationMetric.addCorrect();
                 } else {
@@ -379,7 +401,14 @@ public class TrainingTask implements Runnable {
 
             }
 
-            reward = ((double)correct/(double)trainingData.size())*100.0;
+            //reward = ((double)correct/(double)testData.size())*100.0;
+
+            if(focusOnOneLabel){
+                reward = ((double)correct/(double)datasetMetric.numberOfSamplesPerLabelInTestDataset)*100.0;
+            }else{
+                reward = ((double)correct/(double)testData.size())*100.0;
+            }
+
             championScores.put(Long.toString(currTeam.ID), reward);
 
             /**
@@ -443,6 +472,20 @@ public class TrainingTask implements Runnable {
         }catch (Exception e){
             log.error(e.getMessage(), e);
         }
+    }
+
+    private boolean isCorrect(long predictedLabel, TrainingExemplar exemplar, int focusLabel){
+        long [] correctLabel = Arrays.stream(exemplar.labels()).mapToLong(i->(long)i).toArray();
+
+
+
+        if (predictedLabel == correctLabel[0] && correctLabel[0] == (long)focusLabel){
+            return true;
+        }
+
+
+
+        return false;
     }
 
     private boolean isCorrect(long predictedLabel, TrainingExemplar exemplar){

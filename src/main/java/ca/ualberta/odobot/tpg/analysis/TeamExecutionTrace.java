@@ -28,8 +28,10 @@ public class TeamExecutionTrace {
      */
     public List<Integer> indexedLocations(){
 
+        //Initialize a list to hold the indicies that were accessed in the feature vector
         List<Integer> result = new ArrayList<>();
 
+        //Iterate through our list of learners
         Iterator<Learner> it = learners.iterator();
 
         while (it.hasNext()){

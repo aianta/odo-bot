@@ -19,6 +19,9 @@ import ca.ualberta.odobot.tpg.util.serializers.InstructionSerializer;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Random;
 
 public class SaveLoad {
@@ -97,11 +100,14 @@ public class SaveLoad {
 		output.close();
 	}
 
-	public String saveTeam(Team t, long epochs, int rank, String destinationFolder) throws FileNotFoundException
-	{
+	public String saveTeam(Team t, long epochs, int rank, String destinationFolder) throws IOException {
 		//sets the location where the file will be saved.
 		System.out.println("\nsaveTeam called with filepath " + destinationFolder);
-		
+
+		Path dstPath = Path.of(destinationFolder);
+		if(!Files.exists(dstPath)){
+			Files.createDirectories(dstPath);
+		}
 		String folderWithFile = destinationFolder + "gen_" + epochs + "_rank_" + rank + "_T_" + t.getID() + ".bin";
 		
 		Output output = new Output(new FileOutputStream(folderWithFile));
