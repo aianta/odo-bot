@@ -1,6 +1,7 @@
 package ca.ualberta.odobot;
 
 
+import ca.ualberta.odobot.explorer.ExplorerVerticle;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import ca.ualberta.odobot.tpg.TPGVerticle;
 import ca.ualberta.odobot.web.OdoSightSupport;
@@ -21,11 +22,13 @@ public class MainVerticle extends AbstractVerticle {
         TPGVerticle tpgVerticle = new TPGVerticle();
         TimelineWebApp timelineWebApp = TimelineWebApp.getInstance();
         LogPreprocessor logPreprocessor = new LogPreprocessor();
+        ExplorerVerticle explorerVerticle = new ExplorerVerticle();
 
         vertx.deployVerticle(logPreprocessor);
         vertx.deployVerticle(timelineWebApp);
         vertx.deployVerticle(odoSightSupport);
         vertx.deployVerticle(tpgVerticle);
+        vertx.deployVerticle(explorerVerticle);
 
         return super.rxStart();
     }

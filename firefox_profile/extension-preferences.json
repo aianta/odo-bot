@@ -1,0 +1,6 @@
+{
+  "odosight@ualberta.ca": {
+    "permissions": [],
+    "origins": ["*://localhost/*"]
+  }
+}
