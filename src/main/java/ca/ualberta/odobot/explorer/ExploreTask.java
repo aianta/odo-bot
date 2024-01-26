@@ -1,11 +1,14 @@
 package ca.ualberta.odobot.explorer;
 
-import co.elastic.clients.elasticsearch._types.aggregations.HdrPercentilesAggregate;
 import io.vertx.core.json.JsonObject;
-import org.openqa.selenium.By;
-import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.WebElement;
+import org.openqa.selenium.*;
 import org.openqa.selenium.firefox.*;
+import org.openqa.selenium.logging.LogEntries;
+import org.openqa.selenium.logging.LogEntry;
+import org.openqa.selenium.logging.LogType;
+import org.openqa.selenium.logging.LoggingPreferences;
+import org.openqa.selenium.remote.CapabilityType;
+import org.openqa.selenium.remote.DesiredCapabilities;
 import org.openqa.selenium.support.ui.Wait;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.slf4j.Logger;
@@ -14,7 +17,11 @@ import org.slf4j.LoggerFactory;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.function.Predicate;
+import java.util.logging.Level;
 
 public class ExploreTask implements Runnable{
 
@@ -32,24 +39,34 @@ public class ExploreTask implements Runnable{
     private static final String ADDON_ID = "odosight@ualberta.ca";
     private static final String ODOSIGHT_OPTIONS_LOGUI_SERVER_USERNAME_FIELD_ID = "logui-server-username";
     private static final String ODOSIGHT_OPTIONS_LOGUI_SERVER_PASSWORD_FIELD_ID = "logui-server-password";
-    private static final String ODOSIGHT_OPTIONS_LOGUI_CLIENT_CONFIG_FIELD_ID = "logui-client-config";
-
-
+    private static final String ODOSIGHT_CONTROLS_EDIT_FLIGHT_BUTTON_ID = "edit_flight_btn";
+    private static final String ODOSIGHT_CONTROLS_NEW_FLIGHT_BUTTON_ID = "new-flight-btn";
+    private static final String ODOSIGHT_CONTROLS_NEW_FLIGHT_NAME_INPUT_ID = "new-flight-name";
+    private static final String ODOSIGHT_CONTROLS_SESSION_ID_LABEL_ID = "session_id";
+    private static final String ODOSIGHT_CONTROLS_START_RECORDING_BUTTON_ID = "start-btn";
+    private static final String ODOSIGHT_CONTROLS_STOP_RECORDING_BUTTON_ID = "stop-btn";
+    private static final String ODOSIGHT_CONTROLS_SCRAPE_MONGO_BUTTON_ID = "scrape_mongo_btn";
     JsonObject config;
-
     UUID dynamicAddonId = UUID.randomUUID();
-
     String odoSightOptionsUrl;
-
+    String odoSightControlsUrl;
+    String odoSightControlsTabHandle;
+    String webAppTabHandle;
     FirefoxDriver driver;
+    int recordingCount = 0;
+    String currentFlight;
+
 
     public ExploreTask(JsonObject config){
         this.config = config;
 
         /**
          * See documentation for{@link #buildProfile()}
+         *
+         * Also, in theory these URL paths could break if the extension structure is updated.
          */
         this.odoSightOptionsUrl = "moz-extension://"+dynamicAddonId.toString()+"/options/options.html";
+        this.odoSightControlsUrl = "moz-extension://"+dynamicAddonId.toString()+"/popup/controls.html";
         log.info("OdoSight Options page @ {}", odoSightOptionsUrl);
     }
 
@@ -57,6 +74,7 @@ public class ExploreTask implements Runnable{
     public void run() {
 
         FirefoxOptions options = new FirefoxOptions();
+
         options.setProfile(buildProfile());
 
         driver = new FirefoxDriver(options);
@@ -67,18 +85,102 @@ public class ExploreTask implements Runnable{
             //Setup OdoSight
             setupOdoSight();
 
-            //Load the web app URL
-            driver.get(config.getString(ExploreRequestFields.WEB_APP_URL.field));
+            //Start the OdoSight recording
+            startRecording();
+
+
         }catch (Exception e){
 
             log.error(e.getMessage(), e);
         }
 
+    }
 
+    /**
+     * Starts a new OdoSight recording, with the name specified in the config.
+     */
+    private void startRecording(){
+        recordingCount+=1;
+        //Compute the flight(recording) name and set it as the currentFlight
+        currentFlight = config.getString(ExploreRequestFields.ODOSIGHT_FLIGHT_PREFIX.field) + recordingCount;
 
+        //Switch to the OdoSight Controls tab.
+        driver.switchTo().window(odoSightControlsTabHandle);
 
+        //Click the edit flight button
+        WebElement editFlightButton = driver.findElement(By.id(ODOSIGHT_CONTROLS_EDIT_FLIGHT_BUTTON_ID));
+        editFlightButton.click();
 
+        //Wait for the registered application list to appear
+        explicitlyWait(driver, 2);
 
+        //Select the application specified by the id in the explore request
+        WebElement selectApplicationButton = driver.findElement(By.id(config.getString(ExploreRequestFields.LOGUI_APPLICATION_ID.field) + "-select"));
+        selectApplicationButton.click();
+
+        //Wait until the new flight button is displayed
+        WebElement newFlightButton = driver.findElement(By.id(ODOSIGHT_CONTROLS_NEW_FLIGHT_BUTTON_ID));
+        explicitlyWaitUntil(driver,30, d->newFlightButton.isDisplayed());
+
+        //Enter the name for the current flight
+        WebElement newFlightNameInput = driver.findElement(By.id(ODOSIGHT_CONTROLS_NEW_FLIGHT_NAME_INPUT_ID));
+        newFlightNameInput.sendKeys(currentFlight);
+
+        //Then click the new flight button
+        newFlightButton.click();
+
+        //Start the recording
+        WebElement startRecordingButton = driver.findElement(By.id(ODOSIGHT_CONTROLS_START_RECORDING_BUTTON_ID));
+        explicitlyWaitUntil(driver, 2, d->startRecordingButton.isDisplayed());
+        startRecordingButton.click();
+
+        //Wait for recording session id to be displayed
+        WebElement sessionIdLabel = driver.findElement(By.id(ODOSIGHT_CONTROLS_SESSION_ID_LABEL_ID));
+        explicitlyWaitUntil(driver, 5, d->!sessionIdLabel.getText().equals("<no active session>"));
+
+        //Then return back to the web application tab
+        driver.switchTo().window(webAppTabHandle);
+
+        /**  TODO - capturing console.log() events from firefox is a bit of an ordeal so skipping for now
+         *  For more details see:
+         *  https://github.com/mozilla/geckodriver/issues/284
+         *  https://github.com/mozilla/geckodriver/issues/284#issuecomment-477677764
+         */
+//        //Ensure the recording is active by checking the browser console logs for 'LogUI' and 'Logged object below' log line entries
+//        List<LogEntry> logEntries = driver.manage().logs().get(LogType.BROWSER).getAll();
+//        log.info("got {} log entries in the console", logEntries.size());
+//        for(int i = logEntries.size()-1; i > 0; i--){
+//            LogEntry entry = logEntries.get(i);
+//            if(entry.getMessage().contains("LogUI") && entry.getMessage().contains("Logged object below")){
+//                log.info("OdoSight recording is active.");
+//                recordingIsActive = true;
+//            }
+//        }
+//        //Explicitly mark log entries for garbage collection
+//        logEntries = null;
+//
+//        if(!recordingIsActive){
+//            throw new RuntimeException("OdoSight did not start recording!");
+//        }
+    }
+
+    private void stopRecording(){
+
+        driver.switchTo().window(odoSightControlsTabHandle);
+
+        //Get the stop recording button and click it to stop the recording.
+        WebElement stopRecordingButton = driver.findElement(By.id(ODOSIGHT_CONTROLS_STOP_RECORDING_BUTTON_ID));
+        stopRecordingButton.click();
+
+        explicitlyWait(driver, 2);
+
+        //Get the scrape mongo button and click it to send the flight recording data to elasticsearch
+        WebElement scrapeMongoButton = driver.findElement(By.id(ODOSIGHT_CONTROLS_SCRAPE_MONGO_BUTTON_ID));
+        scrapeMongoButton.click();
+
+        explicitlyWait(driver, 2);
+
+        driver.switchTo().window(webAppTabHandle);
     }
 
     private void setupOdoSight() throws InterruptedException {
@@ -89,9 +191,7 @@ public class ExploreTask implements Runnable{
          * If we don't do this, the default option values that the extension setup when initializing won't be populated in localStorage which means
          * they won't show up on the options page, which means we'll overwrite option values with blanks, which we do not want.
          */
-        Instant targetTime = Instant.ofEpochSecond(Instant.now().getEpochSecond() + 3);
-        Wait<WebDriver> wait = new WebDriverWait(driver, Duration.ofSeconds(5));
-        wait.until(d->Instant.now().isAfter(targetTime));
+        explicitlyWait(driver, 3);
 
 
         //Load the OdoSight options page
@@ -111,6 +211,25 @@ public class ExploreTask implements Runnable{
         WebElement submitButton = driver.findElement(By.tagName("button"));
         submitButton.click();
 
+        //Load the web app URL
+        driver.get(config.getString(ExploreRequestFields.WEB_APP_URL.field));
+
+        //Open a new tab to access the odosight controls
+
+        //First save the handle to this tab
+        webAppTabHandle = driver.getWindowHandle();
+
+        //Then create a new tab and switch to it.
+        driver.switchTo().newWindow(WindowType.TAB);
+
+        //Then save the handle to the new tab
+        odoSightControlsTabHandle = driver.getWindowHandle();
+
+        //Then open the odoSight controls in the new tab
+        driver.get(odoSightControlsUrl);
+
+        //Then switch back to the webAppTab
+        driver.switchTo().window(webAppTabHandle);
 
     }
 
@@ -138,10 +257,22 @@ public class ExploreTask implements Runnable{
 
         ProfilesIni allProfiles = new ProfilesIni();
         FirefoxProfile profile = allProfiles.getProfile("Selenium");
+        profile.setAcceptUntrustedCertificates(true); //LogUI Server is likely running locally over a self-signed cert.
         profile.setPreference("extensions.webextensions.uuids", addonIdPreference.encode());
 
 
         return profile;
+    }
+
+    private void explicitlyWait(WebDriver driver, int seconds){
+        Instant targetTime = Instant.ofEpochSecond(Instant.now().getEpochSecond() + seconds);
+        Wait<WebDriver> wait = new WebDriverWait(driver, Duration.ofSeconds(seconds + 2));
+        wait.until(d->Instant.now().isAfter(targetTime));
+    }
+
+    private void explicitlyWaitUntil(WebDriver driver, int secondsTimout, Function<? super WebDriver, Object> lambda){
+        Wait<WebDriver> wait = new WebDriverWait(driver, Duration.ofSeconds(secondsTimout));
+        wait.until(lambda);
     }
 
 }
