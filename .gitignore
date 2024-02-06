@@ -14,5 +14,5 @@ crawljax_out
 *.csv
 *.db
 *.bin
-
+*.lnk
 !firefox_profile/extension-preferences.json

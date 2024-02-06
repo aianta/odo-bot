@@ -1,6 +1,15 @@
 package ca.ualberta.odobot.explorer;
 
+import ca.ualberta.odobot.explorer.canvas.operations.*;
+import ca.ualberta.odobot.explorer.canvas.resources.Course;
+import ca.ualberta.odobot.explorer.canvas.resources.Module;
+import ca.ualberta.odobot.explorer.canvas.resources.Quiz;
+import ca.ualberta.odobot.explorer.canvas.resources.QuizQuestion;
+import ca.ualberta.odobot.explorer.model.ToDo;
+import com.crawljax.core.CrawljaxRunner;
+import com.crawljax.core.configuration.CrawljaxConfiguration;
 import io.vertx.core.json.JsonObject;
+import org.apache.commons.logging.Log;
 import org.openqa.selenium.*;
 import org.openqa.selenium.firefox.*;
 import org.openqa.selenium.logging.LogEntries;
@@ -22,6 +31,9 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.logging.Level;
+
+import static ca.ualberta.odobot.explorer.WebDriverUtils.explicitlyWait;
+import static ca.ualberta.odobot.explorer.WebDriverUtils.explicitlyWaitUntil;
 
 public class ExploreTask implements Runnable{
 
@@ -56,6 +68,8 @@ public class ExploreTask implements Runnable{
     int recordingCount = 0;
     String currentFlight;
 
+    ToDo toDo;
+
 
     public ExploreTask(JsonObject config){
         this.config = config;
@@ -68,6 +82,38 @@ public class ExploreTask implements Runnable{
         this.odoSightOptionsUrl = "moz-extension://"+dynamicAddonId.toString()+"/options/options.html";
         this.odoSightControlsUrl = "moz-extension://"+dynamicAddonId.toString()+"/popup/controls.html";
         log.info("OdoSight Options page @ {}", odoSightOptionsUrl);
+
+
+
+        Course course = new Course();
+        course.setName("Dummy Course 2");
+        course.setCoursePageUrl("http://localhost:8088/courses/25");
+
+        Module module = new Module();
+        module.setName("Dummy Module");
+
+        Quiz quiz = new Quiz();
+        quiz.setQuizEditPageUrl("http://localhost:8088/courses/25/quizzes/37/edit");
+        quiz.setQuizPageUrl("http://localhost:8088/courses/25/quizzes/37");
+        quiz.setName("dummy quiz");
+        quiz.setBody("Hmmm, a quiz!");
+
+        QuizQuestion question = new QuizQuestion();
+        question.setName("Question One");
+        question.setType(QuizQuestion.QuestionType.MULTIPLE_CHOICE);
+        question.setBody("What is the value of pi?");
+
+        toDo = new ToDo();
+        toDo.add(new Login(new JsonObject()
+                .put("username", "ianta@ualberta.ca")
+                .put("password", "")
+                .put("startingUrl", "http://localhost:8088/login/canvas")
+                )
+        );
+        //toDo.add(new CreateCourse(new JsonObject(), course));
+        //toDo.add(new CreateModule(new JsonObject(), course, module));
+        //toDo.add(new CreateQuiz(new JsonObject(), course, quiz));
+        toDo.add(new CreateQuizQuestion(new JsonObject(), course, quiz, question));
     }
 
     @Override
@@ -88,6 +134,15 @@ public class ExploreTask implements Runnable{
             //Start the OdoSight recording
             startRecording();
 
+            toDo.forEach(op->{
+                op.execute(driver);
+                explicitlyWait(driver, 2);
+            });
+
+//            CrawljaxConfiguration.CrawljaxConfigurationBuilder builder = CrawljaxConfiguration.builderFor(config.getString(ExploreRequestFields.WEB_APP_URL.field));
+//            CrawljaxConfiguration crawljaxConfiguration = builder.build();
+//            CrawljaxRunner runner = new CrawljaxRunner(crawljaxConfiguration);
+//            runner.call();
 
         }catch (Exception e){
 
@@ -264,15 +319,6 @@ public class ExploreTask implements Runnable{
         return profile;
     }
 
-    private void explicitlyWait(WebDriver driver, int seconds){
-        Instant targetTime = Instant.ofEpochSecond(Instant.now().getEpochSecond() + seconds);
-        Wait<WebDriver> wait = new WebDriverWait(driver, Duration.ofSeconds(seconds + 2));
-        wait.until(d->Instant.now().isAfter(targetTime));
-    }
 
-    private void explicitlyWaitUntil(WebDriver driver, int secondsTimout, Function<? super WebDriver, Object> lambda){
-        Wait<WebDriver> wait = new WebDriverWait(driver, Duration.ofSeconds(secondsTimout));
-        wait.until(lambda);
-    }
 
 }
