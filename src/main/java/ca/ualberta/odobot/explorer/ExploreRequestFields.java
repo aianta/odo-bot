@@ -13,7 +13,7 @@ public enum ExploreRequestFields {
     ODOSIGHT_OPTIONS_LOGUI_USERNAME("logUIUsername", String.class),
     ODOSIGHT_OPTIONS_LOGUI_PASSWORD("logUIPassword", String.class),
 
-    LOGUI_APPLICATION_ID("logUIApplicationId", String.class),
+    LOGUI_APPLICATION_ID("logUIApplicationId", String.class)
 
     ;
 

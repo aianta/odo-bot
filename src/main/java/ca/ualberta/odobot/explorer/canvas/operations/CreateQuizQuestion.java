@@ -11,8 +11,6 @@ import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -139,8 +137,9 @@ public class CreateQuizQuestion extends Operation {
      */
     private void navOption1(WebDriver driver){
         navigateToQuizzesSection(driver);
-
+        explicitlyWait(driver, 4);
         WebElement quizPageLink = driver.findElement(By.xpath("//a[@href='"+quiz.getQuizPageUrl()+"']"));
+        explicitlyWaitUntil(driver,30, d->ExpectedConditions.elementToBeClickable(quizPageLink));
         quizPageLink.click();
 
         clickEditQuizButton(driver);
@@ -168,6 +167,7 @@ public class CreateQuizQuestion extends Operation {
      */
     private void navigateToQuizzesSection(WebDriver driver){
         WebElement coursesSidebarLink = driver.findElement(By.id("global_nav_courses_link"));
+        explicitlyWaitUntil(driver, 5, d->ExpectedConditions.visibilityOf(coursesSidebarLink));
         coursesSidebarLink.click();
 
         WebElement courseLink = driver.findElement(By.linkText(course.getName()));

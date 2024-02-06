@@ -59,6 +59,7 @@ public class MultiPath {
                 path.accept(driver);
             }catch (NoSuchElementException notFound){
                 log.warn("Random path failed with missing element, engaging fallback...");
+                log.warn(notFound.getMessage(), notFound);
                 fallback.accept(driver);
             }
         };

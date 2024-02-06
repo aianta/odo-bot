@@ -106,7 +106,7 @@ public class ExploreTask implements Runnable{
         toDo = new ToDo();
         toDo.add(new Login(new JsonObject()
                 .put("username", "ianta@ualberta.ca")
-                .put("password", "")
+                .put("password", config.getString(ExploreRequestFields.ODOSIGHT_OPTIONS_LOGUI_PASSWORD.field))
                 .put("startingUrl", "http://localhost:8088/login/canvas")
                 )
         );
