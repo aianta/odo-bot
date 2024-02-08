@@ -6,7 +6,15 @@ public class QuizQuestion {
 
     private int id;
 
+    private String relatedQuizIdentifier;
 
+    public String getRelatedQuizIdentifier() {
+        return relatedQuizIdentifier;
+    }
+
+    public void setRelatedQuizIdentifier(String relatedQuizIdentifier) {
+        this.relatedQuizIdentifier = relatedQuizIdentifier;
+    }
 
     /**
      * The type of the question used as values for the question type input.

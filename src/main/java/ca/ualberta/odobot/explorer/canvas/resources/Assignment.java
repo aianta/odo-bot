@@ -1,6 +1,6 @@
 package ca.ualberta.odobot.explorer.canvas.resources;
 
-public class Assignment {
+public class Assignment extends BaseResource{
 
     private String name;
 

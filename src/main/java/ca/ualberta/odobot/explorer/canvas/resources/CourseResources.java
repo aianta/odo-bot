@@ -22,7 +22,7 @@ public class CourseResources {
 
     private List<Assignment> assignments = new ArrayList<>();
 
-    public CourseResources quizQuestions(QuizQuestion question){
+    public CourseResources addQuestion(QuizQuestion question){
         this.quizQuestions.add(question);
         return this;
     }
@@ -52,5 +52,34 @@ public class CourseResources {
         return this;
     }
 
+    public String contents(){
 
+        long pagesWithContent = pages.stream().filter(p->p.getBody() != null).count();
+        long assignmentsWithContent = assignments.stream().filter(a->a.getBody() != null).count();
+
+        return "Modules: " + modules.size() + " Assignments: " + assignments.size() + " ["+assignmentsWithContent+"] Quizzes: " + quizzes.size() + " Pages: " + pages.size() + " ["+pagesWithContent+"]" + " Quiz Questions: " + quizQuestions.size() ;
+    }
+
+    public List<Assignment> assignments(){
+        return assignments;
+    }
+
+    public List<Page> pages(){
+        return pages;
+    }
+
+    /**
+     *
+     * @param identifier the IMSCC identifierRef as it appears in the exported course data.
+     * @return The page corresponding with the specified IMSCC identifierRef.
+     *
+     * NOTE: This is not the Id of the page on Canvas.
+     */
+    public Page getPageByIdentifierRef(String identifier){
+        return pages.stream().filter(page -> page.getIdentifierRef().equals(identifier)).findFirst().orElseGet(()->null);
+    }
+
+    public List<Quiz> quizzes(){
+        return quizzes;
+    }
 }

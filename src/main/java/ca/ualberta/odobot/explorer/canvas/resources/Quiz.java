@@ -8,7 +8,7 @@ import java.net.URL;
 import java.util.Arrays;
 import java.util.Iterator;
 
-public class Quiz {
+public class Quiz extends BaseResource{
 
     private static final Logger log = LoggerFactory.getLogger(Quiz.class);
 

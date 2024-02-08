@@ -1,6 +1,6 @@
 package ca.ualberta.odobot.explorer.canvas.resources;
 
-public class Page {
+public class Page extends BaseResource{
 
     private String title;
 
