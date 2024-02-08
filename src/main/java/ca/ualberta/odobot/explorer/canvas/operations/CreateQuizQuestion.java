@@ -137,7 +137,7 @@ public class CreateQuizQuestion extends Operation {
      */
     private void navOption1(WebDriver driver){
         navigateToQuizzesSection(driver);
-        explicitlyWait(driver, 4);
+        explicitlyWait(driver, 2);
         WebElement quizPageLink = driver.findElement(By.xpath("//a[@href='"+quiz.getQuizPageUrl()+"']"));
         explicitlyWaitUntil(driver,30, d->ExpectedConditions.elementToBeClickable(quizPageLink));
         quizPageLink.click();

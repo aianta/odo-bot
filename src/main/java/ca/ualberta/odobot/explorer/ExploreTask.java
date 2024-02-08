@@ -1,10 +1,8 @@
 package ca.ualberta.odobot.explorer;
 
 import ca.ualberta.odobot.explorer.canvas.operations.*;
-import ca.ualberta.odobot.explorer.canvas.resources.Course;
+import ca.ualberta.odobot.explorer.canvas.resources.*;
 import ca.ualberta.odobot.explorer.canvas.resources.Module;
-import ca.ualberta.odobot.explorer.canvas.resources.Quiz;
-import ca.ualberta.odobot.explorer.canvas.resources.QuizQuestion;
 import ca.ualberta.odobot.explorer.model.ToDo;
 import com.crawljax.core.CrawljaxRunner;
 import com.crawljax.core.configuration.CrawljaxConfiguration;
@@ -103,17 +101,23 @@ public class ExploreTask implements Runnable{
         question.setType(QuizQuestion.QuestionType.MULTIPLE_CHOICE);
         question.setBody("What is the value of pi?");
 
+        Page page = new Page();
+        page.setTitle("Dummy Page");
+        page.setBody("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Praesent accumsan varius volutpat. Phasellus nisl enim, molestie a ligula id, tempor iaculis nisi.");
+
         toDo = new ToDo();
         toDo.add(new Login(new JsonObject()
                 .put("username", "ianta@ualberta.ca")
+                //TODO figure out how to configure an explore request properly.
                 .put("password", config.getString(ExploreRequestFields.ODOSIGHT_OPTIONS_LOGUI_PASSWORD.field))
                 .put("startingUrl", "http://localhost:8088/login/canvas")
                 )
         );
-        //toDo.add(new CreateCourse(new JsonObject(), course));
-        //toDo.add(new CreateModule(new JsonObject(), course, module));
-        //toDo.add(new CreateQuiz(new JsonObject(), course, quiz));
+        toDo.add(new CreateCourse(new JsonObject(), course));
+        toDo.add(new CreateModule(new JsonObject(), course, module));
+        toDo.add(new CreateQuiz(new JsonObject(), course, quiz));
         toDo.add(new CreateQuizQuestion(new JsonObject(), course, quiz, question));
+        toDo.add(new CreatePage(new JsonObject(), course, page));
     }
 
     @Override
@@ -129,10 +133,10 @@ public class ExploreTask implements Runnable{
 
         try{
             //Setup OdoSight
-            setupOdoSight();
+            //setupOdoSight();
 
             //Start the OdoSight recording
-            startRecording();
+            //startRecording();
 
             toDo.forEach(op->{
                 op.execute(driver);

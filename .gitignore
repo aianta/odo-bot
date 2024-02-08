@@ -16,3 +16,4 @@ crawljax_out
 *.bin
 *.lnk
 !firefox_profile/extension-preferences.json
+*.imscc
