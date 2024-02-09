@@ -25,25 +25,26 @@ public class CreateCourse extends Operation {
 
     @Override
     protected void _execute(WebDriver driver) {
-
-        WebElement coursesSidebarLink = driver.findElement(By.id(config.getString("coursesSidebarLinkId", "global_nav_courses_link")));
+        WebElement coursesSidebarLink = findElement(driver, By.id("global_nav_courses_link"));
         coursesSidebarLink.click();
 
-        WebElement allCoursesLink = driver.findElement(By.linkText(config.getString("allCoursesLinkText", "All Courses")));
+        WebElement allCoursesLink = findElement(driver, By.linkText("All Courses"));
         allCoursesLink.click();
 
-        WebElement openCreateCourseModalButton = driver.findElement(By.id(config.getString("openCreateCourseModalButtonId", "start_new_course")));
+        WebElement openCreateCourseModalButton = findElement(driver, By.id("start_new_course"));
         openCreateCourseModalButton.click();
-        openCreateCourseModalButton.click();
-
-        WebElement courseNameField = driver.findElement(By.id(config.getString("courseNameField", "course_name")));
+        try{
+            openCreateCourseModalButton.click();
+        }catch (Exception e){
+            log.warn("double click warning");
+        }
+        WebElement courseNameField = findElement(driver, By.id("course_name"));
         courseNameField.sendKeys(course.getName());
 
-        WebElement createCourseButton = driver.findElement(By.xpath(config.getString("createCourseButtonXpath", "//span[contains(.,'Create course')]")));
+        WebElement createCourseButton = findElement(driver, By.xpath("//span[contains(.,'Create course')]"));
         createCourseButton.click();
 
-        WebElement newModuleButton = driver.findElement(By.xpath(config.getString("newModuleButtonXpath", "//div[@id='course_home_content']/div[3]/div/div/button[2]")));
-        explicitlyWaitUntil(driver, 5, d->newModuleButton.isDisplayed());
+        WebElement newModuleButton = findElement(driver, By.xpath("//div[@id='course_home_content']/div[3]/div/div/button[2]"));
 
         course.setCoursePageUrl(driver.getCurrentUrl());
     }

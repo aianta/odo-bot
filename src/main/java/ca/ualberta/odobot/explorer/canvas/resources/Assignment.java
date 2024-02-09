@@ -6,6 +6,16 @@ public class Assignment extends BaseResource{
 
     private String body;
 
+    private String assignmentPageUrl;
+
+    public String getAssignmentPageUrl() {
+        return assignmentPageUrl;
+    }
+
+    public void setAssignmentPageUrl(String assignmentPageUrl) {
+        this.assignmentPageUrl = assignmentPageUrl;
+    }
+
     public String getName() {
         return name;
     }

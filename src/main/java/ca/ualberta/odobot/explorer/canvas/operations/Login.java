@@ -7,6 +7,7 @@ import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import static ca.ualberta.odobot.explorer.WebDriverUtils.*;
 
 public class Login extends Operation {
 
@@ -28,13 +29,13 @@ public class Login extends Operation {
             driver.get(config.getString("startingUrl"));
         }
 
-        WebElement usernameField = driver.findElement(By.id(config.getString("usernameFieldId", "pseudonym_session_unique_id")));
+        WebElement usernameField = findElement(driver, By.id("pseudonym_session_unique_id"));
         usernameField.sendKeys(config.getString("username"));
 
-        WebElement passwordField = driver.findElement(By.id(config.getString("passwordFieldId", "pseudonym_session_password")));
+        WebElement passwordField = findElement(driver, By.id("pseudonym_session_password"));
         passwordField.sendKeys(config.getString("password"));
 
-        WebElement loginButton = driver.findElement(By.xpath(config.getString("loginButtonXpath", "//form[@id='login_form']/div[3]/div[2]/button")));
+        WebElement loginButton = findElement(driver, By.xpath("//form[@id='login_form']/div[3]/div[2]/button"));
         loginButton.click();
 
 

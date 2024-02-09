@@ -23,12 +23,10 @@ public class Logout extends Operation {
     protected void _execute(WebDriver driver) {
 
         try{
-            WebElement profileNavLink = driver.findElement(By.xpath(config.getString("profileNavLinkXpath", "//button[contains(.,'Logout')]")));
+            WebElement profileNavLink = findElement(driver, By.xpath("//button[@id='global_nav_profile_link']/div"));
             profileNavLink.click();
 
-            WebElement logoutButton = driver.findElement(By.xpath(config.getString("logoutButtonXpath", "//button[contains(.,'Logout')]")));
-            explicitlyWaitUntil(driver, 3, d->logoutButton.isDisplayed());
-
+            WebElement logoutButton = findElement(driver, By.xpath("//button[contains(.,'Logout')]"));
             logoutButton.click();
 
 

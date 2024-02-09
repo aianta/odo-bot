@@ -26,7 +26,7 @@ public class CreateQuiz extends Operation {
         this.course = course;
         this.quiz = quiz;
 
-        this.navigateToCoursePage.addPath(this::navOption2);
+        this.navigateToCoursePage.addPath(d->navigateToCoursePage1(d, course));
         this.navigateToCoursePage.setFallback(driver->driver.get(course.getCoursePageUrl()));
     }
 
@@ -35,23 +35,19 @@ public class CreateQuiz extends Operation {
 
         navigateToCoursePage.getPath().accept(driver);
 
-        WebElement quizzesSectionLink = driver.findElement(By.linkText(config.getString("quizzesSectionLinkText", "Quizzes")));
+        WebElement quizzesSectionLink = findElement(driver, By.linkText("Quizzes"));
         quizzesSectionLink.click();
 
-        explicitlyWait(driver, 3);
-
-        WebElement newQuizButton = driver.findElement(By.xpath(config.getString("newQuizButtonXpath", "//div[@id='content']/div/div[2]/form/button")));
-        explicitlyWaitUntil(driver, 5, d->newQuizButton.isDisplayed());
+        WebElement newQuizButton = findElement(driver, By.xpath("//div[@id='content']/div/div[2]/form/button"));
         newQuizButton.click();
 
-
-        WebElement quizTitleField = driver.findElement(By.id(config.getString("quizTitleFieldId", "quiz_title")));
+        WebElement quizTitleField = findElement(driver, By.id("quiz_title"));
         quizTitleField.clear();
         quizTitleField.sendKeys(quiz.getName());
 
         quiz.setQuizEditPageUrl(driver.getCurrentUrl());
 
-        explicitlyWait(driver, 3);
+        explicitlyWait(driver, 2);
 
         /**
          * Here we have to add content into a tinyMCE iframe
@@ -59,25 +55,13 @@ public class CreateQuiz extends Operation {
          */
         ((JavascriptExecutor)driver).executeScript("tinyMCE.activeEditor.setContent('"+quiz.getBody()+"')");
 
-
-        WebElement saveQuizButton = driver.findElement(By.xpath(config.getString("saveQuizButtonXpath",  "//div[@id='quiz_edit_actions']/div/div[2]/button[2]")));
+        WebElement saveQuizButton = findElement(driver, By.xpath("//div[@id='quiz_edit_actions']/div/div[2]/button[2]"));
         saveQuizButton.click();
 
-        explicitlyWait(driver, 3);
+        explicitlyWait(driver, 2);
 
         quiz.setQuizPageUrl(driver.getCurrentUrl());
 
     }
 
-    /**
-     * Navigate to the corresponding course page by going through the course list in the global nav sidebar.
-     * @param driver
-     */
-    private void navOption2(WebDriver driver){
-        WebElement coursesSidebarLink = driver.findElement(By.id(config.getString("coursesSidebarLinkId", "global_nav_courses_link")));
-        coursesSidebarLink.click();
-
-        WebElement courseLink = driver.findElement(By.linkText(course.getName()));
-        courseLink.click();
-    }
 }

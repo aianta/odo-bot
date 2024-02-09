@@ -147,7 +147,7 @@ public class ResourceManager {
 
         log.info(result.contents());
 
-        return null;
+        return result;
     }
 
     private static CourseResources loadAssignments(File courseContentDir, CourseResources resources){

@@ -40,29 +40,25 @@ public class CreatePage extends Operation{
         //Navigate to the pages screen
         navigateToPagesSection.getPath().accept(driver);
 
-        explicitlyWait(driver, 1);
 
         //Click the new page button
-        WebElement newPageButton = driver.findElement(By.xpath("//div/div/div/div/div/a"));
-        explicitlyWaitUntil(driver,30, d->ExpectedConditions.elementToBeClickable(newPageButton));
+        WebElement newPageButton = findElement(driver, By.xpath("//div/div/div/div/div/a"));
         newPageButton.click();
 
         //Enter the page title
-        WebElement pageTitleField = driver.findElement(By.id("title"));
+        WebElement pageTitleField = findElement(driver, By.id("title"));
         pageTitleField.sendKeys(page.getTitle());
 
         //Enter the page body
         ((JavascriptExecutor)driver).executeScript("tinyMCE.activeEditor.setContent('"+page.getBody()+"')");
 
         //Click the save page button
-        WebElement savePageButton = driver.findElement(By.className("submit"));
+        WebElement savePageButton = findElement(driver, By.className("submit"));
         savePageButton.click();
 
-        explicitlyWait(driver, 1);
 
         //Find the page title element that will show up once the page has been successfully saved.
-        WebElement pageTitle = driver.findElement(By.className("page-title"));
-        explicitlyWaitUntil(driver, 30, d->ExpectedConditions.visibilityOf(pageTitle));
+        findElement(driver, By.className("page-title"));
 
         page.setPageUrl(driver.getCurrentUrl());
 
@@ -71,12 +67,7 @@ public class CreatePage extends Operation{
 
     private void navOption1(WebDriver driver){
 
-        WebElement coursesSidebarLink = driver.findElement(By.id("global_nav_courses_link"));
-        explicitlyWaitUntil(driver, 30, d-> ExpectedConditions.visibilityOf(coursesSidebarLink));
-        coursesSidebarLink.click();
-
-        WebElement courseLink = driver.findElement(By.linkText(course.getName()));
-        courseLink.click();
+        navigateToCoursePage1(driver, course);
 
         WebElement pagesSectionLink = driver.findElement(By.linkText("Pages"));
         pagesSectionLink.click();

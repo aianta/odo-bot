@@ -56,42 +56,34 @@ public class CreateQuizQuestion extends Operation {
 
 
         //Now we're on the edit page for the quiz, so we have to click the questions tab.
-        WebElement questionsTab = driver.findElement(By.xpath("//a[contains(@href, '#questions_tab')]"));
-        explicitlyWaitUntil(driver, 30, d-> ExpectedConditions.elementToBeClickable(questionsTab));
+        WebElement questionsTab = findElement(driver, By.xpath("//a[contains(@href, '#questions_tab')]"));
         questionsTab.click();
         questionsTab.click();
-        explicitlyWait(driver, 4);
+        explicitlyWait(driver, 3);
 
         //Get the questionId set before adding a new question
         Set<Integer> oldQuestionIds = getQuestionIdsOnPage(driver);
 
 
         //Then we click the add a new question button
-        WebElement newQuestionButton = driver.findElement(By.cssSelector(".add_question_link:nth-child(1)"));
-        explicitlyWaitUntil(driver,30, d->
-                ExpectedConditions.and(
-                        ExpectedConditions.elementToBeClickable(newQuestionButton),
-                        ExpectedConditions.visibilityOf(newQuestionButton)
-                ));
-        click(driver, newQuestionButton);
-
+        WebElement newQuestionButton = findElement(driver, By.cssSelector(".add_question_link:nth-child(1)"));
+        newQuestionButton.click();
 
         //Then we fill in the question name if on was specified.
         if(question.getName() != null){
-            WebElement questionNameField = driver.findElement(By.name("question_name"));
-            explicitlyWaitUntil(driver, 30, d->ExpectedConditions.elementToBeClickable(questionNameField));
+            WebElement questionNameField = findElement(driver, By.name("question_name"));
             questionNameField.clear();
             questionNameField.sendKeys(question.getName());
         }
 
         //Then we configure the type of the question by selecting the question type drop down and selecting the correct option.
-        WebElement questionTypeSelection = driver.findElement(By.name("question_type"));
-        explicitlyWaitUntil(driver, 30, d->ExpectedConditions.elementToBeClickable(questionTypeSelection));
+        WebElement questionTypeSelection = findElement(driver, By.name("question_type"));
         questionTypeSelection.click();
 
-        WebElement questionTypeOption = driver.findElement(By.xpath("//option[@value='"+question.getType().optionValue+"']"));
+        WebElement questionTypeOption = findElement(driver, By.xpath("//option[@value='"+question.getType().optionValue+"']"));
         questionTypeOption.click();
 
+        explicitlyWait(driver, 2);
         /**
          *   Then we can fill in the question body itself.
          *   Here we have to add content into a tinyMCE iframe
@@ -109,7 +101,7 @@ public class CreateQuizQuestion extends Operation {
 //        }
 
         //Then we click 'update question'
-        WebElement updateQuestionButton = driver.findElement(By.xpath("//button[contains(.,'Update Question')]"));
+        WebElement updateQuestionButton = findElement(driver, By.xpath("//button[contains(.,'Update Question')]"));
         updateQuestionButton.click();
 
 
@@ -137,9 +129,8 @@ public class CreateQuizQuestion extends Operation {
      */
     private void navOption1(WebDriver driver){
         navigateToQuizzesSection(driver);
-        explicitlyWait(driver, 2);
-        WebElement quizPageLink = driver.findElement(By.xpath("//a[@href='"+quiz.getQuizPageUrl()+"']"));
-        explicitlyWaitUntil(driver,30, d->ExpectedConditions.elementToBeClickable(quizPageLink));
+
+        WebElement quizPageLink = findElement(driver, By.xpath("//a[@href='"+quiz.getQuizPageUrl()+"']"));
         quizPageLink.click();
 
         clickEditQuizButton(driver);
@@ -153,10 +144,10 @@ public class CreateQuizQuestion extends Operation {
     private void navOption2(WebDriver driver){
         navigateToQuizzesSection(driver);
 
-        WebElement quickActionDropDownMenu = driver.findElement(By.xpath("//div[@id='summary_quiz_"+quiz.getId()+"']/div/div[3]/div/button/i"));
+        WebElement quickActionDropDownMenu = findElement(driver, By.xpath("//div[@id='summary_quiz_"+quiz.getId()+"']/div/div[3]/div/button/i"));
         quickActionDropDownMenu.click();
 
-        WebElement quickActionEditButton = driver.findElement(By.xpath("//a[@href='"+quiz.getQuizEditPageUrl()+"']"));
+        WebElement quickActionEditButton = findElement(driver, By.xpath("//a[@href='\"+quiz.getQuizEditPageUrl()+\"']"));
         quickActionEditButton.click();
 
     }
@@ -166,29 +157,15 @@ public class CreateQuizQuestion extends Operation {
      * @param driver
      */
     private void navigateToQuizzesSection(WebDriver driver){
-        WebElement coursesSidebarLink = driver.findElement(By.id("global_nav_courses_link"));
-        explicitlyWaitUntil(driver, 5, d->ExpectedConditions.visibilityOf(coursesSidebarLink));
-        coursesSidebarLink.click();
+        navigateToCoursePage1(driver, course);
 
-        WebElement courseLink = driver.findElement(By.linkText(course.getName()));
-        courseLink.click();
-
-        WebElement quizzesSectionLink = driver.findElement(By.linkText("Quizzes"));
+        WebElement quizzesSectionLink = findElement(driver, By.linkText("Quizzes"));
         quizzesSectionLink.click();
     }
 
     private void clickEditQuizButton(WebDriver driver){
-        WebElement editQuizButton = driver.findElement(By.className("edit_assignment_link"));
+        WebElement editQuizButton = findElement(driver, By.className("edit_assignment_link"));
         editQuizButton.click();
-    }
-
-    private void click(WebDriver driver, WebElement element){
-        try{
-            element.click();
-        }catch (ElementNotInteractableException e){
-            explicitlyWait(driver, 3);
-            click(driver, element);
-        }
     }
 
     private Set<Integer> getQuestionIdsOnPage(WebDriver driver){

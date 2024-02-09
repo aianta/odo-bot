@@ -105,6 +105,10 @@ public class ExploreTask implements Runnable{
         page.setTitle("Dummy Page");
         page.setBody("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Praesent accumsan varius volutpat. Phasellus nisl enim, molestie a ligula id, tempor iaculis nisi.");
 
+        Assignment assignment = new Assignment();
+        assignment.setName("Assignment 1");
+        assignment.setBody("<b>WOAH</b>");
+
         toDo = new ToDo();
         toDo.add(new Login(new JsonObject()
                 .put("username", "ianta@ualberta.ca")
@@ -118,6 +122,7 @@ public class ExploreTask implements Runnable{
         toDo.add(new CreateQuiz(new JsonObject(), course, quiz));
         toDo.add(new CreateQuizQuestion(new JsonObject(), course, quiz, question));
         toDo.add(new CreatePage(new JsonObject(), course, page));
+        toDo.add(new CreateAssignment(new JsonObject(), course, assignment));
     }
 
     @Override

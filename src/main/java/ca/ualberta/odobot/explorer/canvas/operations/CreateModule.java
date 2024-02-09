@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.explorer.canvas.operations;
 
+import ca.ualberta.odobot.explorer.WebDriverUtils;
 import ca.ualberta.odobot.explorer.canvas.resources.Course;
 import ca.ualberta.odobot.explorer.canvas.resources.Module;
 import ca.ualberta.odobot.explorer.model.MultiPath;
@@ -26,9 +27,9 @@ public class CreateModule extends Operation {
         this.course = course;
         this.module = module;
 
-        navigateToCoursePage.addPath(this::navOption2);
-        navigateToCoursePage.addPath(this::navOption1);
-        navigateToCoursePage.setFallback(this::navOption1);
+        navigateToCoursePage.addPath(d->navigateToCoursePage1(d, course));
+        navigateToCoursePage.addPath(d->navigateToCoursePage2(d, course));
+        navigateToCoursePage.setFallback(d->d.get(course.getCoursePageUrl()));
     }
 
     @Override
@@ -36,51 +37,24 @@ public class CreateModule extends Operation {
 
         navigateToCoursePage.getPath().accept(driver);
 
-        WebElement addModuleLink = driver.findElement(By.className(config.getString("addModuleLinkCSSClass", "add_module_link")));
+        WebElement addModuleLink = findElement(driver, By.className("add_module_link"));
         addModuleLink.click();
-        addModuleLink.click();
-
-        WebElement moduleNameField = driver.findElement(By.id(config.getString("moduleNameFieldId", "context_module_name")));
+        try{
+            addModuleLink.click();
+        }catch (Exception e){
+            log.warn("double click warning");
+        }
+        WebElement moduleNameField = findElement(driver, By.id("context_module_name"));
         moduleNameField.sendKeys(module.getName());
 
-        WebElement addModuleButton = driver.findElement(By.xpath(config.getString("addModuleButtonXpath", "//button[contains(.,'Add Module')]")));
+        WebElement addModuleButton = findElement(driver, By.xpath("//button[contains(.,'Add Module')]"));
         addModuleButton.click();
 
-        WebElement moduleSpan = driver.findElement(By.xpath("//span[contains(.,' "+module.getName()+"')]"));
-        explicitlyWaitUntil(driver, 5, d->moduleSpan.isDisplayed());
+        findElement(driver, By.xpath("//span[contains(.,' "+module.getName()+"')]"));
 
     }
 
-    /**
-     * Navigate to the corresponding course page by directly getting the course url.
-     * @param driver
-     */
-    private void navOption1(WebDriver driver){
-        driver.get(course.getCoursePageUrl());
-    }
 
-    /**
-     * Navigate to the corresponding course page by going through the course list in the global nav sidebar.
-     * @param driver
-     */
-    private void navOption2(WebDriver driver){
-        WebElement coursesSidebarLink = driver.findElement(By.id(config.getString("coursesSidebarLinkId", "global_nav_courses_link")));
-        coursesSidebarLink.click();
-
-        WebElement courseLink = driver.findElement(By.linkText(course.getName()));
-        courseLink.click();
-    }
-
-    /**
-     * Navigate to the corresponding course page by going through the dashboard.
-     * @param driver
-     */
-    private void navOption3(WebDriver driver){
-        WebElement dashboardLink = driver.findElement(By.id(config.getString("dashboardSidebarLinkId", "global_nav_dashboard_link")));
-        dashboardLink.click();
-
-        //WebElement courseCardLink = driver.findElement(By.xpath());
-    }
 
 
 }
