@@ -10,21 +10,35 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import static ca.ualberta.odobot.explorer.WebDriverUtils.*;
 
-public class CreateCourse extends Operation {
+public class CourseOperations {
 
-    private static final Logger log = LoggerFactory.getLogger(CreateCourse.class);
+    private static final Logger log = LoggerFactory.getLogger(CourseOperations.class);
 
     private Course course;
 
-    public CreateCourse(JsonObject config, Course course) {
-        super(config);
-        type = OperationType.CREATE;
-        resource = Course.class;
+    public CourseOperations( Course course) {
         this.course = course;
     }
 
-    @Override
-    protected void _execute(WebDriver driver) {
+    public void delete(WebDriver driver){
+        //Go to the course page
+        driver.get(course.getCoursePageUrl());
+
+        //Go to the settings section
+        WebElement settingsLink = findElement(driver, By.linkText("Settings"));
+        settingsLink.click();
+
+        //Click the delete button
+        WebElement deleteCourseLink = findElement(driver, By.linkText("Delete this Course"));
+        deleteCourseLink.click();
+
+        //Confirm deletion by clicking delete course button
+        WebElement confirmDeleteButton = findElement(driver, By.xpath("//button[contains(.,'Delete Course')]"));
+        confirmDeleteButton.click();
+
+    }
+
+    public void create(WebDriver driver) {
         WebElement coursesSidebarLink = findElement(driver, By.id("global_nav_courses_link"));
         coursesSidebarLink.click();
 

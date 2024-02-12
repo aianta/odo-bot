@@ -17,3 +17,4 @@ crawljax_out
 *.lnk
 !firefox_profile/extension-preferences.json
 *.imscc
+*.db-journal

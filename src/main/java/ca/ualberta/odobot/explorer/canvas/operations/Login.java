@@ -9,31 +9,35 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import static ca.ualberta.odobot.explorer.WebDriverUtils.*;
 
-public class Login extends Operation {
+public class Login {
 
     private static final Logger log = LoggerFactory.getLogger(Login.class);
 
-    public Login(JsonObject config) {
-        super(config);
-        type = OperationType.INTRANSITIVE;
+    private String username;
+    private String password;
+    private String startingUrl;
+
+    public Login(String startingUrl, String username, String password) {
+        this.startingUrl = startingUrl;
+        this.username = username;
+        this.password = password;
     }
 
-    @Override
-    protected void _execute(WebDriver driver) {
+    public void login(WebDriver driver) {
 
         log.info("Current URL: {}", driver.getCurrentUrl());
 
         //If we're not on the login page
-        if(!driver.getCurrentUrl().equals(config.getString("startingUrl"))){
+        if(!driver.getCurrentUrl().equals(startingUrl)){
             //Navigate to login page
-            driver.get(config.getString("startingUrl"));
+            driver.get(startingUrl);
         }
 
         WebElement usernameField = findElement(driver, By.id("pseudonym_session_unique_id"));
-        usernameField.sendKeys(config.getString("username"));
+        usernameField.sendKeys(username);
 
         WebElement passwordField = findElement(driver, By.id("pseudonym_session_password"));
-        passwordField.sendKeys(config.getString("password"));
+        passwordField.sendKeys(password);
 
         WebElement loginButton = findElement(driver, By.xpath("//form[@id='login_form']/div[3]/div[2]/button"));
         loginButton.click();

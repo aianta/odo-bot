@@ -10,16 +10,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import static ca.ualberta.odobot.explorer.WebDriverUtils.*;
 
-public class Logout extends Operation {
+public class Logout  {
 
     private static final Logger log = LoggerFactory.getLogger(Logout.class);
 
-    public Logout(JsonObject config) {
-        super(config);
-        type = OperationType.INTRANSITIVE;
-    }
 
-    @Override
+
+
     protected void _execute(WebDriver driver) {
 
         try{

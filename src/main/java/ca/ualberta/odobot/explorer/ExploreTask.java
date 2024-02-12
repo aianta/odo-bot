@@ -3,32 +3,17 @@ package ca.ualberta.odobot.explorer;
 import ca.ualberta.odobot.explorer.canvas.operations.*;
 import ca.ualberta.odobot.explorer.canvas.resources.*;
 import ca.ualberta.odobot.explorer.canvas.resources.Module;
+import ca.ualberta.odobot.explorer.model.Operation;
 import ca.ualberta.odobot.explorer.model.ToDo;
-import com.crawljax.core.CrawljaxRunner;
-import com.crawljax.core.configuration.CrawljaxConfiguration;
 import io.vertx.core.json.JsonObject;
-import org.apache.commons.logging.Log;
 import org.openqa.selenium.*;
 import org.openqa.selenium.firefox.*;
-import org.openqa.selenium.logging.LogEntries;
-import org.openqa.selenium.logging.LogEntry;
-import org.openqa.selenium.logging.LogType;
-import org.openqa.selenium.logging.LoggingPreferences;
-import org.openqa.selenium.remote.CapabilityType;
-import org.openqa.selenium.remote.DesiredCapabilities;
-import org.openqa.selenium.support.ui.Wait;
-import org.openqa.selenium.support.ui.WebDriverWait;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
-import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
 import java.util.UUID;
-import java.util.function.Function;
-import java.util.function.Predicate;
-import java.util.logging.Level;
 
 import static ca.ualberta.odobot.explorer.WebDriverUtils.explicitlyWait;
 import static ca.ualberta.odobot.explorer.WebDriverUtils.explicitlyWaitUntil;
@@ -109,20 +94,91 @@ public class ExploreTask implements Runnable{
         assignment.setName("Assignment 1");
         assignment.setBody("<b>WOAH</b>");
 
+        CourseOperations courseOperations = new CourseOperations(course);
+        ModuleOperations moduleOperations = new ModuleOperations(course, module);
+        QuizOperations quizOperations = new QuizOperations(course, quiz);
+        QuizQuestionOperations quizQuestionOperations = new QuizQuestionOperations(course,quiz,question);
+        PageOperations pageOperations = new PageOperations(course,page);
+        AssignmentOperations assignmentOperations = new AssignmentOperations(course, assignment);
+
+        Login login = new Login("http://localhost:8088/login/canvas", "ianta@ualberta.ca", config.getString(ExploreRequestFields.ODOSIGHT_OPTIONS_LOGUI_PASSWORD.field) );
+        Operation loginOperation = new Operation( Operation.OperationType.INTRANSITIVE);
+        loginOperation.setExecuteMethod(login::login);
+
         toDo = new ToDo();
-        toDo.add(new Login(new JsonObject()
-                .put("username", "ianta@ualberta.ca")
-                //TODO figure out how to configure an explore request properly.
-                .put("password", config.getString(ExploreRequestFields.ODOSIGHT_OPTIONS_LOGUI_PASSWORD.field))
-                .put("startingUrl", "http://localhost:8088/login/canvas")
-                )
-        );
-        toDo.add(new CreateCourse(new JsonObject(), course));
-        toDo.add(new CreateModule(new JsonObject(), course, module));
-        toDo.add(new CreateQuiz(new JsonObject(), course, quiz));
-        toDo.add(new CreateQuizQuestion(new JsonObject(), course, quiz, question));
-        toDo.add(new CreatePage(new JsonObject(), course, page));
-        toDo.add(new CreateAssignment(new JsonObject(), course, assignment));
+        toDo.add(loginOperation);
+
+        Operation createCourse = new Operation( Operation.OperationType.CREATE, Course.class);
+        createCourse.setExecuteMethod(courseOperations::create);
+
+        Operation createModule = new Operation( Operation.OperationType.CREATE, Module.class);
+        createModule.setExecuteMethod(moduleOperations::create);
+
+        Operation createQuiz = new Operation( Operation.OperationType.CREATE, Quiz.class);
+        createQuiz.setExecuteMethod(quizOperations::create);
+
+        Operation createQuizQuestion = new Operation( Operation.OperationType.CREATE, QuizQuestion.class);
+        createQuizQuestion.setExecuteMethod(quizQuestionOperations::create);
+
+        Operation createAssignment = new Operation( Operation.OperationType.CREATE, Assignment.class);
+        createAssignment.setExecuteMethod(assignmentOperations::create);
+
+        Operation createPage = new Operation( Operation.OperationType.CREATE, Page.class);
+        createPage.setExecuteMethod(pageOperations::create);
+
+        toDo.add(createCourse);
+        toDo.add(createModule);
+        toDo.add(createQuiz);
+        toDo.add(createQuizQuestion);
+        toDo.add(createAssignment);
+        toDo.add(createPage);
+
+        Operation editPage = new Operation(Operation.OperationType.EDIT, Page.class);
+        editPage.setExecuteMethod(pageOperations::edit);
+
+        Operation editAssignment = new Operation(Operation.OperationType.EDIT, Assignment.class);
+        editAssignment.setExecuteMethod(assignmentOperations::edit);
+
+        Operation editQuiz = new Operation(Operation.OperationType.EDIT, Quiz.class);
+        editQuiz.setExecuteMethod(quizOperations::edit);
+
+        Operation editQuizQuestion = new Operation(Operation.OperationType.EDIT, Quiz.class);
+        editQuizQuestion.setExecuteMethod(quizQuestionOperations::edit);
+
+        Operation editModule = new Operation(Operation.OperationType.EDIT, Module.class);
+        editModule.setExecuteMethod(moduleOperations::edit);
+
+        toDo.add(editPage);
+        toDo.add(editAssignment);
+        toDo.add(editQuizQuestion);
+        toDo.add(editQuiz);
+        toDo.add(editModule);
+
+        Operation deletePage = new Operation(Operation.OperationType.DELETE, Page.class);
+        deletePage.setExecuteMethod(pageOperations::delete);
+
+        Operation deleteAssignment = new Operation(Operation.OperationType.DELETE, Assignment.class);
+        deleteAssignment.setExecuteMethod(assignmentOperations::delete);
+
+        Operation deleteQuizQuestion = new Operation(Operation.OperationType.DELETE, QuizQuestion.class);
+        deleteQuizQuestion.setExecuteMethod(quizQuestionOperations::delete);
+
+        Operation deleteQuiz = new Operation(Operation.OperationType.DELETE, Quiz.class);
+        deleteQuiz.setExecuteMethod(quizOperations::delete);
+
+        Operation deleteModule = new Operation(Operation.OperationType.DELETE, Module.class);
+        deleteModule.setExecuteMethod(moduleOperations::delete);
+
+        Operation deleteCourse = new Operation(Operation.OperationType.DELETE, Course.class);
+        deleteCourse.setExecuteMethod(courseOperations::delete);
+
+        toDo.add(deletePage);
+        toDo.add(deleteAssignment);
+        toDo.add(deleteQuizQuestion);
+        toDo.add(deleteQuiz);
+        toDo.add(deleteModule);
+        toDo.add(deleteCourse);
+
     }
 
     @Override
@@ -138,15 +194,22 @@ public class ExploreTask implements Runnable{
 
         try{
             //Setup OdoSight
-            //setupOdoSight();
+            setupOdoSight();
 
             //Start the OdoSight recording
-            //startRecording();
+            startRecording();
+
+            Instant start = Instant.now();
 
             toDo.forEach(op->{
                 op.execute(driver);
                 explicitlyWait(driver, 2);
             });
+
+            Instant end = Instant.now();
+            log.info("took {}ms", end.toEpochMilli()-start.toEpochMilli());
+
+            stopRecording();
 
 //            CrawljaxConfiguration.CrawljaxConfigurationBuilder builder = CrawljaxConfiguration.builderFor(config.getString(ExploreRequestFields.WEB_APP_URL.field));
 //            CrawljaxConfiguration crawljaxConfiguration = builder.build();

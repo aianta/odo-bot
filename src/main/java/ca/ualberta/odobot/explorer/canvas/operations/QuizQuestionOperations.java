@@ -7,7 +7,7 @@ import ca.ualberta.odobot.explorer.model.MultiPath;
 import ca.ualberta.odobot.explorer.model.Operation;
 import io.vertx.core.json.JsonObject;
 import org.openqa.selenium.*;
-import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.openqa.selenium.interactions.Actions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -17,18 +17,15 @@ import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.explorer.WebDriverUtils.*;
 
-public class CreateQuizQuestion extends Operation {
-    private static final Logger log = LoggerFactory.getLogger(CreateQuizQuestion.class);
+public class QuizQuestionOperations {
+    private static final Logger log = LoggerFactory.getLogger(QuizQuestionOperations.class);
 
     private Course course;
     private Quiz quiz;
     private QuizQuestion question;
     private MultiPath navigateToQuizEditPage = new MultiPath();
 
-    public CreateQuizQuestion(JsonObject config, Course course, Quiz quiz, QuizQuestion question) {
-        super(config);
-        type = OperationType.CREATE;
-        resource = QuizQuestion.class;
+    public QuizQuestionOperations( Course course, Quiz quiz, QuizQuestion question) {
 
         this.quiz = quiz;
         this.course = course;
@@ -36,14 +33,82 @@ public class CreateQuizQuestion extends Operation {
 
         //Setup MutliPath(s)
         navigateToQuizEditPage.addPath(this::navOption1);
-        navigateToQuizEditPage.addPath(this::navOption2);
+//        navigateToQuizEditPage.addPath(this::navOption2); Doesn't work
         navigateToQuizEditPage.setFallback(driver->driver.get(quiz.getQuizEditPageUrl()));
 
     }
 
+    public void delete(WebDriver driver){
 
-    @Override
-    protected void _execute(WebDriver driver) {
+        //If we're already on the quiz page, simply click the edit button.
+        if(driver.getCurrentUrl().equals(quiz.getQuizPageUrl())){
+            clickEditQuizButton(driver);
+        }else{
+            //Otherwise hard navigate to the edit quiz page using one of our predefined methods.
+            navigateToQuizEditPage.getPath().accept(driver);
+        }
+
+        //Now we're on the edit page for the quiz, so we have to click the questions tab.
+        WebElement questionsTab = findElement(driver, By.xpath("//a[contains(@href, '#questions_tab')]"));
+        questionsTab.click();
+        questionsTab.click();
+        explicitlyWait(driver, 3);
+
+        //Get the question element so we can hover over it to reveal the edit button
+        WebElement questionElement = findElement(driver, By.id("question_"+ question.getId()));
+
+        Actions action = new Actions(driver);
+        action.moveToElement(questionElement).perform();
+
+        //Click the delete button for this specific quiz question
+        WebElement deleteButton = findElement(driver, By.cssSelector("#question_"+question.getId()+" .icon-end"));
+        deleteButton.click();
+
+
+        String windowHandle = driver.getWindowHandle();
+        //At this point an alert should come up to ask us if we're sure we want to delete the question, so lets accept it.
+        driver.switchTo().alert().accept();
+        driver.switchTo().window(windowHandle); //Move back to window after alert.
+
+    }
+
+    public void edit(WebDriver driver){
+
+        //If we're already on the quiz page, simply click the edit button.
+        if(driver.getCurrentUrl().equals(quiz.getQuizPageUrl())){
+            clickEditQuizButton(driver);
+        }else{
+            //Otherwise hard navigate to the edit quiz page using one of our predefined methods.
+            navigateToQuizEditPage.getPath().accept(driver);
+        }
+
+        //Now we're on the edit page for the quiz, so we have to click the questions tab.
+        WebElement questionsTab = findElement(driver, By.xpath("//a[contains(@href, '#questions_tab')]"));
+        questionsTab.click();
+        questionsTab.click();
+        explicitlyWait(driver, 3);
+
+        //Get the question element so we can hover over it to reveal the edit button
+        WebElement questionElement = findElement(driver, By.id("question_"+ question.getId()));
+
+        Actions action = new Actions(driver);
+        action.moveToElement(questionElement).perform();
+
+        //Click the edit button for this specific quiz question
+        WebElement editButton = findElement(driver, By.cssSelector("#question_"+question.getId()+" .icon-edit"));
+        editButton.click();
+
+        //Update the question content
+        ((JavascriptExecutor)driver).executeScript("tinymce.EditorManager.get('question_content_0').setContent('" + question.makeEdit(question.getBody()) + "')");
+
+        //Click the update question button
+        WebElement updateButton = findElement(driver, By.xpath("//button[contains(.,'Update Question')]"));
+        updateButton.click();
+
+
+    }
+
+    public void create(WebDriver driver) {
 
         //If we're already on the quiz page, simply click the edit button.
         if(driver.getCurrentUrl().equals(quiz.getQuizPageUrl())){
@@ -143,6 +208,8 @@ public class CreateQuizQuestion extends Operation {
      */
     private void navOption2(WebDriver driver){
         navigateToQuizzesSection(driver);
+
+        explicitlyWait(driver, 2);
 
         WebElement quickActionDropDownMenu = findElement(driver, By.xpath("//div[@id='summary_quiz_"+quiz.getId()+"']/div/div[3]/div/button/i"));
         quickActionDropDownMenu.click();

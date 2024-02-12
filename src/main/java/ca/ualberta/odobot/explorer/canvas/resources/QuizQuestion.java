@@ -1,6 +1,6 @@
 package ca.ualberta.odobot.explorer.canvas.resources;
 
-public class QuizQuestion {
+public class QuizQuestion extends BaseResource{
 
     private String name;
 
