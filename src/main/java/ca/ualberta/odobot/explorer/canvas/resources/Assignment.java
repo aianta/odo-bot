@@ -1,5 +1,7 @@
 package ca.ualberta.odobot.explorer.canvas.resources;
 
+import io.vertx.core.json.JsonObject;
+
 public class Assignment extends BaseResource{
 
     private String name;
@@ -30,5 +32,22 @@ public class Assignment extends BaseResource{
 
     public void setBody(String body) {
         this.body = body;
+    }
+
+    @Override
+    public JsonObject getRuntimeData() {
+        JsonObject result = new JsonObject();
+
+        if(getAssignmentPageUrl() != null){
+            result.put("assignmentPageUrl", getAssignmentPageUrl());
+        }
+        return result;
+    }
+
+    @Override
+    public void setRuntimeData(JsonObject data) {
+        if(data.containsKey("assignmentPageUrl")){
+            setAssignmentPageUrl(data.getString("assignmentPageUrl"));
+        }
     }
 }

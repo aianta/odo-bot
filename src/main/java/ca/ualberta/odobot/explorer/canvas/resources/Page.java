@@ -1,5 +1,7 @@
 package ca.ualberta.odobot.explorer.canvas.resources;
 
+import io.vertx.core.json.JsonObject;
+
 public class Page extends BaseResource{
 
     private String title;
@@ -31,5 +33,21 @@ public class Page extends BaseResource{
 
     public void setTitle(String title) {
         this.title = title;
+    }
+
+    @Override
+    public JsonObject getRuntimeData() {
+        JsonObject result = new JsonObject();
+        if(getPageUrl() != null){
+            result.put("pageUrl", getPageUrl());
+        }
+        return result;
+    }
+
+    @Override
+    public void setRuntimeData(JsonObject data) {
+        if(data.containsKey("pageUrl")){
+            setPageUrl(data.getString("pageUrl"));
+        }
     }
 }

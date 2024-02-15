@@ -99,7 +99,7 @@ public class QuizQuestionOperations {
         editButton.click();
 
         //Update the question content
-        ((JavascriptExecutor)driver).executeScript("tinymce.EditorManager.get('question_content_0').setContent('" + question.makeEdit(question.getBody()) + "')");
+        ((JavascriptExecutor)driver).executeScript("tinymce.EditorManager.get('question_content_0').setContent(`" + question.makeEdit(question.getBody()) + "`)");
 
         //Click the update question button
         WebElement updateButton = findElement(driver, By.xpath("//button[contains(.,'Update Question')]"));
@@ -155,7 +155,7 @@ public class QuizQuestionOperations {
          *   https://stackoverflow.com/questions/21713345/cant-sendkeys-to-tinymce-with-selenium-webdriver
          *   TODO: Keep an eye on this, it's unclear to me if 'question_content_0' will always be the correct editor
          */
-        ((JavascriptExecutor)driver).executeScript("tinymce.EditorManager.get('question_content_0').setContent('"+question.getBody()+"')");
+        ((JavascriptExecutor)driver).executeScript("tinymce.EditorManager.get('question_content_0').setContent(`"+question.getBody()+"`)");
 
 
         //Now we handle questionType specific concerns.

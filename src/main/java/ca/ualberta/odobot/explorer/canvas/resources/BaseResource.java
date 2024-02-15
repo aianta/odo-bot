@@ -1,5 +1,7 @@
 package ca.ualberta.odobot.explorer.canvas.resources;
 
+import io.vertx.core.json.JsonObject;
+
 import java.util.Random;
 
 public abstract class BaseResource {
@@ -32,4 +34,8 @@ public abstract class BaseResource {
         }
         return result;
     }
+
+    public abstract JsonObject getRuntimeData();
+
+    public abstract void setRuntimeData(JsonObject data);
 }

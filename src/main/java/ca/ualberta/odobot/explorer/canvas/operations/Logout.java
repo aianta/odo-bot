@@ -17,7 +17,7 @@ public class Logout  {
 
 
 
-    protected void _execute(WebDriver driver) {
+    public void logout(WebDriver driver) {
 
         try{
             WebElement profileNavLink = findElement(driver, By.xpath("//button[@id='global_nav_profile_link']/div"));

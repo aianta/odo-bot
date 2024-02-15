@@ -2,6 +2,7 @@ package ca.ualberta.odobot.explorer;
 
 import io.reactivex.rxjava3.core.Completable;
 
+import io.vertx.core.Promise;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.JsonObject;
@@ -54,6 +55,8 @@ public class ExplorerVerticle extends AbstractVerticle {
 
             api.route(HttpMethod.POST, "/explore").handler(this::exploreValidationHandler);
             api.route(HttpMethod.POST, "/explore").handler(this::exploreHandler);
+            api.route(HttpMethod.POST, "/plan").handler(this::planValidationHandler);
+            api.route(HttpMethod.POST, "/plan").handler(this::planHandler);
 
             mainRouter.route().handler(LoggerHandler.create());
             mainRouter.route().handler(BodyHandler.create());
@@ -79,7 +82,7 @@ public class ExplorerVerticle extends AbstractVerticle {
         if(rc.body().available()){
             JsonObject config = rc.body().asJsonObject();
 
-            validateFields(rc, config);
+            validateFields(rc, config, ExploreRequestFields.values());
 
             //If routing context wasn't ended during validation, let's proceed.
             if(!rc.response().ended()){
@@ -107,22 +110,58 @@ public class ExplorerVerticle extends AbstractVerticle {
 
     }
 
+    private void planValidationHandler(RoutingContext rc){
+        //TODO - any validation logic that makes sense
+        if(rc.body().available()){
+            JsonObject config = rc.body().asJsonObject();
+
+            validateFields(rc, config, PlanRequestFields.values());
+
+            if(!rc.response().ended()){
+                rc.put("planConfig", config);
+                rc.next();
+                return;
+            }
+        }
+        rc.response().setStatusCode(400).end("Explore request did not contain expected PlanTask configuration in JSON format in the body of the request.");
+
+    }
+
+    private void planHandler(RoutingContext rc){
+
+        JsonObject planConfig = rc.get("planConfig");
+
+        Promise<JsonObject> promise = Promise.promise();
+        promise.future()
+                .onFailure(err->serverError(rc, err))
+                .onSuccess(plan->rc.response().setStatusCode(200).end(plan.encode()));
+
+        PlanTask planTask = new PlanTask(planConfig, promise);
+        Thread thread = new Thread(planTask);
+        thread.start();
+    }
+
+    private void serverError(RoutingContext rc, Throwable err){
+        log.error(err.getMessage(), err);
+        rc.response().setStatusCode(500).end(err.getMessage());
+    }
+
     private void badRequest(RoutingContext rc, String message){
         rc.response().setStatusCode(400).end(message);
     }
 
-    private void validateFields(RoutingContext rc, JsonObject config){
+    private <T extends RequestFields> void validateFields(RoutingContext rc, JsonObject config, T[] fieldsEnum){
 
-        Arrays.stream(ExploreRequestFields.values()).forEach(
+        Arrays.stream(fieldsEnum).forEach(
                 key->{
                     //Check that the fields exist
-                    if(!config.containsKey(key.field)){
-                        badRequest(rc, "Explore request body missing " + key.field + " key.");
+                    if(!config.containsKey(key.field())){
+                        badRequest(rc, "Explore request body missing " + key.field() + " key.");
                     }
 
                     //Check that the string fields aren't blank
-                    if(config.containsKey(key.field) && key.type.equals(String.class) && config.getString(key.field).isBlank()){
-                        badRequest(rc, "Explore request body field "+key.field+" cannot be empty." );
+                    if(config.containsKey(key.field()) && key.type().equals(String.class) && config.getString(key.field()).isBlank()){
+                        badRequest(rc, "Explore request body field "+key.field()+" cannot be empty." );
                     }
                 }
         );

@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.explorer.canvas.resources;
 
+import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -88,5 +89,41 @@ public class Quiz extends BaseResource{
         }
         log.error("Error parsing quiz id from url! Returning id = -1");
         return -1;
+    }
+
+    @Override
+    public JsonObject getRuntimeData() {
+        JsonObject result = new JsonObject();
+
+        if(getQuizPageUrl() != null){
+            result.put("quizPageUrl", getQuizPageUrl());
+        }
+
+        if(getQuizEditPageUrl() != null){
+            result.put("quizEditPageUrl", getQuizEditPageUrl());
+        }
+
+        if(id != -1){
+            result.put("id", id);
+        }
+
+        return result;
+    }
+
+    @Override
+    public void setRuntimeData(JsonObject data) {
+
+        if(data.containsKey("quizPageUrl")){
+            setQuizPageUrl(data.getString("quizPageUrl"));
+        }
+
+        if(data.containsKey("quizEditPageUrl")){
+            setQuizEditPageUrl(data.getString("quizEditPageUrl"));
+        }
+
+        if(data.containsKey("id")){
+            setId(data.getInteger("id"));
+        }
+
     }
 }

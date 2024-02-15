@@ -5,15 +5,28 @@ import ca.ualberta.odobot.explorer.canvas.resources.*;
 import ca.ualberta.odobot.explorer.canvas.resources.Module;
 import ca.ualberta.odobot.explorer.model.Operation;
 import ca.ualberta.odobot.explorer.model.ToDo;
+
+import edu.stanford.nlp.time.Options;
 import io.vertx.core.json.JsonObject;
+import io.vertx.core.json.JsonArray;
 import org.openqa.selenium.*;
 import org.openqa.selenium.firefox.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+
+import java.io.File;
+import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.OpenOption;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.Instant;
-import java.util.UUID;
+import java.util.*;
+import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.explorer.WebDriverUtils.explicitlyWait;
 import static ca.ualberta.odobot.explorer.WebDriverUtils.explicitlyWaitUntil;
@@ -21,6 +34,8 @@ import static ca.ualberta.odobot.explorer.WebDriverUtils.explicitlyWaitUntil;
 public class ExploreTask implements Runnable{
 
     private static final Logger log = LoggerFactory.getLogger(ExploreTask.class);
+
+    private final static Random random = new Random();
 
     /**
      * As specified in OdoSight's manifest.json.
@@ -51,7 +66,19 @@ public class ExploreTask implements Runnable{
     int recordingCount = 0;
     String currentFlight;
 
-    ToDo toDo;
+    /**
+     * Json encoded manifest of all cases to execute. The primaryToDo should be reconstructed from this data.
+     */
+    List<JsonObject> inputManifest;
+
+    Set<UUID> completedOperations = new HashSet<>();
+
+    ToDo primaryToDo = new ToDo();
+
+    Operation loginOperation;
+    Operation logoutOperation;
+
+    List<CourseResources> resourcesList;
 
 
     public ExploreTask(JsonObject config){
@@ -66,118 +93,50 @@ public class ExploreTask implements Runnable{
         this.odoSightControlsUrl = "moz-extension://"+dynamicAddonId.toString()+"/popup/controls.html";
         log.info("OdoSight Options page @ {}", odoSightOptionsUrl);
 
-
-
-        Course course = new Course();
-        course.setName("Dummy Course 2");
-        course.setCoursePageUrl("http://localhost:8088/courses/25");
-
-        Module module = new Module();
-        module.setName("Dummy Module");
-
-        Quiz quiz = new Quiz();
-        quiz.setQuizEditPageUrl("http://localhost:8088/courses/25/quizzes/37/edit");
-        quiz.setQuizPageUrl("http://localhost:8088/courses/25/quizzes/37");
-        quiz.setName("dummy quiz");
-        quiz.setBody("Hmmm, a quiz!");
-
-        QuizQuestion question = new QuizQuestion();
-        question.setName("Question One");
-        question.setType(QuizQuestion.QuestionType.MULTIPLE_CHOICE);
-        question.setBody("What is the value of pi?");
-
-        Page page = new Page();
-        page.setTitle("Dummy Page");
-        page.setBody("Lorem ipsum dolor sit amet, consectetur adipiscing elit. Praesent accumsan varius volutpat. Phasellus nisl enim, molestie a ligula id, tempor iaculis nisi.");
-
-        Assignment assignment = new Assignment();
-        assignment.setName("Assignment 1");
-        assignment.setBody("<b>WOAH</b>");
-
-        CourseOperations courseOperations = new CourseOperations(course);
-        ModuleOperations moduleOperations = new ModuleOperations(course, module);
-        QuizOperations quizOperations = new QuizOperations(course, quiz);
-        QuizQuestionOperations quizQuestionOperations = new QuizQuestionOperations(course,quiz,question);
-        PageOperations pageOperations = new PageOperations(course,page);
-        AssignmentOperations assignmentOperations = new AssignmentOperations(course, assignment);
-
-        Login login = new Login("http://localhost:8088/login/canvas", "ianta@ualberta.ca", config.getString(ExploreRequestFields.ODOSIGHT_OPTIONS_LOGUI_PASSWORD.field) );
-        Operation loginOperation = new Operation( Operation.OperationType.INTRANSITIVE);
+        //Initialize the login operation.
+        Login login = new Login(config.getString(ExploreRequestFields.STARTING_URL.field()), config.getString(ExploreRequestFields.CANVAS_USERNAME.field()), config.getString(ExploreRequestFields.CANVAS_PASSWORD.field()) );
+        loginOperation = new Operation( Operation.OperationType.INTRANSITIVE);
         loginOperation.setExecuteMethod(login::login);
 
-        toDo = new ToDo();
-        toDo.add(loginOperation);
+        //Initialize the logout operation
+        Logout logout = new Logout();
+        logoutOperation = new Operation(Operation.OperationType.INTRANSITIVE);
+        logoutOperation.setExecuteMethod(logout::logout);
 
-        Operation createCourse = new Operation( Operation.OperationType.CREATE, Course.class);
-        createCourse.setExecuteMethod(courseOperations::create);
 
-        Operation createModule = new Operation( Operation.OperationType.CREATE, Module.class);
-        createModule.setExecuteMethod(moduleOperations::create);
+        //Initialize the resources list
+       resourcesList = config.getJsonArray(ExploreRequestFields.COURSES.field()).stream().map(o->(String)o).map(s->ResourceManager.loadCourse(s)).collect(Collectors.toList());
 
-        Operation createQuiz = new Operation( Operation.OperationType.CREATE, Quiz.class);
-        createQuiz.setExecuteMethod(quizOperations::create);
+       //Initalize the input manifest
+       inputManifest = config.getJsonArray(ExploreRequestFields.MANIFEST.field()).stream().map(o->(JsonObject)o).collect(Collectors.toList());
 
-        Operation createQuizQuestion = new Operation( Operation.OperationType.CREATE, QuizQuestion.class);
-        createQuizQuestion.setExecuteMethod(quizQuestionOperations::create);
+       //Construct primaryToDo list.
+       inputManifest.forEach(e->{
+           Operation operation = constructOperation(e);
+           primaryToDo.add(operation);
+           if(operation.isCompleted()){
+               //Keep track of completed operations.
+               completedOperations.add(operation.getId());
+           }
 
-        Operation createAssignment = new Operation( Operation.OperationType.CREATE, Assignment.class);
-        createAssignment.setExecuteMethod(assignmentOperations::create);
+       });
 
-        Operation createPage = new Operation( Operation.OperationType.CREATE, Page.class);
-        createPage.setExecuteMethod(pageOperations::create);
+       log.info("primaryToDo size: {}", primaryToDo.size());
 
-        toDo.add(createCourse);
-        toDo.add(createModule);
-        toDo.add(createQuiz);
-        toDo.add(createQuizQuestion);
-        toDo.add(createAssignment);
-        toDo.add(createPage);
+       //Load progress info if it exists
+        if(config.containsKey("recordingCount")){
+            recordingCount = config.getInteger("recordingCount");
+        }
 
-        Operation editPage = new Operation(Operation.OperationType.EDIT, Page.class);
-        editPage.setExecuteMethod(pageOperations::edit);
+        if(config.containsKey("completedOperations")){
+            JsonArray _completedOperations = config.getJsonArray("completedOperations");
+            completedOperations = _completedOperations.stream().map(s->UUID.fromString((String)s)).collect(Collectors.toSet());
+        }
 
-        Operation editAssignment = new Operation(Operation.OperationType.EDIT, Assignment.class);
-        editAssignment.setExecuteMethod(assignmentOperations::edit);
-
-        Operation editQuiz = new Operation(Operation.OperationType.EDIT, Quiz.class);
-        editQuiz.setExecuteMethod(quizOperations::edit);
-
-        Operation editQuizQuestion = new Operation(Operation.OperationType.EDIT, Quiz.class);
-        editQuizQuestion.setExecuteMethod(quizQuestionOperations::edit);
-
-        Operation editModule = new Operation(Operation.OperationType.EDIT, Module.class);
-        editModule.setExecuteMethod(moduleOperations::edit);
-
-        toDo.add(editPage);
-        toDo.add(editAssignment);
-        toDo.add(editQuizQuestion);
-        toDo.add(editQuiz);
-        toDo.add(editModule);
-
-        Operation deletePage = new Operation(Operation.OperationType.DELETE, Page.class);
-        deletePage.setExecuteMethod(pageOperations::delete);
-
-        Operation deleteAssignment = new Operation(Operation.OperationType.DELETE, Assignment.class);
-        deleteAssignment.setExecuteMethod(assignmentOperations::delete);
-
-        Operation deleteQuizQuestion = new Operation(Operation.OperationType.DELETE, QuizQuestion.class);
-        deleteQuizQuestion.setExecuteMethod(quizQuestionOperations::delete);
-
-        Operation deleteQuiz = new Operation(Operation.OperationType.DELETE, Quiz.class);
-        deleteQuiz.setExecuteMethod(quizOperations::delete);
-
-        Operation deleteModule = new Operation(Operation.OperationType.DELETE, Module.class);
-        deleteModule.setExecuteMethod(moduleOperations::delete);
-
-        Operation deleteCourse = new Operation(Operation.OperationType.DELETE, Course.class);
-        deleteCourse.setExecuteMethod(courseOperations::delete);
-
-        toDo.add(deletePage);
-        toDo.add(deleteAssignment);
-        toDo.add(deleteQuizQuestion);
-        toDo.add(deleteQuiz);
-        toDo.add(deleteModule);
-        toDo.add(deleteCourse);
+        if(config.containsKey("runtimeData")){
+            JsonObject runtimeData = config.getJsonObject("runtimeData");
+            resourcesList.forEach(resources->resources.loadRuntimeData(runtimeData));
+        }
 
     }
 
@@ -193,28 +152,70 @@ public class ExploreTask implements Runnable{
         driver.installExtension(Path.of(config.getString(ExploreRequestFields.ODOSIGHT_PATH.field)), true);
 
         try{
+
             //Setup OdoSight
             setupOdoSight();
 
-            //Start the OdoSight recording
-            startRecording();
+            while (primaryToDo.size() > 0){
 
-            Instant start = Instant.now();
+                //Start the OdoSight recording
+                startRecording();
 
-            toDo.forEach(op->{
-                op.execute(driver);
-                explicitlyWait(driver, 2);
-            });
+                Instant start = Instant.now();
 
-            Instant end = Instant.now();
-            log.info("took {}ms", end.toEpochMilli()-start.toEpochMilli());
+                ToDo session = makeSession(5, 15);
 
-            stopRecording();
+                //Each session starts by logging in.
+                loginOperation.execute(driver);
 
-//            CrawljaxConfiguration.CrawljaxConfigurationBuilder builder = CrawljaxConfiguration.builderFor(config.getString(ExploreRequestFields.WEB_APP_URL.field));
-//            CrawljaxConfiguration crawljaxConfiguration = builder.build();
-//            CrawljaxRunner runner = new CrawljaxRunner(crawljaxConfiguration);
-//            runner.call();
+                //Then some number of cases
+                ListIterator<Operation> it = session.listIterator();
+                while (it.hasNext()){
+                    Operation op = it.next();
+                    try{
+                        log.info("Executing: {}", op.toJson().encodePrettily());
+                        op.execute(driver);
+                        completedOperations.add(op.getId());
+                    }catch (Exception e){
+                        //If an error occurs try doing it the operation again.
+                        log.error(e.getMessage(), e);
+                        completedOperations.remove(op.getId());
+                        op.setCompleted(false);
+                        it.previous();
+                    }
+                }
+                session.forEach(op->{
+                    try{
+                        log.info("Executing: {}", op.toJson().encodePrettily());
+                        op.execute(driver);
+                        completedOperations.add(op.getId());
+                    }catch (Exception e){
+                        log.error(e.getMessage(), e);
+                        op.setCompleted(false);
+                        completedOperations.remove(op.getId());
+
+                    }
+
+                });
+
+                //Then logging out.
+                logoutOperation.execute(driver);
+
+                stopRecording();
+
+                Instant end = Instant.now();
+                log.info("took {}ms", end.toEpochMilli()-start.toEpochMilli());
+
+                //Now remove the session operations from the primaryToDo
+                primaryToDo = primaryToDo.stream().filter(operation -> !session.operationIds().contains(operation.getId())).collect(ToDo::new, ToDo::add, ToDo::addAll);
+
+                log.info("primaryToDo: {}", primaryToDo.size());
+
+                saveProgress();
+            }
+
+
+
 
         }catch (Exception e){
 
@@ -251,6 +252,7 @@ public class ExploreTask implements Runnable{
 
         //Enter the name for the current flight
         WebElement newFlightNameInput = driver.findElement(By.id(ODOSIGHT_CONTROLS_NEW_FLIGHT_NAME_INPUT_ID));
+        newFlightNameInput.clear();
         newFlightNameInput.sendKeys(currentFlight);
 
         //Then click the new flight button
@@ -391,6 +393,214 @@ public class ExploreTask implements Runnable{
         return profile;
     }
 
+    /**
+     * Computes a session consisting of pseudo-randomized test cases to execute on the underlying application.
+     *
+     * A session is constructed by randomly selecting between minSize and maxSize number of cases from the primaryToDo.
+     * For each selected case check to see if its dependencies are satisfied, if they are not, the selected case is replaced by one
+     * of its dependencies.
+     *
+     * @return
+     */
+    private ToDo makeSession(int minSize, int maxSize){
 
+        int size = random.nextInt(minSize, maxSize);
+
+        ToDo session = new ToDo();
+
+        while (session.size() < size){
+            //Pick a random operation from the primaryToDo.
+            Operation candidate = primaryToDo.randomOperation();
+
+            Set<UUID> completedAndPlannedDependencies = new HashSet<>();
+            completedAndPlannedDependencies.addAll(completedOperations);
+            completedAndPlannedDependencies.addAll(session.operationIds());
+
+            //If all of its dependencies have been completed, add it to our result (session)
+            if(completedAndPlannedDependencies.containsAll(candidate.dependencies())){
+                session.add(candidate);
+            }else{
+                session.add(findCandidate(candidate, session));
+            }
+        }
+
+        return session;
+
+    }
+
+    private Operation findCandidate(Operation candidate, ToDo session){
+
+        Set<UUID> completedAndPlannedDependencies = new HashSet<>();
+        completedAndPlannedDependencies.addAll(completedOperations);
+        completedOperations.addAll(session.operationIds());
+
+        List<UUID> incompleteDependencies = candidate.dependencies().stream().filter(dependency->!completedAndPlannedDependencies.contains(dependency)).collect(Collectors.toList());
+        Operation next =  primaryToDo.getOperationById(incompleteDependencies.get(0));
+
+        if(completedOperations.containsAll(next.dependencies())){
+            return next;
+        }else {
+            return findCandidate(next, session);
+        }
+    }
+
+    /**
+     * Re-construct an operation from it's JSON record, assuming its resources are loaded.
+     * @param data
+     * @return
+     */
+    private Operation constructOperation(JsonObject data){
+
+        Operation.OperationType type = Operation.OperationType.valueOf(data.getString("type"));
+        Operation result = constructOperation(data, type);
+
+        return result;
+    }
+
+
+    /**
+     * Some black magic to allow us to reuse {@link #constructOperation(JsonObject, Operation.OperationType)} for create, edit, and delete operations.
+     *
+     * TODO: A better design would avoid this and be much more readable/maintainable.
+     *
+     * @param operations
+     * @param methodName
+     * @return
+     */
+    private static Consumer<WebDriver> toConsumer(Object operations, String methodName){
+        try{
+            //Get the correct method from the operations class, method options should be "create", "edit", or "delete".
+            Method m = operations.getClass().getMethod(methodName, WebDriver.class);
+
+            return (driver)-> {
+                try {
+                    m.invoke(operations, driver);
+                } catch (IllegalAccessException e) {
+                    log.error(e.getMessage(), e);
+                    throw new RuntimeException(e);
+                } catch (InvocationTargetException e) {
+                    log.error(e.getMessage(), e);
+                    throw new RuntimeException(e);
+                }
+            };
+
+        }catch (Exception e){
+            log.error(e.getMessage(), e);
+        }
+
+        return null;
+    }
+
+    private Operation constructOperation(JsonObject data, Operation.OperationType type){
+        Operation result = new Operation(type);
+
+        UUID operationId = UUID.fromString(data.getString("id"));
+        JsonObject relatedIdentifiers = data.getJsonObject("relatedIdentifiers");
+        CourseResources resources = getResourcesForCourseIdentifier(relatedIdentifiers.getString("course"));
+        Course course = resources.getCourse();
+        result.setRelatedIdentifiers(relatedIdentifiers);
+        result.addDependency(data.getJsonArray("dependencies"));
+        result.setCompleted(Boolean.parseBoolean(data.getString("isCompleted")));
+        result.setId(operationId);
+
+
+        String resource = data.getString("resource");
+        return switch (resource){
+            //Reconstruct a create course operation
+            case "ca.ualberta.odobot.explorer.canvas.resources.Course" -> {
+                CourseOperations courseOperations = new CourseOperations(course);
+                result.setResource(Course.class);
+                result.setExecuteMethod(toConsumer(courseOperations, type.name().toLowerCase()));
+                yield result;
+            }
+            case "ca.ualberta.odobot.explorer.canvas.resources.Module" -> {
+                ModuleOperations moduleOperations = new ModuleOperations(course, resources.getModuleByIdentifier(relatedIdentifiers.getString("module")));
+                result.setResource(Module.class);
+                result.setExecuteMethod(toConsumer(moduleOperations, type.name().toLowerCase()));
+                yield result;
+            }
+            case "ca.ualberta.odobot.explorer.canvas.resources.Assignment" -> {
+                AssignmentOperations assignmentOperations = new AssignmentOperations(course, resources.getAssignmentByIdentifier(relatedIdentifiers.getString("assignment")));
+                result.setResource(Assignment.class);
+                result.setExecuteMethod(toConsumer(assignmentOperations, type.name().toLowerCase()));
+                yield result;
+            }
+            case "ca.ualberta.odobot.explorer.canvas.resources.QuizQuestion" -> {
+                QuizQuestionOperations quizQuestionOperations = new QuizQuestionOperations(course, resources.getQuizByIdentifier(relatedIdentifiers.getString("quiz")), resources.getQuizQuestionByIdentifier(relatedIdentifiers.getString("question")));
+                result.setResource(QuizQuestion.class);
+                result.setExecuteMethod(toConsumer(quizQuestionOperations, type.name().toLowerCase()));
+                yield result;
+            }
+            case "ca.ualberta.odobot.explorer.canvas.resources.Quiz" -> {
+                QuizOperations quizOperations = new QuizOperations(course, resources.getQuizByIdentifier(relatedIdentifiers.getString("quiz")));
+                result.setResource(Quiz.class);
+                result.setExecuteMethod(toConsumer(quizOperations, type.name().toLowerCase()));
+                yield result;
+            }
+            case "ca.ualberta.odobot.explorer.canvas.resources.Page" ->{
+                PageOperations pageOperations = new PageOperations(course, resources.getPageIdentifier(relatedIdentifiers.getString("page")));
+                result.setResource(Page.class);
+                result.setExecuteMethod(toConsumer(pageOperations, type.name().toLowerCase()));
+                yield result;
+            }
+            default -> null;
+        };
+
+    }
+
+    private CourseResources getResourcesForCourseIdentifier(String identifier){
+        return resourcesList.stream().filter(resources -> resources.getCourse().getIdentifier().equals(identifier)).findFirst().orElse(null);
+    }
+
+    /**
+     * Create a JSON snapshot of the currently running explore task
+     * @return
+     */
+    private JsonObject toJson(){
+
+        JsonObject result = new JsonObject();
+        //Bring in the config for the task
+        result.mergeIn(config);
+
+        //Update the manifest value using the primary toDo
+        result.put(ExploreRequestFields.MANIFEST.field(), primaryToDo.toManifest());
+
+        //Save the recording count
+        result.put("recordingCount", recordingCount);
+        result.put("completedOperations", completedOperations.stream().map(uuid -> uuid.toString()).collect(JsonArray::new, JsonArray::add, JsonArray::addAll)); //TODO
+
+        //Add the runtime data
+        JsonObject runtimeData = new JsonObject();
+        for(CourseResources resources: resourcesList){
+               runtimeData.mergeIn(resources.getRuntimeValues());
+        }
+
+        result.put("runtimeData", runtimeData);
+
+        return result;
+    }
+
+    private void saveProgress(){
+
+        try{
+
+            File saveDir = new File(config.getString(ExploreRequestFields.SAVE_PATH.field()));
+            if(!saveDir.exists()){
+                Files.createDirectories(Path.of(saveDir.getPath()));
+            }
+            File dataFile = new File(saveDir.getPath() + File.separator + dynamicAddonId.toString() + ".json");
+            if(!dataFile.exists()){
+                dataFile.createNewFile();
+            }
+            Files.write(Path.of(dataFile.getPath()), toJson().encode().getBytes(), StandardOpenOption.TRUNCATE_EXISTING);
+
+
+        }catch (IOException e){
+            log.error(e.getMessage(), e);
+        }
+
+
+
+    }
 
 }

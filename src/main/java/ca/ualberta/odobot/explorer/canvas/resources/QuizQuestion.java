@@ -1,10 +1,12 @@
 package ca.ualberta.odobot.explorer.canvas.resources;
 
+import io.vertx.core.json.JsonObject;
+
 public class QuizQuestion extends BaseResource{
 
     private String name;
 
-    private int id;
+    private int id = -1;
 
     private String relatedQuizIdentifier;
 
@@ -20,6 +22,26 @@ public class QuizQuestion extends BaseResource{
      * The type of the question used as values for the question type input.
      */
     private QuestionType type;
+
+    @Override
+    public JsonObject getRuntimeData() {
+
+        JsonObject result = new JsonObject();
+
+        if(id != -1){
+            result.put("id", getId());
+        }
+
+
+        return result;
+    }
+
+    @Override
+    public void setRuntimeData(JsonObject data) {
+        if(data.containsKey("id")){
+            setId(data.getInteger("id"));
+        }
+    }
 
     public enum QuestionType{
         MULTIPLE_CHOICE("multiple_choice_question"),

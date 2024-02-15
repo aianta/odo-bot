@@ -96,7 +96,7 @@ public class AssignmentOperations {
 
         explicitlyWait(driver, 3);
 
-        ((JavascriptExecutor)driver).executeScript("tinyMCE.activeEditor.setContent('"+assignment.makeEdit(assignment.getBody())+"')");
+        ((JavascriptExecutor)driver).executeScript("tinyMCE.activeEditor.setContent(`"+assignment.makeEdit(assignment.getBody())+"`)");
 
         //Click the save button
         WebElement saveButton = findElement(driver, By.xpath("//form[@id='edit_assignment_form']/div[3]/div[2]/button[3]"));
@@ -124,13 +124,18 @@ public class AssignmentOperations {
         assignmentNameField.sendKeys(assignment.getName());
 
         explicitlyWait(driver,2);
-        //Enter the assignment content
-        ((JavascriptExecutor)driver).executeScript("tinyMCE.activeEditor.setContent('"+assignment.getBody()+"')");
-
-
         //Choose Text Entry as the submission type
         WebElement textEntryCheckbox = findElement(driver, By.id("assignment_text_entry"));
         textEntryCheckbox.click();
+        explicitlyWaitUntil(driver, 30, d->ExpectedConditions.elementSelectionStateToBe(findElement(driver, By.id("assignment_text_entry")), true));
+
+        //Enter the assignment content
+        ((JavascriptExecutor)driver).executeScript("tinyMCE.activeEditor.setContent(`"+assignment.getBody()+"`)");
+
+        textEntryCheckbox = findElement(driver, By.id("assignment_text_entry"));
+        if(!textEntryCheckbox.isSelected()){
+            textEntryCheckbox.click();
+        }
 
         //Click the save button
         WebElement saveButton = findElement(driver, By.xpath("//form[@id='edit_assignment_form']/div[3]/div[2]/button[3]"));

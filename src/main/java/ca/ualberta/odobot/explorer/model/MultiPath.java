@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.explorer.model;
 
+import org.openqa.selenium.ElementClickInterceptedException;
 import org.openqa.selenium.NoSuchElementException;
 import org.openqa.selenium.WebDriver;
 import org.slf4j.Logger;
@@ -57,9 +58,15 @@ public class MultiPath {
         Consumer<WebDriver> wrapper = driver -> {
             try{
                 path.accept(driver);
-            }catch (NoSuchElementException notFound){
+            }catch (NoSuchElementException  notFound){
                 log.warn("Random path failed with missing element, engaging fallback...");
                 log.warn(notFound.getMessage(), notFound);
+                fallback.accept(driver);
+            }catch (ElementClickInterceptedException interceptedException){
+                log.warn(interceptedException.getMessage(), interceptedException);
+                fallback.accept(driver);
+            }catch (Exception e){
+                log.warn(e.getMessage(), e);
                 fallback.accept(driver);
             }
         };

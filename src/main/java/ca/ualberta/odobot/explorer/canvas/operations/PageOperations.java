@@ -41,7 +41,7 @@ public class PageOperations{
         pageTitleField.sendKeys(page.getTitle());
 
         //Enter the page body
-        ((JavascriptExecutor)driver).executeScript("tinyMCE.activeEditor.setContent('"+page.getBody()+"')");
+        ((JavascriptExecutor)driver).executeScript("tinyMCE.activeEditor.setContent(`"+page.getBody()+"`)");
 
         //Click the save page button
         WebElement savePageButton = findElement(driver, By.className("submit"));
@@ -70,7 +70,7 @@ public class PageOperations{
         String newContent = page.makeEdit(page.getBody());
 
         //Update the page body
-        ((JavascriptExecutor)driver).executeScript("tinyMCE.activeEditor.setContent('"+newContent+"');");
+        ((JavascriptExecutor)driver).executeScript("tinyMCE.activeEditor.setContent(`"+newContent+"`);");
 
         //Save the changes
         WebElement savePageButton = findElement(driver, By.className("submit"));

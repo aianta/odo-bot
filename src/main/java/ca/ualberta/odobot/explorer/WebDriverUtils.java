@@ -38,6 +38,14 @@ public class WebDriverUtils {
     }
 
     public static WebElement findElement(WebDriver driver, By by){
+
+        //Check for auto-save feature popup and close it if it is found.
+        if(!driver.findElements(By.xpath("//h2[contains(.,'Found auto-saved content')]")).isEmpty()){
+            WebElement closeButton = driver.findElement(By.xpath("//span[@data-cid='CloseButton']"));
+            closeButton.click();
+            explicitlyWait(driver, 2);
+        }
+
         explicitlyWaitForElement(driver, by);
         return driver.findElement(by);
     }

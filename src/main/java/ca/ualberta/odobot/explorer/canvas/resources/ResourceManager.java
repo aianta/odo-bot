@@ -59,6 +59,7 @@ public class ResourceManager {
         Course course = new Course();
 
         XMLResourceReader imsManifestReader = new XMLResourceReader();
+        imsManifestReader.addStartHandler(path->path.get(path.size()-1).equals(":manifest"), (start,next)->course.setIdentifier(start.getAttributeByName(new QName("identifier")).getValue()));
         imsManifestReader.addStartHandler(path-> path.get(path.size()-1).equals("lomimscc:string") && path.get(path.size()-2).equals("lomimscc:title"), (start, characters) -> course.setName(characters.asCharacters().getData()));
         readXMLFile(imsManifestFile, imsManifestReader::consume);
 
@@ -123,6 +124,7 @@ public class ResourceManager {
                 case "Quizzes::Quiz":
                     Quiz quiz = new Quiz();
                     quiz.setName(itemTitle);
+                    quiz.setBody(itemTitle + " quiz");
                     quiz.setIdentifier(itemIdentifier);
                     quiz.setIdentifierRef(itemIdentifierRef);
                     result.addQuiz(quiz);
@@ -176,14 +178,29 @@ public class ResourceManager {
             File questionsFile = new File(quizFolder.getPath() + File.separator + "assessment_qti.xml");
 
             List<String> questionTexts = new ArrayList<>();
+            List<String> questionIdentifiers = new ArrayList<>();
+            List<String> questionTitles = new ArrayList<>();
 
             XMLResourceReader questionsReader = new XMLResourceReader();
+            questionsReader.addStartHandler(path->path.get(path.size()-1).equals(":item"), (start,next)->{
+                questionIdentifiers.add(start.getAttributeByName(new QName("ident")).getValue());
+                questionTitles.add(start.getAttributeByName(new QName("title")).getValue());
+            });
             questionsReader.addStartHandler(path->path.get(path.size()-1).equals(":mattext") && path.get(path.size()-2).equals(":material") && path.get(path.size()-3).equals(":presentation"), (start, characters)->questionTexts.add(characters.asCharacters().getData()));
             readXMLFile(questionsFile, questionsReader::consume);
 
             Iterator<String> questionTextIt = questionTexts.iterator();
+            Iterator<String> questionTitleIt = questionTitles.iterator();
+            ListIterator<String> questionIdentifierIt = questionIdentifiers.listIterator();
             while (questionTextIt.hasNext()){
                 QuizQuestion question = new QuizQuestion();
+
+                String questionName = questionTitleIt.next();
+                String questionIdentifier = questionIdentifierIt.next();
+
+                question.setName(questionName);
+                question.setIdentifier(questionIdentifier+"#"+questionIdentifierIt.previousIndex());
+                question.setType(QuizQuestion.QuestionType.MULTIPLE_CHOICE);
                 question.setBody(
                         Jsoup.parse(questionTextIt.next()).text()  //This is necessary to convert HTML entities into their real character values. IE: &lt; into <
                 );
@@ -217,10 +234,10 @@ public class ResourceManager {
                 Matcher matcher =  PAGE_IDENTIFIER_IN_HTML.matcher(content);
                 if(matcher.find()){
                     String identifierRefInHTML = matcher.group();
-                    log.info("looking for: {}", identifierRefInHTML);
+                    //log.info("looking for: {}", identifierRefInHTML);
                     Page target = resources.getPageByIdentifierRef(identifierRefInHTML);
                     if(target != null){
-                        target.setBody(content);
+                        target.setBody(Jsoup.parse(content).text());
                     }
 
 

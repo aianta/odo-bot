@@ -73,7 +73,7 @@ public class QuizOperations {
         if(quiz.getBody().isBlank()){
             quiz.setBody(quiz.getName() + " body");
         }
-        ((JavascriptExecutor)driver).executeScript("tinyMCE.activeEditor.setContent('"+ quiz.makeEdit(quiz.getBody())+"')");
+        ((JavascriptExecutor)driver).executeScript("tinyMCE.activeEditor.setContent(`"+ quiz.makeEdit(quiz.getBody())+"`)");
 
         //Click the save quiz button
         WebElement saveQuizButton = findElement(driver, By.className("save_quiz_button"));
@@ -103,7 +103,7 @@ public class QuizOperations {
          * Here we have to add content into a tinyMCE iframe
          * https://stackoverflow.com/questions/21713345/cant-sendkeys-to-tinymce-with-selenium-webdriver
          */
-        ((JavascriptExecutor)driver).executeScript("tinyMCE.activeEditor.setContent('"+quiz.getBody()+"')");
+        ((JavascriptExecutor)driver).executeScript("tinyMCE.activeEditor.setContent(`"+quiz.getBody()+"`)");
 
         WebElement saveQuizButton = findElement(driver, By.xpath("//div[@id='quiz_edit_actions']/div/div[2]/button[2]"));
         saveQuizButton.click();
