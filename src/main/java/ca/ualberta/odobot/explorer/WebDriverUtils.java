@@ -6,38 +6,45 @@ import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.FluentWait;
 import org.openqa.selenium.support.ui.Wait;
 import org.openqa.selenium.support.ui.WebDriverWait;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 public class WebDriverUtils {
 
-    private static void navigateToCoursePageCommon(WebDriver driver, Course course){
-        WebElement coursesSidebarLink = findElement(driver, By.id("global_nav_courses_link"));
-        coursesSidebarLink.click();
-    }
+    private static final Logger log = LoggerFactory.getLogger(WebDriverUtils.class);
 
-    public static void navigateToCoursePage2(WebDriver driver, Course course){
-        navigateToCoursePageCommon(driver, course);
+    public static void scrollToElement(WebDriver driver, WebElement target, By by, int numRetries){
+        try{
+            String javascript = """
+                window.scrollTo(%s,%s);
+                """.formatted(
+                    target.getLocation().getX(),
+                    target.getLocation().getY());
+            ((JavascriptExecutor)driver).executeScript(javascript);
+        }catch (StaleElementReferenceException e){
+            log.warn(e.getMessage());
+            while (numRetries > 0){
+                explicitlyWait(driver, 1);
+                target = findElement(driver, by);
+                scrollToElement(driver, target, by, numRetries-1);
+            }
 
-        WebElement courseLink = findElement(driver, By.linkText(course.getName()));
-        courseLink.click();
-    }
-
-    public static void navigateToCoursePage1(WebDriver driver, Course course){
-
-        navigateToCoursePageCommon(driver, course);
-
-        WebElement allCoursesLink = findElement(driver, By.linkText("All Courses"));
-        allCoursesLink.click();
-
-        WebElement courseLink = findElement(driver, By.xpath("//a[@href='"+course.getCoursePageUrlAsURL().getPath()+"']"));
-        courseLink.click();
+        }
 
     }
+
 
     public static WebElement findElement(WebDriver driver, By by){
+        try{
+            Thread.sleep(1000);
+        }catch (InterruptedException e){
+            log.error(e.getMessage(), e);
+        }
 
         //Check for auto-save feature popup and close it if it is found.
         if(!driver.findElements(By.xpath("//h2[contains(.,'Found auto-saved content')]")).isEmpty()){
@@ -47,17 +54,31 @@ public class WebDriverUtils {
         }
 
         explicitlyWaitForElement(driver, by);
-        return driver.findElement(by);
+        WebElement element = driver.findElement(by);
+
+        //Once the element is found, scroll to it to ensure it is in view for further action.
+        scrollToElement(driver, element, by, 3);
+        return element;
     }
 
     public static void explicitlyWait(WebDriver driver, int seconds){
-        Instant targetTime = Instant.ofEpochSecond(Instant.now().getEpochSecond() + seconds);
-        Wait<WebDriver> wait = new WebDriverWait(driver, Duration.ofSeconds(seconds + 2));
-        wait.until(d->Instant.now().isAfter(targetTime));
+        try{
+            Thread.sleep(seconds*1000);
+        }catch (InterruptedException e){
+            log.error(e.getMessage(), e);
+        }
     }
 
     public static void explicitlyWaitForElement(WebDriver driver, By idMethod){
-        explicitlyWaitUntil(driver, 10, d-> ExpectedConditions.elementToBeClickable(driver.findElement(idMethod)));
+        try{
+            explicitlyWaitUntil(driver, 30, d-> ExpectedConditions.elementToBeClickable(driver.findElement(idMethod)));
+
+        }catch (TimeoutException e){
+            //Try refreshing the page and finding the element, this might just mess things up more.
+            driver.navigate().refresh();
+            explicitlyWaitUntil(driver, 30, d-> ExpectedConditions.elementToBeClickable(driver.findElement(idMethod)));
+
+        }
     }
 
     public static void explicitlyWaitUntil(WebDriver driver, int secondsTimout, Function<? super WebDriver, Object> lambda){
@@ -68,5 +89,48 @@ public class WebDriverUtils {
                 .ignoring(ElementNotInteractableException.class)
                 ;
         wait.until(lambda);
+    }
+
+    public static void doubleClick(WebDriver driver, By by, Consumer<WebDriver> beforeRetry){
+        click(driver, by, 2, 3, beforeRetry);
+    }
+    public static void doubleClick(WebDriver driver, By by){
+        click(driver, by, 2, 3, null);
+    }
+    public static void click(WebDriver driver, By by){
+        click(driver, by, 1, 3, null);
+    }
+    public static void click(WebDriver driver, By by, Consumer<WebDriver> beforeRetry){
+        click(driver, by, 1, 3, beforeRetry);
+    }
+
+    private static void click(WebDriver driver, By by, int numClicks, int numRetries, Consumer<WebDriver> beforeRetry){
+        int originalNumClicks = numClicks;
+        WebElement target = null;
+        try{
+             target = findElement(driver, by);
+
+            while (numClicks > 0){
+                target.click();
+                numClicks--;
+            }
+        }catch ( ElementClickInterceptedException e){
+            log.info("Clicking through javascript");
+            explicitlyWait(driver, 1);
+            while (numClicks > 0){
+                ((JavascriptExecutor)driver).executeScript("arguments[0].click();", target);
+                numClicks--;
+            }
+        }catch (ElementNotInteractableException e){
+            log.info("Clicking through javascript");
+            explicitlyWait(driver, 1);
+            while (numClicks > 0){
+                ((JavascriptExecutor)driver).executeScript("arguments[0].click();", target);
+                numClicks--;
+            }
+
+        }
+
+
     }
 }

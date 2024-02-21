@@ -38,7 +38,7 @@ public class Quiz extends BaseResource{
     public void setQuizEditPageUrl(String quizEditPageUrl) {
         this.quizEditPageUrl = quizEditPageUrl;
         if(id == -1){
-            this.id = parseIdFromUrl(this.quizEditPageUrl);
+            this.id = parseIdFromUrl(this.quizEditPageUrl, "quizzes");
         }
     }
 
@@ -49,7 +49,7 @@ public class Quiz extends BaseResource{
     public void setQuizPageUrl(String quizPageUrl) {
         this.quizPageUrl = quizPageUrl;
         if(id == -1){
-            this.id = parseIdFromUrl(this.quizPageUrl);
+            this.id = parseIdFromUrl(this.quizPageUrl, "quizzes");
         }
     }
 
@@ -70,26 +70,7 @@ public class Quiz extends BaseResource{
     }
 
 
-    private int parseIdFromUrl(String urlString){
-        try{
-            URL url = new URL(urlString);
-            String [] pathSegments = url.getPath().split("/");
 
-            Iterator<String> it = Arrays.stream(pathSegments).iterator();
-            while (it.hasNext()){
-                String segment = it.next();
-                if(segment.equals("quizzes")){
-                    return Integer.parseInt(it.next());
-                }
-            }
-
-
-        }catch (MalformedURLException e){
-            log.error(e.getMessage(), e);
-        }
-        log.error("Error parsing quiz id from url! Returning id = -1");
-        return -1;
-    }
 
     @Override
     public JsonObject getRuntimeData() {
@@ -125,5 +106,13 @@ public class Quiz extends BaseResource{
             setId(data.getInteger("id"));
         }
 
+    }
+
+    public JsonObject toJson(){
+        JsonObject result = super.toJson()
+                .put("name", getName())
+                .put("body", getBody());
+
+        return result;
     }
 }

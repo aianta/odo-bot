@@ -43,7 +43,15 @@ public class Operation {
 
     protected Consumer<WebDriver> executeMethod;
 
-    public Operation( OperationType type) {
+    public JsonObject getRelatedIdentifiers() {
+        return relatedIdentifiers;
+    }
+
+    public OperationType getType() {
+        return type;
+    }
+
+    public Operation(OperationType type) {
         this.type = type;
     }
 
@@ -111,6 +119,10 @@ public class Operation {
         this.type = type;
         this.resource = resource;
 
+    }
+
+    public Class getResource(){
+        return resource;
     }
 
     public List<UUID> dependencies(){

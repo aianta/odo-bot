@@ -4,6 +4,8 @@ import ca.ualberta.odobot.explorer.canvas.operations.*;
 import ca.ualberta.odobot.explorer.canvas.resources.*;
 import ca.ualberta.odobot.explorer.canvas.resources.Module;
 import ca.ualberta.odobot.explorer.model.Operation;
+import ca.ualberta.odobot.explorer.model.OperationFailure;
+import ca.ualberta.odobot.explorer.model.OperationFailures;
 import ca.ualberta.odobot.explorer.model.ToDo;
 
 import edu.stanford.nlp.time.Options;
@@ -142,61 +144,111 @@ public class ExploreTask implements Runnable{
 
     @Override
     public void run() {
+        int completedCases = 0;
 
-        FirefoxOptions options = new FirefoxOptions();
+        /* Create an Operation failures object to store operations that throw execptions during execution.
+         * We'll use this to try and determine what's going on.
+         */
 
-        options.setProfile(buildProfile());
+        OperationFailures failures = new OperationFailures();
 
-        driver = new FirefoxDriver(options);
 
-        driver.installExtension(Path.of(config.getString(ExploreRequestFields.ODOSIGHT_PATH.field)), true);
 
         try{
 
-            //Setup OdoSight
-            setupOdoSight();
 
             while (primaryToDo.size() > 0){
+
+                FirefoxOptions options = new FirefoxOptions();
+
+                options.setProfile(buildProfile());
+
+                driver = new FirefoxDriver(options);
+
+                driver.installExtension(Path.of(config.getString(ExploreRequestFields.ODOSIGHT_PATH.field)), true);
+                //Setup OdoSight
+                setupOdoSight();
 
                 //Start the OdoSight recording
                 startRecording();
 
                 Instant start = Instant.now();
 
-                ToDo session = makeSession(5, 15);
-
                 //Each session starts by logging in.
                 loginOperation.execute(driver);
 
+                int sessionSize = random.nextInt(10, 20);
+                int sessionProgress = 0;
+
                 //Then some number of cases
-                ListIterator<Operation> it = session.listIterator();
-                while (it.hasNext()){
-                    Operation op = it.next();
+
+                while (sessionSize > 0){
+                    Operation op = nextOperation();
+                    if(op == null){
+                        break;
+                    }
+
                     try{
-                        log.info("Executing: {}", op.toJson().encodePrettily());
+                        log.info("[{}]Executing [{}/{}][{}]: {}",completedCases, sessionProgress , sessionProgress + sessionSize, primaryToDo.size(), op.toJson().encodePrettily());
                         op.execute(driver);
                         completedOperations.add(op.getId());
+                        completedCases++;
+                        failures.operationSucceeded();
                     }catch (Exception e){
-                        //If an error occurs try doing it the operation again.
-                        log.error(e.getMessage(), e);
-                        completedOperations.remove(op.getId());
-                        op.setCompleted(false);
-                        it.previous();
+
+                        Throwable targetException = ((InvocationTargetException)((RuntimeException)e).getCause()).getTargetException();
+
+                        failures.add(new OperationFailure(op, targetException, driver.getCurrentUrl()));
+                        saveFailures(failures);
+
+                        log.warn(e.getMessage(), e);
+                        if(op.getType().equals(Operation.OperationType.CREATE)){
+                            log.warn("pruning dependents");
+                            primaryToDo = pruneDependents(op, primaryToDo);
+                        }
+
+                        //Restart everything if this happens. I feel like this might help.
+                        stopRecording();
+
+                        Instant end = Instant.now();
+                        log.info("took {}ms", end.toEpochMilli()-start.toEpochMilli());
+
+                        log.info("primaryToDo: {}", primaryToDo.size());
+
+                        driver.quit();
+
+                        options = new FirefoxOptions();
+
+                        options.setProfile(buildProfile());
+
+                        driver = new FirefoxDriver(options);
+
+                        driver.installExtension(Path.of(config.getString(ExploreRequestFields.ODOSIGHT_PATH.field)), true);
+                        //Setup OdoSight
+                        setupOdoSight();
+
+                        //Start the OdoSight recording
+                        startRecording();
+
+                        start = Instant.now();
+
+                        //Each session starts by logging in.
+                        loginOperation.execute(driver);
+
+                        sessionSize = random.nextInt(10, 20);
+                        sessionProgress = 0;
+
+
+
+                    }finally {
+                        sessionSize--;
+                        sessionProgress++;
+                        //Now remove the session operations from the primaryToDo
+                        primaryToDo = primaryToDo.stream().filter(operation -> !completedOperations.contains(operation.getId())).collect(ToDo::new, ToDo::add, ToDo::addAll);
+                        saveProgress();
                     }
                 }
-                session.forEach(op->{
-                    try{
-                        log.info("Executing: {}", op.toJson().encodePrettily());
-                        op.execute(driver);
-                        completedOperations.add(op.getId());
-                    }catch (Exception e){
-                        log.error(e.getMessage(), e);
-                        op.setCompleted(false);
-                        completedOperations.remove(op.getId());
 
-                    }
-
-                });
 
                 //Then logging out.
                 logoutOperation.execute(driver);
@@ -206,12 +258,9 @@ public class ExploreTask implements Runnable{
                 Instant end = Instant.now();
                 log.info("took {}ms", end.toEpochMilli()-start.toEpochMilli());
 
-                //Now remove the session operations from the primaryToDo
-                primaryToDo = primaryToDo.stream().filter(operation -> !session.operationIds().contains(operation.getId())).collect(ToDo::new, ToDo::add, ToDo::addAll);
-
                 log.info("primaryToDo: {}", primaryToDo.size());
 
-                saveProgress();
+                driver.quit();
             }
 
 
@@ -220,6 +269,7 @@ public class ExploreTask implements Runnable{
         }catch (Exception e){
 
             log.error(e.getMessage(), e);
+            throw new RuntimeException(e);
         }
 
     }
@@ -275,22 +325,7 @@ public class ExploreTask implements Runnable{
          *  https://github.com/mozilla/geckodriver/issues/284
          *  https://github.com/mozilla/geckodriver/issues/284#issuecomment-477677764
          */
-//        //Ensure the recording is active by checking the browser console logs for 'LogUI' and 'Logged object below' log line entries
-//        List<LogEntry> logEntries = driver.manage().logs().get(LogType.BROWSER).getAll();
-//        log.info("got {} log entries in the console", logEntries.size());
-//        for(int i = logEntries.size()-1; i > 0; i--){
-//            LogEntry entry = logEntries.get(i);
-//            if(entry.getMessage().contains("LogUI") && entry.getMessage().contains("Logged object below")){
-//                log.info("OdoSight recording is active.");
-//                recordingIsActive = true;
-//            }
-//        }
-//        //Explicitly mark log entries for garbage collection
-//        logEntries = null;
-//
-//        if(!recordingIsActive){
-//            throw new RuntimeException("OdoSight did not start recording!");
-//        }
+
     }
 
     private void stopRecording(){
@@ -363,6 +398,33 @@ public class ExploreTask implements Runnable{
     }
 
     /**
+     * Removes dependent tasks of the same resource type from primary todo. Used to recover when there is an error executing a particular operation
+     * @param failedOperation the operation that failed.
+     */
+    private ToDo pruneDependents(Operation failedOperation, ToDo target){
+
+        JsonObject relatedIdentifiers = failedOperation.getRelatedIdentifiers();
+
+        String key = switch (failedOperation.getResource().getName()){
+            case "ca.ualberta.odobot.explorer.canvas.resources.Quiz"  -> "quiz";
+            case "ca.ualberta.odobot.explorer.canvas.resources.Module" -> "module";
+            case "ca.ualberta.odobot.explorer.canvas.resources.QuizQuestion" -> "question";
+            case "ca.ualberta.odobot.explorer.canvas.resources.Course" -> "course";
+            case "ca.ualberta.odobot.explorer.canvas.resources.Assignment" -> "assignment";
+            case "ca.ualberta.odobot.explorer.canvas.resources.Page" -> "page";
+            default -> throw new RuntimeException("Unrecognized resource");
+        };
+
+        //Store the value of the key from the failed operation.
+        String value = relatedIdentifiers.getString(key);
+
+        return target.stream().filter(operation -> !(operation.getRelatedIdentifiers().containsKey(key) && operation.getRelatedIdentifiers().getString(key).equals(value))).collect(ToDo::new, ToDo::add, ToDo::addAll);
+
+
+    }
+
+
+    /**
      * To configure the odo sight extension once it is installed, we have to get access to the extensions
      * options.html page. This will be located at moz-extension://[some UUID goes here]/options.html.
      *
@@ -393,46 +455,32 @@ public class ExploreTask implements Runnable{
         return profile;
     }
 
-    /**
-     * Computes a session consisting of pseudo-randomized test cases to execute on the underlying application.
-     *
-     * A session is constructed by randomly selecting between minSize and maxSize number of cases from the primaryToDo.
-     * For each selected case check to see if its dependencies are satisfied, if they are not, the selected case is replaced by one
-     * of its dependencies.
-     *
-     * @return
-     */
-    private ToDo makeSession(int minSize, int maxSize){
 
-        int size = random.nextInt(minSize, maxSize);
-
-        ToDo session = new ToDo();
-
-        while (session.size() < size){
-            //Pick a random operation from the primaryToDo.
-            Operation candidate = primaryToDo.randomOperation();
-
-            Set<UUID> completedAndPlannedDependencies = new HashSet<>();
-            completedAndPlannedDependencies.addAll(completedOperations);
-            completedAndPlannedDependencies.addAll(session.operationIds());
-
-            //If all of its dependencies have been completed, add it to our result (session)
-            if(completedAndPlannedDependencies.containsAll(candidate.dependencies())){
-                session.add(candidate);
-            }else{
-                session.add(findCandidate(candidate, session));
-            }
+    private Operation nextOperation(){
+        if(primaryToDo.size() == 0){
+            return null;
         }
 
-        return session;
-
-    }
-
-    private Operation findCandidate(Operation candidate, ToDo session){
+        //Pick a random operation from the primaryToDo.
+        Operation candidate = primaryToDo.randomOperation();
 
         Set<UUID> completedAndPlannedDependencies = new HashSet<>();
         completedAndPlannedDependencies.addAll(completedOperations);
-        completedOperations.addAll(session.operationIds());
+
+
+        //If all of its dependencies have been completed, add it to our result (session)
+        if(completedAndPlannedDependencies.containsAll(candidate.dependencies())){
+            return candidate;
+        }else{
+            return findCandidate(candidate);
+        }
+
+    }
+
+    private Operation findCandidate(Operation candidate){
+
+        Set<UUID> completedAndPlannedDependencies = new HashSet<>();
+        completedAndPlannedDependencies.addAll(completedOperations);
 
         List<UUID> incompleteDependencies = candidate.dependencies().stream().filter(dependency->!completedAndPlannedDependencies.contains(dependency)).collect(Collectors.toList());
         Operation next =  primaryToDo.getOperationById(incompleteDependencies.get(0));
@@ -440,7 +488,7 @@ public class ExploreTask implements Runnable{
         if(completedOperations.containsAll(next.dependencies())){
             return next;
         }else {
-            return findCandidate(next, session);
+            return findCandidate(next);
         }
     }
 
@@ -578,6 +626,19 @@ public class ExploreTask implements Runnable{
         result.put("runtimeData", runtimeData);
 
         return result;
+    }
+
+    private void saveFailures(OperationFailures failures){
+        try{
+            Path errorFilePath = Path.of(config.getString(ExploreRequestFields.ERROR_PATH.field()));
+            if(!Files.exists(errorFilePath)){
+                new File(errorFilePath.toString()).createNewFile();
+            }
+            Files.write(errorFilePath, failures.fullReport().encodePrettily().getBytes(), StandardOpenOption.TRUNCATE_EXISTING);
+
+        }catch (IOException e){
+            log.error(e.getMessage(),e);
+        }
     }
 
     private void saveProgress(){

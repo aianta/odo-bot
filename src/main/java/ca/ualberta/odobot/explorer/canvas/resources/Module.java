@@ -16,11 +16,17 @@ public class Module extends BaseResource{
 
     @Override
     public JsonObject getRuntimeData() {
-        return null;
+        return new JsonObject();
     }
 
     @Override
     public void setRuntimeData(JsonObject data) {
+    }
 
+    public JsonObject toJson(){
+        JsonObject result = super.toJson()
+                .put("name", getName());
+
+        return result;
     }
 }

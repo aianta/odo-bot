@@ -89,4 +89,16 @@ public class QuizQuestion extends BaseResource{
     public void setName(String name) {
         this.name = name;
     }
+
+    public JsonObject toJson(){
+        JsonObject result = super.toJson()
+                .put("name", getName())
+                .put("type", getType().toString())
+                .put("relatedQuizIdentifier", getRelatedQuizIdentifier())
+                .put("body", getBody())
+                ;
+
+        return result;
+
+    }
 }

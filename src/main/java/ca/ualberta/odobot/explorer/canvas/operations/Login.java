@@ -39,8 +39,7 @@ public class Login {
         WebElement passwordField = findElement(driver, By.id("pseudonym_session_password"));
         passwordField.sendKeys(password);
 
-        WebElement loginButton = findElement(driver, By.xpath("//form[@id='login_form']/div[3]/div[2]/button"));
-        loginButton.click();
+        click(driver,By.xpath("//form[@id='login_form']/div[3]/div[2]/button") );
 
 
     }

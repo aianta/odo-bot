@@ -27,6 +27,8 @@ public enum ExploreRequestFields implements RequestFields{
 
     SAVE_PATH("savePath", String.class),
 
+    ERROR_PATH("failureInfoPath", String.class),
+
     COURSES("sourceCourses", JsonArray.class);
 
     ;

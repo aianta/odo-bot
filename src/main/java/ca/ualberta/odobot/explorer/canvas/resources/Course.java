@@ -11,8 +11,19 @@ public class Course extends BaseResource{
 
     String coursePageUrl;
 
+    int id = -1;
+
     public String getName() {
         return name;
+    }
+
+    /**
+     * Returns the runtime id of the course, that is, the id of the course as it appears in canvas after it is generated
+     * during the data generation process. This is different from the identifiers that are loaded from the IMSCC file.
+     * @return the runtime id of the course
+     */
+    public int getId(){
+        return id;
     }
 
     public void setName(String name) {
@@ -33,6 +44,9 @@ public class Course extends BaseResource{
 
     public void setCoursePageUrl(String coursePageUrl) {
         this.coursePageUrl = coursePageUrl;
+        if(this.id == -1){
+            this.id = parseIdFromUrl(this.coursePageUrl, "courses");
+        }
     }
 
     @Override
@@ -51,5 +65,12 @@ public class Course extends BaseResource{
             setCoursePageUrl(data.getString("coursePageUrl"));
         }
 
+    }
+
+    public JsonObject toJson(){
+        JsonObject result = super.toJson()
+                .put("name",getName());
+
+        return result;
     }
 }

@@ -15,36 +15,27 @@ public class QuizOperations {
 
     private Quiz quiz;
 
-    private MultiPath navigateToCoursePage = new MultiPath();
 
     public QuizOperations(Course course, Quiz quiz) {
         this.course = course;
         this.quiz = quiz;
 
-        this.navigateToCoursePage.addPath(d->navigateToCoursePage1(d, course));
-        this.navigateToCoursePage.setFallback(driver->driver.get(course.getCoursePageUrl()));
     }
 
     public void delete(WebDriver driver){
-        //Navigate to the course page
-        navigateToCoursePage.getPath().accept(driver);
+        //Navigate to the course quizzes section
+        driver.get(course.getCoursePageUrl()+"/quizzes");
 
-        //Then to the quizzes section
-        WebElement quizzesSectionLink = findElement(driver, By.linkText("Quizzes"));
-        quizzesSectionLink.click();
 
         //Then click on the quiz to delete
-        WebElement quizLink = findElement(driver, By.xpath("//a[@href='"+quiz.getQuizPageUrl()+"']"));
-        quizLink.click();
+        click(driver, By.xpath("//a[@href='"+quiz.getQuizPageUrl()+"']"), d->d.get(course.getCoursePageUrl() + "/quizzes"));
+
 
         //Find the drop-down menu button
-        WebElement dropDown = findElement(driver, By.xpath("//button[contains(.,'Manage')]"));
-        dropDown.click();
-        dropDown.click();
+        doubleClick(driver, By.xpath("//button[contains(.,'Manage')]"));
 
         //Find the delete option
-        WebElement deleteOption = findElement(driver, By.className("delete_quiz_link"));
-        deleteOption.click();
+        click(driver,By.className("delete_quiz_link"));
 
         //At this point an alerta should have popped up asking if we're really sure about deleting the quiz
         driver.switchTo().alert().accept();
@@ -52,20 +43,14 @@ public class QuizOperations {
     }
 
     public void edit(WebDriver driver){
-        //Navigate to the course page
-        navigateToCoursePage.getPath().accept(driver);
-
-        //Then to the quizzes section
-        WebElement quizzesSectionLink = findElement(driver, By.linkText("Quizzes"));
-        quizzesSectionLink.click();
+        //Navigate to the course quizzes section
+        driver.get(course.getCoursePageUrl()+"/quizzes");
 
         //Then click on the quiz to edit
-        WebElement quizLink = findElement(driver, By.xpath("//a[@href='"+quiz.getQuizPageUrl()+"']"));
-        quizLink.click();
+        click(driver, By.xpath("//a[@href='"+quiz.getQuizPageUrl()+"']"), d->d.get(course.getCoursePageUrl()+"/quizzes"));
 
         //Then click the edit button
-        WebElement editButton = findElement(driver, By.linkText("Edit"));
-        editButton.click();
+        click(driver, By.linkText("Edit"));
 
         explicitlyWait(driver, 3);
 
@@ -76,20 +61,16 @@ public class QuizOperations {
         ((JavascriptExecutor)driver).executeScript("tinyMCE.activeEditor.setContent(`"+ quiz.makeEdit(quiz.getBody())+"`)");
 
         //Click the save quiz button
-        WebElement saveQuizButton = findElement(driver, By.className("save_quiz_button"));
-        saveQuizButton.click();
+        click(driver, By.className("save_quiz_button"));
 
     }
 
     public void create(WebDriver driver) {
 
-        navigateToCoursePage.getPath().accept(driver);
+        //Navigate to the course quizzes section
+        driver.get(course.getCoursePageUrl()+"/quizzes");
 
-        WebElement quizzesSectionLink = findElement(driver, By.linkText("Quizzes"));
-        quizzesSectionLink.click();
-
-        WebElement newQuizButton = findElement(driver, By.xpath("//div[@id='content']/div/div[2]/form/button"));
-        newQuizButton.click();
+        click(driver,By.xpath("//div[@id='content']/div/div[2]/form/button") );
 
         WebElement quizTitleField = findElement(driver, By.id("quiz_title"));
         quizTitleField.clear();
@@ -105,8 +86,7 @@ public class QuizOperations {
          */
         ((JavascriptExecutor)driver).executeScript("tinyMCE.activeEditor.setContent(`"+quiz.getBody()+"`)");
 
-        WebElement saveQuizButton = findElement(driver, By.xpath("//div[@id='quiz_edit_actions']/div/div[2]/button[2]"));
-        saveQuizButton.click();
+        click(driver, By.xpath("//div[@id='quiz_edit_actions']/div/div[2]/button[2]") );
 
         explicitlyWait(driver, 2);
 

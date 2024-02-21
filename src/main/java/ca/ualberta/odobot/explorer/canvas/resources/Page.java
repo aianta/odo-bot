@@ -50,4 +50,12 @@ public class Page extends BaseResource{
             setPageUrl(data.getString("pageUrl"));
         }
     }
+
+    public JsonObject toJson(){
+        JsonObject result = super.toJson()
+                .put("title", getTitle())
+                .put("body", getBody());
+
+        return result;
+    }
 }

@@ -18,15 +18,9 @@ public class Logout  {
 
 
     public void logout(WebDriver driver) {
-
         try{
-            WebElement profileNavLink = findElement(driver, By.xpath("//button[@id='global_nav_profile_link']/div"));
-            profileNavLink.click();
-
-            WebElement logoutButton = findElement(driver, By.xpath("//button[contains(.,'Logout')]"));
-            logoutButton.click();
-
-
+            click(driver, By.xpath("//button[@id='global_nav_profile_link']/div"));
+            click(driver, By.xpath("//button[contains(.,'Logout')]"));
         }catch (NoSuchElementException notFound){
             log.error(notFound.getMessage(), notFound);
         }
