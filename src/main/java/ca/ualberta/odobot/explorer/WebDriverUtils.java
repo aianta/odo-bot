@@ -97,6 +97,10 @@ public class WebDriverUtils {
     public static void doubleClick(WebDriver driver, By by){
         click(driver, by, 2, 3, null);
     }
+
+    public static void click(WebDriver driver, WebElement element){
+        click(driver, element, 1,3,null);
+    }
     public static void click(WebDriver driver, By by){
         click(driver, by, 1, 3, null);
     }
@@ -104,12 +108,10 @@ public class WebDriverUtils {
         click(driver, by, 1, 3, beforeRetry);
     }
 
-    private static void click(WebDriver driver, By by, int numClicks, int numRetries, Consumer<WebDriver> beforeRetry){
+    private static void click(WebDriver driver, WebElement element, int numClicks, int numRetries, Consumer<WebDriver> beforeRetry){
         int originalNumClicks = numClicks;
-        WebElement target = null;
+        WebElement target = element;
         try{
-             target = findElement(driver, by);
-
             while (numClicks > 0){
                 target.click();
                 numClicks--;
@@ -130,7 +132,9 @@ public class WebDriverUtils {
             }
 
         }
+    }
 
-
+    private static void click(WebDriver driver, By by, int numClicks, int numRetries, Consumer<WebDriver> beforeRetry){
+        click(driver, findElement(driver, by), numClicks, numRetries, beforeRetry);
     }
 }

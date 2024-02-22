@@ -37,49 +37,52 @@ public class QuizQuestionOperations {
     public void delete(WebDriver driver){
 
 
-        driver.get(quiz.getQuizEditPageUrl());
+        driver.get(quiz.getQuizEditPageUrl() + "#questions_tab");
 
         //Now we're on the edit page for the quiz, so we have to click the questions tab.
-        doubleClick(driver, By.xpath("//a[contains(@href, '#questions_tab')]"), d->d.get(quiz.getQuizEditPageUrl()));
+        click(driver, By.xpath("//a[contains(@href, '#questions_tab')]"), d->d.get(quiz.getQuizEditPageUrl()));
         explicitlyWait(driver, 3);
 
         //Get the question element so we can hover over it to reveal the edit button
-        WebElement questionElement = findElement(driver, By.id("question_"+ question.getId()));
+        //WebElement questionElement = getQuestionElementViaJs(driver);
 
-        Actions action = new Actions(driver);
-        action.moveToElement(questionElement).perform();
+        //Actions action = new Actions(driver);
+        //action.moveToElement(questionElement).perform();
+        hoverQuestionElementViaJs(driver);
+
 
         //Click the delete button for this specific quiz question
-        click(driver, By.cssSelector("#question_"+question.getId()+" .icon-end"));
-
+        click(driver, getDeleteButton(driver));
 
         String windowHandle = driver.getWindowHandle();
         //At this point an alert should come up to ask us if we're sure we want to delete the question, so lets accept it.
         driver.switchTo().alert().accept();
         driver.switchTo().window(windowHandle); //Move back to window after alert.
 
+        unhoverQuestionElementViaJs(driver);
     }
 
     public void edit(WebDriver driver){
 
-        driver.get(quiz.getQuizEditPageUrl());
+        driver.get(quiz.getQuizEditPageUrl() + "#questions_tab");
 
         //Now we're on the edit page for the quiz, so we have to click the questions tab.
-        doubleClick(driver,By.xpath("//a[contains(@href, '#questions_tab')]"), d->d.get(quiz.getQuizEditPageUrl()));
+        click(driver,By.xpath("//a[contains(@href, '#questions_tab')]"), d->d.get(quiz.getQuizEditPageUrl()));
 
         explicitlyWait(driver, 3);
 
         //Get the question element so we can hover over it to reveal the edit button
-        WebElement questionElement = findElement(driver, By.id("question_"+ question.getId()));
+        //WebElement questionElement = findElement(driver, By.id("question_"+ question.getId()));
+        WebElement questionElement = getQuestionElementViaJs(driver);
 
         Actions action = new Actions(driver);
         action.moveToElement(questionElement).perform();
 
         //Click the edit button for this specific quiz question
-        click(driver, By.cssSelector("#question_"+question.getId()+" .icon-edit"));
+        click(driver, getEditButton(driver));
 
         //Update the question content
-        ((JavascriptExecutor)driver).executeScript("tinymce.EditorManager.get('question_content_0').setContent(`" + question.makeEdit(question.getBody()) + "`)");
+        setQuestionContent(driver, question.makeEdit(question.getBody()));
 
         //Click the update question button
         click(driver, By.xpath("//button[contains(.,'Update Question')]"));
@@ -89,10 +92,10 @@ public class QuizQuestionOperations {
 
     public void create(WebDriver driver) {
 
-        driver.get(quiz.getQuizEditPageUrl());
+        driver.get(quiz.getQuizEditPageUrl() + "#question_tab");
 
         //Now we're on the edit page for the quiz, so we have to click the questions tab.
-        doubleClick(driver, By.xpath("//a[contains(@href, '#questions_tab')]"), d->d.get(quiz.getQuizEditPageUrl()));
+        click(driver, By.xpath("//a[contains(@href, '#questions_tab')]"), d->d.get(quiz.getQuizEditPageUrl()));
 
 
         //Get the questionId set before adding a new question
@@ -102,28 +105,18 @@ public class QuizQuestionOperations {
         //Then we click the add a new question button
         click(driver, By.cssSelector(".add_question_link:nth-child(1)"));
 
-        //Then we fill in the question name if on was specified.
-        if(question.getName() != null){
-            WebElement questionNameField = findElement(driver, By.name("question_name"));
-            explicitlyWaitUntil(driver, 30, d-> ExpectedConditions.elementToBeClickable(questionNameField));
-            questionNameField.clear();
-            questionNameField.sendKeys(question.getName());
-        }
+        explicitlyWait(driver, 1);
 
-        //Then we configure the type of the question by selecting the question type drop down and selecting the correct option.
-        click(driver, By.name("question_type"));
-
-        click(driver,By.xpath("//option[@value='"+question.getType().optionValue+"']"));
-
-        explicitlyWait(driver, 2);
         /**
          *   Then we can fill in the question body itself.
          *   Here we have to add content into a tinyMCE iframe
          *   https://stackoverflow.com/questions/21713345/cant-sendkeys-to-tinymce-with-selenium-webdriver
-         *   TODO: Keep an eye on this, it's unclear to me if 'question_content_0' will always be the correct editor
+         *   TODO: Keep an eye on this, it's unclear to me if 'question_content_0' will always be the correct editor.
+         *     it is not -> hmmm.
          */
-        ((JavascriptExecutor)driver).executeScript("tinymce.EditorManager.get('question_content_0').setContent(`"+question.getBody()+"`)");
+        setQuestionContent(driver, question.getBody());
 
+        explicitlyWait(driver, 1);
 
         //Then we click 'update question'
         click(driver, By.xpath("//button[contains(.,'Update Question')]"));
@@ -145,10 +138,72 @@ public class QuizQuestionOperations {
 
     }
 
+    private WebElement getDeleteButton(WebDriver driver){
+        return (WebElement) ((JavascriptExecutor)driver).executeScript("return document.querySelector('#question_"+question.getId()+" [title=\"Delete this Question\"]')");
+    }
 
-    private void clickEditQuizButton(WebDriver driver){
-        WebElement editQuizButton = findElement(driver, By.className("edit_assignment_link"));
-        editQuizButton.click();
+    private WebElement getEditButton(WebDriver driver){
+        return (WebElement) ((JavascriptExecutor)driver).executeScript("return document.querySelector('#question_"+question.getId()+" [title=\"Edit this Question\"]')");
+    }
+
+    private void hoverQuestionElementViaJs(WebDriver driver){
+        ((JavascriptExecutor)driver).executeScript("document.getElementById('question_"+question.getId()+"').classList.add('hover');");
+    }
+
+    private void unhoverQuestionElementViaJs(WebDriver driver){
+        ((JavascriptExecutor)driver).executeScript("document.getElementById('question_"+question.getId()+"').classList.remove('hover');");
+    }
+
+    private WebElement getQuestionElementViaJs(WebDriver driver){
+        return (WebElement)((JavascriptExecutor)driver).executeScript("return document.getElementById('question_"+question.getId()+"')");
+    }
+
+    /**
+     * Canvas seems to create new tinyMCE editors every time one goes to update/edit a question on the questions tab without resetting the state,
+     * IE: reloading the page, or navigating away and back.
+     *
+     * The way we currently only work with one question at a time, we should only ever be editing the last tinyMCE editor on the page.
+     *
+     * The javascript below finds that editor and sets it to the given content.
+     *
+     * @param driver
+     * @param content the content to enter into the editor.
+     */
+    private void setQuestionContent(WebDriver driver, String content){
+
+        ((JavascriptExecutor)driver).executeScript("""
+                //Sets the correct editor's content for a quiz question
+                (function(content){
+                
+                    //Keep track of the editor indices so far
+                    let maxEditorIndex = 0
+                    
+                    //Go through all the editors
+                    for(prop in tinymce.editors){
+                    
+                        //If an editor name starts with 'question_content'
+                        if(prop.startsWith('question_content_')){
+                        
+                            //Split on 'question_content_' to grab its index
+                            let editorIndex = prop.split('question_content_')[1]
+                            
+                            //Parse our string value as an int
+                            editorIndex = parseInt(editorIndex)
+                            
+                            //If this index is larger than any I've seen so far
+                            if(editorIndex > maxEditorIndex){
+                                //Set it as the max editor index
+                                maxEditorIndex = editorIndex
+                            }
+                        }
+                    }
+                    //Set the content of the last question content editor.
+                    tinymce.EditorManager.get('question_content_' + maxEditorIndex).setContent(content)
+                                
+                })("%s")
+                                
+                """.formatted(content));
+
     }
 
     private Set<Integer> getQuestionIdsOnPage(WebDriver driver){

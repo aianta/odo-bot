@@ -27,7 +27,7 @@ public class ModuleOperations {
         driver.get(course.getCoursePageUrl());
 
         //Click the dropdown menu for our module
-        doubleClick(driver, By.cssSelector("button[aria-label='Manage "+module.getName()+"']"));
+        click(driver, By.cssSelector("button[aria-label='Manage "+module.getName()+"']"));
 
         //Click the delete option
         click(driver, By.linkText("Delete"));
@@ -43,7 +43,7 @@ public class ModuleOperations {
         driver.get(course.getCoursePageUrl());
 
         //Click the dropdown menu for our module
-        doubleClick(driver,By.cssSelector("button[aria-label='Manage "+module.getName()+"']") );
+        click(driver,By.cssSelector("button[aria-label='Manage "+module.getName()+"']") );
 
         //Click the edit option from the drop-down menu
         click(driver,By.linkText("Edit") );

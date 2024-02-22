@@ -146,6 +146,14 @@ public class ExploreTask implements Runnable{
     public void run() {
         int completedCases = 0;
 
+        //START DEBUGGING
+        //Filter out various other tasks for debugging purposes.
+        primaryToDo = primaryToDo.stream()
+                .filter(operation -> operation.getResource().equals(Course.class) || operation.getResource().equals(Quiz.class) || operation.getResource().equals(QuizQuestion.class)).collect(ToDo::new, ToDo::add, ToDo::addAll);
+
+        //END DEBUGGING
+
+
         /* Create an Operation failures object to store operations that throw execptions during execution.
          * We'll use this to try and determine what's going on.
          */
@@ -178,12 +186,14 @@ public class ExploreTask implements Runnable{
                 loginOperation.execute(driver);
 
                 int sessionSize = random.nextInt(10, 20);
+                sessionSize = 100; //TODO - for debugging, remove
+
                 int sessionProgress = 0;
 
                 //Then some number of cases
 
                 while (sessionSize > 0){
-                    Operation op = nextOperation();
+                    Operation op = nextOperationInOrder();
                     if(op == null){
                         break;
                     }
@@ -290,7 +300,7 @@ public class ExploreTask implements Runnable{
         editFlightButton.click();
 
         //Wait for the registered application list to appear
-        explicitlyWait(driver, 2);
+        explicitlyWait(driver, 1);
 
         //Select the application specified by the id in the explore request
         WebElement selectApplicationButton = driver.findElement(By.id(config.getString(ExploreRequestFields.LOGUI_APPLICATION_ID.field) + "-select"));
@@ -310,12 +320,12 @@ public class ExploreTask implements Runnable{
 
         //Start the recording
         WebElement startRecordingButton = driver.findElement(By.id(ODOSIGHT_CONTROLS_START_RECORDING_BUTTON_ID));
-        explicitlyWaitUntil(driver, 2, d->startRecordingButton.isDisplayed());
+        explicitlyWaitUntil(driver, 30, d->startRecordingButton.isDisplayed());
         startRecordingButton.click();
 
         //Wait for recording session id to be displayed
         WebElement sessionIdLabel = driver.findElement(By.id(ODOSIGHT_CONTROLS_SESSION_ID_LABEL_ID));
-        explicitlyWaitUntil(driver, 5, d->!sessionIdLabel.getText().equals("<no active session>"));
+        explicitlyWaitUntil(driver, 30, d->!sessionIdLabel.getText().equals("<no active session>"));
 
         //Then return back to the web application tab
         driver.switchTo().window(webAppTabHandle);
@@ -455,6 +465,9 @@ public class ExploreTask implements Runnable{
         return profile;
     }
 
+    private Operation nextOperationInOrder(){
+        return primaryToDo.get(0);
+    }
 
     private Operation nextOperation(){
         if(primaryToDo.size() == 0){
