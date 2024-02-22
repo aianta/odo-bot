@@ -148,8 +148,8 @@ public class ExploreTask implements Runnable{
 
         //START DEBUGGING
         //Filter out various other tasks for debugging purposes.
-        primaryToDo = primaryToDo.stream()
-                .filter(operation -> operation.getResource().equals(Course.class) || operation.getResource().equals(Quiz.class) || operation.getResource().equals(QuizQuestion.class)).collect(ToDo::new, ToDo::add, ToDo::addAll);
+        //primaryToDo = primaryToDo.stream()
+        //        .filter(operation -> operation.getResource().equals(Course.class) || operation.getResource().equals(Quiz.class) || operation.getResource().equals(QuizQuestion.class)).collect(ToDo::new, ToDo::add, ToDo::addAll);
 
         //END DEBUGGING
 
