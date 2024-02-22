@@ -44,7 +44,7 @@ public class AssignmentOperations {
         explicitlyWait(driver, 1);
 
         //Click the more options drop down
-        doubleClick(driver, By.className("icon-more"));
+        click(driver, By.className("icon-more"));
 
         //Click the delete option
         click(driver, By.linkText("Delete"));

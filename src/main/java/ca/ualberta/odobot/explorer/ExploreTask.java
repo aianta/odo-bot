@@ -146,12 +146,12 @@ public class ExploreTask implements Runnable{
     public void run() {
         int completedCases = 0;
 
-        //START DEBUGGING
-        //Filter out various other tasks for debugging purposes.
-        //primaryToDo = primaryToDo.stream()
-        //        .filter(operation -> operation.getResource().equals(Course.class) || operation.getResource().equals(Quiz.class) || operation.getResource().equals(QuizQuestion.class)).collect(ToDo::new, ToDo::add, ToDo::addAll);
-
-        //END DEBUGGING
+//        //START DEBUGGING
+//        //Filter out various other tasks for debugging purposes.
+//        primaryToDo = primaryToDo.stream()
+//                .filter(operation -> operation.getResource().equals(Course.class) || operation.getResource().equals(Page.class) ).collect(ToDo::new, ToDo::add, ToDo::addAll);
+//
+//        //END DEBUGGING
 
 
         /* Create an Operation failures object to store operations that throw execptions during execution.
@@ -186,14 +186,13 @@ public class ExploreTask implements Runnable{
                 loginOperation.execute(driver);
 
                 int sessionSize = random.nextInt(10, 20);
-                sessionSize = 100; //TODO - for debugging, remove
 
                 int sessionProgress = 0;
 
                 //Then some number of cases
 
                 while (sessionSize > 0){
-                    Operation op = nextOperationInOrder();
+                    Operation op = nextOperation();
                     if(op == null){
                         break;
                     }
