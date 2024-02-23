@@ -27,16 +27,9 @@ public class AssignmentOperations {
 
     public void delete(WebDriver driver){
 
-        //Navigate to the course assignment page
-        driver.get(course.getCoursePageUrl()+"/assignments");
+        //Navigate to the assignment page
+        driver.get(assignment.getAssignmentPageUrl());
 
-
-        click(driver, By.xpath("//a[@href='http://localhost:8088/courses/"+course.getId()+"/assignments/"+assignment.getId()+"']"));
-
-        //If we're not on the page for this assignment at this point
-        if(!driver.getCurrentUrl().equals(assignment.getAssignmentPageUrl())){
-            driver.get(assignment.getAssignmentPageUrl()); //Explicitly load that page
-        }
 
         //Click the edit button
         click(driver, By.linkText("Edit"));
@@ -59,18 +52,8 @@ public class AssignmentOperations {
 
     public void edit (WebDriver driver){
 
-        //Navigate to the course assignments page
-        driver.get(course.getCoursePageUrl() + "/assignments");
-        click(driver, By.xpath("//a[@href='http://localhost:8088/courses/"+course.getId()+"/assignments/"+assignment.getId()+"']"));
-
-        //Wait to see the assignment title displayed
-        WebElement assignmentTitle = findElement(driver, By.cssSelector(".title-content > .title"));
-        explicitlyWaitUntil(driver, 30, d-> ExpectedConditions.visibilityOf(assignmentTitle));
-
-        //If we're not on the page for this assignment at this point
-        if(!driver.getCurrentUrl().equals(assignment.getAssignmentPageUrl())){
-            driver.get(assignment.getAssignmentPageUrl()); //Explicitly load that page
-        }
+        //Navigate to the assignment page
+        driver.get(assignment.getAssignmentPageUrl());
 
         //Click the edit button
         click(driver, By.linkText("Edit"));
@@ -83,7 +66,7 @@ public class AssignmentOperations {
         click(driver, By.xpath("//form[@id='edit_assignment_form']/div[3]/div[2]/button[3]") );
 
         //Wait to see the assignment title displayed
-        explicitlyWaitUntil(driver, 30, d-> ExpectedConditions.visibilityOf(assignmentTitle));
+        explicitlyWait(driver, 1);
     }
 
     public void create(WebDriver driver) {

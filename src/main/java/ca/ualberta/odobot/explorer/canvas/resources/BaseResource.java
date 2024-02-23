@@ -34,6 +34,10 @@ public abstract class BaseResource {
     }
 
     public String makeEdit(String body){
+        if(body.length() == 0){
+            log.warn("something has an empty body.....");
+            body = "edited value";
+        }
         //Randomly pick some sub-section of the body
         String result = body.substring(random.nextInt(0, body.length()));
         if(result.length() < body.length()/2){ // If the randomly selected subsection is greater than half the original content.

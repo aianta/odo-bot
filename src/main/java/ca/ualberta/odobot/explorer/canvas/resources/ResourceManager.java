@@ -178,31 +178,31 @@ public class ResourceManager {
             File questionsFile = new File(quizFolder.getPath() + File.separator + "assessment_qti.xml");
 
             List<String> questionTexts = new ArrayList<>();
-            List<String> questionIdentifiers = new ArrayList<>();
+
             List<String> questionTitles = new ArrayList<>();
 
             XMLResourceReader questionsReader = new XMLResourceReader();
             questionsReader.addStartHandler(path->path.get(path.size()-1).equals(":item"), (start,next)->{
-                questionIdentifiers.add(start.getAttributeByName(new QName("ident")).getValue());
+
                 questionTitles.add(start.getAttributeByName(new QName("title")).getValue());
             });
             questionsReader.addStartHandler(path->path.get(path.size()-1).equals(":mattext") && path.get(path.size()-2).equals(":material") && path.get(path.size()-3).equals(":presentation"), (start, characters)->questionTexts.add(characters.asCharacters().getData()));
             readXMLFile(questionsFile, questionsReader::consume);
 
-            Iterator<String> questionTextIt = questionTexts.iterator();
+            ListIterator<String> questionTextIt = questionTexts.listIterator();
             Iterator<String> questionTitleIt = questionTitles.iterator();
-            ListIterator<String> questionIdentifierIt = questionIdentifiers.listIterator();
+
             while (questionTextIt.hasNext()){
                 QuizQuestion question = new QuizQuestion();
 
                 String questionName = questionTitleIt.next();
-                String questionIdentifier = questionIdentifierIt.next();
+                String questionText = questionTextIt.next();
 
                 question.setName(questionName);
-                question.setIdentifier(questionIdentifier+"#"+questionIdentifierIt.previousIndex());
+                question.setIdentifier(quiz.getIdentifier()+"#"+questionTextIt.previousIndex());
                 question.setType(QuizQuestion.QuestionType.MULTIPLE_CHOICE);
                 question.setBody(
-                        Jsoup.parse(questionTextIt.next()).text()  //This is necessary to convert HTML entities into their real character values. IE: &lt; into <
+                        Jsoup.parse(questionText).text()  //This is necessary to convert HTML entities into their real character values. IE: &lt; into <
                 );
                 question.setName("Question");
                 question.setRelatedQuizIdentifier(quiz.getIdentifier());

@@ -25,6 +25,7 @@ public interface ElasticsearchService {
         return new ElasticsearchServiceVertxEBProxy(vertx, address);
     }
 
+
     Future<List<JsonObject>> fetchAll(String index);
 
     Future<List<JsonObject>> fetchAndSortAll(String index, JsonArray sortOptions);

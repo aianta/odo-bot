@@ -185,7 +185,7 @@ public class ExploreTask implements Runnable{
                 //Each session starts by logging in.
                 loginOperation.execute(driver);
 
-                int sessionSize = random.nextInt(10, 20);
+                int sessionSize = random.nextInt(10, 30);
 
                 int sessionProgress = 0;
 
@@ -211,6 +211,8 @@ public class ExploreTask implements Runnable{
                         saveFailures(failures);
 
                         log.warn(e.getMessage(), e);
+                        e.printStackTrace();
+
                         if(op.getType().equals(Operation.OperationType.CREATE)){
                             log.warn("pruning dependents");
                             primaryToDo = pruneDependents(op, primaryToDo);
@@ -495,7 +497,17 @@ public class ExploreTask implements Runnable{
         completedAndPlannedDependencies.addAll(completedOperations);
 
         List<UUID> incompleteDependencies = candidate.dependencies().stream().filter(dependency->!completedAndPlannedDependencies.contains(dependency)).collect(Collectors.toList());
-        Operation next =  primaryToDo.getOperationById(incompleteDependencies.get(0));
+        Iterator<UUID> incompleteDependenciesIt = incompleteDependencies.iterator();
+        Operation next =  primaryToDo.getOperationById(incompleteDependenciesIt.next());
+
+        //It's possible that dependencies have been pruned from the primaryToDO so we have to keep going through them until we find one.
+        while (next == null){
+            if(!incompleteDependenciesIt.hasNext()){
+                return null;
+            }
+            next = primaryToDo.getOperationById(incompleteDependenciesIt.next());
+
+        }
 
         if(completedOperations.containsAll(next.dependencies())){
             return next;

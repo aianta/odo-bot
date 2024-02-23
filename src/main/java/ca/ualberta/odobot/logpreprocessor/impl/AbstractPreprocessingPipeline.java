@@ -76,9 +76,15 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
          * Pipelines use proxies to interact with services allowing for better use of resources
          * across a distributed deployment.
          */
-        elasticsearchService = ElasticsearchService.createProxy(vertx.getDelegate(), ELASTICSEARCH_SERVICE_ADDRESS);
+        //elasticsearchService = ElasticsearchService.createProxy(vertx.getDelegate(), ELASTICSEARCH_SERVICE_ADDRESS);
         domSequencingService = DOMSequencingService.createProxy(vertx.getDelegate(), DOMSEQUENCING_SERVICE_ADDRESS);
         //sqliteService = SqliteService.createProxy(vertx.getDelegate(), SQLITE_SERVICE_ADDRESS);
+
+        //Need a custom service proxy builder here because elasticsearch queries can take a really long time.
+        ServiceProxyBuilder esProxyBuilder = new ServiceProxyBuilder(vertx.getDelegate())
+                .setAddress(ELASTICSEARCH_SERVICE_ADDRESS)
+                .setOptions(new DeliveryOptions().setSendTimeout(3600000)); //1hr timeout
+        elasticsearchService = esProxyBuilder.build(ElasticsearchService.class);
 
         ServiceProxyBuilder dbProxyBuilder = new ServiceProxyBuilder(vertx.getDelegate())
                 .setAddress(SQLITE_SERVICE_ADDRESS);
@@ -264,14 +270,52 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
         //Fetch the event logs corresponding with every index requested
         CompositeFuture.all(
                 esIndices.stream().map(index->elasticsearchService.fetchAndSortAll(index, sortOptions)).collect(Collectors.toList())
-        ).compose(future->{
+        ).onFailure(err->log.error(err.getMessage(), err))
+        .compose(future->{
             List<List<JsonObject>> eventlogs = future.list();
 
             //Build a map associating the logs with their elasticsearch indices
             Map<String,List<JsonObject>> eventlogsMap = new HashMap<>();
-            for(int i = 0; i < eventlogs.size(); i++){
-                eventlogsMap.put(esIndices.get(i), eventlogs.get(i));
+
+            /**
+             * There are three possible cases for this handler:
+             *
+             * 1) A list of specific elasticsearch indices are given. In that case, each will be retrieved individually
+             * and each List<JsonObject> in the eventlogs variable corresponds with the documents/events for one of the
+             * given indices.
+             *
+             * 2) An index prefix is specified, in that case, elasticsearch will do a multi-index search and a single List<JsonObject>
+             * will contain documents/events from multiple underlying es indices.
+             *
+             * 3) A combination of 1) & 2).
+             *
+             * The logic below aims to support all these cases. Each JsonObject will include a field 'index', which specifies the index
+             * from which it originated. We use this field to sort out where each event belongs.
+             */
+
+            //Go through every eventlog returned to us by the elastic search service.
+            Iterator<List<JsonObject>> eventLogIt = eventlogs.iterator();
+            while (eventLogIt.hasNext()){
+                List<JsonObject> eventlog = eventLogIt.next();
+
+                //Go through every event in a given event log
+                Iterator<JsonObject> eventIt = eventlog.iterator();
+                while (eventIt.hasNext()){
+
+                    //For each event, check its 'index' field to place it into the correct map entry.
+                    JsonObject event = eventIt.next();
+                    List<JsonObject> targetList = eventlogsMap.getOrDefault(event.getString("index"), new ArrayList<>());
+                    targetList.add(event);
+                    eventlogsMap.put(event.getString("index"), targetList);
+
+                }
+
             }
+
+            log.info("Retrieved data from the following indices:");
+            //List out the indices retrieved for sanity purposes.
+            eventlogsMap.keySet().forEach(index->log.info("{}", index));
+
             rc.put("rawEventsMap", eventlogsMap);
 
             //Construct timelines for each index on separate threads.

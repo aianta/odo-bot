@@ -73,13 +73,13 @@ public class QuizQuestionOperations {
 
         //Get the question element so we can hover over it to reveal the edit button
         //WebElement questionElement = findElement(driver, By.id("question_"+ question.getId()));
-        WebElement questionElement = getQuestionElementViaJs(driver);
-
-        Actions action = new Actions(driver);
-        action.moveToElement(questionElement).perform();
+        //WebElement questionElement = getQuestionElementViaJs(driver);
+        hoverQuestionElementViaJs(driver);
 
         //Click the edit button for this specific quiz question
         click(driver, getEditButton(driver));
+
+        unhoverQuestionElementViaJs(driver);
 
         //Update the question content
         setQuestionContent(driver, question.makeEdit(question.getBody()));
@@ -88,9 +88,12 @@ public class QuizQuestionOperations {
         click(driver, By.xpath("//button[contains(.,'Update Question')]"));
 
 
+
     }
 
     public void create(WebDriver driver) {
+
+        //Canvas creates new tinyMCE editors over and over if you keep playing around with quiz questions without changeing the app state.
 
         driver.get(quiz.getQuizEditPageUrl() + "#question_tab");
 
@@ -105,7 +108,7 @@ public class QuizQuestionOperations {
         //Then we click the add a new question button
         click(driver, By.cssSelector(".add_question_link:nth-child(1)"));
 
-        explicitlyWait(driver, 1);
+        explicitlyWait(driver, 3);
 
         /**
          *   Then we can fill in the question body itself.
@@ -200,7 +203,7 @@ public class QuizQuestionOperations {
                     //Set the content of the last question content editor.
                     tinymce.EditorManager.get('question_content_' + maxEditorIndex).setContent(content)
                                 
-                })("%s")
+                })(`%s`)
                                 
                 """.formatted(content));
 
