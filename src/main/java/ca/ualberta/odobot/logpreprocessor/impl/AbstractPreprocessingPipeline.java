@@ -76,9 +76,7 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
          * Pipelines use proxies to interact with services allowing for better use of resources
          * across a distributed deployment.
          */
-        //elasticsearchService = ElasticsearchService.createProxy(vertx.getDelegate(), ELASTICSEARCH_SERVICE_ADDRESS);
         domSequencingService = DOMSequencingService.createProxy(vertx.getDelegate(), DOMSEQUENCING_SERVICE_ADDRESS);
-        //sqliteService = SqliteService.createProxy(vertx.getDelegate(), SQLITE_SERVICE_ADDRESS);
 
         //Need a custom service proxy builder here because elasticsearch queries can take a really long time.
         ServiceProxyBuilder esProxyBuilder = new ServiceProxyBuilder(vertx.getDelegate())

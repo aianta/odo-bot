@@ -24,7 +24,7 @@ import java.util.List;
 
 public class FetchAllTask implements Runnable{
     private static final Logger log = LoggerFactory.getLogger(FetchAllTask.class);
-    private static final Time keepAliveValue = Time.of(t->t.time("1m"));
+    private static final Time keepAliveValue = Time.of(t->t.time("10m"));
 
     private ElasticsearchClient client;
     private Promise<List<JsonObject>> promise;
@@ -49,8 +49,7 @@ public class FetchAllTask implements Runnable{
      * Note: This method accumulates the results in an ArrayList, and thus could scale poorly with
      * large datasets.
      *
-     * TODO -> Consider a scalable implementation... the recursion is begging for a stack overflow
-     *
+     * TODO -> Consider a scalable implementation...
      * @param index index from which to retrieve documents.
      * @param sortOptions a json array of elasticsearch sort options (see: https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html)
      * @return A list of all available documents from that index.
@@ -100,8 +99,25 @@ public class FetchAllTask implements Runnable{
 
                 SearchResponse<JsonData> search = client.search(initialRequest, JsonData.class);
 
+                //Termination condition: response contains 0 results.
+                while(search.hits().hits().size() != 0){
+                    log.info("Response: {}", search.toString());
+
+                    //add to our results and formulate the next search request
+                    Iterator<Hit<JsonData>> it = search.hits().hits().iterator();
+                    List<FieldValue> sortInfo = new ArrayList<>();
+                    while (it.hasNext()){
+                        Hit<JsonData> curr = it.next();
+                        results.add(JsonDataUtility.fromJsonData(curr.source()).put("index", curr.index())); //Add the index of the document to our result
+                        sortInfo = curr.sort();
+                    }
+
+                    SearchRequest nextRequest = fetchAllRequest(search.pitId(), keepAliveValue, options, sortInfo);
+                    search = client.search(nextRequest, JsonData.class);
+                }
+
                 //Recurse!
-                fetchAll(search, initialRequest, options, results);
+                //fetchAll(search, initialRequest, options, results);
                 log.info("Done! got {} documents.", results.size());
 
 
@@ -125,32 +141,6 @@ public class FetchAllTask implements Runnable{
             promise.fail(ioe);
         }
         promise.complete(results);
-    }
-
-    private List<JsonObject> fetchAll(SearchResponse<JsonData> response, SearchRequest request, SortOptions sortOptions, List<JsonObject> resultsSoFar) throws IOException {
-
-        //log.info("Response: {}", response.toString());
-
-        //Termination condition: response contains 0 results.
-        if(response.hits().hits().size() == 0){
-            return resultsSoFar;
-        }
-
-        //Otherwise add to our results and formulate the next search request
-        Iterator<Hit<JsonData>> it = response.hits().hits().iterator();
-        List<FieldValue> sortInfo = new ArrayList<>();
-        while (it.hasNext()){
-            Hit<JsonData> curr = it.next();
-            resultsSoFar.add(JsonDataUtility.fromJsonData(curr.source()).put("index", curr.index()));
-            sortInfo = curr.sort();
-            //log.info("SortInfo: {}", sortInfo.toString());
-        }
-
-        //Update the search request with the last sort information from the last result.
-        SearchRequest nextRequest = fetchAllRequest(response.pitId(), keepAliveValue, sortOptions,  sortInfo);
-
-        SearchResponse<JsonData> search = client.search(nextRequest, JsonData.class);
-        return fetchAll(search, request, sortOptions, resultsSoFar);
     }
 
     private SortOptions defaultSort(){
