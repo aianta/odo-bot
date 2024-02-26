@@ -37,6 +37,8 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
     private static final Pattern numbers = Pattern.compile("[0-9]+");
     private static final Pattern logicalTextRegion = Pattern.compile("(?<=[>])([a-zA-Z0-9?!;.,\\\"\\\"\\(\\)\\s]+)(?=[<])");
 
+    private static final DijkstraCache cache = new DijkstraCache();
+
     private BiFunction<Element,String, Elements> matchingFunction;
 
     /**
@@ -115,9 +117,11 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
             log.error("Cannot get terms! Matching function is not set!");
             return List.of();
         }
-
+        cache.printStats();
         Element targetElement = artifact.getTargetElement();
         Document dom = artifact.getDomSnapshot();
+        String domString = dom.toString();
+
         Element body = dom.body();
 
         log.debug("targetElement: {}", targetElement);
@@ -156,24 +160,24 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
                 return switch (multiElementOptions){
                     case MIN -> new RankedTerm(term,
                                     elements.stream()
-                                            .mapToInt(match->dijkstra(dom, targetElement, match))
+                                            .mapToInt(match->cachedOrComputedDistance(domString, dom, targetElement, match))
                                             .min().getAsInt()
                                 );
                     case MAX -> new RankedTerm(term,
                                     elements.stream()
-                                            .mapToInt(match->dijkstra(dom, targetElement, match))
+                                            .mapToInt(match->cachedOrComputedDistance(domString, dom, targetElement, match))
                                             .max().getAsInt()
                                 );
                     case MEAN -> new RankedTerm(term,
                                     elements.stream()
-                                            .mapToInt(match->dijkstra(dom, targetElement, match))
+                                            .mapToInt(match->cachedOrComputedDistance(domString, dom, targetElement, match))
                                             .average().getAsDouble()
                             );
                 };
             }
 
             if(elements.size() == 1){
-                return new RankedTerm(term, dijkstra(dom, targetElement, elements.first()));
+                return new RankedTerm(term, cachedOrComputedDistance(domString, dom, targetElement, elements.first()));
             }
 
             log.warn("About to return a null ranked term, this happens when we cannot find elements containing " +
@@ -203,6 +207,14 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
         return result.stream().map(value->value.term()).collect(Collectors.toList());
     }
 
+    private static Integer cachedOrComputedDistance(String domString, Document document, Element source, Element target){
+        Optional<Integer> cachedDistance = cache.getDistance(domString, source, target);
+        if(cachedDistance.isEmpty()){
+            return dijkstra(domString, document, source, target);
+        }else{
+            return cachedDistance.get();
+        }
+    }
 
     /**
      * https://en.wikipedia.org/wiki/Dijkstra's_algorithm
@@ -210,10 +222,10 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
      * @param src
      * @param tgt
      */
-    public static Integer dijkstra(Document document, Element src, Element tgt){
+    public static Integer dijkstra(String domString, Document document, Element src, Element tgt){
 
         /**
-         * Initalize Dijkstra
+         * Initialize Dijkstra
          */
         Elements vertices = document.getAllElements();
         Map<Element, Integer> dist = new HashMap<>();
@@ -239,6 +251,15 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
             Element u = q.poll();
 
             if(u.equals(tgt)){
+                //Cache all non-infinite distances from this source element
+                dist.entrySet().stream()
+                        .filter(entry->entry.getValue() < Integer.MAX_VALUE - 1)
+                        .forEach(entry->{
+                            cache.cacheDistance(domString, src, entry.getKey(), entry.getValue());
+                            //Shortest distances are commutative in non-directed graphs, so add target to source values as well
+                            cache.cacheDistance(domString, entry.getKey(), src, entry.getValue());
+                        });
+
                 return dist.get(u);
             }
 

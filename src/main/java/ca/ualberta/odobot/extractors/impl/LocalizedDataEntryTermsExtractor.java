@@ -35,7 +35,7 @@ import java.util.stream.Collectors;
  * which share the same '<form>' tag parent.
  *
  * Within the <form> context, we also identify other input fields and remove terms closer to those input fields than this input field.
- * Where closer is defined by {@link DistanceToTarget#dijkstra(Document, Element, Element)}.
+ * Where closer is defined by {@link DistanceToTarget#dijkstra(String domString, Document, Element, Element)}.
  *
  * NOTE: Naturally, this assumes the text field is placed within a <form> tag. This is not guaranteed. If no
  * parent <form> tag is found, we revert back to the normal term extraction strategy.
@@ -55,6 +55,7 @@ public class LocalizedDataEntryTermsExtractor extends SimpleDataEntryTermsExtrac
         //Get the last input change event for this Data Entry event since it will contain the DOMSnapshot.
         InputChange finalChange = entity.lastChange();
         Document document = finalChange.getDomSnapshot();
+        String domString = document.toString();
         Element inputElement = finalChange.getTargetElement();
 
         log.info(inputElement.outerHtml());
@@ -83,7 +84,7 @@ public class LocalizedDataEntryTermsExtractor extends SimpleDataEntryTermsExtrac
             LinkedHashMap<Element, Integer> distanceToTerm = new LinkedHashMap<>();
             inputFields.forEach(field->{
 
-                Integer dist = DistanceToTarget.dijkstra(document, t, field);
+                Integer dist = DistanceToTarget.dijkstra(domString, document, t, field);
                 //log.info("Distance of {} for {} to {}", dist, t.ownText(), field.outerHtml());
                 distanceToTerm.put(field,dist );
             });

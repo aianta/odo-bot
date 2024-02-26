@@ -22,6 +22,7 @@ import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.eventbus.DeliveryOptions;
+import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.core.Vertx;
@@ -30,6 +31,7 @@ import io.vertx.rxjava3.core.buffer.Buffer;
 import io.vertx.rxjava3.ext.web.RoutingContext;
 import io.vertx.rxjava3.ext.web.client.WebClient;
 import io.vertx.serviceproxy.ServiceProxyBuilder;
+import org.apache.http.protocol.HTTP;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,6 +45,7 @@ import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.*;
+import static ca.ualberta.odobot.logpreprocessor.LogPreprocessor.API_PATH_PREFIX;
 
 /**
  * Provide base/common/core fields, resources, and services to all pipelines.
@@ -248,12 +251,62 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
         rc.next();
     }
 
+    public void chunkedSemanticTracesHandler(RoutingContext rc){
+
+        List<String> esIndices = rc.queryParam("index");
+        int chunkSize = Integer.parseInt(rc.queryParam("chunkSize").get(0));
+        String dataset = rc.request().getParam("dataset");
+        if(dataset != null){
+            rc.put("dataset", dataset);
+        }
+        rc.put("chunkSize", chunkSize);
+
+
+        CompositeFuture.<Set<String>>all(
+                esIndices.stream().map(index->elasticsearchService.getAliases(index)).collect(Collectors.toList())
+        ).onFailure(err->log.error(err.getMessage(), err))
+                .onSuccess(indicesSets->{
+
+                    List<String> todo = new ArrayList<>();
+
+                    indicesSets.<Set<String>>list().forEach(set->{
+                        todo.addAll(set);
+                    });
+
+                    rc.put("todo", todo);
+                    log.info("Indices todo: {}", todo.toString());
+                    log.info("In {} sized chunks", chunkSize);
+
+                    rc.reroute(HttpMethod.GET, API_PATH_PREFIX.substring(0, API_PATH_PREFIX.length()-2)  + "/preprocessing/pipelines/" + slug() + "/semanticTraces");
+
+                });
+
+
+    }
+
     @Override
     public void timelinesHandler(RoutingContext rc) {
 
+        if(rc.get("todo") != null){
+            List<String> todo = rc.get("todo");
+            List<String> esIndices = new ArrayList<>();
 
-        List<String> esIndices = rc.queryParam("index");
-        rc.put("esIndices", esIndices);
+            Iterator<String> it = todo.iterator();
+            int counter = rc.get("chunkSize");
+            while (it.hasNext() && counter > 0){
+                esIndices.add(it.next());
+                it.remove();
+                counter--;
+            }
+
+            rc.put("todo", todo);
+            rc.put("esIndices", esIndices);
+        }else{
+            List<String> esIndices = rc.queryParam("index");
+            rc.put("esIndices", esIndices);
+        }
+
+
 
         /**
          *  Event logs should be returned with the oldest event first. Create a JsonArray
@@ -263,7 +316,7 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
         JsonArray sortOptions = new JsonArray()
                 .add(new JsonObject().put(TIMESTAMP_FIELD, "asc"));
 
-
+        List<String> esIndices = rc.get("esIndices");
 
         //Fetch the event logs corresponding with every index requested
         CompositeFuture.all(
@@ -412,7 +465,8 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
         }
 
         //Get the name of the training dataset we're capturing materials for if it exists
-        String datasetName = rc.request().getParam("dataset");
+
+        String datasetName = rc.request().getParam("dataset") == null?rc.get("dataset"):rc.request().getParam("dataset");
         if(datasetName == null){
             datasetName = "default"; //Add to the default dataset if no dataset is otherwise specified.
         }
@@ -439,7 +493,15 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
             List<TrainingMaterials> dataset = new ArrayList<>();
             data.<List<TrainingMaterials>>list().forEach(materialsList->dataset.addAll(materialsList));
             log.info("{} training materials found!", dataset.size());
-            rc.put("trainingMaterials", dataset);
+
+            //During chunked requests, there may already be training materials from previous timelines, if so, we want to add to them.
+            List<TrainingMaterials> existingMaterials = rc.get("trainingMaterials");
+            if(existingMaterials != null){
+                existingMaterials.addAll(dataset);
+                rc.put("trainingMaterials", dataset);
+            }else{
+                rc.put("trainingMaterials", dataset);
+            }
             rc.next();
         });
 

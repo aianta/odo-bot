@@ -7,6 +7,7 @@ import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
 import ca.ualberta.odobot.logpreprocessor.impl.*;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 
+import ca.ualberta.odobot.semanticflow.model.TrainingMaterials;
 import ca.ualberta.odobot.semanticflow.model.semantictrace.SemanticTrace;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import ca.ualberta.odobot.sqlite.impl.TrainingExemplar;
@@ -44,7 +45,7 @@ import static ca.ualberta.odobot.logpreprocessor.Constants.*;
 public class LogPreprocessor extends AbstractVerticle {
     private static final Logger log = LoggerFactory.getLogger(LogPreprocessor.class);
 
-    private static final String API_PATH_PREFIX = "/api/*";
+    public static final String API_PATH_PREFIX = "/api/*";
     private static final String HOST = "0.0.0.0";
     private static final int PORT = 8078;
 
@@ -294,13 +295,33 @@ public class LogPreprocessor extends AbstractVerticle {
         semanticTracesRoute.handler(pipeline::timelinesHandler);
         semanticTracesRoute.handler(pipeline::semanticTraceHandler);
         semanticTracesRoute.handler(pipeline::captureTrainingMaterialsHandler);
+        //If we're constructing training materials in a chunked fashion, go back and get the next chunks now.
+        semanticTracesRoute.handler(rc->{
+            List<TrainingMaterials> materials = rc.get("trainingMaterials");
+            log.info("Collected {} training materials so far.", materials.size());
+            if(rc.get("todo") != null && ((List<String>)rc.get("todo")).size() > 0){
+                rc.reroute(HttpMethod.GET, API_PATH_PREFIX.substring(0, API_PATH_PREFIX.length()-2) + "/preprocessing/pipelines/" + pipeline.slug() + "/semanticTraces");
+            }else{
+                rc.next();
+            }
+        });
         semanticTracesRoute.handler(pipeline::makeTrainingExemplarsHandler);
 
         semanticTracesRoute.handler(rc->{
+
+
             List<SemanticTrace> semanticTraces = rc.get("semanticTraces");
             JsonArray response = semanticTraces.stream().map(SemanticTrace::toJson).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
             rc.response().setStatusCode(200).putHeader("Content-Type", "application/json").end(response.encode());
+
+
+
         });
+
+
+        //Setup chunked semantic traces route, this is used for large sets of traces which would otherwise cause out of memory errors
+        Route chunkedSemanticTracesRoute = router.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + pipeline.slug() + "/large/semanticTraces");
+        chunkedSemanticTracesRoute.handler(pipeline::chunkedSemanticTracesHandler);
 
         router.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + pipeline.slug() + "/timelines").handler(pipeline::timelinesHandler);
         router.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + pipeline.slug() + "/timelines").handler(rc->{

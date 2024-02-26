@@ -261,7 +261,7 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
 
             }
         }
-
+        log.info("Timeline length: {}", timeline.size());
         return CompositeFuture.all(futures).onFailure(err->log.error(err.getMessage(), err)).compose(done->
                 {
                     log.info(" {} Training materials harvested!", done.list().size());

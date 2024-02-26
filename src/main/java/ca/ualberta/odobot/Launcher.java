@@ -22,7 +22,7 @@ public class Launcher extends io.vertx.core.Launcher {
                 .setWarningExceptionTimeUnit(TimeUnit.MINUTES)
         ;
 
-        super.beforeStartingVertx(options);
+        //super.beforeStartingVertx(options);
     }
 
 

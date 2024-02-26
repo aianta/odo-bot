@@ -14,6 +14,7 @@ import co.elastic.clients.elasticsearch.core.search.Hit;
 import co.elastic.clients.elasticsearch.core.search.TrackHits;
 import co.elastic.clients.elasticsearch.indices.DeleteIndexRequest;
 
+import co.elastic.clients.elasticsearch.indices.get_alias.IndexAliases;
 import co.elastic.clients.json.JsonData;
 import co.elastic.clients.json.jackson.JacksonJsonpMapper;
 import co.elastic.clients.transport.ElasticsearchTransport;
@@ -34,9 +35,7 @@ import org.slf4j.LoggerFactory;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.StringReader;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
+import java.util.*;
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.EXECUTIONS_INDEX;
 
@@ -59,7 +58,15 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
         client = new ElasticsearchClient(transport);
     }
 
-
+    public Future<Set<String>> getAliases(String pattern){
+        try{
+            Map<String, IndexAliases> results =  client.indices().getAlias(aliasRequest->aliasRequest.index(pattern)).result();
+            return Future.succeededFuture(results.keySet());
+        }catch (IOException error){
+            log.error(error.getMessage(), error);
+            return Future.failedFuture(error);
+        }
+    }
 
 
     /**

@@ -61,10 +61,28 @@ public class TrainingMaterials {
                         .mapToDouble(term->new HashCodeBuilder(41,83).append(term).toHashCode()).toArray();
                 log.info("Got hashed terms array: {}", hashedTerms.length);
 
+                /**
+                 * TODO: We need to process paths using Open API/API documentation such that
+                 * permalinks are turned to wildcards appropriately. In our case, I believe
+                 * our only consideration is for canvas page management routes.
+                 *
+                 *
+                 * https://canvas.instructure.com/doc/api/pages.html#method.wiki_pages_api.update
+                 *
+                 * PUT /api/v1/courses/:course_id/pages/:url_or_id
+                 *
+                 * So there we need to turn :url_or_id into an asterisks, we'll do this with a simple regex.
+                 *
+                 * TODO: Ideally there would be a proper component here capable of doing this dynamically based
+                 * on API documentation.
+                 */
+                String wildcardedPath = networkEvent.getPath().replaceAll("(?<=pages\\/)[\\s\\S]+", "*");
+                String fullPath = networkEvent.getMethod() + "-" + wildcardedPath;
 
-                int pathHash = hashString(networkEvent.getPath());
+                //Need to include the method for best differentiability between calls.
+                int pathHash = hashString(fullPath);
                 labels[0] = pathHash;
-                extras.put("path", networkEvent.getPath());
+                extras.put("path", fullPath);
                 extras.put("pathHash", pathHash);
 
 

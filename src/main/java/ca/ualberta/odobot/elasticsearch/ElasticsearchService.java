@@ -10,6 +10,7 @@ import io.vertx.core.json.JsonObject;
 
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * Interface for interacting with Elasticsearch throughout odobot.
@@ -25,6 +26,12 @@ public interface ElasticsearchService {
         return new ElasticsearchServiceVertxEBProxy(vertx, address);
     }
 
+    /**
+     * Return all indices matching the given pattern.
+     * @param pattern
+     * @return
+     */
+    Future<Set<String>> getAliases(String pattern);
 
     Future<List<JsonObject>> fetchAll(String index);
 

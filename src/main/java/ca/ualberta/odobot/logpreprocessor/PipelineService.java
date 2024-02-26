@@ -19,6 +19,8 @@ public interface PipelineService {
 
     void timelineEntitiesHandler(RoutingContext rc);
 
+    void chunkedSemanticTracesHandler(RoutingContext rc);
+
     void timelinesHandler(RoutingContext rc);
 
     void semanticTraceHandler(RoutingContext rc);
