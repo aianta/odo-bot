@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.sqlite.impl;
 
+import ca.ualberta.odobot.semanticflow.model.TrainingMaterials;
 import ca.ualberta.odobot.sqlite.LogParser;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import io.vertx.core.Future;
@@ -8,11 +9,15 @@ import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.jdbcclient.JDBCPool;
+import io.vertx.sqlclient.Row;
+import io.vertx.sqlclient.RowSet;
 import io.vertx.sqlclient.Tuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.SQLITE_CONNECTION_STRING;
@@ -34,6 +39,7 @@ public class SqliteServiceImpl implements SqliteService {
 
         createLogTable();
         createTrainingDatasetTable();
+        createTrainingMaterialsTable();
     }
 
     public Future<JsonArray> selectLogs(long timestampMilli, long range){
@@ -119,6 +125,69 @@ public class SqliteServiceImpl implements SqliteService {
         return promise.future();
     }
 
+    public Future<JsonArray> loadTrainingMaterialsForDataset(String dataset){
+        Promise<JsonArray> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            SELECT * FROM training_materials WHERE
+            dataset_name = ?;
+        """).execute(Tuple.of(dataset), result->{
+           if(result.succeeded()){
+
+               List<TrainingMaterials> materials = new ArrayList<>();
+               RowSet<Row> rows = result.result();
+               for(Row r: rows){
+                   materials.add(TrainingMaterials.fromRow(r));
+               }
+               promise.complete(materials.stream().map(e->e.toJson()).collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
+
+           }else{
+               promise.fail(result.cause());
+           }
+        });
+
+        return promise.future();
+    }
+
+    public Future<Void> saveTrainingMaterial(JsonObject json){
+        log.info("Saving {}", json.encodePrettily());
+        return saveTrainingMaterial(TrainingMaterials.fromJson(json));
+    }
+    public Future<Void> saveTrainingMaterial(TrainingMaterials materials){
+        Promise<Void> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            INSERT INTO  training_materials(
+                exemplar_id, 
+                hashed_dom_tree, 
+                hashed_terms,
+                source,
+                labels,
+                dataset_name,
+                extras
+            ) VALUES (?,?,?,?,?,?,?);
+        """).execute(Tuple.of(
+                materials.getExemplarId().toString(),
+                Arrays.stream(materials.getHashedDOMTree()).collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode(),
+                Arrays.stream(materials.getHashedTerms()).collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode(),
+                materials.getSource(),
+                Arrays.stream(materials.getLabels()).collect(JsonArray::new, JsonArray::add, JsonArray::addAll),
+                materials.getDatasetName(),
+                materials.getExtras().encode()
+        ), result->{
+           if(result.succeeded()){
+               log.info("Training material saved!");
+               promise.complete();
+           }else{
+               log.error(result.cause().getMessage(), result.cause());
+               promise.fail(result.cause());
+           }
+        });
+
+
+        return promise.future();
+    }
+
     public Future<Void> saveTrainingExemplar(JsonObject json){
         return saveExemplar(TrainingExemplar.fromJson(json));
     }
@@ -175,6 +244,30 @@ public class SqliteServiceImpl implements SqliteService {
 
         return promise.future();
 
+    }
+
+    private Future<Void> createTrainingMaterialsTable(){
+        Promise<Void> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            CREATE TABLE IF NOT EXISTS training_materials(
+                hashed_dom_tree text NOT NULL,
+                hashed_terms text NOT NULL,
+                exemplar_id text PRIMARY KEY,
+                source text NOT NULL,
+                labels text NOT NULL,
+                dataset_name NOT NULL,
+                extras text NOT NULL
+            )
+        """).execute(result->{
+            if(result.succeeded()){
+                promise.complete();
+            }else{
+                promise.fail(result.cause());
+            }
+        });
+
+        return promise.future();
     }
 
     private Future<Void> createLogTable(){

@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.explorer.canvas.resources;
 
+import org.apache.commons.io.FileUtils;
 import org.jsoup.Jsoup;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,7 +13,11 @@ import javax.xml.stream.events.EndElement;
 import javax.xml.stream.events.StartElement;
 import javax.xml.stream.events.XMLEvent;
 import java.io.*;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -49,6 +54,7 @@ public class ResourceManager {
 
         File courseContentDir = unzipArchive(courseArchive);
 
+
         log.info("Unzipped course content into temporary dir at: {}", courseContentDir.getPath());
 
         File imsManifestFile = new File(courseContentDir.getPath() + File.separator + "imsmanifest.xml");
@@ -62,6 +68,7 @@ public class ResourceManager {
         imsManifestReader.addStartHandler(path->path.get(path.size()-1).equals(":manifest"), (start,next)->course.setIdentifier(start.getAttributeByName(new QName("identifier")).getValue()));
         imsManifestReader.addStartHandler(path-> path.get(path.size()-1).equals("lomimscc:string") && path.get(path.size()-2).equals("lomimscc:title"), (start, characters) -> course.setName(characters.asCharacters().getData()));
         readXMLFile(imsManifestFile, imsManifestReader::consume);
+
 
         log.info("Loaded course {}", course.getName());
 
@@ -149,8 +156,18 @@ public class ResourceManager {
 
         log.info(result.contents());
 
+        //Clean-up temp course directories
+        try{
+            FileUtils.deleteDirectory(courseContentDir);
+        }catch (IOException e){
+            log.error(e.getMessage(), e);
+            throw new RuntimeException(e);
+        }
+
+
         return result;
     }
+
 
     private static CourseResources loadAssignments(File courseContentDir, CourseResources resources){
 
@@ -343,6 +360,8 @@ public class ResourceManager {
                 consumer.accept(nextEvent);
             }
 
+            reader.close();
+
         } catch (XMLStreamException e) {
             throw new RuntimeException(e);
         } catch (FileNotFoundException e) {
@@ -394,7 +413,10 @@ public class ResourceManager {
                         }
 
                         entryDestination.getParentFile().mkdirs();
-                        zipFile.getInputStream(entry).transferTo(new FileOutputStream(entryDestination));
+                        FileOutputStream fos = new FileOutputStream(entryDestination);
+                        zipFile.getInputStream(entry).transferTo(fos);
+                        fos.flush();
+                        fos.close();
                     }
                 }
 

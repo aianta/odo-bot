@@ -4,11 +4,13 @@ import io.vertx.core.Future;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import io.vertx.sqlclient.Row;
 import org.apache.commons.lang3.builder.HashCodeBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;
@@ -41,6 +43,47 @@ public class TrainingMaterials {
 
     JsonObject extras = new JsonObject();
 
+    public static TrainingMaterials fromRow(Row r){
+
+        TrainingMaterials result = new TrainingMaterials();
+        result.source = r.getString("source");
+        result.datasetName = r.getString("dataset_name");
+        result.exemplarId = UUID.fromString(r.getString("exemplar_id"));
+        result.extras = new JsonObject(r.getString("extras"));
+        result.labels = new JsonArray(r.getString("labels")).stream().mapToInt(o->(int)o).toArray();
+        result.hashedTerms = new JsonArray(r.getString("hashed_terms")).stream().mapToDouble(o->(double)o).toArray();
+        result.hashedDOMTree = new JsonArray(r.getString("hashed_dom_tree")).stream().mapToDouble(o->(double)o).toArray();
+
+        return result;
+    }
+
+    public static TrainingMaterials fromJson(JsonObject json){
+        TrainingMaterials result = new TrainingMaterials();
+        result.source = json.getString("source");
+        result.datasetName = json.getString("datasetName");
+        result.exemplarId = UUID.fromString(json.getString("exemplarId"));
+        result.extras = json.getJsonObject("extras");
+        result.labels = json.getJsonArray("labels").stream().mapToInt(o->(int)o).toArray();
+        result.hashedTerms = json.getJsonArray("hashedTerms").stream().mapToDouble(o->(double) o).toArray();
+        result.hashedDOMTree = json.getJsonArray("hashedDOMTree").stream().mapToDouble(o->(double) o).toArray();
+
+        return result;
+    }
+    public JsonObject toJson(){
+        JsonObject result = new JsonObject()
+                .put("source", getSource())
+                .put("datasetName", getDatasetName())
+                .put("exemplarId", getExemplarId().toString())
+                .put("extras", getExtras())
+                .put("labels", Arrays.stream(labels).collect(JsonArray::new, JsonArray::add, JsonArray::addAll))
+                .put("hashedTerms", Arrays.stream(hashedTerms).collect(JsonArray::new, JsonArray::add, JsonArray::addAll))
+                .put("hashedDOMTree", Arrays.stream(hashedDOMTree).collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
+
+        return result;
+    }
+
+    public TrainingMaterials(){}
+
     public TrainingMaterials(ClickEvent clickEvent, NetworkEvent networkEvent, String source, String datasetName ){
         this.clickEvent = clickEvent;
         this.networkEvent = networkEvent;
@@ -60,6 +103,7 @@ public class TrainingMaterials {
                         .stream().map(o->(String)o)
                         .mapToDouble(term->new HashCodeBuilder(41,83).append(term).toHashCode()).toArray();
                 log.info("Got hashed terms array: {}", hashedTerms.length);
+                extras.put("top_5_terms",clickEvent.getSemanticArtifacts().getJsonArray("terms").stream().limit(5).collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
 
                 /**
                  * TODO: We need to process paths using Open API/API documentation such that
@@ -118,14 +162,14 @@ public class TrainingMaterials {
 //                        .toHashCode();
 
 
-                String dbOpsString = networkEvent.getDbOps().stringRepresentation();
+                //String dbOpsString = networkEvent.getDbOps().stringRepresentation();
 //                label = new HashCodeBuilder(63, 87)
 //                        .append(dbOpsString)
 //                        .toHashCode();
 
                 log.info("Constructed Label! {}", labels.toString());
 
-                extras.put("dbOpsString", dbOpsString);
+                //extras.put("dbOpsString", dbOpsString);
 
 
             }catch (Exception e){

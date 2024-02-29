@@ -12,11 +12,13 @@ import edu.stanford.nlp.time.Options;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.json.JsonArray;
 import org.openqa.selenium.*;
+import org.openqa.selenium.Point;
 import org.openqa.selenium.firefox.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 
+import java.awt.*;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
@@ -27,6 +29,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.util.*;
+import java.util.List;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -107,7 +110,11 @@ public class ExploreTask implements Runnable{
 
 
         //Initialize the resources list
-       resourcesList = config.getJsonArray(ExploreRequestFields.COURSES.field()).stream().map(o->(String)o).map(s->ResourceManager.loadCourse(s)).collect(Collectors.toList());
+       resourcesList = config.getJsonArray(ExploreRequestFields.COURSES.field())
+               .stream()
+               .map(o->(String)o)
+               .map(s->ResourceManager.loadCourse(s))
+               .collect(Collectors.toList());
 
        //Initalize the input manifest
        inputManifest = config.getJsonArray(ExploreRequestFields.MANIFEST.field()).stream().map(o->(JsonObject)o).collect(Collectors.toList());
@@ -127,7 +134,7 @@ public class ExploreTask implements Runnable{
 
        //Load progress info if it exists
         if(config.containsKey("recordingCount")){
-            recordingCount = config.getInteger("recordingCount");
+            recordingCount = config.getInteger("recordingCount")+1;
         }
 
         if(config.containsKey("completedOperations")){
@@ -162,18 +169,24 @@ public class ExploreTask implements Runnable{
 
 
 
-        try{
+
 
 
             while (primaryToDo.size() > 0){
+                try{
 
                 FirefoxOptions options = new FirefoxOptions();
 
                 options.setProfile(buildProfile());
+                java.awt.Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
+
 
                 driver = new FirefoxDriver(options);
 
                 driver.installExtension(Path.of(config.getString(ExploreRequestFields.ODOSIGHT_PATH.field)), true);
+
+                //Move browser to right screen
+
                 //Setup OdoSight
                 setupOdoSight();
 
@@ -203,12 +216,22 @@ public class ExploreTask implements Runnable{
                         completedOperations.add(op.getId());
                         completedCases++;
                         failures.operationSucceeded();
-                    }catch (Exception e){
 
+                    }catch (Exception e){
+                        log.info("Exception: {} type: {}", e, e.getClass().getName()  );
                         Throwable targetException = ((InvocationTargetException)((RuntimeException)e).getCause()).getTargetException();
 
                         failures.add(new OperationFailure(op, targetException, driver.getCurrentUrl()));
                         saveFailures(failures);
+
+                        //For the last ones
+                        completedOperations.add(op.getId());
+//                        //TODO -> Implement this in a more clear way: We want an Edit failure due to null pointer not be re-attempted
+//                        //This is because an edit on something that cannot be found is likely due to a restart data issue. IE: a quiz question was created twice under different quizzes.
+//                        if(targetException.getClass().equals(NullPointerException.class) && op.getType().equals(Operation.OperationType.EDIT)){
+//                            log.info("Edit failure with NullPointerException counting this operation as completed! {}", op.getId());
+//                            completedOperations.add(op.getId());
+//                        }
 
                         log.warn(e.getMessage(), e);
                         e.printStackTrace();
@@ -258,11 +281,17 @@ public class ExploreTask implements Runnable{
                         primaryToDo = primaryToDo.stream().filter(operation -> !completedOperations.contains(operation.getId())).collect(ToDo::new, ToDo::add, ToDo::addAll);
                         saveProgress();
                     }
-                }
+                } //End session while
 
 
                 //Then logging out.
-                logoutOperation.execute(driver);
+                try{
+                    logoutOperation.execute(driver);
+                }catch (Exception e){
+                    log.error("Error during logout!");
+                    log.error(e.getMessage(), e);
+                }
+
 
                 stopRecording();
 
@@ -271,17 +300,16 @@ public class ExploreTask implements Runnable{
 
                 log.info("primaryToDo: {}", primaryToDo.size());
 
-                driver.quit();
+
+
+                }catch (Exception e){
+
+                    log.error(e.getMessage(), e);
+                    //throw new RuntimeException(e);
+                }finally {
+                    driver.quit();
+                }
             }
-
-
-
-
-        }catch (Exception e){
-
-            log.error(e.getMessage(), e);
-            throw new RuntimeException(e);
-        }
 
     }
 
@@ -332,6 +360,7 @@ public class ExploreTask implements Runnable{
         driver.switchTo().window(webAppTabHandle);
 
         /**  TODO - capturing console.log() events from firefox is a bit of an ordeal so skipping for now
+         *   In theory this would be a good feature for verifying that Odo Sight is in fact started properly.
          *  For more details see:
          *  https://github.com/mozilla/geckodriver/issues/284
          *  https://github.com/mozilla/geckodriver/issues/284#issuecomment-477677764

@@ -15,7 +15,7 @@ public class Launcher extends io.vertx.core.Launcher {
                 .setMaxEventLoopExecuteTimeUnit(TimeUnit.MINUTES)
                 .setMaxWorkerExecuteTime(10)
                 .setMaxWorkerExecuteTimeUnit(TimeUnit.MINUTES)
-                .setInternalBlockingPoolSize(14)
+                .setInternalBlockingPoolSize(4)
                 .setBlockedThreadCheckInterval(10)
                 .setBlockedThreadCheckIntervalUnit(TimeUnit.MINUTES)
                 .setWarningExceptionTime(10)

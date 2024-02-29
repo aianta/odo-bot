@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class DijkstraCache {
     private static final Logger log = LoggerFactory.getLogger(DijkstraCache.class);
@@ -14,7 +15,10 @@ public class DijkstraCache {
     private static int hits;
     private static int misses;
 
+    private static String lastKey = null;
+
     private Map<String, DistanceCache> caches = new HashMap<>();
+    private Map<String, Integer> age = new HashMap<>();
 
     private class DistanceCache{
 
@@ -62,25 +66,75 @@ public class DijkstraCache {
         cacheDistance(dom.toString(), source, target, distance);
     }
 
-    public void cacheDistance(String html, Element source, Element target, Integer distance){
+    public synchronized void cacheDistance(String html, Element source, Element target, Integer distance){
         //Don't let the cache grow too big
-        //TODO - Implement some better logic here, maybe Least Recently Used
-        if(caches.size() > 10){
+        if(caches.size() > 20){
             log.info("Cache grew too large, evicting a key.");
-            String keyToKick = caches.keySet().stream()
-                    .filter(key->!key.equals(html)) //Don't evict the key we're caching values for.
-                    .iterator().next();
-            DistanceCache cacheToKick = caches.get(keyToKick);
-            cacheToKick.clear();
-            caches.remove(keyToKick);
+            String keyToKick = getLeastRecentlyUsedKey();
+            if(keyToKick == null){
+                log.warn("keyToKick was null!");
+                log.warn("caching key: {}", html.substring(0, 500));
+                caches.keySet().stream().forEach(key->log.info("{}", key.substring(0, 500)));
+            }else{
+                DistanceCache cacheToKick = caches.get(keyToKick);
+                cacheToKick.clear();
+                caches.remove(keyToKick);
+            }
+
         }
 
+        if(!age.containsKey(html)){
+            age.put(html, 0);
+        }
         DistanceCache cache = caches.getOrDefault(html, new DistanceCache());
         cache.cacheDistance(source, target, distance);
         caches.put(html, cache);
+        if(lastKey != null && !lastKey.equals(html)){
+            /*Updating age iterates through all age entries in the cache,
+             since we cache things very often for the same key,
+             we can just avoid updating the ages unless the key has changed since last time.
+             */
+            updateAge(html);
+        }
+        lastKey = html;
+    }
 
+    private synchronized String getLeastRecentlyUsedKey(){
+        String leastRecentlyUsedKey = age.entrySet().stream()
+                //Sort the age entries in descending order.
+                .sorted(Collections.reverseOrder(Map.Entry.comparingByValue()))
+                .collect(Collectors.toList())
+                .get(0).getKey(); //Get the oldest key
+
+        //Remove the key from the age map
+        age.remove(leastRecentlyUsedKey);
+
+        //And return it.
+        return leastRecentlyUsedKey;
 
     }
+
+    /**
+     * Increases the age of all keys except the one passed to this method.
+     * @param key
+     */
+    private synchronized void updateAge(String key){
+
+        Map<String, Integer> newAgeMap = new HashMap<>();
+
+        age.entrySet().stream()
+                .filter(entry->!entry.getKey().equals(key))
+                .forEach(
+                ageEntry->{
+                    newAgeMap.put(ageEntry.getKey(), ageEntry.getValue()+1);
+                }
+        );
+        newAgeMap.put(key, age.get(key));
+
+        age = newAgeMap;
+    }
+
+
 
     public Optional<Integer> getDistance(Document dom, Element source, Element target){
         return getDistance(dom.toString(), source, target);

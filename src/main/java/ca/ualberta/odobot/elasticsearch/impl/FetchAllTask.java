@@ -140,7 +140,7 @@ public class FetchAllTask implements Runnable{
             log.error(ioe.getMessage(), ioe);
             promise.fail(ioe);
         }
-        promise.complete(results);
+        promise.tryComplete(results);
     }
 
     private SortOptions defaultSort(){

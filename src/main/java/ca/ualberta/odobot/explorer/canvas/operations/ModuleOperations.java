@@ -30,9 +30,11 @@ public class ModuleOperations {
 
     public void delete(WebDriver driver){
         //Go to the course page
-        driver.get(course.getCoursePageUrl());
-
-        explicitlyWait(driver, 2);
+        do{
+            driver.get(course.getCoursePageUrl());
+            explicitlyWait(driver, 2);
+        }
+        while(!driver.getCurrentUrl().equals(course.getCoursePageUrl()));
 
         //Click the dropdown menu for our module
         click(driver, getManageElement(driver));
@@ -48,9 +50,10 @@ public class ModuleOperations {
     public void edit(WebDriver driver){
 
         //Go to the course page
-        driver.get(course.getCoursePageUrl());
-
-        explicitlyWait(driver, 2);
+        do {
+            driver.get(course.getCoursePageUrl());
+            explicitlyWait(driver, 2);
+        }while (!driver.getCurrentUrl().equals(course.getCoursePageUrl()));
 
         //Click the dropdown menu for our module
         click(driver,getManageElement(driver));

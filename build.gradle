@@ -101,6 +101,10 @@ dependencies {
     // https://mvnrepository.com/artifact/org.apache.commons/commons-csv
     implementation group: 'org.apache.commons', name: 'commons-csv', version: '1.10.0'
 
+    // https://mvnrepository.com/artifact/commons-io/commons-io
+    implementation group: 'commons-io', name: 'commons-io', version: '2.15.1'
+
+
     /**
      * Elasticsearch
      */

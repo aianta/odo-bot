@@ -1,11 +1,14 @@
 package ca.ualberta.odobot.sqlite;
 
+import ca.ualberta.odobot.semanticflow.model.TrainingMaterials;
 import ca.ualberta.odobot.sqlite.impl.SqliteServiceImpl;
 import io.vertx.codegen.annotations.ProxyGen;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+
+import java.util.List;
 
 @ProxyGen
 public interface SqliteService {
@@ -17,6 +20,10 @@ public interface SqliteService {
     static SqliteService createProxy(Vertx vertx, String address){
         return new SqliteServiceVertxEBProxy(vertx, address);
     }
+
+    Future<Void> saveTrainingMaterial(JsonObject json);
+
+    Future<JsonArray> loadTrainingMaterialsForDataset(String dataset);
 
     Future<Void> saveTrainingExemplar(JsonObject json);
 

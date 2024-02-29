@@ -23,13 +23,8 @@ public class QuizOperations {
     }
 
     public void delete(WebDriver driver){
-        //Navigate to the course quizzes section
-        driver.get(course.getCoursePageUrl()+"/quizzes");
-
-
-        //Then click on the quiz to delete
-        click(driver, By.xpath("//a[@href='"+quiz.getQuizPageUrl()+"']"), d->d.get(course.getCoursePageUrl() + "/quizzes"));
-
+        //Navigate to the quiz page
+        driver.get(quiz.getQuizPageUrl());
 
         //Find the drop-down menu button
         doubleClick(driver, By.xpath("//button[contains(.,'Manage')]"));
@@ -43,14 +38,9 @@ public class QuizOperations {
     }
 
     public void edit(WebDriver driver){
-        //Navigate to the course quizzes section
-        driver.get(course.getCoursePageUrl()+"/quizzes");
 
-        //Then click on the quiz to edit
-        click(driver, By.xpath("//a[@href='"+quiz.getQuizPageUrl()+"']"), d->d.get(course.getCoursePageUrl()+"/quizzes"));
-
-        //Then click the edit button
-        click(driver, By.linkText("Edit"));
+        //Navigate to the quiz edit page
+        driver.get(quiz.getQuizEditPageUrl());
 
         explicitlyWait(driver, 3);
 

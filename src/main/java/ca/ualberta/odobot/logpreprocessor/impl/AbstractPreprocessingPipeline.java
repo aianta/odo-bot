@@ -277,7 +277,7 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
                     log.info("Indices todo: {}", todo.toString());
                     log.info("In {} sized chunks", chunkSize);
 
-                    rc.reroute(HttpMethod.GET, API_PATH_PREFIX.substring(0, API_PATH_PREFIX.length()-2)  + "/preprocessing/pipelines/" + slug() + "/semanticTraces");
+                    rc.reroute(HttpMethod.GET, API_PATH_PREFIX.substring(0, API_PATH_PREFIX.length()-2)  + "/preprocessing/pipelines/" + slug() + "/harvestTrainingMaterials");
 
                 });
 
@@ -381,6 +381,7 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
                 },false));
             });
 
+            eventlogs = null; //Explicitly free for garbage collection
 
             return Future.all(timelineFutures)
                     .compose(result-> Future.succeededFuture(result.<Timeline>list()));
@@ -494,11 +495,13 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
             data.<List<TrainingMaterials>>list().forEach(materialsList->dataset.addAll(materialsList));
             log.info("{} training materials found!", dataset.size());
 
+            dataset.forEach(material->sqliteService.saveTrainingMaterial(material.toJson()));
+
             //During chunked requests, there may already be training materials from previous timelines, if so, we want to add to them.
             List<TrainingMaterials> existingMaterials = rc.get("trainingMaterials");
             if(existingMaterials != null){
                 existingMaterials.addAll(dataset);
-                rc.put("trainingMaterials", dataset);
+                rc.put("trainingMaterials", existingMaterials);
             }else{
                 rc.put("trainingMaterials", dataset);
             }

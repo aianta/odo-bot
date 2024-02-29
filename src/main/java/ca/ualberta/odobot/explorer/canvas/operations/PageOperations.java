@@ -50,13 +50,10 @@ public class PageOperations{
     }
 
     public void edit(WebDriver driver){
-        //Navigate to the pages screen
-        //navigateToPagesSection.getPath().accept(driver);
-        driver.get(course.getCoursePageUrl() + "/pages");
+        //Navigate to the page of interest
+        driver.get(page.getPageUrl());
 
-        //Click on the page of interest
-        click(driver, By.xpath("//a[@href='"+page.getPageUrl()+"']"));
-
+        //Click the edit button
         click(driver,By.xpath("//span[contains(.,' Edit')]"));
 
         explicitlyWait(driver, 3);
@@ -77,12 +74,8 @@ public class PageOperations{
 
     public void delete(WebDriver driver){
 
-        //Navigate to the pages screen.
-        //navigateToPagesSection.getPath().accept(driver);
-        driver.get(course.getCoursePageUrl() + "/pages");
-
-        //Click on the page of interest
-        click(driver,By.xpath("//a[@href='"+page.getPageUrl()+"']"));
+        //Navigate to the page of interest
+        driver.get(page.getPageUrl());
 
 
         //Click the drop-down menu beside the edit button
