@@ -1,14 +1,18 @@
 package ca.ualberta.odobot.web;
 
+import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 import ca.ualberta.odobot.sqlite.LogParser;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import io.reactivex.rxjava3.core.Completable;
+import io.vertx.core.Future;
+import io.vertx.core.Promise;
+import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerOptions;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import io.vertx.ext.web.client.WebClient;
 import io.vertx.rxjava3.core.AbstractVerticle;
-import io.vertx.rxjava3.core.Promise;
-import io.vertx.rxjava3.core.Vertx;
 import io.vertx.rxjava3.core.http.HttpServer;
 import io.vertx.rxjava3.ext.web.Router;
 import io.vertx.rxjava3.ext.web.RoutingContext;
@@ -21,11 +25,10 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Date;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 
+import static ca.ualberta.odobot.logpreprocessor.Constants.ELASTICSEARCH_SERVICE_ADDRESS;
 import static ca.ualberta.odobot.logpreprocessor.Constants.SQLITE_SERVICE_ADDRESS;
 
 public class OdoSightSupport extends AbstractVerticle {
@@ -42,16 +45,24 @@ public class OdoSightSupport extends AbstractVerticle {
 
     private SqliteService sqliteService;
 
+    private ElasticsearchService elasticService;
     HttpServer server;
     Router router;
 
+    WebClient client;
     @Override
     public Completable rxStart(){
 
         log.info("Starting Odo Sight Support Server at {}:{}", HOST, PORT);
 
+        //Setup webclient
+        client = WebClient.create(vertx.getDelegate());
+
+
+
         log.info("Initializing Sqlite Service Proxy");
         sqliteService = SqliteService.createProxy(vertx.getDelegate(), SQLITE_SERVICE_ADDRESS);
+        elasticService = ElasticsearchService.createProxy(vertx.getDelegate(), ELASTICSEARCH_SERVICE_ADDRESS);
 
         HttpServerOptions options = new HttpServerOptions()
                 .setHost(HOST)
@@ -67,6 +78,7 @@ public class OdoSightSupport extends AbstractVerticle {
         router.route().handler(rc->{rc.response().putHeader("Access-Control-Allow-Origin", "*");rc.next();});
         router.route().method(HttpMethod.GET).path("/odo-sight/alive").handler(rc->rc.response().setStatusCode(200).end());
         //router.route().method(HttpMethod.POST).path("/odo-sight/scrape-mongo").handler(this::scrapeAuditLogs);
+        router.route().method(HttpMethod.POST).path("/odo-sight/bulk-scrape-mongo").handler(this::bulkScrape);
         router.route().method(HttpMethod.POST).path("/odo-sight/scrape-mongo").handler(this::scrapeMongo);
 
 
@@ -75,31 +87,66 @@ public class OdoSightSupport extends AbstractVerticle {
         return super.rxStart();
     }
 
+    public void bulkScrape(RoutingContext rc){
+        //If a prefix is given, we first query elasticsearch to find all indices which have already been scraped!
+        //We do not re-scrape these indices, to avoid duplication of existing documents.
+        String prefix = rc.request().getParam("prefix");
+        Promise<Set<String>> excludePromise = Promise.promise();
+        if(prefix != null){
+            elasticService.getAliases(prefix)
+                    .onFailure(err->log.error(err.getMessage(),err))
+                    .onSuccess(excludePromise::complete);
+        }else{
+            excludePromise.complete(Set.of()); //Pass in an empty set of excluded indices otherwise.
+        }
+
+
+        JsonArray flightsToScrape = rc.body().asJsonArray();
+
+        excludePromise.future().onSuccess(
+                exclude->{
+
+                    Iterator<JsonObject> it = flightsToScrape.stream().map(o->(JsonObject)o).iterator();
+                    Future f = null;
+                    while(it.hasNext()){
+                        JsonObject flight = it.next();
+
+                        if(!exclude.contains(flight.getString("name"))){
+                            log.info("{} is not in elasticsearch, scraping...", flight.getString("name"));
+                            if(f == null){
+                                f = vertx.getDelegate().executeBlocking(blocking->scrape(blocking, flight.getString("name"), flight.getString("id")));
+                            }else{
+                                f.compose(done->vertx.getDelegate().executeBlocking(blocking->scrape(blocking, flight.getString("name"), flight.getString("id"))));
+                            }
+                        }else{
+                            log.info("{} is already in elastic search, skipping...", flight.getString("name"));
+                        }
+
+                    }
+
+                    f.onSuccess(done->log.info("Finished bulk scrape!"));
+                    f.onFailure(err->log.error("Error during bulk scrape!"));
+                }
+        );
+
+
+
+    }
+
     public void scrapeMongo(RoutingContext rc){
+
         JsonObject data = rc.body().asJsonObject();
+
         String flightId = data.getString("flightId");
         String flightName = data.getString("flightName");
+
 
         if (flightId == null || flightName == null){
             rc.response().setStatusCode(400).end("BAD REQUEST");
             return;
         }
 
-        vertx.rxExecuteBlocking(blocking->{
-            try{
-                log.info("Executing mongo scrape for flightId: {} into es-index: {} ", flightId, flightName);
-                ProcessBuilder pb = new ProcessBuilder("wsl", SCRAPE_SCRIPT_PATH, flightId, flightName);
-//                ProcessBuilder pb = new ProcessBuilder("wsl", SCRAPE_SCRIPT_PATH, flightId, flightName,"&&","echo", "\"__END__\"");
-                //ProcessBuilder pb = new ProcessBuilder("wsl", "ls;", "echo", "\"__END__\"");
-                pb.inheritIO();
-                Process scrapeProcess = pb.start();
-                scrapeProcess.waitFor(15, TimeUnit.SECONDS);
-
-                blocking.complete();
-            } catch (IOException | InterruptedException ioException) {
-                log.error(ioException.getMessage(), ioException);
-            }
-        }).doAfterTerminate(()->{
+        vertx.rxExecuteBlocking(blocking->scrape(blocking.getDelegate(), flightName, flightId)).doAfterTerminate(()->{
             log.info("Scrape script invoke complete!");
         }).subscribe();
 
@@ -107,6 +154,22 @@ public class OdoSightSupport extends AbstractVerticle {
         rc.response().setStatusCode(201).end();
 
 
+    }
+
+    private void scrape( Promise promise, String flightName, String flightId){
+        try{
+            log.info("Executing mongo scrape for flightId: {} into es-index: {} ", flightId, flightName);
+            ProcessBuilder pb = new ProcessBuilder("wsl", SCRAPE_SCRIPT_PATH, flightId, flightName);
+//                ProcessBuilder pb = new ProcessBuilder("wsl", SCRAPE_SCRIPT_PATH, flightId, flightName,"&&","echo", "\"__END__\"");
+            //ProcessBuilder pb = new ProcessBuilder("wsl", "ls;", "echo", "\"__END__\"");
+            pb.inheritIO();
+            Process scrapeProcess = pb.start();
+            scrapeProcess.waitFor(15, TimeUnit.SECONDS);
+            Thread.sleep(60000);
+            promise.complete();
+        } catch (IOException | InterruptedException ioException) {
+            log.error(ioException.getMessage(), ioException);
+        }
     }
 
     public void scrapeAuditLogs(RoutingContext rc){

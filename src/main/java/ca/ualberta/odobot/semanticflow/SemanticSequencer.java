@@ -79,6 +79,9 @@ public class SemanticSequencer {
             }
         }
 
+        //TODO -only for training exemplar extraction
+        line.pruneNonPrecedingClickEvents();
+
         return line;
     }
 

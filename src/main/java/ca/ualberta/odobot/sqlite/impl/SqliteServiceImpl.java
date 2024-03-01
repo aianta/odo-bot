@@ -15,9 +15,7 @@ import io.vertx.sqlclient.Tuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.SQLITE_CONNECTION_STRING;
@@ -184,6 +182,30 @@ public class SqliteServiceImpl implements SqliteService {
            }
         });
 
+
+        return promise.future();
+    }
+
+    public Future<Set<String>> getHarvestProgress(String dataset){
+        Promise<Set<String>> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            SELECT DISTINCT source FROM training_materials WHERE dataset_name = ?;
+        """).execute(Tuple.of(dataset), result->{
+           if(result.succeeded()){
+
+               Set<String> sources = new HashSet<>(); //Set of completed es indices
+               for(Row r: result.result()){
+                   sources.add(r.getString("source"));
+               }
+
+               promise.complete(sources);
+
+           }else {
+               log.error(result.cause().getMessage(), result.cause());
+               promise.fail(result.cause());
+           }
+        });
 
         return promise.future();
     }

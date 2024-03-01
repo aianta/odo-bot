@@ -154,6 +154,7 @@ public class FetchAllTask implements Runnable{
                 .size(100)
                 .pit(pit->pit.id(pitId).keepAlive(keepAliveValue))
                 .query(q->q.matchAll(v->v.withJson(new StringReader("{}"))))
+                .timeout("1800000ms")
                 .trackTotalHits(TrackHits.of(th->th.enabled(false)));
 
         //If we were given sort options, add them to the request now

@@ -9,6 +9,7 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
 import java.util.List;
+import java.util.Set;
 
 @ProxyGen
 public interface SqliteService {
@@ -24,6 +25,8 @@ public interface SqliteService {
     Future<Void> saveTrainingMaterial(JsonObject json);
 
     Future<JsonArray> loadTrainingMaterialsForDataset(String dataset);
+
+    Future<Set<String>> getHarvestProgress(String dataset);
 
     Future<Void> saveTrainingExemplar(JsonObject json);
 

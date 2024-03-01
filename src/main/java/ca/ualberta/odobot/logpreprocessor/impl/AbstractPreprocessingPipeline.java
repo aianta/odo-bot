@@ -267,17 +267,34 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
         ).onFailure(err->log.error(err.getMessage(), err))
                 .onSuccess(indicesSets->{
 
-                    List<String> todo = new ArrayList<>();
+                    //Now let's go check to see how much progress has been made
+                    sqliteService.getHarvestProgress(rc.get("dataset"))
+                            .onSuccess(progress->{
 
-                    indicesSets.<Set<String>>list().forEach(set->{
-                        todo.addAll(set);
-                    });
+                                //Every index that appears in the progress set has already been harvested, so no need to include them again.
 
-                    rc.put("todo", todo);
-                    log.info("Indices todo: {}", todo.toString());
-                    log.info("In {} sized chunks", chunkSize);
+                                List<String> todo = new ArrayList<>();
 
-                    rc.reroute(HttpMethod.GET, API_PATH_PREFIX.substring(0, API_PATH_PREFIX.length()-2)  + "/preprocessing/pipelines/" + slug() + "/harvestTrainingMaterials");
+                                indicesSets.<Set<String>>list().forEach(set->{
+                                    todo.addAll(set);
+                                });
+                                int originalTodoSize = todo.size();
+                                log.info("{} indices toDo...", originalTodoSize);
+                                List<String> finalTodo = todo.stream().filter(index->!progress.contains(index)).collect(Collectors.toList());
+                                log.info("skipping {} indices that are already complete...", originalTodoSize - finalTodo.size() );
+
+                                rc.put("todo", finalTodo);
+                                log.info("Indices todo: {}", finalTodo.toString());
+                                log.info("In {} sized chunks", chunkSize);
+
+                                rc.reroute(HttpMethod.GET, API_PATH_PREFIX.substring(0, API_PATH_PREFIX.length()-2)  + "/preprocessing/pipelines/" + slug() + "/harvestTrainingMaterials");
+
+                            })
+                            .onFailure(err->{
+                                log.error(err.getMessage(), err);
+                            })
+                    ;
+
 
                 });
 
