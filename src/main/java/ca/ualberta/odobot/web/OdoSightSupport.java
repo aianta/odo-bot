@@ -18,6 +18,7 @@ import io.vertx.rxjava3.ext.web.Router;
 import io.vertx.rxjava3.ext.web.RoutingContext;
 import io.vertx.rxjava3.ext.web.handler.BodyHandler;
 import io.vertx.rxjava3.ext.web.handler.LoggerHandler;
+import org.eclipse.rdf4j.query.algebra.In;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,6 +38,8 @@ public class OdoSightSupport extends AbstractVerticle {
     private static final String HOST = "0.0.0.0";
     private static final int PORT = 8079;
     private static final String SCRAPE_SCRIPT_PATH = "/home/aianta/shock_and_awe/es-local/scrape_mongo.sh";
+
+    private static final String SCRAPE_SCRIPT_V2_PATH = "/home/aianta/shock_and_awe/es-local/scrape_mongo_v2.sh";
     private static final String DATABASE_CONTAINER_NAME = "canvas-lms-postgres-1";
     private static final String DATABASE_LOGS_PATH = "/var/lib/postgresql/data/log/";
     private static final String DATABASE_LOG_NAME_PREFIX = "db_log_";
@@ -79,12 +82,60 @@ public class OdoSightSupport extends AbstractVerticle {
         router.route().method(HttpMethod.GET).path("/odo-sight/alive").handler(rc->rc.response().setStatusCode(200).end());
         //router.route().method(HttpMethod.POST).path("/odo-sight/scrape-mongo").handler(this::scrapeAuditLogs);
         router.route().method(HttpMethod.POST).path("/odo-sight/bulk-scrape-mongo").handler(this::bulkScrape);
+        router.route().method(HttpMethod.POST).path("/odo-sight/bulk-scrape-mongo/v2").handler(this::bulkScrapeV2);
         router.route().method(HttpMethod.POST).path("/odo-sight/scrape-mongo").handler(this::scrapeMongo);
 
 
         server.requestHandler(router).listen(PORT);
 
         return super.rxStart();
+    }
+
+    public void bulkScrapeV2(RoutingContext rc){
+
+        String esIndex = rc.request().getParam("es-index");
+        Promise<Set<String>> excludePromise = Promise.promise();
+
+        elasticService.getFlights(esIndex)
+                .onFailure(err->log.error(err.getMessage(),err))
+                .onSuccess(excludePromise::complete);
+
+        JsonArray flightsToScrape = rc.body().asJsonArray();
+
+        excludePromise.future()
+                .onSuccess(
+                        exclude->{
+
+                            Iterator<JsonObject> it = flightsToScrape.stream().map(o->(JsonObject)o).iterator();
+                            Future f = null;
+                            while (it.hasNext()){
+                                JsonObject flight = it.next();
+
+                                if(!exclude.contains(flight.getString("name"))){
+                                    log.info("{} is not in elasticsearch, scraping...", flight.getString("name"));
+                                    if(f == null){
+                                        f = vertx.getDelegate().executeBlocking(blocking->scrapeV2(blocking, flight.getString("name"), flight.getString("id"), esIndex));
+                                    }else {
+                                        f.compose(done->vertx.getDelegate().executeBlocking(blocking->scrapeV2(blocking, flight.getString("name"), flight.getString("id"), esIndex)));
+                                    }
+                                }else{
+                                    log.info("{} is already in elastic search, skipping...", flight.getString("name"));
+                                }
+                            }
+
+                            f.onSuccess(done->{
+                                log.info("Finished bulk scrape!");
+                                rc.response().setStatusCode(200).end("Finished bulk scrape!");
+                            });
+                            f.onFailure(err->{
+                                log.error("Error during bulk scrape!");
+                                rc.response().setStatusCode(500).end();
+                            });
+
+                        }
+                );
+
+
     }
 
     public void bulkScrape(RoutingContext rc){
@@ -154,6 +205,27 @@ public class OdoSightSupport extends AbstractVerticle {
         rc.response().setStatusCode(201).end();
 
 
+    }
+
+    /**
+     * Scrapes events from a flight into a specified elasticsearch index.
+     * @param promise
+     * @param flightName the human readable name of the flight to scrape from mongo eg: 'selenium-test-ep-13'
+     * @param flightId the uuid like flight id that is the collection name in mongo
+     * @param esIndex the elastic search index into which the data should be indexed.
+     */
+    private void scrapeV2(Promise promise, String flightName, String flightId, String esIndex){
+        try{
+            log.info("Executing mongo scrape v2 script for {} ({}) into es-index: {}", flightId, flightName, esIndex);
+            ProcessBuilder pb = new ProcessBuilder("wsl", SCRAPE_SCRIPT_V2_PATH, flightId, flightName, esIndex);
+            pb.inheritIO();
+            Process scrapeProcess = pb.start();
+            scrapeProcess.waitFor(15, TimeUnit.SECONDS);
+            Thread.sleep(60000);
+            promise.complete();
+        }catch (IOException | InterruptedException e){
+            log.error(e.getMessage(), e);
+        }
     }
 
     private void scrape( Promise promise, String flightName, String flightId){

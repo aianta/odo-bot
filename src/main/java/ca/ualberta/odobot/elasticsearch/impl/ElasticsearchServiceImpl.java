@@ -6,6 +6,10 @@ import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
 import ca.ualberta.odobot.semanticflow.JsonDataUtility;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.*;
+import co.elastic.clients.elasticsearch._types.aggregations.Aggregate;
+import co.elastic.clients.elasticsearch._types.aggregations.Aggregation;
+import co.elastic.clients.elasticsearch._types.aggregations.StringTermsBucket;
+import co.elastic.clients.elasticsearch._types.aggregations.TermsAggregation;
 import co.elastic.clients.elasticsearch._types.mapping.DateProperty;
 import co.elastic.clients.elasticsearch.core.*;
 
@@ -36,6 +40,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.*;
+import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.EXECUTIONS_INDEX;
 
@@ -45,6 +50,7 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
 
     //Constants
     private static final Time keepAliveValue = Time.of(t->t.time("1m"));
+    private static final int MAX_FLIGHTS_PER_INDEX = 10000;
 
     //Elasticsearch communication
     private RestClient restClient;
@@ -68,6 +74,74 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
         }
     }
 
+
+    public Future<Set<String>> getFlights(String index){
+
+        Promise promise = Promise.promise();
+
+        try {
+            boolean indexExists = client.indices().exists(e->e.index(index)).value();
+            if(!indexExists){
+                log.info("Requested index does not exist");
+                promise.complete(Set.of());
+            }
+
+            log.info("Creating PIT!");
+
+            //Index is specified through PIT request
+            OpenPointInTimeResponse pitResponse = client.openPointInTime(pitRequest->pitRequest.index(index).keepAlive(keepAliveValue));
+            log.info ("PIT: {}", pitResponse.id());
+
+            try{
+                /**
+                 * For more details see:
+                 * https://stackoverflow.com/questions/25465215/elasticsearch-return-unique-values
+                 * and
+                 * https://medium.com/@andre.luiz1987/aggregation-elasticsearch-java-api-client-3152698a2e67
+                 */
+                Aggregation aggregation = new Aggregation.Builder()
+                        .terms( new TermsAggregation.Builder()
+                                .field("flight_name")
+                                .size(MAX_FLIGHTS_PER_INDEX)
+                                .build()
+                        ).build();
+
+                SearchRequest searchRequest = new SearchRequest.Builder()
+                        .index(index)
+                        .pit(pit->pit.id(pitResponse.id()).keepAlive(keepAliveValue))
+                        .size(0)
+                        .aggregations("unique_flights", aggregation)
+                        .build();
+
+                SearchResponse response = client.search(searchRequest, Void.class);
+
+                Aggregate aggregate = (Aggregate) response.aggregations().get("unique_flights");
+                List<StringTermsBucket> list = aggregate.sterms().buckets().array();
+
+                promise.complete(list.stream().map(stermBucket->stermBucket.key().stringValue()).collect(Collectors.toSet()));
+
+            }catch (ElasticsearchException ese){
+                log.error("Error in search request during fetch!");
+                log.error(ese.getMessage(), ese);
+                promise.fail(ese);
+            }catch (IOException ioe){
+                log.error(ioe.getMessage(), ioe);
+                promise.fail(ioe);
+            }finally {
+                //Finally, delete the PIT once we're done.
+                log.info("Deleting PIT: {}", pitResponse.id());
+                ClosePointInTimeResponse closePITResponse = client.closePointInTime(close->close.id(pitResponse.id()));
+                log.info("{}",closePITResponse.succeeded());
+            }
+
+
+        } catch (IOException e) {
+            log.error(e.getMessage(), e);
+            promise.fail(e);
+        }
+
+        return promise.future();
+    }
 
     /**
      * See {@link #fetchAndSortAll(String, JsonArray)}

@@ -33,6 +33,13 @@ public interface ElasticsearchService {
      */
     Future<Set<String>> getAliases(String pattern);
 
+    /**
+     * Returns the names of the flights contained within the specified index as a set of strings.
+     * @param index the index to search.
+     * @return
+     */
+    Future<Set<String>> getFlights(String index);
+
     Future<List<JsonObject>> fetchAll(String index);
 
     Future<List<JsonObject>> fetchAndSortAll(String index, JsonArray sortOptions);
