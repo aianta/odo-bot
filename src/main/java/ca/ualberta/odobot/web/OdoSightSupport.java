@@ -84,6 +84,7 @@ public class OdoSightSupport extends AbstractVerticle {
         router.route().method(HttpMethod.POST).path("/odo-sight/bulk-scrape-mongo").handler(this::bulkScrape);
         router.route().method(HttpMethod.POST).path("/odo-sight/bulk-scrape-mongo/v2").handler(this::bulkScrapeV2);
         router.route().method(HttpMethod.POST).path("/odo-sight/scrape-mongo").handler(this::scrapeMongo);
+        router.route().method(HttpMethod.POST).path("/odo-sight/scrape-mongo/v2").handler(this::scrapeMongoV2);
 
 
         server.requestHandler(router).listen(PORT);
@@ -181,6 +182,26 @@ public class OdoSightSupport extends AbstractVerticle {
         );
 
 
+
+    }
+
+    public void scrapeMongoV2(RoutingContext rc){
+        JsonObject data = rc.body().asJsonObject();
+
+        String flightName = data.getString("flightName");
+        String flightId = data.getString("flightId");
+        String esIndex = data.getString("esIndex");
+
+        if(flightId == null || flightName == null || esIndex == null){
+            rc.response().setStatusCode(400).end("BAD REQUEST");
+            return;
+        }
+
+        vertx.executeBlocking(blocking->scrapeV2(blocking.getDelegate(), flightName, flightId, esIndex)).doAfterTerminate(()->{
+            log.info("Scrape script invoke complete!");
+        }).subscribe();
+
+        rc.response().setStatusCode(201).end();
 
     }
 
