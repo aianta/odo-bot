@@ -92,7 +92,7 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
         return result;
     }
 
-    public Future<Timeline> makeTimeline(String sourceIndex, List<JsonObject> events){
+    public Future<Timeline> makeTimeline(String flightName, List<JsonObject> events){
 
         SemanticSequencer sequencer = new SemanticSequencer();
 //        sequencer.setOnArtifact(artifact -> {
@@ -103,8 +103,10 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
 
         //Timeline data structure construction
         Timeline timeline = sequencer.parse(events);
-        timeline.getAnnotations().put("source-index", sourceIndex);
+        timeline.getAnnotations().put("flight-name", flightName);
 
+        int originalTimelineSize = timeline.size();
+        log.info("Original timeline size before semantic artifact extraction: {}", originalTimelineSize);
 
         /**
          * Semantic artifact extraction:
@@ -113,12 +115,28 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
          * Then apply each extractor to the entity and add it's output to the entity's semantic artifacts.
          */
         ListIterator<TimelineEntity> it = timeline.listIterator();
+        List<String> symbolsRemoved = new ArrayList<>(); //Keep track of the kinds of entities that are being discarded.
         while (it.hasNext()){
             try{
                 TimelineEntity entity = it.next();
+                if(entity.symbol().equals("NET")){
+                    continue;
+                }
+
                 Collection<SemanticArtifactExtractor> entityExtractors = extractorMultimap.get(entity.getClass());
+                log.info("{} entity extractors for {}", entityExtractors.size(), entity.symbol());
                 entityExtractors.forEach(extractor->
                         entity.getSemanticArtifacts().put(extractor.artifactName(), extractor.extract(entity,it.previousIndex(),timeline)));
+
+                log.info("Extracted semantic artifacts for entity[{}] {}", entity.getSemanticArtifacts().size(), entity.getSemanticArtifacts().encodePrettily());
+
+                //If there are no semantic artifacts, discard the entity
+                if(entity.getSemanticArtifacts().size() == 0){
+                    symbolsRemoved.add(entity.symbol());
+
+                    it.remove();
+                    continue;
+                }
 
                 /**
                  * Need to prevent giving deep-service entities with no embeddable semantic artifacts.
@@ -136,6 +154,7 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
                     }
                     //If we got to the end of the artifacts for this entity, and none of the mustHaveOne artifacts were found with values in their json arrays, remove the entity.
                     if(!semanticArtifactsIterator.hasNext()){
+                        symbolsRemoved.add(entity.symbol());
                         it.remove();
                     }
                 }
@@ -147,7 +166,8 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
         }
 
 
-
+        log.info("processed timeline, removed {} elements due to lack of semantic artifacts.", originalTimelineSize - timeline.size());
+        log.info("List of symbols removed: {}", symbolsRemoved);
 
         return Future.succeededFuture(timeline);
     }
@@ -249,7 +269,7 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
 
                     ClickEvent finalLastClickEvent = lastClickEvent;
 
-                    TrainingMaterials materials = new TrainingMaterials(lastClickEvent, networkEvent, timeline.getAnnotations().getString("source-index"), datasetName);
+                    TrainingMaterials materials = new TrainingMaterials(lastClickEvent, networkEvent, timeline.getAnnotations().getString("flight-name"), datasetName);
                     materials.setTreeHashingFunction((html)->domSequencingService.hashAndFlattenDOM(html));
 
                     futures.add(
@@ -285,7 +305,7 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
                     try{
                         //Timeline data structure construction
                         Timeline timeline = sequencer.parse(events);
-                        timeline.getAnnotations().put("source-index", index);
+                        timeline.getAnnotations().put("flight-name", index);
 
 
                         /**

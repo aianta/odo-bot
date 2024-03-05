@@ -130,16 +130,19 @@ public class TrainingTaskImpl implements Runnable {
             distribution.put(exemplar.labels()[0], count+1);
         });
 
+        distribution.forEach((label, frequency)->log.info("label: {} freq: {}", label,frequency));
+
 
         Map<Integer, Integer> toAdd = new HashMap<>();
-        distribution.entrySet().stream().filter(entry->entry.getValue()>=samplesPerLabel).forEach(entry->toAdd.put(entry.getKey(), samplesPerLabel));
-
+        //distribution.entrySet().stream().filter(entry->entry.getValue()>=samplesPerLabel).forEach(entry->toAdd.put(entry.getKey(), samplesPerLabel));
+        distribution.entrySet().stream().filter(entry->entry.getValue()>=samplesPerLabel).forEach(entry->toAdd.put(entry.getKey(), entry.getValue() > 500?125: entry.getValue()));
         Collections.shuffle(dataset);
 
         Iterator<TrainingExemplar> iterator = dataset.iterator();
         while (iterator.hasNext()){
             TrainingExemplar exemplar = iterator.next();
             int label = exemplar.labels()[0];
+//            if(toAdd.get(label) != null){
             if(toAdd.get(label) != null && toAdd.get(label) > 0){
                 result.add(exemplar);
                 toAdd.put(label, toAdd.get(label) - 1);

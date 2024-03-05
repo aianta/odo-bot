@@ -152,7 +152,7 @@ public class BaseStrategy extends AbstractStrategy implements SemanticTraceConst
                                 .collect(Collectors.toList()));
 
                         trace.setConstructionStrategy(name());
-                        trace.setSourceIndex(timeline.getAnnotations().getString("source-index"));
+                        trace.setSourceIndex(timeline.getAnnotations().getString("flight-name"));
 
                         promise.complete(trace);
                     });
@@ -160,7 +160,7 @@ public class BaseStrategy extends AbstractStrategy implements SemanticTraceConst
         }else{
             SemanticTrace emptyTrace = new SemanticTrace();
             emptyTrace.setConstructionStrategy(name());
-            emptyTrace.setSourceIndex(timeline.getAnnotations().getString("source-index"));
+            emptyTrace.setSourceIndex(timeline.getAnnotations().getString("flight-name"));
             promise.complete(emptyTrace);
         }
 

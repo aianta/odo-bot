@@ -40,7 +40,7 @@ public interface PreprocessingPipeline extends PipelineService {
 
     Future<List<Timeline>> makeTimelines(Map<String, List<JsonObject>> eventsMap);
 
-    Future<Timeline> makeTimeline(String sourceIndex, List<JsonObject> events);
+    Future<Timeline> makeTimeline(String flightName, List<JsonObject> events);
 
     Future<SemanticTrace> makeSemanticTrace(Timeline timeline);
 

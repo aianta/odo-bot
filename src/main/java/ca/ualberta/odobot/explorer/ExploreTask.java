@@ -61,6 +61,9 @@ public class ExploreTask implements Runnable{
     private static final String ODOSIGHT_CONTROLS_START_RECORDING_BUTTON_ID = "start-btn";
     private static final String ODOSIGHT_CONTROLS_STOP_RECORDING_BUTTON_ID = "stop-btn";
     private static final String ODOSIGHT_CONTROLS_SCRAPE_MONGO_BUTTON_ID = "scrape_mongo_btn";
+
+    private static final String ODOSIGHT_CONTROLS_SCRAPE_ES_INDEX_INPUT_ID = "scrape-index";
+
     JsonObject config;
     UUID dynamicAddonId = UUID.randomUUID();
     String odoSightOptionsUrl;
@@ -178,7 +181,6 @@ public class ExploreTask implements Runnable{
                 FirefoxOptions options = new FirefoxOptions();
 
                 options.setProfile(buildProfile());
-                java.awt.Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
 
 
                 driver = new FirefoxDriver(options);
@@ -225,7 +227,7 @@ public class ExploreTask implements Runnable{
                         saveFailures(failures);
 
                         //For the last ones
-                        completedOperations.add(op.getId());
+                        //completedOperations.add(op.getId());
 //                        //TODO -> Implement this in a more clear way: We want an Edit failure due to null pointer not be re-attempted
 //                        //This is because an edit on something that cannot be found is likely due to a restart data issue. IE: a quiz question was created twice under different quizzes.
 //                        if(targetException.getClass().equals(NullPointerException.class) && op.getType().equals(Operation.OperationType.EDIT)){
@@ -378,6 +380,14 @@ public class ExploreTask implements Runnable{
 
         explicitlyWait(driver, 2);
 
+        //Enter the target elasticsearch index for the scrape operation
+        String targetIndex = config.getString(ExploreRequestFields.ODOSIGHT_FLIGHT_PREFIX.field);
+        if(targetIndex.endsWith("-") || targetIndex.endsWith("_")){ //Strip the hyphen/underscore off the flight-prefix if it exists
+            targetIndex = targetIndex.substring(0, targetIndex.length()-1);
+        }
+        WebElement scrapeIndexInput = driver.findElement(By.id(ODOSIGHT_CONTROLS_SCRAPE_ES_INDEX_INPUT_ID));
+        scrapeIndexInput.sendKeys(targetIndex);
+
         //Get the scrape mongo button and click it to send the flight recording data to elasticsearch
         WebElement scrapeMongoButton = driver.findElement(By.id(ODOSIGHT_CONTROLS_SCRAPE_MONGO_BUTTON_ID));
         scrapeMongoButton.click();
@@ -486,11 +496,29 @@ public class ExploreTask implements Runnable{
         JsonObject addonIdPreference = new JsonObject()
                 .put(ADDON_ID, dynamicAddonId.toString());
 
+        /**
+         * Disable any sort of features that introduce random modal/popups.
+         *
+         * For example browser.newtabpage.activity-stream.asrouter.providers.onboarding, if enabled, displays a modal on startup
+         * where the user is prompted to make firefox the default opener of weblinks on their system. This would appear when
+         * the selenium controlled browser starts up and cause selenium to fail as it tried to setup odo-sight.
+         */
         ProfilesIni allProfiles = new ProfilesIni();
         FirefoxProfile profile = allProfiles.getProfile("Selenium");
         profile.setAcceptUntrustedCertificates(true); //LogUI Server is likely running locally over a self-signed cert.
         profile.setPreference("extensions.webextensions.uuids", addonIdPreference.encode());
-
+        profile.setPreference("browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features", false);
+        profile.setPreference("browser.aboutwelcome.enabled", false);
+        profile.setPreference("browser.messaging-system.whatsNewPanel.enabled", false);
+        profile.setPreference("browser.migrate.content-modal.import-all.enabled", false);
+        profile.setPreference("messaging-system.askForFeedback", false);
+        profile.setPreference("messaging-system.rsexperimentloader.enabled", false);
+        profile.setPreference("services.sync.prefs.sync.browser.firefox-view.feature-tour", false);
+        profile.setPreference("services.sync.prefs.sync.browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons", false);
+        profile.setPreference("services.sync.prefs.sync.browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features", false);
+        profile.setPreference("browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons", false);
+        profile.setPreference("browser.newtabpage.activity-stream.asrouter.useRemoteL10n", false);
+        profile.setPreference("browser.newtabpage.activity-stream.asrouter.providers.onboarding", "{\"id\":\"onboarding\",\"type\":\"local\",\"localProvider\":\"OnboardingMessageProvider\",\"enabled\":false,\"exclude\":[]}");
 
         return profile;
     }

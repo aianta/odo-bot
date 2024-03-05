@@ -3,23 +3,18 @@ package ca.ualberta.odobot.elasticsearch.impl;
 import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 
 import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
-import ca.ualberta.odobot.semanticflow.JsonDataUtility;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.*;
 import co.elastic.clients.elasticsearch._types.aggregations.Aggregate;
 import co.elastic.clients.elasticsearch._types.aggregations.Aggregation;
 import co.elastic.clients.elasticsearch._types.aggregations.StringTermsBucket;
 import co.elastic.clients.elasticsearch._types.aggregations.TermsAggregation;
-import co.elastic.clients.elasticsearch._types.mapping.DateProperty;
 import co.elastic.clients.elasticsearch.core.*;
 
 import co.elastic.clients.elasticsearch.core.bulk.BulkResponseItem;
-import co.elastic.clients.elasticsearch.core.search.Hit;
-import co.elastic.clients.elasticsearch.core.search.TrackHits;
 import co.elastic.clients.elasticsearch.indices.DeleteIndexRequest;
 
 import co.elastic.clients.elasticsearch.indices.get_alias.IndexAliases;
-import co.elastic.clients.json.JsonData;
 import co.elastic.clients.json.jackson.JacksonJsonpMapper;
 import co.elastic.clients.transport.ElasticsearchTransport;
 import co.elastic.clients.transport.rest_client.RestClientTransport;
@@ -31,14 +26,11 @@ import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.apache.http.HttpHost;
-import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.StringReader;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -75,7 +67,7 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
     }
 
 
-    public Future<Set<String>> getFlights(String index){
+    public Future<Set<String>> getFlights(String index, String identifierField){
 
         Promise promise = Promise.promise();
 
@@ -101,7 +93,7 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
                  */
                 Aggregation aggregation = new Aggregation.Builder()
                         .terms( new TermsAggregation.Builder()
-                                .field("flight_name")
+                                .field(identifierField)
                                 .size(MAX_FLIGHTS_PER_INDEX)
                                 .build()
                         ).build();
@@ -169,6 +161,7 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
 
 
         promise.future()
+                .onFailure(err->log.error(err.getMessage(), err))
                 .onComplete(data->log.info("got data back from thread!"));
 
         FetchAllTask task = new FetchAllTask(promise, client, index, sortOptions);
@@ -176,6 +169,22 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
         thread.start();
 
 
+
+        return promise.future();
+    }
+
+
+    public Future<List<JsonObject>> fetchFlightEvents(String index, String flightName, JsonArray sortOptions){
+        //Do this in a separate thread so vertx event loop doesn't get blocked.
+        Promise<List<JsonObject>> promise = Promise.promise();
+
+        promise.future()
+                .onFailure(err->log.error(err.getMessage(), err))
+                .onComplete(data->log.info("got data back from thread!"));
+
+        FetchAllTask task = new FetchAllTask(promise, client, index, flightName, sortOptions);
+        Thread thread = new Thread(task);
+        thread.start();
 
         return promise.future();
     }

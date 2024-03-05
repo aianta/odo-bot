@@ -197,7 +197,7 @@ public class AlphaStrategy extends AbstractStrategy implements SemanticTraceCons
                                 .collect(Collectors.toList()));
 
                         trace.setConstructionStrategy(name());
-                        trace.setSourceIndex(timeline.getAnnotations().getString("source-index"));
+                        trace.setSourceIndex(timeline.getAnnotations().getString("flight-name"));
 
                         promise.complete(trace);
                     });
@@ -205,7 +205,7 @@ public class AlphaStrategy extends AbstractStrategy implements SemanticTraceCons
         }else{
             SemanticTrace emptyTrace = new SemanticTrace();
             emptyTrace.setConstructionStrategy(name());
-            emptyTrace.setSourceIndex(timeline.getAnnotations().getString("source-index"));
+            emptyTrace.setSourceIndex(timeline.getAnnotations().getString("flight-name"));
             promise.complete(emptyTrace);
         }
 

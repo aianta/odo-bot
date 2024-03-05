@@ -49,7 +49,10 @@ public class Timeline extends ArrayList<TimelineEntity> {
                 }
             }
 
-            toKeep.add(closestIndex);
+            if(closestIndex != -1){
+                toKeep.add(closestIndex);
+            }
+
 
         });
 

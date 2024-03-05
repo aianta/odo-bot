@@ -36,14 +36,42 @@ public interface ElasticsearchService {
     /**
      * Returns the names of the flights contained within the specified index as a set of strings.
      * @param index the index to search.
+     * @param identifierField the field whose value uniquely identifies flights in the specified index, for example 'flight_name' or 'flightID'.
+     * @return Future containing a set of flight strings ex: ['selenium-test-ep-1']
+     */
+    Future<Set<String>> getFlights(String index, String identifierField);
+
+    /**
+     * Returns all documents in the specified elasticsearch index.
+     *
+     * This can require significant amounts of RAM.
+     * @param index
      * @return
      */
-    Future<Set<String>> getFlights(String index);
-
     Future<List<JsonObject>> fetchAll(String index);
 
+
+    /**
+     * Old method originally used to retrieve events for flights/traces when each flight/trace had a dedicated index in elasticsearch. This design lead to
+     * oversharding and was not scalable for larger datasets.
+     */
     Future<List<JsonObject>> fetchAndSortAll(String index, JsonArray sortOptions);
 
+    /**
+     * Returns all documents associated with a particular flight from a specified index. These documents will correspond to events scraped from LogUI's mongoDB.
+     * @param index the index containing the events of the specified flight
+     * @param flightName the name of the flight whose events to retrieve.
+     * @param sortOptions Options regarding the order of the retrieved documents. Right now, this is treated as a boolean, any non-null value will return documents oldest to newest, while any null value will return documents using the default elasticsearch _score value.
+     * @return The corresponding documents matching the specified criteria.
+     */
+    Future<List<JsonObject>> fetchFlightEvents(String index, String flightName, JsonArray sortOptions);
+
+    /**
+     * Inserts the specified items into the specified elasticsearch index.
+     * @param items items to be inserted into the index
+     * @param index index into which the items are inserted.
+     * @return
+     */
     Future<Void> saveIntoIndex(List<JsonObject> items, String index);
 
     Future<Void> deleteIndex(String index);

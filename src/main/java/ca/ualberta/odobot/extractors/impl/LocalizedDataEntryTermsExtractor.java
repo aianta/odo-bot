@@ -51,6 +51,8 @@ public class LocalizedDataEntryTermsExtractor extends SimpleDataEntryTermsExtrac
 
     @Override
     public Object extract(DataEntry entity, int index, Timeline timeline) {
+        try{
+
 
         //Get the last input change event for this Data Entry event since it will contain the DOMSnapshot.
         InputChange finalChange = entity.lastChange();
@@ -80,7 +82,7 @@ public class LocalizedDataEntryTermsExtractor extends SimpleDataEntryTermsExtrac
         Map<Element, Integer> inputElementTerms = new HashMap<>();
 
         formTerms.forEach(t->{
-
+            try{
             LinkedHashMap<Element, Integer> distanceToTerm = new LinkedHashMap<>();
             inputFields.forEach(field->{
 
@@ -96,11 +98,8 @@ public class LocalizedDataEntryTermsExtractor extends SimpleDataEntryTermsExtrac
              * Sort in ascending order by value such that the text field the shortest distance away from
              * the term appears first in the list.
              */
-            try{
-                ordered.sort(Comparator.comparingInt(Map.Entry::getValue));
-            }catch (Exception e){
-                log.error(e.getMessage(), e);
-            }
+            ordered.sort(Comparator.comparingInt(Map.Entry::getValue));
+
 
             //log.info("{}", ordered);
 
@@ -122,15 +121,24 @@ public class LocalizedDataEntryTermsExtractor extends SimpleDataEntryTermsExtrac
                 }
             }
 
+            }catch (Exception e){
+                log.error(e.getMessage(), e);
+            }
+
         });
 
         List<Map.Entry<Element,Integer>> inputElementTermsList = new ArrayList<>(inputElementTerms.entrySet());
         //Finally, sort all the terms that appear closer to our input field than any other field by their distance to our input field.
         inputElementTermsList.sort(Comparator.comparingInt(Map.Entry::getValue));
 
+
         List<String> result = inputElementTermsList.stream().map(entry->entry.getKey().ownText()).limit(1).collect(Collectors.toList());
-        //log.info("result: {}", result);
+        log.info("LocalizedDataEntryTermsExtractor result: {}", result);
         return result;
+        }catch (Exception e){
+            log.error(e.getMessage(), e);
+            throw new RuntimeException(e);
+        }
     }
 
     private class TermsAndFieldsCollector implements NodeVisitor{
@@ -141,25 +149,30 @@ public class LocalizedDataEntryTermsExtractor extends SimpleDataEntryTermsExtrac
 
         @Override
         public void head(Node node, int depth) {
+            try{
+                //If this node is a non-input element with non-empty ownText
+                if(node instanceof Element &&
+                        !((Element)node).tagName().equals("input") &&
+                        !((Element)node).ownText().isBlank()
 
-            //If this node is a non-input element with non-empty ownText
-            if(node instanceof Element &&
-                    !((Element)node).tagName().equals("input") &&
-                    !((Element)node).ownText().isBlank()
+                ){
+                    log.info("Added term {}", ((Element)node).ownText());
+                    //Add it to our terms list.
+                    terms.add((Element)node);
+                }
 
-            ){
-                log.info("Added term {}", ((Element)node).ownText());
-                //Add it to our terms list.
-                terms.add((Element)node);
+                //If this node is an input element.
+                if(node instanceof Element &&
+                        ((Element)node).tagName().equals("input")){
+                    log.info("Added field {}", ((Element)node).outerHtml());
+                    //Add it to our input fields list.
+                    inputFields.add((Element)node);
+                }
+            }catch (Exception e){
+                log.error(e.getMessage(), e);
             }
 
-            //If this node is an input element.
-            if(node instanceof Element &&
-                    ((Element)node).tagName().equals("input")){
-                log.info("Added field {}", ((Element)node).outerHtml());
-                //Add it to our input fields list.
-                inputFields.add((Element)node);
-            }
+
         }
 
         @Override

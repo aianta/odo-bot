@@ -189,6 +189,7 @@ public class LogPreprocessor extends AbstractVerticle {
                             mountPipeline(api, temporalPipeline);
                             mountPipeline(api, tfidfTemporalPipeline);
                             mountPipeline(api, effectOverhaulPipeline);
+                            mountPipeline(api, hierarchicalPipeline);
 
                         }
 

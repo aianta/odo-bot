@@ -18,3 +18,4 @@ crawljax_out
 !firefox_profile/extension-preferences.json
 *.imscc
 *.db-journal
+*.xpi

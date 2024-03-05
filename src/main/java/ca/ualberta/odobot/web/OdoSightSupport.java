@@ -28,6 +28,7 @@ import java.io.InputStreamReader;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.ELASTICSEARCH_SERVICE_ADDRESS;
 import static ca.ualberta.odobot.logpreprocessor.Constants.SQLITE_SERVICE_ADDRESS;
@@ -40,6 +41,7 @@ public class OdoSightSupport extends AbstractVerticle {
     private static final String SCRAPE_SCRIPT_PATH = "/home/aianta/shock_and_awe/es-local/scrape_mongo.sh";
 
     private static final String SCRAPE_SCRIPT_V2_PATH = "/home/aianta/shock_and_awe/es-local/scrape_mongo_v2.sh";
+    private static final String SCRAPE_SCRIPT_V3_PATH = "/home/aianta/shock_and_awe/es-local/scrape_mongo_v3.sh";
     private static final String DATABASE_CONTAINER_NAME = "canvas-lms-postgres-1";
     private static final String DATABASE_LOGS_PATH = "/var/lib/postgresql/data/log/";
     private static final String DATABASE_LOG_NAME_PREFIX = "db_log_";
@@ -83,8 +85,10 @@ public class OdoSightSupport extends AbstractVerticle {
         //router.route().method(HttpMethod.POST).path("/odo-sight/scrape-mongo").handler(this::scrapeAuditLogs);
         router.route().method(HttpMethod.POST).path("/odo-sight/bulk-scrape-mongo").handler(this::bulkScrape);
         router.route().method(HttpMethod.POST).path("/odo-sight/bulk-scrape-mongo/v2").handler(this::bulkScrapeV2);
+        router.route().method(HttpMethod.POST).path("/odo-sight/bulk-scrape-mongo/v3").handler(this::bulkScrapeV3);
         router.route().method(HttpMethod.POST).path("/odo-sight/scrape-mongo").handler(this::scrapeMongo);
         router.route().method(HttpMethod.POST).path("/odo-sight/scrape-mongo/v2").handler(this::scrapeMongoV2);
+
 
 
         server.requestHandler(router).listen(PORT);
@@ -92,12 +96,49 @@ public class OdoSightSupport extends AbstractVerticle {
         return super.rxStart();
     }
 
-    public void bulkScrapeV2(RoutingContext rc){
+    /**
+     * This bulk scrape configures a logstash pipeline to scrape all provided flights into a target instance.
+     * It differs from v2, which scrapes one flight at a time.
+     * @param rc
+     */
+    public void bulkScrapeV3(RoutingContext rc){
+        //Get the target esIndex where we will deposit the scraped data.
+        String esIndex = rc.request().getParam("es-index");
 
+        JsonArray flightsToScrape = rc.body().asJsonArray();
+        Set<String> flightIds = flightsToScrape.stream().map(o->(JsonObject)o).map(flight->flight.getString("id")).collect(Collectors.toSet());
+
+        String collectionsRegex = makeCollectionsRegex(flightIds);
+        log.info("Computed collections regex for logstash pipeline: {}", collectionsRegex);
+
+        vertx.executeBlocking(blocking->scrapeV3(blocking.getDelegate(), collectionsRegex, esIndex))
+                .doAfterTerminate(()->log.info("Bulk scrape pipeline started!"))
+                .subscribe();
+
+
+    }
+
+    private String makeCollectionsRegex(Set<String> flightIds){
+
+        StringBuilder sb = new StringBuilder();
+        Iterator<String> it = flightIds.iterator();
+        while (it.hasNext()){
+            sb.append(it.next());
+            if(it.hasNext()){
+                sb.append("|");
+            }
+        }
+
+        return sb.toString();
+
+    }
+
+    public void bulkScrapeV2(RoutingContext rc){
+        //Get the target esIndex where we will deposit the scraped data.
         String esIndex = rc.request().getParam("es-index");
         Promise<Set<String>> excludePromise = Promise.promise();
 
-        elasticService.getFlights(esIndex)
+        elasticService.getFlights(esIndex, "flight_name")
                 .onFailure(err->log.error(err.getMessage(),err))
                 .onSuccess(excludePromise::complete);
 
@@ -226,6 +267,25 @@ public class OdoSightSupport extends AbstractVerticle {
         rc.response().setStatusCode(201).end();
 
 
+    }
+
+    /**
+     * Scrapes events from a flight into a specified elasticsearch index.
+     * @param promise
+     * @param mongoCollectionRegex a regex matching the mongo collections to scrape
+     * @param esIndex the elastic search index into which the data should be indexed.
+     */
+    private void scrapeV3(Promise promise, String mongoCollectionRegex, String esIndex){
+        try{
+            log.info("Executing mongo scrape v2 script for {}  into es-index: {}", mongoCollectionRegex, esIndex);
+            ProcessBuilder pb = new ProcessBuilder("wsl", SCRAPE_SCRIPT_V3_PATH, "\""+mongoCollectionRegex +"\"", esIndex);
+            pb.inheritIO();
+            Process scrapeProcess = pb.start();
+            scrapeProcess.waitFor(15, TimeUnit.SECONDS);
+            promise.complete();
+        }catch (IOException | InterruptedException e){
+            log.error(e.getMessage(), e);
+        }
     }
 
     /**

@@ -42,6 +42,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.*;
@@ -253,19 +254,24 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
 
     public void chunkedSemanticTracesHandler(RoutingContext rc){
 
-        List<String> esIndices = rc.queryParam("index");
+        String flightIdentifierField = rc.request().getParam("flight_identifier_field", "field_name");
+
+        String index = rc.request().getParam("index");
+        rc.put("index", index);
+
         int chunkSize = Integer.parseInt(rc.queryParam("chunkSize").get(0));
+
         String dataset = rc.request().getParam("dataset");
+
         if(dataset != null){
             rc.put("dataset", dataset);
         }
+
         rc.put("chunkSize", chunkSize);
 
-
-        CompositeFuture.<Set<String>>all(
-                esIndices.stream().map(index->elasticsearchService.getAliases(index)).collect(Collectors.toList())
-        ).onFailure(err->log.error(err.getMessage(), err))
-                .onSuccess(indicesSets->{
+        elasticsearchService.getFlights(index, flightIdentifierField)
+                .onFailure(err->log.error(err.getMessage(), err))
+                .onSuccess(flightSet->{
 
                     //Now let's go check to see how much progress has been made
                     sqliteService.getHarvestProgress(rc.get("dataset"))
@@ -275,16 +281,15 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
 
                                 List<String> todo = new ArrayList<>();
 
-                                indicesSets.<Set<String>>list().forEach(set->{
-                                    todo.addAll(set);
-                                });
+                                todo.addAll(flightSet);
+
                                 int originalTodoSize = todo.size();
                                 log.info("{} indices toDo...", originalTodoSize);
-                                List<String> finalTodo = todo.stream().filter(index->!progress.contains(index)).collect(Collectors.toList());
-                                log.info("skipping {} indices that are already complete...", originalTodoSize - finalTodo.size() );
+                                List<String> finalTodo = todo.stream().filter(flight->!progress.contains(flight)).collect(Collectors.toList());
+                                log.info("skipping {} flights that are already complete...", originalTodoSize - finalTodo.size() );
 
                                 rc.put("todo", finalTodo);
-                                log.info("Indices todo: {}", finalTodo.toString());
+                                log.info("Flights todo: {}", finalTodo.toString());
                                 log.info("In {} sized chunks", chunkSize);
 
                                 rc.reroute(HttpMethod.GET, API_PATH_PREFIX.substring(0, API_PATH_PREFIX.length()-2)  + "/preprocessing/pipelines/" + slug() + "/harvestTrainingMaterials");
@@ -306,21 +311,24 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
 
         if(rc.get("todo") != null){
             List<String> todo = rc.get("todo");
-            List<String> esIndices = new ArrayList<>();
+            List<String> flights = new ArrayList<>();
 
             Iterator<String> it = todo.iterator();
             int counter = rc.get("chunkSize");
             while (it.hasNext() && counter > 0){
-                esIndices.add(it.next());
+                flights.add(it.next());
                 it.remove();
                 counter--;
             }
 
             rc.put("todo", todo);
-            rc.put("esIndices", esIndices);
+            rc.put("flights", flights);
         }else{
-            List<String> esIndices = rc.queryParam("index");
-            rc.put("esIndices", esIndices);
+            List<String> flights = rc.queryParam("flight");
+            rc.put("flights", flights);
+
+            String index = rc.request().getParam("index");
+            rc.put("index", index);
         }
 
 
@@ -333,31 +341,25 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
         JsonArray sortOptions = new JsonArray()
                 .add(new JsonObject().put(TIMESTAMP_FIELD, "asc"));
 
-        List<String> esIndices = rc.get("esIndices");
+        List<String> flights = rc.get("flights");
 
-        //Fetch the event logs corresponding with every index requested
+        //Fetch the event logs corresponding with every flight requested
         CompositeFuture.all(
-                esIndices.stream().map(index->elasticsearchService.fetchAndSortAll(index, sortOptions)).collect(Collectors.toList())
+                flights.stream().map(flight->elasticsearchService.fetchFlightEvents(rc.get("index"), flight, sortOptions)).collect(Collectors.toList())
         ).onFailure(err->log.error(err.getMessage(), err))
         .compose(future->{
             List<List<JsonObject>> eventlogs = future.list();
 
-            //Build a map associating the logs with their elasticsearch indices
+            //Build a map associating the logs with their flights
             Map<String,List<JsonObject>> eventlogsMap = new HashMap<>();
 
             /**
-             * There are three possible cases for this handler:
              *
-             * 1) A list of specific elasticsearch indices are given. In that case, each will be retrieved individually
+             * A list of specific flights are given. Each will be retrieved individually
              * and each List<JsonObject> in the eventlogs variable corresponds with the documents/events for one of the
-             * given indices.
+             * given flights.
              *
-             * 2) An index prefix is specified, in that case, elasticsearch will do a multi-index search and a single List<JsonObject>
-             * will contain documents/events from multiple underlying es indices.
-             *
-             * 3) A combination of 1) & 2).
-             *
-             * The logic below aims to support all these cases. Each JsonObject will include a field 'index', which specifies the index
+             * Each JsonObject will include a field 'flightName', which specifies the flight
              * from which it originated. We use this field to sort out where each event belongs.
              */
 
@@ -370,17 +372,20 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
                 Iterator<JsonObject> eventIt = eventlog.iterator();
                 while (eventIt.hasNext()){
 
-                    //For each event, check its 'index' field to place it into the correct map entry.
+                    /**
+                     * For each event, check its 'flightName' field to place it into the correct map entry. See {@link ca.ualberta.odobot.elasticsearch.impl.FetchAllTask#fetch(BiFunction)}
+                     */
+
                     JsonObject event = eventIt.next();
-                    List<JsonObject> targetList = eventlogsMap.getOrDefault(event.getString("index"), new ArrayList<>());
+                    List<JsonObject> targetList = eventlogsMap.getOrDefault(event.getString("flightName"), new ArrayList<>());
                     targetList.add(event);
-                    eventlogsMap.put(event.getString("index"), targetList);
+                    eventlogsMap.put(event.getString("flightName"), targetList);
 
                 }
 
             }
 
-            log.info("Retrieved data from the following indices:");
+            log.info("Retrieved data from the following flights:");
             //List out the indices retrieved for sanity purposes.
             eventlogsMap.keySet().forEach(index->log.info("{}", index));
 
@@ -388,11 +393,11 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
 
             //Construct timelines for each index on separate threads.
             List<Future<Timeline>> timelineFutures = new ArrayList<>();
-            eventlogsMap.forEach((sourceIndex, events)->{
+            eventlogsMap.forEach((flight, events)->{
                 timelineFutures.add(
                 vertx.getDelegate().executeBlocking(blocking->{
                     //Pass the sourceIndex, and timeline events to the implementing subclass for processing.
-                    makeTimeline(sourceIndex, events)
+                    makeTimeline(flight, events)
                             .onSuccess(timeline->blocking.complete(timeline))
                             .onFailure(err->blocking.fail(err));
                 },false));
@@ -401,6 +406,10 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
             eventlogs = null; //Explicitly free for garbage collection
 
             return Future.all(timelineFutures)
+                    .onFailure(err->{
+                        log.error("Error while constructing timelines!");
+                        log.error(err.getMessage(), err);
+                    })
                     .compose(result-> Future.succeededFuture(result.<Timeline>list()));
 
 
@@ -408,16 +417,19 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
             //Pass the eventlogMap to the implementing subclass for processing.
 //            return makeTimelines(eventlogsMap);
 
-        }).onSuccess(timelines->{
-
+        }).onFailure(err->{
+            log.error(err.getMessage(), err);
+                })
+                .onSuccess(timelines->{
+            log.info("Got Timelines!");
             BasicExecution execution = rc.get("metadata");
             //Update execution metadata
             if(execution != null){
                 execution.status().data().put("step", "timelinesHandler");
-                timelines.forEach(timeline->execution.registerTimeline(timeline.getAnnotations().getString("source-index"),timeline.getId()));
+                timelines.forEach(timeline->execution.registerTimeline(timeline.getAnnotations().getString("flight-name"),timeline.getId()));
             }
 
-
+            log.info("Saving {} timelines to routing context", timelines.size());
             //Put timelines in routing context for further processing or persistence layer.
             rc.put("timelines", timelines);
             rc.next();

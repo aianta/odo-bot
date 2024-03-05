@@ -13,6 +13,7 @@ import co.elastic.clients.json.JsonData;
 import io.vertx.core.Promise;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import io.vertx.ext.web.client.impl.cache.UserAgent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -21,49 +22,86 @@ import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.function.BiFunction;
 
 public class FetchAllTask implements Runnable{
     private static final Logger log = LoggerFactory.getLogger(FetchAllTask.class);
     private static final Time keepAliveValue = Time.of(t->t.time("10m"));
+
+    private static final String ELASTICSEARCH_TIMEOUT = "1800000ms"; //30 min
 
     private ElasticsearchClient client;
     private Promise<List<JsonObject>> promise;
     private String index;
     private JsonArray sortOptions;
 
+    private SortOptions esSortOptions;
+
+    private String flightName;
+
+    /**
+     * Constructor used to create a FetchAllTask object that retrieves all documents (events) for a given flight/trace from its parent index.
+     * @param promise the promise to complete once all documents have been retrieved.
+     * @param client the elasticsearch client to use.
+     * @param index the index containing the specified flight/trace
+     * @param flightName the name of the flight/trace to retrieve events for.
+     * @param sortOptions Options regarding the sort order of the returned documents. Json array of elasticsearch sort options (see: https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html)
+     */
+    public FetchAllTask (Promise<List<JsonObject>> promise, ElasticsearchClient client, String index, String flightName, JsonArray sortOptions){
+        this.promise = promise;
+        this.index = index;
+        this.flightName = flightName;
+        this.sortOptions = sortOptions;
+        this.client = client;
+
+        //Construct SortOptions from JsonArray
+        esSortOptions = processSortOptions(sortOptions);
+    }
+
+    /**
+     * Constructor used to create a FetchAllTask object that retrieves all documents in an index.
+     * @param promise the promise to complete once all documents have been retrieved.
+     * @param client the elasticsearch client to use.
+     * @param index the index whose documents are to be retrieved.
+     * @param sortOptions Options regarding the sort order of the returned documents. Json array of elasticsearch sort options (see: https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html)
+     */
     public  FetchAllTask(Promise<List<JsonObject>> promise, ElasticsearchClient client, String index, JsonArray sortOptions){
         this.promise = promise;
         this.index = index;
         this.sortOptions = sortOptions;
         this.client = client;
+
+        //Construct SortOptions from JsonArray
+        esSortOptions = processSortOptions(sortOptions);
     }
 
     @Override
     public void run() {
-        fetchAndSortAll(index, sortOptions);
+        //If no flight name is specified, retrieve all documents in an index.
+        if(flightName == null){
+            log.info("Fetching all documents in es index:{}", index);
+            fetch((String pitId, List<FieldValue> sortInfo)->fetchAllRequest(pitId, keepAliveValue, esSortOptions, sortInfo));
+        }else{
+            log.info("Fetching all events for flight: {} in es index: {}", flightName, index);
+            fetch((String pitId, List<FieldValue> sortInfo)->fetchAllRequestV2(pitId, keepAliveValue, esSortOptions, sortInfo, flightName));
+        }
     }
+
 
     /**
      * Fetches all documents stored in the specified index.
      *
      * Note: This method accumulates the results in an ArrayList, and thus could scale poorly with
-     * large datasets.
+     * large datasets as it places them entirely into memory.
      *
      * TODO -> Consider a scalable implementation...
-     * @param index index from which to retrieve documents.
-     * @param sortOptions a json array of elasticsearch sort options (see: https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html)
+     * @param requestFunction a function that returns the desired search request to execute given a String:PIT Id and List<FieldValue>:sortInfo
      * @return A list of all available documents from that index.
      */
-    private void fetchAndSortAll(String index, JsonArray sortOptions){
+    private void fetch(BiFunction<String, List<FieldValue>,SearchRequest> requestFunction){
         List<JsonObject> results = new ArrayList<>();
 
-        //Construct SortOptions from JsonArray
-        SortOptions options;
-        if(sortOptions == null || sortOptions.size() == 0){
-            options = defaultSort();
-        }else{
-            options = makeSortOptions(sortOptions);
-        }
+
 
         /**
          * Procedure:
@@ -95,7 +133,10 @@ public class FetchAllTask implements Runnable{
                  * NOTE: DO NOT CONFUSE SORT INFO FOR SORT OPTIONS!!
                  */
                 log.info("Harvesting documents from index: {}", index);
-                SearchRequest initialRequest = fetchAllRequest(pitResponse.id(), keepAliveValue, options, null);
+                //SearchRequest initialRequest = fetchAllRequest(pitResponse.id(), keepAliveValue, options, null);
+                SearchRequest initialRequest = requestFunction.apply(pitResponse.id(), null);
+
+                log.info("ES initial query: {}", initialRequest);
 
                 SearchResponse<JsonData> search = client.search(initialRequest, JsonData.class);
 
@@ -108,11 +149,18 @@ public class FetchAllTask implements Runnable{
                     List<FieldValue> sortInfo = new ArrayList<>();
                     while (it.hasNext()){
                         Hit<JsonData> curr = it.next();
-                        results.add(JsonDataUtility.fromJsonData(curr.source()).put("index", curr.index())); //Add the index of the document to our result
+
+                        JsonObject result = JsonDataUtility.fromJsonData(curr.source()).put("esIndex", curr.index());
+                        if(flightName != null){
+                            result.put("flightName", flightName);
+                        }
+
+                        results.add(result); //Add the index of the document to our result
                         sortInfo = curr.sort();
                     }
 
-                    SearchRequest nextRequest = fetchAllRequest(search.pitId(), keepAliveValue, options, sortInfo);
+                    //SearchRequest nextRequest = fetchAllRequest(search.pitId(), keepAliveValue, options, sortInfo);
+                    SearchRequest nextRequest = requestFunction.apply(search.pitId(), sortInfo);
                     search = client.search(nextRequest, JsonData.class);
                 }
 
@@ -147,27 +195,67 @@ public class FetchAllTask implements Runnable{
         return SortOptions.of(b->b.field(f->f.field("_score").order(SortOrder.Desc))); //Default to using _score sort.
     }
 
-    private SearchRequest fetchAllRequest(String pitId, Time keepAliveValue, SortOptions sortOptions, List<FieldValue> sortInfo){
+    private SortOptions processSortOptions(JsonArray sortOptions){
+        if(sortOptions == null || sortOptions.size() == 0){
+            return defaultSort();
+        }else{
+            return makeSortOptions(sortOptions);
+        }
+    }
 
-        //Build request
+    private SearchRequest fetchAllRequestV2(String pitId, Time keepAliveValue, SortOptions sortOptions, List<FieldValue> sortInfo, String flightName){
+
+        /**
+         * Using the Filter Context strategy from the link below:
+         * https://opster.com/guides/elasticsearch/search-apis/elasticsearch-exact-match/
+         *
+         * Filters should allow for caching on elasticsearch's end improving performance.
+         */
+
+        SearchRequest.Builder requestBuilder = commonRequestBuilder(pitId, keepAliveValue)
+                //The field 'flight_name' is defined in the scrape_mongo_v2.sh script used to scrape flight data from LogUI's mongoDB into elasticsearch.
+                .query(q->q.bool(b->b.filter(f->f.term(t->t.field("flight_name.keyword").value(flightName)))));
+
+        return handleSorting(requestBuilder, sortOptions, sortInfo);
+    }
+
+    /**
+     * Construct a search request builder object with common settings.
+     * @return
+     */
+    private SearchRequest.Builder commonRequestBuilder(String pitId, Time keepAliveValue){
         SearchRequest.Builder requestBuilder = new SearchRequest.Builder()
                 .size(100)
                 .pit(pit->pit.id(pitId).keepAlive(keepAliveValue))
-                .query(q->q.matchAll(v->v.withJson(new StringReader("{}"))))
-                .timeout("1800000ms")
+                .timeout(ELASTICSEARCH_TIMEOUT)
                 .trackTotalHits(TrackHits.of(th->th.enabled(false)));
 
+        return requestBuilder;
+
+    }
+
+    private SearchRequest handleSorting(SearchRequest.Builder requestBuilder, SortOptions sortOptions, List<FieldValue> sortInfo){
         //If we were given sort options, add them to the request now
         if(sortOptions != null){
             requestBuilder.sort(sortOptions);
         }
 
-
-        if (sortInfo != null){
+        if(sortInfo != null){
             requestBuilder.searchAfter(sortInfo);
         }
 
         return requestBuilder.build();
+
+    }
+
+    private SearchRequest fetchAllRequest(String pitId, Time keepAliveValue, SortOptions sortOptions, List<FieldValue> sortInfo){
+
+        //Build request
+        SearchRequest.Builder requestBuilder = commonRequestBuilder(pitId, keepAliveValue)
+                .query(q->q.matchAll(v->v.withJson(new StringReader("{}"))));
+
+
+        return handleSorting(requestBuilder, sortOptions, sortInfo);
     }
 
     /**
