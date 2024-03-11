@@ -36,7 +36,7 @@ public class TPGVerticle extends AbstractVerticle {
     private static final Logger log = LoggerFactory.getLogger(TPGVerticle.class);
 
     private static final String HOST = "0.0.0.0";
-    private static final int PORT = 8077;
+    private static final int PORT = 8027;
     private static final String API_PATH_PREFIX = "/api/*";
 
     private TPGService tpgService;
@@ -75,6 +75,7 @@ public class TPGVerticle extends AbstractVerticle {
                     .setSsl(false);
 
             server = vertx.createHttpServer(options);
+
             mainRouter = Router.router(vertx);
             api = Router.router(vertx);
 

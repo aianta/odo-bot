@@ -13,7 +13,6 @@ import co.elastic.clients.json.JsonData;
 import io.vertx.core.Promise;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
-import io.vertx.ext.web.client.impl.cache.UserAgent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,20 +36,24 @@ public class FetchAllTask implements Runnable{
 
     private SortOptions esSortOptions;
 
-    private String flightName;
+    private String flightIdentifier;
+
+    private String flightIdentifierField;
 
     /**
      * Constructor used to create a FetchAllTask object that retrieves all documents (events) for a given flight/trace from its parent index.
      * @param promise the promise to complete once all documents have been retrieved.
      * @param client the elasticsearch client to use.
      * @param index the index containing the specified flight/trace
-     * @param flightName the name of the flight/trace to retrieve events for.
+     * @param flightIdentifier the identifier of the flight/trace to retrieve events for.
+     * @param flightIdentifierField the name of the field containing the identifier. These should probably end in '.keyword'.
      * @param sortOptions Options regarding the sort order of the returned documents. Json array of elasticsearch sort options (see: https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html)
      */
-    public FetchAllTask (Promise<List<JsonObject>> promise, ElasticsearchClient client, String index, String flightName, JsonArray sortOptions){
+    public FetchAllTask (Promise<List<JsonObject>> promise, ElasticsearchClient client, String index, String flightIdentifier, String flightIdentifierField, JsonArray sortOptions){
         this.promise = promise;
         this.index = index;
-        this.flightName = flightName;
+        this.flightIdentifier = flightIdentifier;
+        this.flightIdentifierField = flightIdentifierField;
         this.sortOptions = sortOptions;
         this.client = client;
 
@@ -78,12 +81,21 @@ public class FetchAllTask implements Runnable{
     @Override
     public void run() {
         //If no flight name is specified, retrieve all documents in an index.
-        if(flightName == null){
+        if(flightIdentifier == null){
             log.info("Fetching all documents in es index:{}", index);
             fetch((String pitId, List<FieldValue> sortInfo)->fetchAllRequest(pitId, keepAliveValue, esSortOptions, sortInfo));
         }else{
-            log.info("Fetching all events for flight: {} in es index: {}", flightName, index);
-            fetch((String pitId, List<FieldValue> sortInfo)->fetchAllRequestV2(pitId, keepAliveValue, esSortOptions, sortInfo, flightName));
+            //Cannot proceed without an identifier field.
+            if(flightIdentifierField == null){
+                throw new RuntimeException("No flight identifier field specified!");
+            }
+            //Identifier field should probably end in 'keyword'.
+            if(!flightIdentifierField.endsWith("keyword")){
+                log.warn("Flight identifier field: {} does not end with '.keyword'...", flightIdentifierField);
+            }
+
+            log.info("Fetching all events for flight: {} in es index: {}", flightIdentifier, index);
+            fetch((String pitId, List<FieldValue> sortInfo)->fetchAllRequestV2(pitId, keepAliveValue, esSortOptions, sortInfo, flightIdentifier, flightIdentifierField));
         }
     }
 
@@ -151,8 +163,8 @@ public class FetchAllTask implements Runnable{
                         Hit<JsonData> curr = it.next();
 
                         JsonObject result = JsonDataUtility.fromJsonData(curr.source()).put("esIndex", curr.index());
-                        if(flightName != null){
-                            result.put("flightName", flightName);
+                        if(flightIdentifier != null){
+                            result.put("flightName", flightIdentifier);
                         }
 
                         results.add(result); //Add the index of the document to our result
@@ -203,7 +215,7 @@ public class FetchAllTask implements Runnable{
         }
     }
 
-    private SearchRequest fetchAllRequestV2(String pitId, Time keepAliveValue, SortOptions sortOptions, List<FieldValue> sortInfo, String flightName){
+    private SearchRequest fetchAllRequestV2(String pitId, Time keepAliveValue, SortOptions sortOptions, List<FieldValue> sortInfo, String flightIdentifier, String flightIdentifierField){
 
         /**
          * Using the Filter Context strategy from the link below:
@@ -214,7 +226,7 @@ public class FetchAllTask implements Runnable{
 
         SearchRequest.Builder requestBuilder = commonRequestBuilder(pitId, keepAliveValue)
                 //The field 'flight_name' is defined in the scrape_mongo_v2.sh script used to scrape flight data from LogUI's mongoDB into elasticsearch.
-                .query(q->q.bool(b->b.filter(f->f.term(t->t.field("flight_name.keyword").value(flightName)))));
+                .query(q->q.bool(b->b.filter(f->f.term(t->t.field(flightIdentifierField).value(flightIdentifier)))));
 
         return handleSorting(requestBuilder, sortOptions, sortInfo);
     }

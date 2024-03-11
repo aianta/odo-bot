@@ -254,7 +254,8 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
 
     public void chunkedSemanticTracesHandler(RoutingContext rc){
 
-        String flightIdentifierField = rc.request().getParam("flight_identifier_field", "field_name");
+        String flightIdentifierField = rc.request().getParam("flight_identifier_field", "flight_name.keyword");
+        rc.put("flightIdentifierField", flightIdentifierField);
 
         String index = rc.request().getParam("index");
         rc.put("index", index);
@@ -324,6 +325,9 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
             rc.put("todo", todo);
             rc.put("flights", flights);
         }else{
+
+            rc.put("flightIdentifierField", "flight_name.keyword");
+
             List<String> flights = rc.queryParam("flight");
             rc.put("flights", flights);
 
@@ -342,10 +346,11 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
                 .add(new JsonObject().put(TIMESTAMP_FIELD, "asc"));
 
         List<String> flights = rc.get("flights");
+        String flightIdentifierField = rc.get("flightIdentifierField");
 
         //Fetch the event logs corresponding with every flight requested
         CompositeFuture.all(
-                flights.stream().map(flight->elasticsearchService.fetchFlightEvents(rc.get("index"), flight, sortOptions)).collect(Collectors.toList())
+                flights.stream().map(flight->elasticsearchService.fetchFlightEvents(rc.get("index"), flight, flightIdentifierField, sortOptions)).collect(Collectors.toList())
         ).onFailure(err->log.error(err.getMessage(), err))
         .compose(future->{
             List<List<JsonObject>> eventlogs = future.list();

@@ -141,7 +141,9 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
 //                ,
 //                (term)->ALLOWED_PARTS_OF_SPEECH.contains(term.tag()) //Filtering to be applied to the core label results
 //        );
-        List<String> terms = getLogicalTextRegions(body.outerHtml());
+
+        //List<String> terms = getLogicalTextRegions(body.outerHtml());
+        List<String> terms = getTopNLogicalTextRegions(targetElement, 10);
 
 
         log.debug("terms size: {}", terms.size());
@@ -291,6 +293,30 @@ public class DistanceToTarget implements TermRankingStrategy<AbstractArtifact> {
         }
         result.addAll(e.children());
         return result;
+    }
+
+    /**
+     * Takes the target element then extracts logical text regions from it.
+     * Once more than n text regions are found, they are returned. Otherwise,
+     * the method moves to the parent element of the target iteratively until
+     * more than n terms are found.
+     *
+     * NOTE: more than N text regions may be returned.
+     *
+     * @param targetElement target element from which to start searching for logical text regions
+     * @param n the minimum number of text regions before returning.
+     * @return a list of logical text regions whose size is greater than n.
+     */
+    private static List<String> getTopNLogicalTextRegions(Element targetElement, int n){
+
+        Element curr = targetElement;
+        List<String> termsInElement = new ArrayList<>();
+        while (termsInElement.size() < n && curr != null){
+            termsInElement = getLogicalTextRegions(curr.html());
+            curr = curr.parent();
+        }
+        log.info("Sought {} text regions, got {}", n, termsInElement.size());
+        return termsInElement;
     }
 
     private static List<String> getLogicalTextRegions(String html){

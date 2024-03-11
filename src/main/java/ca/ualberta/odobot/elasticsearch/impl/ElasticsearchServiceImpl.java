@@ -99,11 +99,12 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
                         ).build();
 
                 SearchRequest searchRequest = new SearchRequest.Builder()
-                        .index(index)
                         .pit(pit->pit.id(pitResponse.id()).keepAlive(keepAliveValue))
                         .size(0)
                         .aggregations("unique_flights", aggregation)
                         .build();
+
+                log.info("Search request: {}", searchRequest.toString());
 
                 SearchResponse response = client.search(searchRequest, Void.class);
 
@@ -174,7 +175,7 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
     }
 
 
-    public Future<List<JsonObject>> fetchFlightEvents(String index, String flightName, JsonArray sortOptions){
+    public Future<List<JsonObject>> fetchFlightEvents(String index, String flightIdentifier, String flightIdentifierField, JsonArray sortOptions){
         //Do this in a separate thread so vertx event loop doesn't get blocked.
         Promise<List<JsonObject>> promise = Promise.promise();
 
@@ -182,7 +183,7 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
                 .onFailure(err->log.error(err.getMessage(), err))
                 .onComplete(data->log.info("got data back from thread!"));
 
-        FetchAllTask task = new FetchAllTask(promise, client, index, flightName, sortOptions);
+        FetchAllTask task = new FetchAllTask(promise, client, index, flightIdentifier, flightIdentifierField, sortOptions);
         Thread thread = new Thread(task);
         thread.start();
 

@@ -19,3 +19,4 @@ crawljax_out
 *.imscc
 *.db-journal
 *.xpi
+*.state

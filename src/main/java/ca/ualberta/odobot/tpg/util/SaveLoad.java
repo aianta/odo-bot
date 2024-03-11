@@ -16,10 +16,7 @@ import ca.ualberta.odobot.tpg.teams.Team;
 import ca.ualberta.odobot.tpg.TPGLearn;
 import ca.ualberta.odobot.tpg.util.serializers.InstructionSerializer;
 
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Random;
@@ -70,6 +67,8 @@ public class SaveLoad {
 
 	public void saveState(TPGAlgorithm tpgAlgorithm, String filepath) throws FileNotFoundException
 	{
+		File f = new File(filepath);
+		f.getParentFile().mkdirs();
 
 		//sets the location where the file will be saved.
 		System.out.println("\nsaveState called with filepath " + filepath);

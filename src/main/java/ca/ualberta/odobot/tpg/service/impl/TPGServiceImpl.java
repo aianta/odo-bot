@@ -37,11 +37,6 @@ public class TPGServiceImpl implements TPGService {
         Promise<TPGAlgorithm> promise = Promise.promise();
         List<TrainingExemplar> dataset = data.stream().map(o->TrainingExemplar.fromJson((JsonObject)o)).collect(Collectors.toList());
 
-        //Some extremely basic validation
-        if(config.getInteger("testSamplesPerLabel") >= config.getInteger("samplesPerLabel")){
-            log.error("testSamplesPerLabel ({}) is greater or equal to the number of samplesPerLabel({}) ",config.getInteger("testSamplesPerLabel"),config.getInteger("samplesPerLabel")  );
-            throw new RuntimeException("Invalid training task configuration!");
-        }
 
         //Need to capture this before getTestData() as that method will remove test exemplars from the original dataset.
         int originalDatasetSize = dataset.size();
@@ -51,8 +46,8 @@ public class TPGServiceImpl implements TPGService {
         //Balance & Split dataset
         //NOTE: The exemplars in the test dataset will be removed from the training dataset, and by reference also the dataset.
         //Hence why originalDatasetSize is captured beforehand for metrics.
-        List<TrainingExemplar> trainingDataset = balanceDataset(dataset, config.getInteger("samplesPerLabel"));
-        List<TrainingExemplar> testData = getTestData(trainingDataset, config.getInteger("testSamplesPerLabel"));
+        //List<TrainingExemplar> trainingDataset = balanceDataset(dataset, config.getInteger("samplesPerLabel"));
+        //List<TrainingExemplar> testData = getTestData(trainingDataset, config.getInteger("testSamplesPerLabel"));
 
 
 

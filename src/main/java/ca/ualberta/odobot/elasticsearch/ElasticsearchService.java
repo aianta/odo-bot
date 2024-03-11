@@ -60,11 +60,12 @@ public interface ElasticsearchService {
     /**
      * Returns all documents associated with a particular flight from a specified index. These documents will correspond to events scraped from LogUI's mongoDB.
      * @param index the index containing the events of the specified flight
-     * @param flightName the name of the flight whose events to retrieve.
+     * @param flightIdentifier the name of the flight whose events to retrieve.
+     * @param flightIdentifierField the field containing the flight identifier. Should probably end in '.keyword'
      * @param sortOptions Options regarding the order of the retrieved documents. Right now, this is treated as a boolean, any non-null value will return documents oldest to newest, while any null value will return documents using the default elasticsearch _score value.
      * @return The corresponding documents matching the specified criteria.
      */
-    Future<List<JsonObject>> fetchFlightEvents(String index, String flightName, JsonArray sortOptions);
+    Future<List<JsonObject>> fetchFlightEvents(String index, String flightIdentifier, String flightIdentifierField, JsonArray sortOptions);
 
     /**
      * Inserts the specified items into the specified elasticsearch index.

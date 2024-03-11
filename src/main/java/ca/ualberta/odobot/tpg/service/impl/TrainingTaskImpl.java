@@ -6,6 +6,7 @@ import ca.ualberta.odobot.tpg.TPGAlgorithm;
 import ca.ualberta.odobot.tpg.TPGLearn;
 import ca.ualberta.odobot.tpg.analysis.metrics.*;
 import ca.ualberta.odobot.tpg.teams.Team;
+import ca.ualberta.odobot.tpg.util.SaveLoad;
 import io.vertx.core.Promise;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
@@ -41,6 +42,7 @@ public class TrainingTaskImpl implements Runnable {
     RunMetric runMetric;
     DatasetMetric datasetMetric;
 
+    SaveLoad saveLoad;
 
 
     public TrainingTaskImpl(Promise<TPGAlgorithm> promise, JsonObject config, ElasticsearchService elasticsearchService, List<TrainingExemplar> trainingDataset){
@@ -48,17 +50,18 @@ public class TrainingTaskImpl implements Runnable {
         this.dataset = trainingDataset;
         this.config = config;
         this.elasticsearchService = elasticsearchService;
+        this.saveLoad = new SaveLoad();
 
         int originalDatasetSize = trainingDataset.size();
 
         Collections.shuffle(this.dataset);
-        this.dataset = balanceDataset(this.dataset, config.getInteger("samplesPerLabel"));
+        //this.dataset = balanceDataset(this.dataset, config.getInteger("samplesPerLabel"));
         int balancedDatasetSize = this.dataset.size();
-
-        this.testData = getTestData(this.dataset, config.getInteger("testSamplesPerLabel"));
+        this.testData = getProportionalTestData(dataset, (int)(config.getDouble("testSetSize") * dataset.size()));
+        //this.testData = getTestData(this.dataset, config.getInteger("testSamplesPerLabel"));
         this.trainingData = this.dataset;
 
-        log.info("Original dataset size: {} trainingData size: {} testData size: {}", trainingDataset.size(), trainingData.size(), testData.size());
+        log.info("Original dataset size: {} trainingData size: {} testData size: {}", originalDatasetSize, trainingData.size(), testData.size());
 
         //Initialize Run Metric
         runMetric = new RunMetric();
@@ -70,9 +73,9 @@ public class TrainingTaskImpl implements Runnable {
 
         //Initialize the Dataset Metric
         datasetMetric = new DatasetMetric();
-        datasetMetric.numberOfSamplesPerLabelInTrainingDataset = config.getInteger("samplesPerLabel") - config.getInteger("testSamplesPerLabel");
-        datasetMetric.numberOfSamplesPerLabelInTestDataset = config.getInteger("testSamplesPerLabel");
-        datasetMetric.numberOfSamplesPerLabelInBalancedDataset = config.getInteger("samplesPerLabel");
+//        datasetMetric.numberOfSamplesPerLabelInTrainingDataset = config.getInteger("samplesPerLabel") - config.getInteger("testSamplesPerLabel");
+//        datasetMetric.numberOfSamplesPerLabelInTestDataset = config.getInteger("testSamplesPerLabel");
+//        datasetMetric.numberOfSamplesPerLabelInBalancedDataset = config.getInteger("samplesPerLabel");
         datasetMetric.trainingDatasetSize = this.trainingData.size();
         datasetMetric.testDatasetSize = this.testData.size();
         datasetMetric.balancedTotalDatasetSize = balancedDatasetSize;
@@ -80,6 +83,75 @@ public class TrainingTaskImpl implements Runnable {
 
 
 
+    }
+
+    private List<TrainingExemplar> getProportionalTestData(List<TrainingExemplar> dataset, int testSetSize){
+        log.info("Computing proportional test data, target testSetSize: {} datasetSize: {}", testSetSize, dataset.size());
+        List<TrainingExemplar> testDataset = new ArrayList<>();
+
+        Map<Integer, Double> proportionalDistribution = computeProportionalDistribution(dataset);
+        Map<Integer, Integer> instanceMap = computeTargetDistribution(proportionalDistribution, testSetSize);
+
+        Collections.shuffle(dataset);//TODO - this sort of thing should probably be done first. So as to single responsibility principle...
+
+        Map<Integer, Integer> testDistribution = new LinkedHashMap<>();
+        Iterator<TrainingExemplar> it = dataset.iterator();
+
+        while (it.hasNext()) {
+            TrainingExemplar exemplar = it.next();
+            int label = exemplar.labels()[0];
+            int count = testDistribution.getOrDefault(label, 0);
+            if (count < instanceMap.get(label)) {
+                testDataset.add(exemplar);
+                it.remove();
+                testDistribution.put(label, count + 1);
+            }
+
+        }
+
+        testDistribution.forEach((label, frequency)->log.info("testLabel: {} freq: {}", label, frequency));
+
+        return testDataset;
+    }
+
+    /**
+     * Takes a proportional distribution where the values 0.05 = 5% are then multiplied
+     * by the target size to yield the number of instances of a label that would make 5%
+     * of the target size.
+     * @param proportionalDistribution
+     * @param targetSize
+     * @return
+     */
+    private Map<Integer, Integer> computeTargetDistribution(Map<Integer, Double> proportionalDistribution, int targetSize){
+
+        Map<Integer, Integer> result = new LinkedHashMap<>();
+        proportionalDistribution.forEach((label, proportion)->{
+            log.info("label: {} proportion: {} target: {} result:{}", label, proportion, targetSize,(int)Math.floor(proportion*(double)targetSize) );
+            result.put(label, (int)Math.floor(proportion*(double)targetSize));
+        });
+
+        return result;
+    }
+
+    private Map<Integer, Double> computeProportionalDistribution(List<TrainingExemplar> exemplars){
+        double datasetSize = exemplars.size();
+        Map<Integer, Integer> distribution = computeDistribution(exemplars);
+        Map<Integer, Double> result = new LinkedHashMap<>();
+
+        distribution.forEach((label, frequency)->{
+            result.put(label, (double)frequency/datasetSize);
+        });
+
+        return result;
+    }
+
+    private Map<Integer, Integer> computeDistribution(List<TrainingExemplar> exemplars){
+        Map<Integer, Integer> distribution = new LinkedHashMap<>();
+        exemplars.forEach(exemplar->{
+            int count = distribution.getOrDefault(exemplar.labels()[0], 0);
+            distribution.put(exemplar.labels()[0], count+1);
+        });
+        return distribution;
     }
 
     /**
@@ -125,13 +197,17 @@ public class TrainingTaskImpl implements Runnable {
         List<TrainingExemplar> result = new ArrayList<>();
 
         Map<Integer, Integer> distribution = new LinkedHashMap<>();
+        Map<String, Integer> friendlyLabelNameDistribution = new LinkedHashMap<>();
         dataset.forEach(exemplar -> {
             int count = distribution.getOrDefault(exemplar.labels()[0], 0);
             distribution.put(exemplar.labels()[0], count+1);
+
+            count = friendlyLabelNameDistribution.getOrDefault(exemplar.extras().getString("path"), 0);
+            friendlyLabelNameDistribution.put(exemplar.extras().getString("path"), count+1);
         });
 
         distribution.forEach((label, frequency)->log.info("label: {} freq: {}", label,frequency));
-
+        friendlyLabelNameDistribution.forEach((path, frequency)->log.info("path: {} freq: {}", path, frequency));
 
         Map<Integer, Integer> toAdd = new HashMap<>();
         //distribution.entrySet().stream().filter(entry->entry.getValue()>=samplesPerLabel).forEach(entry->toAdd.put(entry.getKey(), samplesPerLabel));
@@ -295,8 +371,9 @@ public class TrainingTaskImpl implements Runnable {
                                 .addComponent(entry.getValue())
                                 .build()
                         ).collect(Collectors.toList());
+
                 elasticsearchService.saveIntoIndex(labelClassificationData, ES_INDEX_LABEL_CLASSIFICATION)
-                        .onSuccess(done->log.info("Saved label classification data for team {}", tpg.getCurrTeamID()))
+                        .onSuccess(done->log.info("Saved label classification data for team: {}", tpg.getCurrTeamID()))
                         .onFailure(err->log.error(err.getMessage(), err));
 
             }
@@ -334,7 +411,21 @@ public class TrainingTaskImpl implements Runnable {
 
             log.info("Generation {} complete. Scores [Min: {}, Avg: {}, Max: {}]",tpg.getEpochs() , generationMin, generationAverage, generationMax);
 
+            //Save State every 25 generations
+            if(i % 25 == 0){
+                saveLoad.saveState(tpgAlgorithm, "./tpg/progress/" + runMetric.id.toString() + "/" + i + ".state" );
+            }
+
             long mutationParameter =  config.getLong("mutationRoundsPerGeneration");
+
+            //Gradually start tangling teams
+            if(tpg.getEpochs() < 1000){
+                tpg.probActionIsTeam = 0.0;
+            }else{
+                tpg.probActionIsTeam = (((double)tpg.getEpochs()/1000.0) % 1000)/100.0;
+            }
+
+            log.info("probActionIsTeam for next generation: {}", tpg.probActionIsTeam);
 
             //Perform selection
             tpg.selection();
