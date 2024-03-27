@@ -10,6 +10,7 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
 import java.util.List;
+import java.util.Map;
 
 @ProxyGen
 public interface TPGService {
@@ -20,6 +21,7 @@ public interface TPGService {
         return new TPGServiceVertxEBProxy(vertx,address);
     }
 
+
     /**
      *
      * @param config
@@ -28,6 +30,6 @@ public interface TPGService {
      */
     Future<JsonObject> train(JsonObject config, JsonArray dataset);
 
-    Future<Void> identify(JsonObject config, JsonObject exemplar);
+    Future<JsonObject> identify(JsonObject config, JsonObject exemplar, List<Long> pathActions, JsonObject actionsMap);
 
 }

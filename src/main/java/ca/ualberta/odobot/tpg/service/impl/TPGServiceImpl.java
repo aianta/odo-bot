@@ -4,6 +4,8 @@ import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 import ca.ualberta.odobot.sqlite.impl.TrainingExemplar;
 import ca.ualberta.odobot.tpg.TPGAlgorithm;
 import ca.ualberta.odobot.tpg.TPGLearn;
+import ca.ualberta.odobot.tpg.analysis.TeamExecutionTrace;
+import ca.ualberta.odobot.tpg.learners.Learner;
 import ca.ualberta.odobot.tpg.service.TPGService;
 import ca.ualberta.odobot.tpg.teams.Team;
 import ca.ualberta.odobot.tpg.util.SaveLoad;
@@ -11,6 +13,7 @@ import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import org.apache.commons.collections.list.AbstractLinkedList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -66,23 +69,60 @@ public class TPGServiceImpl implements TPGService {
     }
 
     @Override
-    public Future<Void> identify(JsonObject config, JsonObject exemplarJson) {
+    public Future<JsonObject> identify(JsonObject config, JsonObject exemplarJson, List<Long> actions, JsonObject actionsObject) {
         TrainingExemplar exemplar = TrainingExemplar.fromJson(exemplarJson);
+
+        long [] pathActions = actions.stream().mapToLong(e->e).toArray();
+        Map<Long,String> actionsMap = actionsObject.getMap().entrySet()
+                .stream()
+                .map(entry->Map.entry(Long.parseLong(entry.getKey()), (String)entry.getValue()))
+                .collect(HashMap::new, (map, entry)->map.put(entry.getKey(), entry.getValue()), HashMap::putAll);
+
 
         String championPath = config.getString("championPath");
         try{
             Team champion  = saveLoad.loadTeam(championPath);
 
-            double [] registerArray = champion.getAction(new HashSet<>(), exemplar.featureVector());
+            List<Learner> learnerSequence = new ArrayList<>();
+
+            double [] registerArray = champion.getAction(new HashSet<>(), learnerSequence, exemplar.featureVector());
+            long predictedLabel = pathActions[(int)Math.floor(Math.abs(registerArray[0]))%pathActions.length];
+            String humanReadableLabel = actionsMap.get(predictedLabel);
+
+            TeamExecutionTrace trace = new TeamExecutionTrace(exemplar.featureVector(), learnerSequence);
+
+            List<Integer> indexedLocations = trace.indexedLocations();
+            List<Double> maskedFeatureVector = new ArrayList<>();
+
+            ListIterator<Double> it = Arrays.stream(exemplar.featureVector()).collect(ArrayList<Double>::new, ArrayList::add, ArrayList::addAll).listIterator();
+            while (it.hasNext()){
+                double value = it.next();
+                if(indexedLocations.contains(it.previousIndex())){
+                    maskedFeatureVector.add(value);
+                }else {
+                    maskedFeatureVector.add(0.0);
+                }
+            }
+
+            log.info("Team {} indexed {} locations: {}", champion.ID, indexedLocations.size(), indexedLocations );
 
             log.info("Champion produced register array: {}", registerArray);
+
+            JsonObject results = new JsonObject()
+                    .put("championId", champion.ID)
+                    .put("championPath", config.getString("championPath"))
+                    .put("exemplar", exemplarJson)
+                    .put("predictedLabel", humanReadableLabel)
+                    .put("actualLabel", exemplar.extras().getString("path"))
+                    .put("numIndexedLocations", indexedLocations.size())
+                    .put("indexedLocations", indexedLocations.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll))
+                    .put("maskedFeatureVector", maskedFeatureVector.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
+
+            return Future.succeededFuture(results);
         }catch (IOException ioe){
             log.error(ioe.getMessage(), ioe);
             return Future.failedFuture(ioe);
         }
-
-
-        return Future.succeededFuture();
     }
 
     private Future<JsonObject> saveChampion(TPGAlgorithm trainedTPG, UUID runID){
@@ -98,11 +138,8 @@ public class TPGServiceImpl implements TPGService {
             championPaths.put(Long.toString(champion.ID), championPath);
         }
 
-
-
-
-
         return Future.succeededFuture(championPaths);
+
         }catch (Exception e){
             log.error(e.getMessage(), e);
             return Future.failedFuture(e);

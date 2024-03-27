@@ -10,6 +10,7 @@ import io.vertx.core.Future;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
+import org.apache.xalan.xsltc.DOM;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -76,13 +77,33 @@ public class DOMSequencingServiceImpl implements DOMSequencingService {
 
     }
 
+    public Future<JsonArray> htmlToXPathSequence(String html){
+        Document doc = Jsoup.parse(html);
+        DOMVisitor visitor = new DOMVisitor();
+        doc.traverse(visitor);
+
+        DOMSequence sequence = visitor.getSequence();
+
+        return Future.succeededFuture(sequence.xpathSequence());
+    }
+
+    public Future<JsonArray> htmlToSequence(String html){
+        Document doc = Jsoup.parse(html);
+        DOMVisitor visitor = new DOMVisitor();
+        doc.traverse(visitor);
+
+        DOMSequence sequence = visitor.getSequence();
+
+        return Future.succeededFuture(sequence.toStringSequence());
+    }
+
     @Override
     public Future<JsonObject> process(String html) {
 
         Document doc = Jsoup.parse(html);
 
 
-        doNLP(doc);
+        //doNLP(doc);
 
 
 
@@ -90,11 +111,11 @@ public class DOMSequencingServiceImpl implements DOMSequencingService {
         doc.traverse(visitor);
 
         DOMSequence sequence = visitor.getSequence();
-        CSSManifest manifest = visitor.getCssManifest();
-        DirectlyFollowsManifest directlyFollowsManifest = visitor.getDirectlyFollowsManifest();
+        //CSSManifest manifest = visitor.getCssManifest();
+        //DirectlyFollowsManifest directlyFollowsManifest = visitor.getDirectlyFollowsManifest();
 
-        globalDirectlyFollowsManifest.merge(directlyFollowsManifest);
-        globalManifest.merge(manifest);
+        //globalDirectlyFollowsManifest.merge(directlyFollowsManifest);
+        //globalManifest.merge(manifest);
 
         database.add(sequence);
 
@@ -601,12 +622,13 @@ public class DOMSequencingServiceImpl implements DOMSequencingService {
                 i -= 1;
                 j -= 1;
             }else if(matrix[i][j-1] == matrix[i][j] - calculateGap(1)){
-                outA.add(0,new DOMSegment("-",""));
+                outA.add(0,new DOMSegment("-","", ""));
+
                 outB.add(0, b.get(j-1));
                 j -= 1;
             }else{
                 outA.add(0, a.get(i-1));
-                outB.add(0, new DOMSegment("-",""));
+                outB.add(0, new DOMSegment("-","", ""));
                 i -= 1;
             }
         }

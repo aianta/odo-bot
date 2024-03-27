@@ -23,6 +23,10 @@ public interface DOMSequencingService {
 
     Future<JsonObject> process(String html);
 
+    Future<JsonArray> htmlToXPathSequence(String html);
+
+    Future<JsonArray> htmlToSequence(String html);
+
     Future<List<JsonObject>> getSequences();
 
     Future<Void> clearSequences();

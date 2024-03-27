@@ -212,6 +212,7 @@ public class LogPreprocessor extends AbstractVerticle {
             api.route().method(HttpMethod.GET).path("/dom/entitiesAndActions").handler(this::getEntitiesAndActions);
             api.route().method(HttpMethod.POST).path("/texts").handler(this::getTexts);
             api.route().method(HttpMethod.GET).path("/DOMSequences/hashed").handler(this::getHashedSequences);
+            api.route().method(HttpMethod.POST).path("/html2xpath").handler(this::html2xpath);
 
 
             //Mount handlers to main router
@@ -479,6 +480,11 @@ public class LogPreprocessor extends AbstractVerticle {
         String htmlInput = rc.body().asString();
         domSequencingService.getTexts(htmlInput).onSuccess(results->
                 rc.response().setStatusCode(200).end(results.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode()));
+    }
+
+    private void html2xpath(RoutingContext rc){
+        String htmlInput = rc.body().asString();
+        domSequencingService.htmlToXPathSequence(htmlInput).onSuccess(results->rc.response().setStatusCode(200).end(results.encode()));
     }
 
 

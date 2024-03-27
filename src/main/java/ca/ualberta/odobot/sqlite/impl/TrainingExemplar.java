@@ -16,7 +16,10 @@ public record TrainingExemplar(
         int [] labels,
         String datasetName,
 
-        JsonObject extras
+        JsonArray humanFeatureVector,
+
+        JsonObject extras,
+        String domHTML
 ) {
 
     static TrainingExemplar fromRow(Row row){
@@ -27,7 +30,9 @@ public record TrainingExemplar(
                 new JsonArray(row.getString("feature_vector")).stream().mapToDouble(entry->Double.parseDouble((String)entry)).toArray(),
                 new JsonArray(row.getString("label")).stream().mapToInt(entry->Integer.parseInt((String)entry)).toArray(),
                 row.getString("dataset_name"),
-                new JsonObject(row.getString("extras"))
+                new JsonArray(row.getString("human_feature_vector")),
+                new JsonObject(row.getString("extras")),
+                row.getString("dom_html")
         );
     }
 
@@ -38,7 +43,9 @@ public record TrainingExemplar(
                 json.getJsonArray("featureVector").stream().mapToDouble(entry->(double) entry).toArray(),
                 json.getJsonArray("labels").stream().mapToInt(entry->(int) entry).toArray(),
                 json.getString("datasetName"),
-                json.getJsonObject("extras")
+                json.getJsonArray("humanFeatureVector"),
+                json.getJsonObject("extras"),
+                json.getString("domHTML")
         );
     }
     public JsonObject toJson(){
@@ -46,10 +53,12 @@ public record TrainingExemplar(
         result.put("id", id().toString())
                 .put("source", source())
                 .put("featureVector", Arrays.stream(featureVector()).collect(JsonArray::new, JsonArray::add, JsonArray::addAll))
+                .put("humanFeatureVector", humanFeatureVector)
                 .put("labels", Arrays.stream(labels()).collect(JsonArray::new, JsonArray::add, JsonArray::addAll))
                 .put("datasetName", datasetName())
                 .put("featureVectorSize", featureVector().length)
                 .put("extras", extras)
+                .put("domHTML", domHTML)
         ;
         return result;
     }

@@ -212,6 +212,12 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
             int paddingSize = maxTreeSize - curr.getHashedDOMTree().length;
             double [] padding = new double[paddingSize];
 
+
+            List<String> humanTreeComponent = new ArrayList<>(); //Human-readable version of DOM tree.
+            humanTreeComponent.addAll(curr.getDomTree());
+            Collections.addAll(humanTreeComponent, new String[paddingSize]);
+
+
             double [] treeComponent = ArrayUtils.addAll(curr.getHashedDOMTree(), padding);
 
             paddingSize = maxTermsSize - curr.getHashedTerms().length;
@@ -219,7 +225,16 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
 
             double [] termsComponent = ArrayUtils.addAll(curr.getHashedTerms(), padding);
 
+            List<String> humanTermsComponent = new ArrayList<>(); //Human-readable version of DOM tree.
+            humanTermsComponent.addAll(curr.getTerms());
+            Collections.addAll(humanTermsComponent, new String[paddingSize]);
+
             double [] featureVector = ArrayUtils.addAll(treeComponent, termsComponent);
+
+            List<String> _humanFeatureVector = new ArrayList<>();
+            _humanFeatureVector.addAll(humanTreeComponent);
+            _humanFeatureVector.addAll(humanTermsComponent);
+
 
             TrainingExemplar exemplar = new TrainingExemplar(
                     curr.getExemplarId(),
@@ -227,7 +242,9 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
                     featureVector,
                     curr.getLabels(),
                     curr.getDatasetName(),
-                    curr.getExtras()
+                    _humanFeatureVector.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll),
+                    curr.getExtras(),
+                    curr.getClickEvent().getDomSnapshot().outerHtml()
             );
             sqliteService.saveTrainingExemplar(exemplar.toJson());
             result.add(exemplar);
@@ -271,6 +288,7 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
 
                     TrainingMaterials materials = new TrainingMaterials(lastClickEvent, networkEvent, timeline.getAnnotations().getString("flight-name"), datasetName);
                     materials.setTreeHashingFunction((html)->domSequencingService.hashAndFlattenDOM(html));
+                    materials.setTreeFlattenFunction((html)->domSequencingService.htmlToSequence(html));
 
                     futures.add(
                             materials.harvestData().onFailure(err->log.error(err.getMessage(), err))

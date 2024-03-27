@@ -5,12 +5,13 @@ import org.apache.commons.lang3.builder.HashCodeBuilder;
 
 import java.util.Set;
 
-public record DOMSegment (String tag, String className) {
+public record DOMSegment (String tag, String className, String xpath) {
 
     public JsonObject toJson(){
         var result = new JsonObject()
                 .put("tag", tag)
-                .put("class", className);
+                .put("class", className)
+                .put("xpath", xpath);
         return result;
     }
 

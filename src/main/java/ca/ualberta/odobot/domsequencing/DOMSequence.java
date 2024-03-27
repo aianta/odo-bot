@@ -56,7 +56,7 @@ public class DOMSequence extends ArrayList<DOMSegment> {
         var result = new DOMSequence();
         sequenceData.stream()
                 .map(o->(JsonObject)o)
-                .map(segmentData->new DOMSegment(segmentData.getString("tag"), segmentData.getString("class")))
+                .map(segmentData->new DOMSegment(segmentData.getString("tag"), segmentData.getString("class"), segmentData.getString("xpath")))
                 .forEach(segment->result.add(segment));
 
         return result;
@@ -102,6 +102,22 @@ public class DOMSequence extends ArrayList<DOMSegment> {
         });
 
         return sb.toString();
+    }
+
+    public JsonArray xpathSequence(){
+        JsonArray result = new JsonArray();
+        forEach(segment->{
+            result.add(segment.xpath());
+        });
+        return result;
+    }
+
+    public JsonArray toStringSequence(){
+        JsonArray result = new JsonArray();
+        forEach(segment->{
+            result.add(segment.tag() + (segment.className().isEmpty()?"":"["+segment.className()+"]"));
+        });
+        return result;
     }
 
     public double [] toHashSequence(){

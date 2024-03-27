@@ -20,3 +20,4 @@ crawljax_out
 *.db-journal
 *.xpi
 *.state
+*.txt

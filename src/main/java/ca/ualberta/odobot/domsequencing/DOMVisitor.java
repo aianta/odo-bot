@@ -18,7 +18,7 @@ public class DOMVisitor implements NodeVisitor {
     public void head(Node node, int depth) {
         if(node instanceof Element){
             Element element = (Element) node;
-            sequence.add(new DOMSegment(element.tagName(), element.className()));
+            sequence.add(new DOMSegment(element.tagName(), element.className(), XPath.getXPath(element)));
             cssManifest.catalogElement(element);
         }
     }

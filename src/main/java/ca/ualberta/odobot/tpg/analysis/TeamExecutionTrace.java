@@ -18,9 +18,13 @@ public class TeamExecutionTrace {
     private double [] inputFeatures;
     List<Learner> learners = new ArrayList<>();
 
-    public TeamExecutionTrace(double [] featureVector){
+    public TeamExecutionTrace(double [] featureVector, List<Learner> learners){
         this.inputFeatures = featureVector;
+        this.learners = learners;
+
+        log.info("Team execution trace to process: {} learners", learners.size());
     }
+
 
     /**
      * Produces a list of feature vector indices that are retrieved during the execution of a series of learners.
@@ -60,7 +64,7 @@ public class TeamExecutionTrace {
 
         program.program.forEach(instruction->{
             //If this is an instruction that indexes the feature vector
-            if(instruction.getModeRegister().equals(Instruction.mode2)){
+            if(instruction.getModeRegister().equals(Instruction.mode1)){
                 result.add((int) (instruction.getSourceRegister().getLongValue() % inputFeatures.length) );
             }
         });

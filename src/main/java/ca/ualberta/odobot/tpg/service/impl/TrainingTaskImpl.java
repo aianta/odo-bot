@@ -269,6 +269,7 @@ public class TrainingTaskImpl implements Runnable {
         tpg.initialize();
         log.info("Constructing run metric!");
         ParametersMetric parametersMetric = ParametersMetric.of(tpg);
+        parametersMetric.actions = Arrays.stream(pathActions).collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
         JsonObject runData = new MetricBuilder().addComponent(runMetric).addComponent(datasetMetric).addComponent(parametersMetric).build();
         elasticsearchService.saveIntoIndex(List.of(runData),ES_INDEX_RUNS )
                 .onSuccess(done->log.info("Run metric saved!"))
@@ -613,7 +614,7 @@ public class TrainingTaskImpl implements Runnable {
      * @param dimension
      * @return
      */
-    private long [] generateActions(List<TrainingExemplar> dataset, int dimension){
+    public static long [] generateActions(List<TrainingExemplar> dataset, int dimension){
 
         //Compile a set of unique labels for this dataset.
         return dataset.stream()
@@ -621,6 +622,12 @@ public class TrainingTaskImpl implements Runnable {
                 .distinct()
                 .toArray();
 
+    }
+
+    public static Map<Long, String> generateHumanReadableActions(List<TrainingExemplar> dataset){
+       return dataset.stream()
+               .map(exemplar->Map.entry((long)exemplar.labels()[0], exemplar.extras().getString("path")))
+               .collect(HashMap<Long,String>::new, (map, entry)->map.put(entry.getKey(), entry.getValue()), HashMap::putAll);
     }
 
 }

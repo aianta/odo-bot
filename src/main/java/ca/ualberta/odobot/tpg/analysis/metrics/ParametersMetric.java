@@ -2,7 +2,12 @@ package ca.ualberta.odobot.tpg.analysis.metrics;
 
 import ca.ualberta.odobot.tpg.TPGLearn;
 import io.vertx.codegen.annotations.DataObject;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * @author Alexandru Ianta
@@ -32,6 +37,8 @@ public class ParametersMetric implements MetricComponent{
     double probActionProgramMutate;
     int numberOfActionRegisters;
     int seed;
+
+    public List<Long> actions = List.of();
 
     public static ParametersMetric of(TPGLearn tpgLearn){
         ParametersMetric result = new ParametersMetric();
@@ -77,6 +84,7 @@ public class ParametersMetric implements MetricComponent{
         this.probActionProgramSwap = data.getDouble(JSON_PREFIX + "probActionProgramSwap");
         this.probActionProgramMutate = data.getDouble(JSON_PREFIX + "probActionProgramMutate");
         this.numberOfActionRegisters = data.getInteger(JSON_PREFIX + "numberOfActionRegisters");
+        this.actions = data.getJsonArray(JSON_PREFIX+"actions").stream().mapToLong(e->(long)e).collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
         this.seed = data.getInteger(JSON_PREFIX + "seed");
 
     }
@@ -101,6 +109,7 @@ public class ParametersMetric implements MetricComponent{
                 .put(JSON_PREFIX + "probActionProgramSwap", probActionProgramSwap)
                 .put(JSON_PREFIX + "probActionProgramMutate", probActionProgramMutate)
                 .put(JSON_PREFIX + "numberOfActionRegisters", numberOfActionRegisters)
+                .put(JSON_PREFIX + "actions", actions.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll))
                 .put(JSON_PREFIX + "seed", seed);
 
         return result;

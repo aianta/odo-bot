@@ -4,9 +4,11 @@ package ca.ualberta.odobot.tpg.actions;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.List;
 
 
 import ca.ualberta.odobot.tpg.Program;
+import ca.ualberta.odobot.tpg.learners.Learner;
 import ca.ualberta.odobot.tpg.teams.Team;
 
 
@@ -59,6 +61,25 @@ public class Action<T extends ActionType>
     public Action()
     {
 
+    }
+
+    public double[] getAction(HashSet<Team> visited, List<Learner> visitedLearners, double[] inputFeatures )
+    {
+        // If we are not storing an atomic action, then this action holds a Team.
+        // Use the provided feature set to generate an action and return it.
+        //instead of this thing we are going to run an action program! yay!
+        //if this action is a team pointer:
+        if (team != null)
+        {
+            return team.getAction(visited, visitedLearners, inputFeatures);
+        }
+
+        //else we're going to run the action program
+        else
+        {
+            return action.process(inputFeatures);
+
+        }
     }
 
     // Retrieve an action from this object

@@ -258,6 +258,63 @@ public class Team implements Comparable<Team>
         return bestLearner.getActionObject().getAction(visited,state);
     }
 
+    public double[] getAction( HashSet<Team> visited, List<Learner> visitedLearners, double[] state )
+    {
+        Learner bestLearner = null;
+        double maxBid = 0;
+        double nextBid = 0;
+
+        // Add this Team to the visited set
+        visited.add(this);
+
+        // Create an integer for iteration
+        int i = 0;
+
+        // Get the first bid from the Learners based on their Action object
+        for( i=0; i < learners.size(); i++ )
+        {
+            // Get the next Learner from the list
+            bestLearner = learners.get(i);
+
+            // If this Learner's Action is a Team and we've visited that Team before, skip this Learner
+            if( !bestLearner.getActionObject().isAtomic() && visited.contains(bestLearner.getActionObject().team) )
+                continue;
+
+            // Otherwise we can get the Learner's bid
+            maxBid = learners.get(i).bid( state );
+
+            // We've found our starting Learner, so break
+            break;
+        }
+
+        // Query the rest of the Learners to get the highest bid from the Learner pool
+        for( i += 1 ; i < learners.size(); i++ )
+        {
+            // If this Learner's Action is a Team and we've visited that Team before, skip this Learner
+            if( !learners.get(i).getActionObject().isAtomic() && visited.contains(learners.get(i).getActionObject().team) )
+                continue;
+
+            // Otherwise get the bid from this Learner
+            nextBid = learners.get(i).bid( state );
+
+            // If this bid is higher than the previous highest bid, store it and the Learner
+            if( nextBid > maxBid )
+            {
+                maxBid = nextBid;
+                bestLearner = learners.get(i);
+            }
+        }
+
+        //run the best Learner's action program and get the resulting action register[0].
+        //bestLearner.getActionObject().runActionProgram(visited,state);
+        //return bestLearner.getActionObject().getActionRegisters(visited,state);
+
+        visitedLearners.add(bestLearner);
+
+        // Return the action of the best Learner
+        return bestLearner.getActionObject().getAction(visited, visitedLearners, state);
+    }
+
     // Provide this Team with an input state set and return an action
     public double[] getAction( HashSet<Team> visited, double[] state, ArrayList<String> seq)
     {
@@ -313,7 +370,7 @@ public class Team implements Comparable<Team>
 
         // Return the action of the best Learner
         seq.add("L:" + bestLearner.ID);
-        return bestLearner.getActionObject().getAction(visited,state);
+        return bestLearner.getActionObject().getAction(visited,state, seq);
     }
 
 

@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.tpg;
 
+import ca.ualberta.odobot.domsequencing.DOMSequencingService;
 import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import ca.ualberta.odobot.sqlite.impl.TrainingExemplar;
@@ -8,8 +9,10 @@ import io.reactivex.rxjava3.core.Completable;
 
 
 import io.vertx.core.CompositeFuture;
+import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerOptions;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.core.AbstractVerticle;
 import io.vertx.rxjava3.core.http.HttpServer;
@@ -22,10 +25,12 @@ import io.vertx.serviceproxy.ServiceProxyBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.*;
+import static ca.ualberta.odobot.tpg.service.impl.TrainingTaskImpl.generateActions;
+import static ca.ualberta.odobot.tpg.service.impl.TrainingTaskImpl.generateHumanReadableActions;
 
 /**
  * @author Alexandru Ianta
@@ -42,6 +47,8 @@ public class TPGVerticle extends AbstractVerticle {
     private TPGService tpgService;
     private ElasticsearchService elasticsearchService;
     private SqliteService db;
+
+    private DOMSequencingService domSequencingService;
 
     HttpServer server;
     Router mainRouter;
@@ -68,6 +75,10 @@ public class TPGVerticle extends AbstractVerticle {
                     .setAddress(SQLITE_SERVICE_ADDRESS);
             db = dbServiceProxyBuilder.build(SqliteService.class);
 
+            ServiceProxyBuilder domSequencingServiceProxyBuilder = new ServiceProxyBuilder(vertx.getDelegate())
+                    .setAddress(DOMSEQUENCING_SERVICE_ADDRESS);
+            domSequencingService = domSequencingServiceProxyBuilder.build(DOMSequencingService.class);
+
             //Set up http server
             HttpServerOptions options = new HttpServerOptions()
                     .setHost(HOST)
@@ -83,6 +94,7 @@ public class TPGVerticle extends AbstractVerticle {
             api.route(HttpMethod.POST, "/train").handler(this::trainHandler);
             api.route(HttpMethod.POST, "/identify").handler(this::loadDataset);
             api.route(HttpMethod.POST, "/identify").handler(this::identifyHandler);
+            api.route(HttpMethod.POST, "/dehash").handler(this::dehashHandler);
 
             mainRouter.route().handler(LoggerHandler.create());
             mainRouter.route().handler(BodyHandler.create());
@@ -104,16 +116,58 @@ public class TPGVerticle extends AbstractVerticle {
         return super.rxStart();
     }
 
+    private void dehashHandler(RoutingContext rc){
+        JsonObject body  = rc.body().asJsonObject();
+        List<Integer> indexedLocations = body.getJsonArray("indexedLocations").stream().map(i->(Integer)i).collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
+
+        domSequencingService.htmlToSequence(body.getString("outerHTML")).onSuccess(result->{
+            List<String> masked = new ArrayList<>();
+            List<String> sequences = result.stream().map(o->(String)o).collect(Collectors.toList());
+            ListIterator<String> it = sequences.listIterator();
+            while (it.hasNext()){
+                String curr = it.next();
+                if(indexedLocations.contains(it.previousIndex())){
+                    masked.add(curr);
+                }else{
+                    masked.add("-");
+                }
+            }
+
+            JsonObject finalResult = new JsonObject()
+                    .put("original", result)
+                            .put("masked", masked.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
+
+            rc.response().setStatusCode(200).end(finalResult.encode());
+        });
+    }
+
     private void identifyHandler(RoutingContext rc){
         JsonObject identifyConfig = rc.body().asJsonObject();
 
         List<TrainingExemplar> exemplars = rc.get("dataset");
 
-        CompositeFuture.all(exemplars.stream().map(exemplar->tpgService.identify(identifyConfig, exemplar.toJson()))
+        //Compute the path actions and a map that converts long labels into human readable strings.
+        //TODO -> this is a mess, we have to convert the pathActions to a List, and the actionsMap to a JSON object to conform to vertx service proxy restrictions
+        //  But really we shouldn't be doing this at all, and need to re-organize things such that this isn't necessary. This is a temporary hack.
+        long [] pathActions = generateActions(exemplars, 0);
+        log.info("{} path actions found in dataset", pathActions.length);
+        List<Long> pathActionsList = Arrays.stream(pathActions).collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
+
+        Map<Long,String> humanReadablePathActions = generateHumanReadableActions(exemplars);
+
+        JsonObject actionsMap = new JsonObject();
+        humanReadablePathActions.forEach((longVal, label)->actionsMap.put(longVal.toString(), label));
+
+
+        //TODO - temporarily for testing
+        List<TrainingExemplar> subset = exemplars.stream().limit(5).toList();
+
+        CompositeFuture.all(subset.stream().map(exemplar->tpgService.identify(identifyConfig, exemplar.toJson(), pathActionsList, actionsMap))
                         .collect(Collectors.toList()))
                         .onSuccess(done->{
+                            JsonArray results = done.list().stream().map(o->(JsonObject)o).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
                             log.info("Identified all!");
-                            rc.response().setStatusCode(200).end();
+                            rc.response().setStatusCode(200).end(results.encodePrettily());
                         });
 
 

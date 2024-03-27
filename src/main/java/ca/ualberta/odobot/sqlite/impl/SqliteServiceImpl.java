@@ -162,8 +162,10 @@ public class SqliteServiceImpl implements SqliteService {
                 source,
                 labels,
                 dataset_name,
-                extras
-            ) VALUES (?,?,?,?,?,?,?);
+                extras,
+                dom_tree,
+                terms
+            ) VALUES (?,?,?,?,?,?,?,?,?);
         """).execute(Tuple.of(
                 materials.getExemplarId().toString(),
                 Arrays.stream(materials.getHashedDOMTree()).collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode(),
@@ -171,7 +173,9 @@ public class SqliteServiceImpl implements SqliteService {
                 materials.getSource(),
                 Arrays.stream(materials.getLabels()).collect(JsonArray::new, JsonArray::add, JsonArray::addAll),
                 materials.getDatasetName(),
-                materials.getExtras().encode()
+                materials.getExtras().encode(),
+                materials.getDomTree().stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode(),
+                materials.getTerms().stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode()
         ), result->{
            if(result.succeeded()){
                log.info("Training material saved!");
@@ -220,8 +224,8 @@ public class SqliteServiceImpl implements SqliteService {
 
         pool.preparedQuery("""
             INSERT INTO training_dataset (
-                id, source, feature_vector, label, dataset_name, feature_vector_size, extras
-            ) VALUES (?,?,?,?,?,?,?);
+                id, source, feature_vector, label, dataset_name, feature_vector_size, extras, human_feature_vector, dom_html
+            ) VALUES (?,?,?,?,?,?,?,?,?);
         """).execute(Tuple.of(
                 exemplar.id().toString(),
                 exemplar.source(),
@@ -229,7 +233,9 @@ public class SqliteServiceImpl implements SqliteService {
                 Arrays.stream(exemplar.labels()).mapToObj(Integer::toString).collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode(),
                 exemplar.datasetName(),
                 exemplar.featureVector().length,
-                exemplar.extras().encode()
+                exemplar.extras().encode(),
+                exemplar.humanFeatureVector().encode(),
+                exemplar.domHTML()
         ),result->{
             if(result.succeeded()){
                 promise.complete();
@@ -250,10 +256,12 @@ public class SqliteServiceImpl implements SqliteService {
                 id text PRIMARY KEY,
                 source text,
                 feature_vector text,
+                human_feature_vector text,
                 label text,
                 dataset_name text,
                 feature_vector_size numeric,
-                extras text
+                extras text,
+                dom_html text
             )
         
         """).execute(result->{
@@ -274,6 +282,8 @@ public class SqliteServiceImpl implements SqliteService {
         pool.preparedQuery("""
             CREATE TABLE IF NOT EXISTS training_materials(
                 hashed_dom_tree text NOT NULL,
+                dom_tree text NOT NULL,
+                terms text NOT NULL,
                 hashed_terms text NOT NULL,
                 exemplar_id text PRIMARY KEY,
                 source text NOT NULL,

@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.semanticflow.model;
 
+import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonArray;
@@ -14,6 +15,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * A class used to store the data for producing a training exemplar.
@@ -26,8 +28,14 @@ public class TrainingMaterials {
 
     Function<String, Future<JsonArray>> treeHashingFunction;
 
+    Function<String, Future<JsonArray>> treeFlattenFunction;
+
     ClickEvent clickEvent;
     NetworkEvent networkEvent;
+
+    List<String> domTree;
+
+    List<String> terms;
 
     double [] hashedDOMTree;
 
@@ -53,6 +61,8 @@ public class TrainingMaterials {
         result.labels = new JsonArray(r.getString("labels")).stream().mapToInt(o->(int)o).toArray();
         result.hashedTerms = new JsonArray(r.getString("hashed_terms")).stream().mapToDouble(o->(double)o).toArray();
         result.hashedDOMTree = new JsonArray(r.getString("hashed_dom_tree")).stream().mapToDouble(o->(double)o).toArray();
+        result.domTree = new JsonArray(r.getString("dom_tree")).stream().map(o->(String)o).collect(Collectors.toList());
+        result.terms = new JsonArray(r.getString("terms")).stream().map(o->(String)o).collect(Collectors.toList());
 
         return result;
     }
@@ -66,6 +76,8 @@ public class TrainingMaterials {
         result.labels = json.getJsonArray("labels").stream().mapToInt(o->(int)o).toArray();
         result.hashedTerms = json.getJsonArray("hashedTerms").stream().mapToDouble(o->(double) o).toArray();
         result.hashedDOMTree = json.getJsonArray("hashedDOMTree").stream().mapToDouble(o->(double) o).toArray();
+        result.domTree = json.getJsonArray("domTree").stream().map(o->(String)o).collect(Collectors.toList());
+        result.terms = json.getJsonArray("terms").stream().map(o->(String)o).collect(Collectors.toList());
 
         return result;
     }
@@ -77,7 +89,10 @@ public class TrainingMaterials {
                 .put("extras", getExtras())
                 .put("labels", Arrays.stream(labels).collect(JsonArray::new, JsonArray::add, JsonArray::addAll))
                 .put("hashedTerms", Arrays.stream(hashedTerms).collect(JsonArray::new, JsonArray::add, JsonArray::addAll))
-                .put("hashedDOMTree", Arrays.stream(hashedDOMTree).collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
+                .put("hashedDOMTree", Arrays.stream(hashedDOMTree).collect(JsonArray::new, JsonArray::add, JsonArray::addAll))
+                .put("domTree", domTree.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll))
+                .put("terms", terms.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
+
 
         return result;
     }
@@ -93,17 +108,33 @@ public class TrainingMaterials {
 
     public Future<TrainingMaterials> harvestData(){
         log.info("Harvesting training materials.");
-        return treeHashingFunction.apply(clickEvent.getDomSnapshot().outerHtml()).compose(hashedDOMJsonArray->{
+
+        return CompositeFuture.all(
+                treeHashingFunction.apply(clickEvent.getDomSnapshot().outerHtml()),
+                treeFlattenFunction.apply(clickEvent.getDomSnapshot().outerHtml())
+        ).onFailure(err->log.error(err.getMessage(), err))
+                .compose(treeResults->{
+
+        //return treeHashingFunction.apply(clickEvent.getDomSnapshot().outerHtml()).compose(hashedDOMJsonArray->{
             try{
+
+                JsonArray hashedDOMJsonArray = treeResults.resultAt(0);
+                JsonArray flattenedDOMTree = treeResults.resultAt(1);
+
+                domTree = flattenedDOMTree.stream().map(o->(String)o).collect(Collectors.toList());
+
                 log.info("Got hashed DOM json array!");
                 hashedDOMTree = hashedDOMJsonArray.stream().mapToDouble(entry->(double) entry).toArray();
                 log.info("Got hashed DOM array {}", hashedDOMTree.length);
+
+                terms = clickEvent.getSemanticArtifacts().getJsonArray("terms").stream().map(o->(String)o).collect(Collectors.toList());
 
                 hashedTerms = clickEvent.getSemanticArtifacts().getJsonArray("terms")
                         .stream().map(o->(String)o)
                         .mapToDouble(term->new HashCodeBuilder(41,83).append(term).toHashCode()).toArray();
                 log.info("Got hashed terms array: {}", hashedTerms.length);
                 extras.put("top_5_terms",clickEvent.getSemanticArtifacts().getJsonArray("terms").stream().limit(5).collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
+                extras.put("clickEvent", clickEvent.id.toString());
 
                 /**
                  * TODO: We need to process paths using Open API/API documentation such that
@@ -156,20 +187,11 @@ public class TrainingMaterials {
                     labels[2] = 0;
                 }
 
-//                String networkHashString = networkHashStringBuilder.toString().trim();
-//                label = new HashCodeBuilder(63, 87)
-//                        .append(networkHashString)
-//                        .toHashCode();
 
-
-                //String dbOpsString = networkEvent.getDbOps().stringRepresentation();
-//                label = new HashCodeBuilder(63, 87)
-//                        .append(dbOpsString)
-//                        .toHashCode();
 
                 log.info("Constructed Label! {}", labels.toString());
 
-                //extras.put("dbOpsString", dbOpsString);
+
 
 
             }catch (Exception e){
@@ -243,6 +265,22 @@ public class TrainingMaterials {
 
     public JsonObject getExtras() {
         return extras;
+    }
+
+    public Function<String, Future<JsonArray>> getTreeFlattenFunction() {
+        return treeFlattenFunction;
+    }
+
+    public void setTreeFlattenFunction(Function<String, Future<JsonArray>> treeFlattenFunction) {
+        this.treeFlattenFunction = treeFlattenFunction;
+    }
+
+    public List<String> getDomTree() {
+        return domTree;
+    }
+
+    public List<String> getTerms() {
+        return terms;
     }
 
     private String makeRequestString(NetworkEvent event){
