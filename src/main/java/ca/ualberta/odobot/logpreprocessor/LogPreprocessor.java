@@ -484,7 +484,18 @@ public class LogPreprocessor extends AbstractVerticle {
 
     private void html2xpath(RoutingContext rc){
         String htmlInput = rc.body().asString();
-        domSequencingService.htmlToXPathSequence(htmlInput).onSuccess(results->rc.response().setStatusCode(200).end(results.encode()));
+        domSequencingService.htmlToXPathSequence(htmlInput).onSuccess(results->{
+            //If we are given a specific index to return, let's do that.
+            if(rc.request().getParam("index") != null){
+
+                int targetIndex = Integer.parseInt(rc.request().getParam("index"));
+                rc.response().setStatusCode(200).end(results.getString(targetIndex));
+
+            }else{
+                //Otherwise send back the full list of xpaths for the submitted HTML.
+                rc.response().setStatusCode(200).end(results.encode());
+            }
+        });
     }
 
 
