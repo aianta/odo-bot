@@ -2,8 +2,8 @@ package ca.ualberta.odobot.logpreprocessor.impl;
 
 import ca.ualberta.odobot.extractors.SemanticArtifactExtractor;
 import ca.ualberta.odobot.semanticflow.SemanticSequencer;
-import ca.ualberta.odobot.semanticflow.model.Timeline;
-import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
+import ca.ualberta.odobot.semanticflow.model.*;
+import ca.ualberta.odobot.semanticflow.navmodel.NavNode;
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -33,6 +33,11 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
 
         //Timeline data structure construction
         Timeline timeline = sequencer.parse(events);
+
+        //TODO: this will fail if we ever actually use flight names instead of IDs...
+        UUID timelineId = UUID.fromString(flightName);
+        timeline.setId(timelineId);
+
         timeline.getAnnotations().put("flight-name", flightName);
 
         int originalTimelineSize = timeline.size();
@@ -68,5 +73,101 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
 
 
         return Future.succeededFuture(timeline);
+    }
+
+    public Future<Void> buildNavModel(Timeline timeline){
+
+
+        ListIterator<TimelineEntity> it = timeline.listIterator();
+        int clickEventCount = 0;
+        int dataEntryCount = 0;
+        int networkEventCount = 0;
+
+        log.info("Building nav model for timeline: {} [{}]: {}", timeline.getId(), timeline.size(), timeline.toString());
+
+        while (it.hasNext()){
+
+            TimelineEntity entity = it.next();
+
+            if(entity instanceof ClickEvent){
+                clickEventCount++;
+                neo4j.processClickEvent(timeline, (ClickEvent) entity);
+            }
+
+
+            if(entity instanceof DataEntry){
+                dataEntryCount++;
+                neo4j.processDataEntry(timeline, (DataEntry) entity);
+            }
+
+            if(entity instanceof NetworkEvent){
+                networkEventCount++;
+                neo4j.processNetworkEvent(timeline, (NetworkEvent) entity);
+            }
+
+        }
+
+
+        //Now do another pass to process effects.
+        int effectCount = 0;
+        it = timeline.listIterator();
+        while (it.hasNext()){
+            TimelineEntity entity = it.next();
+
+            if(entity instanceof Effect && it.hasNext() && it.previousIndex() != 0){
+                /**
+                 * Do not model effects that happen at the end or beginning of a trace...
+                 * Strange things can happen here, because an effect at the end of a trace can only be matched by its predecessor.
+                 * If there have been other effects between that predecessor and some successor, wierd stuff happens.
+                 */
+                effectCount++;
+                neo4j.processEffect(timeline, (Effect) entity);
+            }
+
+
+        }
+
+
+
+        //Do a final pass connecting everything
+        if(timeline.size()>2){
+            it = timeline.listIterator();
+            ListIterator<TimelineEntity> successorIt = timeline.listIterator();
+            successorIt.next();
+
+            while (it.hasNext() && successorIt.hasNext()){
+
+                TimelineEntity curr = it.next();
+                TimelineEntity next = successorIt.next();
+
+                if((curr instanceof Effect && it.previousIndex() == 0) || (next instanceof Effect && !successorIt.hasNext())){
+                    continue;
+                }
+
+                if(curr instanceof ClickEvent && next instanceof ClickEvent && ((ClickEvent)curr).getXpath().equals(((ClickEvent) next).getXpath())){
+                    continue;
+                }
+
+                NavNode a = neo4j.resolveNavNode(timeline, it.previousIndex());
+                NavNode b = neo4j.resolveNavNode(timeline, successorIt.previousIndex());
+
+                log.info("a is {} at {}", curr.symbol(), it.previousIndex());
+                log.info("b is {} at {}", next.symbol(), successorIt.previousIndex());
+
+                neo4j.bind(a, b);
+            }
+        }
+
+
+
+
+        log.info("Processed {} clicks for nav model", clickEventCount);
+        log.info("Processed {} data entries for nav model", dataEntryCount);
+        log.info("Processed {} network events for nav model", networkEventCount);
+        log.info("Processed {} effects for nav model", effectCount);
+
+
+        return Future.succeededFuture();
+
     }
 }

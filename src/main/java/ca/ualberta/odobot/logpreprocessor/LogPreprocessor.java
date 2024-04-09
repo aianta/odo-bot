@@ -9,6 +9,7 @@ import ca.ualberta.odobot.semanticflow.model.Timeline;
 
 import ca.ualberta.odobot.semanticflow.model.TrainingMaterials;
 import ca.ualberta.odobot.semanticflow.model.semantictrace.SemanticTrace;
+import ca.ualberta.odobot.semanticflow.navmodel.NavModel;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import ca.ualberta.odobot.sqlite.impl.TrainingExemplar;
 import ca.ualberta.odobot.tpg.service.TPGService;
@@ -214,7 +215,6 @@ public class LogPreprocessor extends AbstractVerticle {
             //Define API routes
             api.route().method(HttpMethod.DELETE).path("/indices/:target").handler(this::clearIndex);
             api.route().method(HttpMethod.DELETE).path("/indices").handler(this::clearIndices);
-
             api.route().method(HttpMethod.GET).path("/DOMSequences").handler(this::getDOMSequences);
             api.route().method(HttpMethod.DELETE).path("/DOMSequences").handler(this::clearDOMSequences);
             api.route().method(HttpMethod.POST).path("/DOMSequences/patterns").handler(this::testPatternExtraction);
@@ -321,6 +321,38 @@ public class LogPreprocessor extends AbstractVerticle {
         });
         makeTrainingExemplarsRoute.handler(pipeline::makeTrainingExemplarsHandler);
         makeTrainingExemplarsRoute.handler(rc->rc.response().setStatusCode(200).end());
+
+
+        //Setup the pipeline for constructing a nav model
+        Route navModelRoute = router.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + pipeline.slug() + "/construct/navmodel");
+        navModelRoute.handler(rc->{
+
+            String modelName = rc.request().getParam("name", "default");
+            NavModel navModel = new NavModel();
+            navModel.setId(UUID.randomUUID());
+            navModel.setName(modelName);
+
+            rc.put("navModel", navModel);
+
+            rc.next();
+        });
+        navModelRoute.handler(pipeline::timelinesHandler);
+        navModelRoute.handler(pipeline::navModelHandler);
+        navModelRoute.handler(rc->{
+            if(rc.get("todo") != null && ((List<String>)rc.get("todo")).size()> 0){
+                rc.reroute(HttpMethod.GET, API_PATH_PREFIX.substring(0,API_PATH_PREFIX.length()-2) + "/preprocessing/pipelines/" + pipeline.slug() + "/construct/navmodel");
+            }else{
+                rc.response().setStatusCode(200).end("done");
+            }
+        });
+
+        //Chunked version of nav model construction
+        Route navModelLargeRoute = router.route().method(HttpMethod.GET).path("/preprocessing/pipelines/"+ pipeline.slug() + "/large/construct/navmodel");
+        navModelLargeRoute.handler(pipeline::chunkedSemanticTracesHandler);
+        navModelLargeRoute.handler(rc->rc.reroute(HttpMethod.GET, API_PATH_PREFIX.substring(0,API_PATH_PREFIX.length()-2) + "/preprocessing/pipelines/" + pipeline.slug() + "/construct/navmodel"));
+
+
+
 
 
         //Setup the pipeline for producing state samples

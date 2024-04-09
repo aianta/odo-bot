@@ -22,6 +22,10 @@ public class Timeline extends ArrayList<TimelineEntity> {
         return id;
     }
 
+    public void setId(UUID id){
+        this.id = id;
+    }
+
     /**
      * OPTIMIZATION FOR DATA EXTRACTION
      * We only really care about click events if they are the last click event preceding a network event.

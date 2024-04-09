@@ -489,5 +489,9 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
         return promise.future();
     }
 
+    public Future<Void> buildNavModel(Timeline timeline){
+        throw new RuntimeException("Build Nav Model Operation not supported for this pipeline!");
+    }
+
 
 }

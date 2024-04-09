@@ -17,6 +17,7 @@ import ca.ualberta.odobot.semanticflow.model.Timeline;
 
 import ca.ualberta.odobot.semanticflow.model.TrainingMaterials;
 import ca.ualberta.odobot.semanticflow.model.semantictrace.SemanticTrace;
+import ca.ualberta.odobot.semanticflow.statemodel.Neo4JUtils;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import io.vertx.core.CompositeFuture;
 
@@ -75,6 +76,8 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
     private String processModelStatsIndex;
     protected PipelinePersistenceLayer persistenceLayer;
 
+    protected Neo4JUtils neo4j;
+
     public AbstractPreprocessingPipeline(Vertx vertx, String slug){
         this.vertx = vertx;
         /**
@@ -97,6 +100,8 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
 
 
         client = WebClient.create(vertx);
+
+        neo4j = new Neo4JUtils("bolt://localhost:7687", "neo4j", "odobotdb");
 
         setTimelineIndex("timelines-" + slug);
         setTimelineEntityIndex("timeline-entities-"+slug);
@@ -253,6 +258,62 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
         rc.next();
     }
 
+    public void navModelHandler(RoutingContext rc){
+
+        //Update bookkeeping for this execution
+        BasicExecution execution = rc.get("metadata");
+        if(execution != null){
+            execution.status().data().put("step", "extractStateSamplesHandler");
+        }
+
+        List<Timeline> timelines = rc.get("timelines");
+
+        log.info("Constructing model for timelines");
+
+        Future<Void> f = null;
+
+        Iterator<Timeline> it = timelines.iterator();
+        while (it.hasNext()){
+            Timeline curr = it.next();
+
+            if(f == null){
+                f = vertx.getDelegate().<Void>executeBlocking(blocking->buildNavModel(curr)
+                        .onSuccess(done->blocking.complete(done))
+                        .onFailure(err->blocking.fail(err))
+                );
+            }else{
+                f = f.compose(
+                        (done)->vertx.getDelegate().<Void>executeBlocking(blocking->buildNavModel(curr)
+                                        .onSuccess(d->blocking.complete(d))
+                                .onFailure(err->blocking.fail(err))
+                        ));
+            }
+        }
+
+        f
+                .onSuccess(d->log.info("Successfully finished adding timelines to model"))
+                .onFailure(err->log.error(err.getMessage(), err))
+                .onComplete(r->{
+            log.info("Done constructing model");
+            rc.next();
+        });
+
+//        List<Future<Void>> processing = timelines.stream().map(timeline->{
+//            return vertx.getDelegate().<Void>executeBlocking(blocking->buildNavModel(timeline)
+//                    .onSuccess(done->blocking.complete(done))
+//                    .onFailure(err->blocking.fail(err))
+//            );
+//        }).collect(Collectors.toList());
+//
+//        Future.all(processing)
+//                .onSuccess(done->{
+//                    rc.next();
+//                })
+//                .onFailure(err->log.error(err.getMessage(),err))
+//        ;
+
+    }
+
     public void chunkedSemanticTracesHandler(RoutingContext rc){
 
         String flightIdentifierField = rc.request().getParam("flight_identifier_field", "flight_name.keyword");
@@ -326,7 +387,9 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
             rc.put("flights", flights);
         }else{
 
-            rc.put("flightIdentifierField", "flight_name.keyword");
+            String identifierField = rc.request().getParam("flight_identifier_field", "flight_name.keyword");
+
+            rc.put("flightIdentifierField", identifierField );
 
             List<String> flights = rc.queryParam("flight");
             rc.put("flights", flights);

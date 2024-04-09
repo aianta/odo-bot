@@ -211,9 +211,10 @@ public class SemanticSequencer {
 
                             log.info("{} - {}", networkEvent.getMethod(), networkEvent.getUrl());
                             //TODO - Temporarily ignore all GET requests. See 'Integrating Network Events # Network Event Summarization Options' in obsidian for details
-                            //if(!networkEvent.getMethod().toLowerCase().equals("get")){
+                            if(!networkEvent.getMethod().toLowerCase().equals("get")) {
 
                                 line.add(networkEvent);
+                            }
 
                             log.info("Handled NETWORK_EVENT");
                     }

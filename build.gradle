@@ -81,7 +81,9 @@ dependencies {
     /*
      * Neo4j
      */
-    implementation 'org.neo4j.driver:neo4j-java-driver:5.7.0'
+    // https://mvnrepository.com/artifact/org.neo4j.driver/neo4j-java-driver
+    implementation group: 'org.neo4j.driver', name: 'neo4j-java-driver', version: '5.19.0'
+
 
     // https://mvnrepository.com/artifact/org.xerial/sqlite-jdbc
     implementation group: 'org.xerial', name: 'sqlite-jdbc', version: '3.43.2.2'

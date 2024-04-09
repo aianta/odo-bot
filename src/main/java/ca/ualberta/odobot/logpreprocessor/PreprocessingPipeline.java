@@ -38,6 +38,7 @@ public interface PreprocessingPipeline extends PipelineService {
 
     String processModelStatsIndex();
 
+    Future<Void> buildNavModel(Timeline timeline);
 
     Future<List<Timeline>> makeTimelines(Map<String, List<JsonObject>> eventsMap);
 
