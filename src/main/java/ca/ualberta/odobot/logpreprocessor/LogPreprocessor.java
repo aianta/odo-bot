@@ -133,6 +133,14 @@ public class LogPreprocessor extends AbstractVerticle {
                             });
 
                             //ADD NEW PIPELINES HERE
+
+//                            PreprocessingPipeline minimalPipeline = new MinimalPipeline(
+//                                    vertx, UUID.randomUUID(), "minimal-v1", "Minimal pipeline with no semantic extractors"
+//                            );
+//
+//                            mountPipeline(api, minimalPipeline);
+//                            elasticsearchService.saveIntoIndex(List.of(minimalPipeline.toJson()), PIPELINES_INDEX).onSuccess(saved->log.info("saved minimal pipeline to index"));
+
 //                PreprocessingPipeline hierarchicalPipeline = new HierarchicalClusteringPipeline(
 //                        vertx, UUID.randomUUID(), "hierarchical-v1", "Hierarchical clustering technique that blends domain knowledge from the DOM with unsupervised learning to determine activity labels. "
 //                );
@@ -171,6 +179,10 @@ public class LogPreprocessor extends AbstractVerticle {
                                     vertx, UUID.randomUUID(), "hierarchical-v1", "Hierarchical clustering technique that blends domain knowledge from the DOM with unsupervised learning to determine activity labels. "
                             );
 
+                            PreprocessingPipeline minimalPipeline = new MinimalPipeline(
+                                    vertx, UUID.randomUUID(), "minimal-v1", "Minimal pipeline with no semantic extractors"
+                            );
+
                             elasticsearchService.saveIntoIndex(List.of(
                                     simplePipeline.toJson(),
                                     enhancedEmbeddingsPipeline.toJson(),
@@ -178,7 +190,8 @@ public class LogPreprocessor extends AbstractVerticle {
                                     temporalPipeline.toJson(),
                                     tfidfTemporalPipeline.toJson(),
                                     effectOverhaulPipeline.toJson(),
-                                    hierarchicalPipeline.toJson()
+                                    hierarchicalPipeline.toJson(),
+                                    minimalPipeline.toJson()
                             ), PIPELINES_INDEX).onSuccess(done -> {
                                 log.info("Registered pipeline(s) in elasticsearch");
                             });
@@ -190,6 +203,7 @@ public class LogPreprocessor extends AbstractVerticle {
                             mountPipeline(api, tfidfTemporalPipeline);
                             mountPipeline(api, effectOverhaulPipeline);
                             mountPipeline(api, hierarchicalPipeline);
+                            mountPipeline(api, minimalPipeline);
 
                         }
 
@@ -309,6 +323,23 @@ public class LogPreprocessor extends AbstractVerticle {
         makeTrainingExemplarsRoute.handler(rc->rc.response().setStatusCode(200).end());
 
 
+        //Setup the pipeline for producing state samples
+        Route stateSampleRoute = router.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + pipeline.slug() + "/extractStateSamples");
+        stateSampleRoute.handler(pipeline::timelinesHandler);
+        stateSampleRoute.handler(pipeline::extractStateSamplesHandler);
+        stateSampleRoute.handler(rc->{
+           if(rc.get("todo") != null && ((List<String>)rc.get("todo")).size() > 0){
+               rc.reroute(HttpMethod.GET, API_PATH_PREFIX.substring(0, API_PATH_PREFIX.length()-2) + "/preprocessing/pipelines/" + pipeline.slug() + "/extractStateSamples");
+           }else{
+               rc.response().setStatusCode(200).end("done");
+            }
+        });
+
+        //Chunked version of state sample extraction
+        Route stateSampleRouteLarge = router.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + pipeline.slug() + "/large/extractStateSamples");
+        stateSampleRouteLarge.handler(pipeline::chunkedSemanticTracesHandler);
+        stateSampleRouteLarge.handler(rc->rc.reroute(HttpMethod.GET, API_PATH_PREFIX.substring(0, API_PATH_PREFIX.length()-2) + "/preprocessing/pipelines/" + pipeline.slug() + "/extractStateSamples") );
+
         //Setup the pipeline training material harvesting route
         Route trainingMaterialsExtractionRoute = router.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + pipeline.slug() + "/harvestTrainingMaterials");
         trainingMaterialsExtractionRoute.handler(pipeline::timelinesHandler);
@@ -342,6 +373,9 @@ public class LogPreprocessor extends AbstractVerticle {
         //Setup chunked semantic traces route, this is used for large sets of traces which would otherwise cause out of memory errors
         Route chunkedSemanticTracesRoute = router.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + pipeline.slug() + "/large/harvestTrainingMaterials");
         chunkedSemanticTracesRoute.handler(pipeline::chunkedSemanticTracesHandler);
+        chunkedSemanticTracesRoute.handler(rc->{
+            rc.reroute(HttpMethod.GET, API_PATH_PREFIX.substring(0, API_PATH_PREFIX.length()-2)  + "/preprocessing/pipelines/" + pipeline.slug() + "/harvestTrainingMaterials");
+        });
 
         router.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + pipeline.slug() + "/timelines").handler(pipeline::timelinesHandler);
         router.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + pipeline.slug() + "/timelines").handler(rc->{

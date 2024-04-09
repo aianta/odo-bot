@@ -12,6 +12,7 @@ import ca.ualberta.odobot.logpreprocessor.executions.impl.AbstractPreprocessingP
 import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
 
 
+import ca.ualberta.odobot.semanticflow.model.StateSample;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 
 import ca.ualberta.odobot.semanticflow.model.TrainingMaterials;
@@ -293,8 +294,7 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
                                 log.info("Flights todo: {}", finalTodo.toString());
                                 log.info("In {} sized chunks", chunkSize);
 
-                                rc.reroute(HttpMethod.GET, API_PATH_PREFIX.substring(0, API_PATH_PREFIX.length()-2)  + "/preprocessing/pipelines/" + slug() + "/harvestTrainingMaterials");
-
+                                rc.next();
                             })
                             .onFailure(err->{
                                 log.error(err.getMessage(), err);
@@ -485,6 +485,49 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
         List<TrainingMaterials> materials = rc.get("trainingMaterials");
         makeTrainingExemplars(materials).onSuccess(exemplars->{
             rc.put("trainingExemplars", exemplars);
+
+            rc.next();
+        });
+
+    }
+
+    public void extractStateSamplesHandler(RoutingContext rc){
+        //Update bookkeeping for this execution
+        BasicExecution execution = rc.get("metadata");
+        if(execution != null){
+            execution.status().data().put("step", "extractStateSamplesHandler");
+        }
+
+        //Get the name of the training dataset we're extracting state samples for if it exists
+        String datasetName = rc.request().getParam("dataset") == null?rc.get("dataset"):rc.request().getParam("dataset");
+        if(datasetName == null){
+            datasetName = "default"; //Add to the default dataset if no dataset is otherwise specified.
+        }
+
+        //Get state samples from every timeline
+        List<Timeline> timelines = rc.get("timelines");
+
+        log.info("Gathering state samples from {} timelines", timelines.size());
+
+        String finalDatasetName = datasetName;
+        List<Future<List<StateSample>>> materials = timelines.stream().map(timeline->{
+            return vertx.getDelegate().<List<StateSample>>executeBlocking(blocking->{
+                extractStateSamples(timeline, finalDatasetName)
+                        .onSuccess(done->{
+                            blocking.complete(done);
+                        })
+                        .onFailure(err->blocking.fail(err));
+            });
+        }).collect(Collectors.toList());
+
+
+        //Collect the state samples harvested from every timeline into a single materials list
+        Future.all(materials).onSuccess(data->{
+            List<StateSample> dataset = new ArrayList<>();
+            data.<List<StateSample>>list().forEach(materialsList->dataset.addAll(materialsList));
+            log.info("{} state samples found!", dataset.size());
+
+            dataset.forEach(sample->sqliteService.saveStateSample(sample.toJson()));
 
             rc.next();
         });

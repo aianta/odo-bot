@@ -95,11 +95,7 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
     public Future<Timeline> makeTimeline(String flightName, List<JsonObject> events){
 
         SemanticSequencer sequencer = new SemanticSequencer();
-//        sequencer.setOnArtifact(artifact -> {
-//            if(artifact.getDomSnapshot() != null){
-//                domSequencingService.process(artifact.getDomSnapshot().outerHtml());
-//            }
-//        });
+
 
         //Timeline data structure construction
         Timeline timeline = sequencer.parse(events);
@@ -252,6 +248,76 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
         }
 
         return Future.succeededFuture(result);
+    }
+
+    public Future<List<StateSample>> extractStateSamples(Timeline timeline, String datasetName){
+
+        List<Future> futures = new ArrayList<>();
+        ListIterator<TimelineEntity> it = timeline.listIterator();
+        List<StateSample> samples = new ArrayList<>();
+
+        while (it.hasNext()){
+
+            TimelineEntity entity = it.next();
+
+            StateSample sample = new StateSample();
+            sample.source = timeline.getId() +  "#" + it.previousIndex();
+            sample.datasetName = datasetName;
+            sample.sourceSymbol = entity.symbol();
+
+            if(entity instanceof ClickEvent){
+                ClickEvent clickEvent = (ClickEvent) entity;
+
+                sample.domHTML = clickEvent.getDomSnapshot().outerHtml();
+                sample.baseURI = clickEvent.getBaseURI();
+
+            }
+
+            if(entity instanceof Effect){
+                Effect effect = (Effect) entity;
+
+                DomEffect lastEffect = effect.get(effect.size()-1);
+                sample.domHTML = lastEffect.getDomSnapshot().outerHtml();
+                sample.baseURI = lastEffect.getBaseURI();
+            }
+
+            if (entity instanceof DataEntry){
+                DataEntry dataEntry = (DataEntry) entity;
+
+                InputChange lastInputChange = dataEntry.get(dataEntry.size()-1);
+                sample.domHTML = lastInputChange.getDomSnapshot().outerHtml();
+                sample.baseURI = lastInputChange.getBaseURI();
+            }
+
+            if(sample.baseURI == null || sample.domHTML == null){
+                continue;
+            }
+
+            log.info("baseURI: {}", sample.baseURI);
+            log.info("domHTML: {}", sample.domHTML.substring(0, 150));
+
+            futures.add(
+                    domSequencingService.htmlToSequence(sample.domHTML).onSuccess(domTree->{
+                        sample.domTree = domTree.stream().map(o->(String)o).collect(Collectors.toList());
+                    })
+            );
+
+            futures.add(
+                    domSequencingService.hashAndFlattenDOM(sample.domHTML).onSuccess(hashedDomTree->{
+                        sample.hashedDOMTree = hashedDomTree.stream().mapToDouble(o->(double) o).toArray();
+                    })
+            );
+
+            samples.add(sample);
+        }
+
+        return CompositeFuture.all(futures)
+                .onFailure(err->log.error(err.getMessage(), err))
+                .compose(done->{
+                    log.info("State samples extracted!");
+                    return Future.succeededFuture(samples);
+                });
+
     }
 
     /**

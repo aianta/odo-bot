@@ -28,6 +28,8 @@ public interface SqliteService {
 
     Future<Set<String>> getHarvestProgress(String dataset);
 
+    Future<Void> saveStateSample(JsonObject json);
+
     Future<Void> saveTrainingExemplar(JsonObject json);
 
     /**

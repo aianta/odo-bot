@@ -25,6 +25,8 @@ public interface PipelineService {
 
     void semanticTraceHandler(RoutingContext rc);
 
+    void extractStateSamplesHandler(RoutingContext rc);
+
     void captureTrainingMaterialsHandler(RoutingContext rc);
 
     void makeTrainingExemplarsHandler(RoutingContext rc);

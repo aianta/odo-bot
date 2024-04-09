@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.sqlite.impl;
 
+import ca.ualberta.odobot.semanticflow.model.StateSample;
 import ca.ualberta.odobot.semanticflow.model.TrainingMaterials;
 import ca.ualberta.odobot.sqlite.LogParser;
 import ca.ualberta.odobot.sqlite.SqliteService;
@@ -38,6 +39,7 @@ public class SqliteServiceImpl implements SqliteService {
         createLogTable();
         createTrainingDatasetTable();
         createTrainingMaterialsTable();
+        createStateSampleTable();
     }
 
     public Future<JsonArray> selectLogs(long timestampMilli, long range){
@@ -214,6 +216,50 @@ public class SqliteServiceImpl implements SqliteService {
         return promise.future();
     }
 
+    public Future<Void> saveStateSample(JsonObject json){
+        return saveStateSample(StateSample.fromJson(json));
+    }
+
+
+    public Future<Void> saveStateSample(StateSample sample){
+        Promise<Void> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            INSERT INTO state_samples (
+                id,
+                base_uri,
+                normalized_uri_path,
+                dataset_name,
+                source,
+                source_symbol,
+                extras,
+                dom_tree,
+                hashed_dom_tree,
+                dom_html,
+                vector_size
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?);
+        """).execute(Tuple.of(
+                sample.id.toString(),
+                sample.baseURI,
+                sample.normalizedBaseUri(),
+                sample.datasetName,
+                sample.source,
+                sample.sourceSymbol,
+                sample.extras.encode(),
+                sample.domTree.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode(),
+                Arrays.stream(sample.hashedDOMTree).collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode(),
+                sample.domHTML,
+                sample.domTree.size()
+        ), result->{
+            if(result.succeeded()){
+                promise.complete();
+            }else {
+                promise.fail(result.cause());
+            }
+        });
+
+        return promise.future();
+    }
     public Future<Void> saveTrainingExemplar(JsonObject json){
         return saveExemplar(TrainingExemplar.fromJson(json));
     }
@@ -274,6 +320,34 @@ public class SqliteServiceImpl implements SqliteService {
 
         return promise.future();
 
+    }
+
+    private Future<Void> createStateSampleTable(){
+        Promise<Void> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            CREATE TABLE IF NOT EXISTS state_samples (
+                id text PRIMARY KEY,
+                base_uri text NOT NULL,
+                normalized_uri_path text NOT NULL,
+                dataset_name text NOT NULL,
+                source text NOT NULL,
+                source_symbol text NOT NULL,
+                extras text NOT NULL,
+                dom_tree text NOT NULL,
+                hashed_dom_tree text NOT NULL,
+                dom_html text NOT NULL,
+                vector_size numeric NOT NULL
+            )
+        """).execute(result->{
+            if(result.succeeded()){
+                promise.complete();
+            }else {
+                promise.fail(result.cause());
+            }
+        });
+
+        return promise.future();
     }
 
     private Future<Void> createTrainingMaterialsTable(){

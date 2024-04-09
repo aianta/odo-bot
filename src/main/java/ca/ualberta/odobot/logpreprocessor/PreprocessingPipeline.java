@@ -2,6 +2,7 @@ package ca.ualberta.odobot.logpreprocessor;
 
 
 import ca.ualberta.odobot.logpreprocessor.executions.PreprocessingPipelineExecution;
+import ca.ualberta.odobot.semanticflow.model.StateSample;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
 import ca.ualberta.odobot.semanticflow.model.TrainingMaterials;
@@ -43,6 +44,8 @@ public interface PreprocessingPipeline extends PipelineService {
     Future<Timeline> makeTimeline(String flightName, List<JsonObject> events);
 
     Future<SemanticTrace> makeSemanticTrace(Timeline timeline);
+
+    Future<List<StateSample>> extractStateSamples(Timeline timeline, String datasetName);
 
     Future<List<TrainingMaterials>> captureTrainingMaterials(Timeline timeline, String datasetName);
 
