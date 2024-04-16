@@ -3,10 +3,9 @@ package ca.ualberta.odobot.semanticflow.statemodel;
 import ca.ualberta.odobot.semanticflow.model.*;
 import ca.ualberta.odobot.semanticflow.navmodel.*;
 import com.idealista.tlsh.digests.Q;
-import org.neo4j.driver.AuthTokens;
-import org.neo4j.driver.Driver;
-import org.neo4j.driver.GraphDatabase;
-import org.neo4j.driver.Query;
+import org.neo4j.dbms.api.DatabaseManagementService;
+import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
+import org.neo4j.driver.*;
 import org.neo4j.driver.Record;
 import org.neo4j.driver.exceptions.NoSuchRecordException;
 import org.slf4j.Logger;
@@ -25,6 +24,8 @@ public class Neo4JUtils {
     private static final Logger log = LoggerFactory.getLogger(Neo4JUtils.class);
     private final Driver driver;
 
+    private static final String databaseName = "odobot2";
+
     public HashMap<Effect, UUID> effectMap = new HashMap<>();
 
     public Neo4JUtils(String uri, String user, String password){
@@ -36,6 +37,7 @@ public class Neo4JUtils {
         createState(id, modelId);
         return id;
     }
+
 
     public void processNetworkEvent(Timeline timeline, NetworkEvent networkEvent){
         var index = timeline.indexOf(networkEvent);
@@ -61,7 +63,8 @@ public class Neo4JUtils {
         final APINode finalApiNode = apiNode;
 
         //Write the changes to the data entry node back into the database
-        try(var session = driver.session()){
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+            
 
             HashMap<String, Object> props = new HashMap<>();
             props.put("path", finalApiNode.getPath());
@@ -103,7 +106,7 @@ public class Neo4JUtils {
         final DataEntryNode finalDataEntryNode = dataEntryNode;
 
         //Write the changes to the data entry node back into the database
-        try(var session = driver.session()){
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
 
             HashMap<String, Object> props = new HashMap<>();
             props.put("xpath", finalDataEntryNode.getXpath());
@@ -147,7 +150,7 @@ public class Neo4JUtils {
         final ClickNode finalClickNode = clickNode;
 
         //Write the changes to the click node back into the database
-        try(var session = driver.session()){
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
 
             HashMap<String, Object> props = new HashMap<>();
             props.put("xpath", finalClickNode.getXpath());
@@ -205,7 +208,7 @@ public class Neo4JUtils {
         final NavNode finalAnchor = anchor;
         final NavNode finalAnchor2 = anchor2;
 
-        try(var session = driver.session()){
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
 
             HashMap<String, Object> props = new HashMap<>();
             props.put("id", finalEffectNode.getId().toString());
@@ -371,7 +374,7 @@ public class Neo4JUtils {
     public void bind(NavNode a, NavNode b){
         var stmt = "MATCH (a {id:$aId}), (b {id:$bId}) MERGE (a)-[:NEXT]->(b);";
         var query = new Query(stmt, parameters("aId", a.getId().toString(), "bId", b.getId().toString()));
-        try(var session = driver.session()){
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
 
             session.executeWrite(tx->{
                 tx.run(query);
@@ -438,7 +441,7 @@ public class Neo4JUtils {
 
 
     public DataEntryNode readDataEntryNode(Query query){
-        try(var session = driver.session()){
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
             Record node = session.executeRead(tx->{
                 var result = tx.run(query);
                 try{
@@ -458,7 +461,7 @@ public class Neo4JUtils {
     }
 
     public ClickNode readClickNode(Query query){
-        try(var session = driver.session()){
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
              Record node = session.executeRead(tx -> {
 
                 var result = tx.run(query);
@@ -480,7 +483,7 @@ public class Neo4JUtils {
     }
 
     public <T extends NavNode> T readNode(Query query, Class<T> tClass){
-        try(var session = driver.session()){
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
             Record node = session.executeRead(tx->{
                 var result = tx.run(query);
                 try{
@@ -509,7 +512,7 @@ public class Neo4JUtils {
 
 
     public void write(Query query){
-        try(var session = driver.session()){
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
             session.executeWrite(tx->{
                 tx.run(query);
                 return 0;

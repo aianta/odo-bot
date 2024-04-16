@@ -23,6 +23,7 @@ vertx{
 
 ext{
     corenlp_version = "4.4.0"
+    neo4j_version = "5.19.0"
 }
 
 dependencies {
@@ -82,7 +83,14 @@ dependencies {
      * Neo4j
      */
     // https://mvnrepository.com/artifact/org.neo4j.driver/neo4j-java-driver
-    implementation group: 'org.neo4j.driver', name: 'neo4j-java-driver', version: '5.19.0'
+    implementation group: 'org.neo4j.driver', name: 'neo4j-java-driver', version: neo4j_version
+        // https://mvnrepository.com/artifact/org.neo4j/neo4j
+    implementation group: 'org.neo4j', name: 'neo4j', version: neo4j_version
+
+    // https://mvnrepository.com/artifact/org.neo4j/neo4j-bolt
+    testImplementation group: 'org.neo4j', name: 'neo4j-bolt', version: neo4j_version
+
+
 
 
     // https://mvnrepository.com/artifact/org.xerial/sqlite-jdbc

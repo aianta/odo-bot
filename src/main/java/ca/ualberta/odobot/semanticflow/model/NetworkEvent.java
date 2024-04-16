@@ -148,7 +148,8 @@ public class NetworkEvent extends AbstractArtifact implements TimelineEntity, Fi
     }
 
     public String getPath(){
-        return url.getPath().replaceAll("[0-9]+", "*");
+        //TODO-> Hard coding a pattern for normalizing canvas paths...
+        return url.getPath().replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*");
     }
 
     public String getQuery(){

@@ -77,6 +77,7 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
 
     public Future<Void> buildNavModel(Timeline timeline){
 
+        neo4j.effectMap.clear();
 
         ListIterator<TimelineEntity> it = timeline.listIterator();
         int clickEventCount = 0;
