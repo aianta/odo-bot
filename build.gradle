@@ -21,6 +21,8 @@ vertx{
 //    jvmArgs = ["-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"]
 }
 
+
+
 ext{
     corenlp_version = "4.4.0"
     neo4j_version = "5.19.0"
@@ -83,12 +85,12 @@ dependencies {
      * Neo4j
      */
     // https://mvnrepository.com/artifact/org.neo4j.driver/neo4j-java-driver
-    implementation group: 'org.neo4j.driver', name: 'neo4j-java-driver', version: neo4j_version
+    implementation (group: 'org.neo4j.driver', name: 'neo4j-java-driver', version: neo4j_version)
         // https://mvnrepository.com/artifact/org.neo4j/neo4j
-    implementation group: 'org.neo4j', name: 'neo4j', version: neo4j_version
+    implementation (group: 'org.neo4j', name: 'neo4j', version: neo4j_version)
 
     // https://mvnrepository.com/artifact/org.neo4j/neo4j-bolt
-    testImplementation group: 'org.neo4j', name: 'neo4j-bolt', version: neo4j_version
+    implementation (group: 'org.neo4j', name: 'neo4j-bolt', version: neo4j_version)
 
 
 
@@ -140,9 +142,11 @@ dependencies {
      * Logging
      */
     // https://mvnrepository.com/artifact/org.slf4j/slf4j-simple
-    implementation group: 'org.slf4j', name: 'slf4j-simple', version: '2.0.3'
-    // https://mvnrepository.com/artifact/org.slf4j/slf4j-api
-    implementation group: 'org.slf4j', name: 'slf4j-api', version: '2.0.3'
+    implementation group: 'org.slf4j', name: 'slf4j-simple', version: '2.0.13'
+
+//
+//    // https://mvnrepository.com/artifact/org.slf4j/slf4j-api
+    implementation group: 'org.slf4j', name: 'slf4j-api', version: '2.0.13'
 
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.7.0'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.7.0'

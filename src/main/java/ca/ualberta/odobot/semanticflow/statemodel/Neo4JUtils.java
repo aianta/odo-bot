@@ -2,9 +2,7 @@ package ca.ualberta.odobot.semanticflow.statemodel;
 
 import ca.ualberta.odobot.semanticflow.model.*;
 import ca.ualberta.odobot.semanticflow.navmodel.*;
-import com.idealista.tlsh.digests.Q;
-import org.neo4j.dbms.api.DatabaseManagementService;
-import org.neo4j.dbms.api.DatabaseManagementServiceBuilder;
+
 import org.neo4j.driver.*;
 import org.neo4j.driver.Record;
 import org.neo4j.driver.exceptions.NoSuchRecordException;
@@ -13,7 +11,6 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.InvocationTargetException;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -64,7 +61,7 @@ public class Neo4JUtils {
 
         //Write the changes to the data entry node back into the database
         try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
-            
+
 
             HashMap<String, Object> props = new HashMap<>();
             props.put("path", finalApiNode.getPath());

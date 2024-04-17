@@ -9,6 +9,7 @@ import ca.ualberta.odobot.semanticflow.model.Timeline;
 
 import ca.ualberta.odobot.semanticflow.model.TrainingMaterials;
 import ca.ualberta.odobot.semanticflow.model.semantictrace.SemanticTrace;
+import ca.ualberta.odobot.semanticflow.navmodel.GraphDB;
 import ca.ualberta.odobot.semanticflow.navmodel.NavModel;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import ca.ualberta.odobot.sqlite.impl.TrainingExemplar;
@@ -62,9 +63,15 @@ public class LogPreprocessor extends AbstractVerticle {
     Router api;
     HttpServer server;
 
+    GraphDB graphDB;
+
     public Completable rxStart(){
         try {
 
+
+            //Init embedded Neo4J
+            //TODO -> this should probably be its own service
+            //graphDB = new GraphDB("./graphdb/", "embedded");
 
             //Init Http Server
             HttpServerOptions options = new HttpServerOptions()
