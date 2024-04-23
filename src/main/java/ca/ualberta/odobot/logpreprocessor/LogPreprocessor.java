@@ -9,6 +9,7 @@ import ca.ualberta.odobot.semanticflow.model.Timeline;
 
 import ca.ualberta.odobot.semanticflow.model.TrainingMaterials;
 import ca.ualberta.odobot.semanticflow.model.semantictrace.SemanticTrace;
+import ca.ualberta.odobot.semanticflow.navmodel.CollapsingTraversal;
 import ca.ualberta.odobot.semanticflow.navmodel.GraphDB;
 import ca.ualberta.odobot.semanticflow.navmodel.NavModel;
 import ca.ualberta.odobot.sqlite.SqliteService;
@@ -71,7 +72,7 @@ public class LogPreprocessor extends AbstractVerticle {
 
             //Init embedded Neo4J
             //TODO -> this should probably be its own service
-            //graphDB = new GraphDB("./graphdb/", "embedded");
+            graphDB = new GraphDB("/graphdb/", "embedded");
 
             //Init Http Server
             HttpServerOptions options = new HttpServerOptions()
@@ -234,6 +235,7 @@ public class LogPreprocessor extends AbstractVerticle {
             api.route().method(HttpMethod.POST).path("/texts").handler(this::getTexts);
             api.route().method(HttpMethod.GET).path("/DOMSequences/hashed").handler(this::getHashedSequences);
             api.route().method(HttpMethod.POST).path("/html2xpath").handler(this::html2xpath);
+            api.route().method(HttpMethod.GET).path("/collapseTest").handler(this::testingCollapse);
 
 
             //Mount handlers to main router
@@ -571,6 +573,15 @@ public class LogPreprocessor extends AbstractVerticle {
         });
     }
 
+    private void testingCollapse(RoutingContext rc){
+
+        CollapsingTraversal collapsingTraversal = new CollapsingTraversal(graphDB);
+        var startingNodes = collapsingTraversal.getNodesWithOutDegree();
+
+
+
+
+    }
 
 
 

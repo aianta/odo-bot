@@ -21,7 +21,7 @@ public class Neo4JUtils {
     private static final Logger log = LoggerFactory.getLogger(Neo4JUtils.class);
     private final Driver driver;
 
-    private static final String databaseName = "odobot2";
+    private static final String databaseName = "neo4j";
 
     public HashMap<Effect, UUID> effectMap = new HashMap<>();
 

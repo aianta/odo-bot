@@ -38,6 +38,16 @@ dependencies {
     annotationProcessor 'io.vertx:vertx-codegen:4.4.1:processor'
     annotationProcessor 'io.vertx:vertx-service-proxy:4.4.1'
 
+    /**
+     * Logging
+     */
+//     https://mvnrepository.com/artifact/org.slf4j/slf4j-simple
+    implementation group: 'org.slf4j', name: 'slf4j-simple', version: '2.0.13'
+
+
+    // https://mvnrepository.com/artifact/org.slf4j/slf4j-api
+    implementation group: 'org.slf4j', name: 'slf4j-api', version: '2.0.13'
+
     // https://mvnrepository.com/artifact/org.apache.commons/commons-lang3
     implementation group: 'org.apache.commons', name: 'commons-lang3', version: '3.13.0'
 
@@ -92,6 +102,10 @@ dependencies {
     // https://mvnrepository.com/artifact/org.neo4j/neo4j-bolt
     implementation (group: 'org.neo4j', name: 'neo4j-bolt', version: neo4j_version)
 
+    // https://mvnrepository.com/artifact/org.slf4j/slf4j-jdk14
+    implementation group: 'org.slf4j', name: 'slf4j-jdk14', version: '2.0.13'
+
+
 
 
 
@@ -126,9 +140,9 @@ dependencies {
     /**
      * CrawlJAX
      */
-    implementation 'com.crawljax:crawljax-core:5.2.3'
+    //implementation 'com.crawljax:crawljax-core:5.2.3'
     // https://mvnrepository.com/artifact/com.crawljax.plugins/crawloverview-plugin
-    implementation group: 'com.crawljax.plugins', name: 'crawloverview-plugin', version: '5.2.3'
+    //implementation group: 'com.crawljax.plugins', name: 'crawloverview-plugin', version: '5.2.3'
 
     /**
      * Kyro for TPG serialization
@@ -138,15 +152,7 @@ dependencies {
 
 
 
-    /**
-     * Logging
-     */
-    // https://mvnrepository.com/artifact/org.slf4j/slf4j-simple
-    implementation group: 'org.slf4j', name: 'slf4j-simple', version: '2.0.13'
 
-//
-//    // https://mvnrepository.com/artifact/org.slf4j/slf4j-api
-    implementation group: 'org.slf4j', name: 'slf4j-api', version: '2.0.13'
 
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.7.0'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.7.0'

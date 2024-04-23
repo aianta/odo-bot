@@ -1,6 +1,7 @@
 package ca.ualberta.odobot;
 
 import io.vertx.core.VertxOptions;
+import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.TimeUnit;
 
@@ -8,6 +9,12 @@ public class Launcher extends io.vertx.core.Launcher {
 
     @Override
     public void beforeStartingVertx(VertxOptions options) {
+        /**
+         * Set up logging using SLF4J
+         */
+        System.setProperty("vertx.logger-delegate-factory-class-name","io.vertx.core.logging.SLF4JLogDelegateFactory");
+
+
 //        options.setBlockedThreadCheckInterval(10);
 //        options.setBlockedThreadCheckIntervalUnit(TimeUnit.MINUTES);
         options.setWorkerPoolSize(4)
