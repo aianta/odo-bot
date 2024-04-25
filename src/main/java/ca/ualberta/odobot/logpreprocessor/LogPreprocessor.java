@@ -576,7 +576,7 @@ public class LogPreprocessor extends AbstractVerticle {
     private void testingCollapse(RoutingContext rc){
 
         CollapsingTraversal collapsingTraversal = new CollapsingTraversal(graphDB);
-        var startingNodes = collapsingTraversal.getNodesWithOutDegree();
+        collapsingTraversal.doCollapsePass();
 
 
 

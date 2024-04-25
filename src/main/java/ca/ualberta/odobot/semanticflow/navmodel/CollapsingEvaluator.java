@@ -1,6 +1,6 @@
 package ca.ualberta.odobot.semanticflow.navmodel;
 
-import org.neo4j.graphdb.Entity;
+
 import org.neo4j.graphdb.Label;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Path;
@@ -10,176 +10,276 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
-import java.util.stream.Collectors;
+
+import static ca.ualberta.odobot.semanticflow.navmodel.BaseLabel.resolveBaseLabel;
+
 
 public class CollapsingEvaluator implements Evaluator {
 
     private static final Logger log = LoggerFactory.getLogger(CollapsingEvaluator.class);
 
-    List<Collapse> collapses = new ArrayList<>();
+
+
+    public static class PathElement {
+
+        public static String toString(List<PathElement> input){
+            StringBuilder sb = new StringBuilder();
+            sb.append("|");
+            input.forEach(element->{
+                sb.append(String.format("%12s:%4s|", element.label, element.id));
+            });
+            sb.append("\n");
+
+            return sb.toString();
+        }
+
+        public static List<PathElement> fromPath(Path p){
+            List<PathElement> result = new ArrayList<>();
+            p.nodes().forEach(node->result.add(fromNode(node)));
+            return result;
+        }
+
+
+
+        public static PathElement fromNode(Node n){
+            PathElement result = new PathElement();
+            result.label = resolveBaseLabel(n);
+            result.elementId = n.getElementId();
+            String[] splits = result.elementId.split(":");
+            result.id = Long.parseLong(splits[splits.length-1]);
+
+            return result;
+        }
+
+        public long id;
+        public String elementId;
+        public String label;
+
+    }
+
+    private class Pattern{
+
+        List<PathElement> pattern = new ArrayList<>();
+
+        public List<List<PathElement>> instances = new ArrayList<>();
+
+        public Pattern(Path initPath){
+            pattern = PathElement.fromPath(initPath);
+            instances.add(pattern);
+        }
+
+        public int size(){
+            return instances.size();
+        }
+
+        /**
+         *
+         * @return A map of <EndNode ElementId, List of instances with that endNode>.
+         */
+        public Map<String, List<List<PathElement>>> getByCommonEndNode(){
+
+            Map<String, List<List<PathElement>>> map = new HashMap<>();
+
+            instances.forEach(instance->{
+                PathElement lastElement = instance.get(instance.size()-1);
+                List<List<PathElement>> endNodeCollection = map.getOrDefault(lastElement.elementId, new ArrayList<>());
+                endNodeCollection.add(instance);
+                map.put(lastElement.elementId, endNodeCollection);
+            });
+
+
+            return map;
+
+        }
+
+        public boolean matches(Path path){
+
+            List<PathElement> _path = PathElement.fromPath(path);
+
+            //log.debug("Testing if path: \n{}\nmatches pattern: \n{}\n ", MatrixElement.toString(_path), MatrixElement.toString(pattern));
+
+
+            ListIterator<PathElement> pathIterator = _path.listIterator();
+            ListIterator<PathElement> patternIterator = pattern.listIterator();
+
+            while (patternIterator.hasNext()){
+
+                PathElement pathNode = pathIterator.next();
+
+                PathElement patternNode = patternIterator.next();
+
+                if(!patternNode.label.equals(pathNode.label)){
+                    return false;
+                }
+
+            }
+
+            return true;
+        }
+
+        public String toString(){
+            StringBuilder sb = new StringBuilder();
+            sb.append("Pattern:\n|");
+            pattern.forEach(element->sb.append(String.format("%-17s|", element.label)));
+            sb.append("\nInstances:\n");
+
+
+            for(List<PathElement> instance:instances){
+                sb.append("|");
+                instance.forEach(element->{
+                    sb.append(String.format("%12s:%-4s|", element.label, element.id));
+                });
+                sb.append("\n");
+            }
+
+            return sb.toString();
+        }
+
+    }
+
+    List<Pattern> lastPatterns = new ArrayList<>();
+    List<Pattern> patterns = new ArrayList<>();
 
     int length = -1;
-    List<String> endNodes = new ArrayList<>();
-    List<String> endNodeTypes = new ArrayList<>();
-    List<Path> paths = new ArrayList<>();
-
-    List<Path> toKeep = new ArrayList<>();
-
-    Map<String, List<Path>> anchoredPaths = new HashMap<>();
 
 
+    private Collapse collapse = null;
 
 
     @Override
     public Evaluation evaluate(Path path) {
-
-        if(length != path.length()){
-            processAndReset();
+        if(length  != path.length()){
             length = path.length();
+
+            if(length != -1){
+
+//                buildAllPathsMatrix();
+//                printAllPaths();
+                printPatterns();
+
+                Pattern collapsePattern = patterns.stream()
+                        /**
+                         * If a pattern exists where multiple instances share an end node, we have a collapse.
+                         */
+                        .filter(pattern->{
+                            var commonEndNodeCollection = pattern.getByCommonEndNode();
+                            return commonEndNodeCollection.entrySet().stream().filter(entry->entry.getValue().size() > 1).findAny().isPresent();
+                        })
+                        .findAny()
+                        .orElse(null)
+                ;
+
+                if(collapsePattern != null){
+
+                    var commonEndNodeCollection = collapsePattern.getByCommonEndNode();
+
+                    log.info("Found {} collapsable patterns. ", commonEndNodeCollection.size());
+
+                    Map.Entry<String, List<List<PathElement>>> entry =  commonEndNodeCollection.entrySet().iterator().next();
+                    List<PathElement> firstInstance = entry.getValue().get(0);
+
+                    PathElement startingNode = firstInstance.get(0);
+                    PathElement endingNode = firstInstance.get(firstInstance.size()-1);
+
+                    collapse = new Collapse(startingNode, endingNode, entry.getValue());
+                }
+                printAnchoredPatterns();
+
+
+
+            }
+
+            resetPatterns();
+
         }
 
-        //Process anchoredPaths
-        for(Map.Entry<String, List<Path>> entry: anchoredPaths.entrySet()){
-            String anchorId = entry.getKey();
-            Iterator<Node> reverseIterator =  path.reverseNodes().iterator();
-            reverseIterator.next();
-            Node lastNode = reverseIterator.next();
-            if(((String)lastNode.getProperty("id")).equals(anchorId)){
+        log.info("Evaluating: {}", path.toString());
 
-                //TODO -> I should get some collapses here no?
+        if(collapse != null){ //If we've found a collapse, terminate all traversals.
+            log.info("Traversal terminating because collapse has been found.");
+            return Evaluation.EXCLUDE_AND_PRUNE;
+        }
 
-                return Evaluation.EXCLUDE_AND_PRUNE;
+        boolean matched = false;
+        for(Pattern pattern: patterns){
+            if(pattern.matches(path)){
+
+                pattern.instances.add(PathElement.fromPath(path));
+                matched = true;
+                break;
             }
         }
 
+        if(!matched){
+            patterns.add(new Pattern(path));
+        }
 
-        //If we've made it this far we're looking to keep the path if it appears in the to keep list
-        if(toKeep(path)){
-            //Collect endNode Ids
-            String endNodeId = (String)path.endNode().getProperty("id");
-            endNodes.add(endNodeId);
 
-            //Collect endNode types/labels
-            path.endNode().getLabels().forEach(label -> endNodeTypes.add(label.name()));
 
-            //Collect paths
-            paths.add(path);
 
+        if(length < 2){ //Always expand paths until at least length 2, as there won't be a meaningful lastPatterns until then.
+            log.info("Traversal continuing because path length is less than 2.");
             return Evaluation.INCLUDE_AND_CONTINUE;
         }
 
+        //If the path matches one of the last patterns continue expanding it.
+        if(lastPatterns.stream().filter(pattern -> pattern.matches(path)).findAny().isPresent()){
+            log.info("Traversal continuing because path matches a pattern with sufficient support.");
+            return Evaluation.INCLUDE_AND_CONTINUE;
+        }else{
+            log.info("Traversal terminating because path does not match a pattern with sufficient support.");
+            return Evaluation.EXCLUDE_AND_PRUNE;
+        }
 
-        return Evaluation.EXCLUDE_AND_PRUNE;
+
+//        return length > MAX_LENGTH? Evaluation.EXCLUDE_AND_PRUNE:Evaluation.INCLUDE_AND_CONTINUE;
     }
 
-    private void processAndReset(){
+    /**
+     * Moves patterns with more than one instance to lastPatterns, and clears patterns.
+     */
+    private void resetPatterns(){
 
-        //Go through each path for the current length, and count how many paths end with each observed endNode.
-        Map<String, List<Path>> idMap = new HashMap<>();
-        Map<String, List<Path>> typeMap = new HashMap<>();
+        lastPatterns.clear();
 
-        //Populate idMap
-        endNodes.forEach(id->{
+        patterns.stream()
+                .filter(pattern -> pattern.size() > 1)
+                .forEach(pattern->lastPatterns.add(pattern));
 
-            List<Path> pathsWithThisEndNode = paths.stream().filter(path->((String)path.endNode().getProperty("id")).equals(id)).collect(Collectors.toList());
+        patterns.clear();
+    }
 
-            List<Path> endNodePaths = idMap.getOrDefault(id, new ArrayList<>());
-            endNodePaths.addAll(pathsWithThisEndNode);
-            idMap.put(id, endNodePaths);
+    private void printAnchoredPatterns(){
+        patterns.forEach(pattern->{
+            Map<String, List<List<PathElement>>> anchoredPatterns = pattern.getByCommonEndNode();
 
-            log.info("{} paths have the same end node {}", pathsWithThisEndNode.size(), id);
+            anchoredPatterns.entrySet().forEach(entry->{
+                log.info("The following paths end with: {}", entry.getKey());
+
+                List<List<PathElement>> instances = entry.getValue();
+                StringBuilder sb = new StringBuilder();
+                instances.forEach(instance->sb.append(PathElement.toString(instance)));
+                log.info("\n{}",sb.toString() );
+            });
+
+
 
         });
-
-        //Paths that have been anchored should be halted.
-        anchoredPaths = idMap.entrySet().stream().filter(entry->entry.getValue().size() > 1).collect(HashMap::new, (map,entry)->map.put(entry.getKey(), entry.getValue()), HashMap::putAll);
-
-
-        //Populate typeMap
-        endNodeTypes.forEach(type->{
-            List<Path> pathsWithThisTypeOfEndNode = paths.stream().filter(path->{
-
-                Set<String> labels = new HashSet<>();
-                Iterator<Label> it = path.endNode().getLabels().iterator();
-                while (it.hasNext()){
-                    labels.add(it.next().name());
-                }
-
-                return labels.contains(type);
-            }).collect(Collectors.toList());
-
-            List<Path> endNodePaths = typeMap.getOrDefault(type, new ArrayList<>());
-            endNodePaths.addAll(pathsWithThisTypeOfEndNode);
-            typeMap.put(type, endNodePaths);
-
-            log.info("{} paths have end node type {}", pathsWithThisTypeOfEndNode.size(), type);
-        });
-
-
-        //A path should be kept if it appears in a typeMap list of size 2.
-        toKeep = typeMap.values().stream()
-                .filter(paths->paths.size()>1)
-                .collect(ArrayList::new, ArrayList::addAll, ArrayList::addAll);
-
-
-
-
-        paths.clear();
-        endNodes.clear();
-        endNodeTypes.clear();
     }
 
-
-    private boolean toKeep(Path path){
-
-        for(Path p: toKeep){
-            if(isTypeEquivalent(p, path)){
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private boolean isTypeEquivalent(Path oldPath, Path newPath){
-
-        if (oldPath.length() != newPath.length() - 1){
-            log.error("Old path length is {}, expected {}. New path length is: {}", oldPath.length(), newPath.length()-1, newPath.length() );
-            throw new RuntimeException("Path equivalence mismatch exception!");
-        }
-
-        Iterator<Node> newPathIt = newPath.nodes().iterator();
-        Iterator<Node> oldPathIt = oldPath.nodes().iterator();
-
-        while (oldPathIt.hasNext()){
-
-            Node newPathNode = newPathIt.next();
-            Node oldPathNode =  oldPathIt.next();
-
-            Set<String> newPathNodeLabels = new HashSet<>();
-            newPathNode.getLabels().forEach(label->newPathNodeLabels.add(label.name()));
-
-            Set<String> oldPathNodeLabels = new HashSet<>();
-            oldPathNode.getLabels().forEach(label->oldPathNodeLabels.add(label.name()));
-
-            //If they have different numbers of labels they are not type equivalent.
-            if(newPathNodeLabels.size() != oldPathNodeLabels.size()){
-                return false;
-            //If they have the same label they are equivalent
-            }else if(newPathNodeLabels.containsAll(oldPathNodeLabels) && oldPathNodeLabels.containsAll(newPathNodeLabels)){
-                continue;
-            }else{
-            //If they don't have the same labels they are not equivalent
-                return false;
-            }
-
-
-        }
-
-        //Got here only if all nodes along the old path are type equivalent with those found on the new path.
-        return true;
+    private void printPatterns(){
+        log.info("Printing patterns!");
+        patterns.forEach(pattern -> log.info("\n{}", pattern.toString()));
 
     }
+
+    public Collapse getCollapse(){
+        return collapse;
+    }
+
+    public boolean hasCollapse(){
+        return collapse != null;
+    }
+
 
 }
-
