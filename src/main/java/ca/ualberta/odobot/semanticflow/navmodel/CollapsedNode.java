@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.semanticflow.navmodel;
 
+import org.neo4j.graphdb.Label;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Transaction;
 
@@ -43,7 +44,15 @@ public abstract class CollapsedNode {
         }
     }
 
-    public abstract Node createNode(Transaction tx);
+    public Node createNode(Transaction tx){
+
+        Node result = tx.createNode(Label.label(baseLabel));
+        result.setProperty("id", id.toString());
+        result.setProperty("instances", instances.toArray(new String[1]));
+
+        return result;
+
+    }
 
 
 }

@@ -14,10 +14,8 @@ public class CollapsedEffectNode extends CollapsedNode{
     @Override
     public Node createNode(Transaction tx) {
 
-        Node result = tx.createNode(Label.label(baseLabel), Label.label("CollapsedEffectNode"));
-        result.setProperty("id", id.toString());
-        result.setProperty("instances", instances.toArray(new String[1]));
-
+        Node result = super.createNode(tx);
+        result.addLabel(Label.label("CollapsedEffectNode"));
         return result;
     }
 }
