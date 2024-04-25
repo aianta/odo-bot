@@ -50,13 +50,13 @@ public class CollapsingTraversal {
 
     public void collapse(Transaction tx, Node startingNode){
 
-
+        CollapsingEvaluatorV2 v2 = new CollapsingEvaluatorV2();
 
         TraversalDescription traversal = tx.traversalDescription()
                 .breadthFirst()
                 .uniqueness(Uniqueness.NODE_PATH)
                 .relationships(RelationshipType.withName("NEXT"), Direction.OUTGOING)
-                .evaluator(Evaluators.all());
+                .evaluator(v2);
 
         Traverser traverser = traversal.traverse(startingNode);
 

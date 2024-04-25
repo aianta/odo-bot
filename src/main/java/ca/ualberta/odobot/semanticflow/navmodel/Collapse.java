@@ -1,13 +1,11 @@
 package ca.ualberta.odobot.semanticflow.navmodel;
 
-import java.util.HashSet;
-import java.util.Set;
 
-/**
- * A collapse contains a set of odo-bot ids (UUIDs) which have been marked for collapse into a single node.
- */
-public class Collapse {
+import java.util.List;
 
-    Set<String> ids = new HashSet<>();
 
-}
+public record Collapse (
+        CollapsingEvaluatorV2.MatrixElement startingAnchor,
+        CollapsingEvaluatorV2.MatrixElement endingAnchor,
+        List<List<CollapsingEvaluatorV2.MatrixElement>> instances
+) {}
