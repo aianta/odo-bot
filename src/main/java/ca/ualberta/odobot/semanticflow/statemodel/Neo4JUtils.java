@@ -126,7 +126,7 @@ public class Neo4JUtils {
 
         log.info("Processing click event {}", entityTimelineId);
 
-        String clickText = clickEvent.getTriggerElement().ownText();
+        String clickText = clickEvent.getTriggerElement() != null?clickEvent.getTriggerElement().ownText():"";
         String clickXpath = clickEvent.getXpath();
 
         ClickNode clickNode = getClickNode(clickXpath, clickText);
@@ -247,7 +247,7 @@ public class Neo4JUtils {
         TimelineEntity target = timeline.get(index);
         if (target instanceof ClickEvent){
             ClickEvent clickEvent = (ClickEvent)target;
-            return getClickNode(clickEvent.getXpath(), clickEvent.getTriggerElement().ownText());
+            return getClickNode(clickEvent.getXpath(), clickEvent.getTriggerElement() != null ? clickEvent.getTriggerElement().ownText():"");
         }
 
         if(target instanceof DataEntry){

@@ -19,41 +19,53 @@ public class CollapsingTraversal {
         this.db = graphDB.db;
     }
 
-    public void doCollapsePass(){
 
-        Set<Node> output = new HashSet<>();
+    public List<Collapse> doCollapsePass(){
+        List<Collapse> collapses = new ArrayList<>();
+        Collapse collapse = null;
 
-        try(
-                Transaction tx  = db.beginTx();
-                Result result = tx.execute("MATCH (n)-->() with n, count(*) as degree where degree > 1 return n;");
-                ResourceIterator<Node> nodes = result.columnAs("n");
-        ){
+        do{
+            Set<Node> output = new HashSet<>();
 
-            while (nodes.hasNext()){
-                Node node = nodes.next();
-                output.add(node);
+            try(
+                    Transaction tx  = db.beginTx();
+                    Result result = tx.execute("MATCH (n)-->() with n, count(*) as degree where degree > 1 return n;");
+                    ResourceIterator<Node> nodes = result.columnAs("n");
+            ){
+
+                while (nodes.hasNext()){
+                    Node node = nodes.next();
+                    output.add(node);
+                }
+
+
+                 collapse = output.stream()
+                        .peek(node->log.info("Searching for collapsable patterns with traversal starting from {}", node.getElementId()))
+                        .map(node->this.findCollapse(tx, node))
+                        .filter(Objects::nonNull)
+                        .findAny()
+                        .orElse(null)
+                        ;
+
+
+
+                if(collapse == null){
+                    log.info("No collapsable patterns found!");
+                    break;
+                }
+
+                applyCollapse(tx, collapse);
+
+                collapses.add(collapse);
+
+                tx.commit(); //Commit and finish the transaction.
+
             }
 
-            Collapse collapse = output.stream()
-                    .peek(node->log.info("Searching for collapsable patterns with traversal starting from {}", node.getElementId()))
-                    .map(node->this.findCollapse(tx, node))
-                    .filter(Objects::nonNull)
-                    .findAny()
-                    .orElse(null)
-            ;
-
-            if(collapse == null){
-                log.info("No collapsable patterns found!");
-                return;
-            }
-
-            applyCollapse(tx, collapse);
-
-            tx.commit(); //Commit and finish the transaction.
+        }while (collapse != null);
 
 
-        }
-
+        return collapses;
 
     }
 
@@ -74,7 +86,11 @@ public class CollapsingTraversal {
 
             mergeList.forEach(pathElement -> nodeSet.add(tx.getNodeByElementId(pathElement.elementId)));
 
-            CollapsedNode collapsedNode = switch (BaseLabel.resolveBaseLabel(nodeSet.iterator().next())){
+            String baseLabel = BaseLabel.resolveBaseLabel(nodeSet.iterator().next());
+
+            log.info("Creating collapsed node for {} label", baseLabel);
+
+            CollapsedNode collapsedNode = switch (baseLabel){
                 case "ClickNode" -> new CollapsedClickNode(nodeSet);
                 case "DataEntryNode" -> new CollapsedDataEntryNode(nodeSet);
                 case "EffectNode" -> new CollapsedEffectNode(nodeSet);

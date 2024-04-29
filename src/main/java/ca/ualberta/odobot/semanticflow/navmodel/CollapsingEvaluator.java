@@ -182,7 +182,10 @@ public class CollapsingEvaluator implements Evaluator {
 
                 PathElement patternNode = patternIterator.next();
 
-                if(!patternNode.label.equals(pathNode.label)){
+                if(!patternNode.label.equals(pathNode.label) || //If the labels do not match, then this is not a match.
+                        (patternNode.label.equals("APINode") && pathNode.label.equals("APINode") && !patternNode.elementId.equals(pathNode.elementId)) //If the nodes have matching APINode labels, they must be an ending anchor (that is, the same elementId), otherwise, no match.
+
+                ){
                     return false;
                 }
 
@@ -273,6 +276,7 @@ public class CollapsingEvaluator implements Evaluator {
                         /**
                          * If a pattern exists where multiple instances share an end node, we have a collapse.
                          */
+                        .filter(pattern -> pattern.size() > 1)
                         .filter(pattern->{
                             var commonEndNodeCollection = pattern.getByCommonEndNode();
                             return commonEndNodeCollection.entrySet().stream().filter(entry->entry.getValue().size() > 1).findAny().isPresent();
@@ -287,9 +291,20 @@ public class CollapsingEvaluator implements Evaluator {
                     //Compute the end anchor for the collapsable pattern
                     var commonEndNodeCollection = collapsePattern.getByCommonEndNode();
 
-                    log.info("Found {} collapsable patterns. ", commonEndNodeCollection.size());
 
-                    Map.Entry<String, List<List<PathElement>>> entry =  commonEndNodeCollection.entrySet().iterator().next();
+
+                    log.info("Found {} collapsable patterns. ", commonEndNodeCollection.entrySet().stream()
+                            .filter(e->e.getValue().size() > 1)
+                            .count()
+                    );
+
+                    log.info("This is the collapsePattern:\n{}", collapsePattern.toString());
+
+                    Map.Entry<String, List<List<PathElement>>> entry =  commonEndNodeCollection.entrySet().stream()
+                            .filter(e->e.getValue().size() > 1)
+                            .findAny()
+                            .orElse(null);
+
                     List<PathElement> firstInstance = entry.getValue().get(0);
 
                     PathElement startingNode = firstInstance.get(0);
@@ -314,7 +329,7 @@ public class CollapsingEvaluator implements Evaluator {
 
         }
 
-        log.info("Evaluating: {}", path.toString());
+        //log.info("Evaluating: {}", path.toString());
 
         //If we've found a collapse we're done.
         if(collapse != null){ //If we've found a collapse, terminate all traversals.

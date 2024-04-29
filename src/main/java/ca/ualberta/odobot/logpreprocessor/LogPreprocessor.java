@@ -9,6 +9,7 @@ import ca.ualberta.odobot.semanticflow.model.Timeline;
 
 import ca.ualberta.odobot.semanticflow.model.TrainingMaterials;
 import ca.ualberta.odobot.semanticflow.model.semantictrace.SemanticTrace;
+import ca.ualberta.odobot.semanticflow.navmodel.Collapse;
 import ca.ualberta.odobot.semanticflow.navmodel.CollapsingTraversal;
 import ca.ualberta.odobot.semanticflow.navmodel.GraphDB;
 import ca.ualberta.odobot.semanticflow.navmodel.NavModel;
@@ -36,10 +37,7 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 
@@ -576,10 +574,11 @@ public class LogPreprocessor extends AbstractVerticle {
     private void testingCollapse(RoutingContext rc){
 
         CollapsingTraversal collapsingTraversal = new CollapsingTraversal(graphDB);
-        collapsingTraversal.doCollapsePass();
+        List<Collapse> collapses = collapsingTraversal.doCollapsePass();
 
+        log.info("Found {} collapsable patterns!", collapses.size());
 
-
+        rc.response().setStatusCode(200).end();
 
     }
 
