@@ -1,7 +1,9 @@
 package ca.ualberta.odobot.semanticflow.navmodel;
 
+import org.neo4j.graphdb.Direction;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Path;
+import org.neo4j.graphdb.RelationshipType;
 import org.neo4j.graphdb.traversal.Evaluation;
 import org.neo4j.graphdb.traversal.Evaluator;
 import org.slf4j.Logger;
@@ -47,6 +49,12 @@ public class CollapsingEvaluator implements Evaluator {
             return sb.toString();
         }
 
+        public String toString(){
+            StringBuilder sb = new StringBuilder();
+            sb.append(String.format("%12s:%4s", label, id));
+            return sb.toString();
+        }
+
         /**
          *
          * @param p the path to convert.
@@ -75,6 +83,7 @@ public class CollapsingEvaluator implements Evaluator {
             result.elementId = n.getElementId();
             String[] splits = result.elementId.split(":");
             result.id = Long.parseLong(splits[splits.length-1]);
+            result.incomingNextEdges = n.getDegree(RelationshipType.withName("NEXT"), Direction.INCOMING);
 
             return result;
         }
@@ -82,6 +91,7 @@ public class CollapsingEvaluator implements Evaluator {
         public long id;
         public String elementId;
         public String label;
+        public int incomingNextEdges;
 
     }
 
@@ -168,6 +178,8 @@ public class CollapsingEvaluator implements Evaluator {
          */
         public boolean matches(Path path){
 
+            log.info("Matching {} to pattern: {}", path.toString(), this.pattern.toString());
+
             List<PathElement> _path = PathElement.fromPath(path);
 
             //log.debug("Testing if path: \n{}\nmatches pattern: \n{}\n ", MatrixElement.toString(_path), MatrixElement.toString(pattern));
@@ -182,10 +194,20 @@ public class CollapsingEvaluator implements Evaluator {
 
                 PathElement patternNode = patternIterator.next();
 
+                log.info("incoming edges {} for {}", pathNode.incomingNextEdges,  pathNode.toString());
+
                 if(!patternNode.label.equals(pathNode.label) || //If the labels do not match, then this is not a match.
                         (patternNode.label.equals("APINode") && pathNode.label.equals("APINode") && !patternNode.elementId.equals(pathNode.elementId)) //If the nodes have matching APINode labels, they must be an ending anchor (that is, the same elementId), otherwise, no match.
 
                 ){
+                    log.info("MISMATCH FOR {}", pathNode.toString());
+                    return false;
+                }
+
+
+                //If this isn't the last element of the pattern, then the number of incoming NEXT edges should never be more than 1.
+                if (patternIterator.hasNext() && patternIterator.previousIndex() != 0 && pathNode.incomingNextEdges > 1){
+                   log.info("MISMATCH FOR {}", pathNode.toString());
                     return false;
                 }
 

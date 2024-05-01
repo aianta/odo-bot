@@ -309,7 +309,10 @@ public class ExploreTask implements Runnable{
                     log.error(e.getMessage(), e);
                     //throw new RuntimeException(e);
                 }finally {
-                    driver.quit();
+                    if(driver != null){
+                        driver.quit();
+                    }
+
                 }
             }
 
