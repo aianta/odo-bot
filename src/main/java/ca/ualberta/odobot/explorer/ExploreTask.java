@@ -33,8 +33,7 @@ import java.util.List;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-import static ca.ualberta.odobot.explorer.WebDriverUtils.explicitlyWait;
-import static ca.ualberta.odobot.explorer.WebDriverUtils.explicitlyWaitUntil;
+import static ca.ualberta.odobot.explorer.WebDriverUtils.*;
 
 public class ExploreTask implements Runnable{
 
@@ -172,9 +171,6 @@ public class ExploreTask implements Runnable{
 
 
 
-
-
-
             while (primaryToDo.size() > 0){
                 try{
 
@@ -200,20 +196,13 @@ public class ExploreTask implements Runnable{
                 //Each session starts by logging in.
                 loginOperation.execute(driver);
 
-                int sessionSize = random.nextInt(10, 30);
-
-                int sessionProgress = 0;
-
-                //Then some number of cases
-
-                while (sessionSize > 0){
                     Operation op = nextOperation();
                     if(op == null){
                         break;
                     }
 
                     try{
-                        log.info("[{}]Executing [{}/{}][{}]: {}",completedCases, sessionProgress , sessionProgress + sessionSize, primaryToDo.size(), op.toJson().encodePrettily());
+                        log.info("[{}/{}]Executing: {}",completedCases, primaryToDo.size(), op.toJson().encodePrettily());
                         op.execute(driver);
                         completedOperations.add(op.getId());
                         completedCases++;
@@ -246,44 +235,44 @@ public class ExploreTask implements Runnable{
                         //Restart everything if this happens. I feel like this might help.
                         stopRecording();
 
-                        Instant end = Instant.now();
-                        log.info("took {}ms", end.toEpochMilli()-start.toEpochMilli());
+//                        Instant end = Instant.now();
+//                        log.info("took {}ms", end.toEpochMilli()-start.toEpochMilli());
+//
+//                        log.info("primaryToDo: {}", primaryToDo.size());
+//
+//                        driver.quit();
+//
+//                        options = new FirefoxOptions();
+//
+//                        options.setProfile(buildProfile());
+//
+//                        driver = new FirefoxDriver(options);
+//
+//                        driver.installExtension(Path.of(config.getString(ExploreRequestFields.ODOSIGHT_PATH.field)), true);
+//                        //Setup OdoSight
+//                        setupOdoSight();
+//
+//                        //Start the OdoSight recording
+//                        startRecording();
+//
+//                        start = Instant.now();
+//
+//                        //Each session starts by logging in.
+//                        loginOperation.execute(driver);
 
-                        log.info("primaryToDo: {}", primaryToDo.size());
 
-                        driver.quit();
 
-                        options = new FirefoxOptions();
-
-                        options.setProfile(buildProfile());
-
-                        driver = new FirefoxDriver(options);
-
-                        driver.installExtension(Path.of(config.getString(ExploreRequestFields.ODOSIGHT_PATH.field)), true);
-                        //Setup OdoSight
-                        setupOdoSight();
-
-                        //Start the OdoSight recording
-                        startRecording();
-
-                        start = Instant.now();
-
-                        //Each session starts by logging in.
-                        loginOperation.execute(driver);
-
-                        sessionSize = random.nextInt(10, 20);
-                        sessionProgress = 0;
 
 
 
                     }finally {
-                        sessionSize--;
-                        sessionProgress++;
+
+
                         //Now remove the session operations from the primaryToDo
                         primaryToDo = primaryToDo.stream().filter(operation -> !completedOperations.contains(operation.getId())).collect(ToDo::new, ToDo::add, ToDo::addAll);
                         saveProgress();
                     }
-                } //End session while
+
 
 
                 //Then logging out.
@@ -379,23 +368,25 @@ public class ExploreTask implements Runnable{
 
         //Get the stop recording button and click it to stop the recording.
         WebElement stopRecordingButton = driver.findElement(By.id(ODOSIGHT_CONTROLS_STOP_RECORDING_BUTTON_ID));
-        stopRecordingButton.click();
+        click(driver, stopRecordingButton);
+        //stopRecordingButton.click();
 
         explicitlyWait(driver, 2);
 
-        //Enter the target elasticsearch index for the scrape operation
-        String targetIndex = config.getString(ExploreRequestFields.ODOSIGHT_FLIGHT_PREFIX.field);
-        if(targetIndex.endsWith("-") || targetIndex.endsWith("_")){ //Strip the hyphen/underscore off the flight-prefix if it exists
-            targetIndex = targetIndex.substring(0, targetIndex.length()-1);
-        }
-        WebElement scrapeIndexInput = driver.findElement(By.id(ODOSIGHT_CONTROLS_SCRAPE_ES_INDEX_INPUT_ID));
-        scrapeIndexInput.sendKeys(targetIndex);
-
-        //Get the scrape mongo button and click it to send the flight recording data to elasticsearch
-        WebElement scrapeMongoButton = driver.findElement(By.id(ODOSIGHT_CONTROLS_SCRAPE_MONGO_BUTTON_ID));
-        scrapeMongoButton.click();
-
-        explicitlyWait(driver, 2);
+//TODO - Disabling scrape after every case since data generation slowed significantly over long runs, with elastic search crashing. 
+//        //Enter the target elasticsearch index for the scrape operation
+//        String targetIndex = config.getString(ExploreRequestFields.ODOSIGHT_FLIGHT_PREFIX.field);
+//        if(targetIndex.endsWith("-") || targetIndex.endsWith("_")){ //Strip the hyphen/underscore off the flight-prefix if it exists
+//            targetIndex = targetIndex.substring(0, targetIndex.length()-1);
+//        }
+//        WebElement scrapeIndexInput = driver.findElement(By.id(ODOSIGHT_CONTROLS_SCRAPE_ES_INDEX_INPUT_ID));
+//        scrapeIndexInput.sendKeys(targetIndex);
+//
+//        //Get the scrape mongo button and click it to send the flight recording data to elasticsearch
+//        WebElement scrapeMongoButton = driver.findElement(By.id(ODOSIGHT_CONTROLS_SCRAPE_MONGO_BUTTON_ID));
+//        scrapeMongoButton.click();
+//
+//        explicitlyWait(driver, 2);
 
         driver.switchTo().window(webAppTabHandle);
     }
@@ -425,8 +416,9 @@ public class ExploreTask implements Runnable{
         passwordInput.sendKeys(config.getString(ExploreRequestFields.ODOSIGHT_OPTIONS_LOGUI_PASSWORD.field));
 
         //Update the OdoSight Options with the username and password
-        WebElement submitButton = driver.findElement(By.tagName("button"));
-        submitButton.click();
+        WebElement submitButton = findElement(driver, By.tagName("button"));
+        click(driver, submitButton);
+        //submitButton.click();
 
         //Load the web app URL
         driver.get(config.getString(ExploreRequestFields.WEB_APP_URL.field));

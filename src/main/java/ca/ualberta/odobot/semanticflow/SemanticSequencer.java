@@ -15,6 +15,8 @@ import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.URL;
+import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -168,6 +170,8 @@ public class SemanticSequencer {
                     case DOM_EFFECT -> {
                         //return;
 //                        TODO - We don't use DOM effects in training data, so we can skip them.
+
+
                         try{
                             DomEffect domEffect = domEffectMapper.map(event);
 
@@ -182,10 +186,55 @@ public class SemanticSequencer {
                              Check if the last entity in the timeline is an {@link Effect},
                              if so, add this domEffect to it. Otherwise, create a new Effect
                              and add this domEffect to it before adding the created Effect to the timeline.
+
+                             In addition, we need to model and normalize the representation of transitions in the window location of a trace.
+                             So, if the last entity in the timeline is an effect, get it's baseURI and compare it to the current
+                             domEffect's baseURI. If they are equal, proceed normally, and just add the domEffect to the Effect.
+
+                             However, if they are not equal:
+                             1) Create an {@link ApplicationLocationChange} entity and populate it's {@link ApplicationLocationChange#from} and {@link ApplicationLocationChange#to}
+                             fields.
+
+
                              */
                             if(line.last() != null && line.last() instanceof Effect){
+
                                 Effect effect = (Effect) line.last();
-                                effect.add(domEffect);
+
+                                if(effect.getBaseURIs().size() == 0 || effect.getBaseURIs().size() > 1){
+                                    log.error("Effect baseURI set is of an invalid size! {}", effect.getBaseURIs().size());
+                                    throw new RuntimeException("Invalid Effect BaseURI set size!");
+                                }
+
+                                String previousBaseURI = effect.getBaseURIs().iterator().next();
+                                String currentBaseURI = domEffect.getBaseURI();
+
+                                if(previousBaseURI.equals(currentBaseURI)){
+                                    effect.add(domEffect);
+                                }else{
+
+                                    ApplicationLocationChange applicationLocationChange = new ApplicationLocationChange();
+                                    applicationLocationChange.setFrom(new URL(previousBaseURI));
+                                    applicationLocationChange.setTo(new URL(currentBaseURI));
+
+                                    //Set the location change timestamp as the average between the current and last domEffect timestamps.
+                                    long lastTimestamp = effect.get(effect.size()-1).getTimestamp().toInstant().toEpochMilli();
+                                    long thisTimestamp = domEffect.getTimestamp().toInstant().toEpochMilli();
+
+                                    long applicationLocationChangeTimestamp = (lastTimestamp + thisTimestamp)/2;
+                                    applicationLocationChange.setTimestamp(ZonedDateTime.ofInstant(Instant.ofEpochMilli(applicationLocationChangeTimestamp), domEffect.getTimestamp().getZone()));
+
+                                    line.add(applicationLocationChange);
+
+                                    //Create the Effect following the ApplicationLocationChange.
+
+                                    Effect postEffect = new Effect();
+                                    postEffect.add(domEffect);
+                                    line.add(postEffect);
+                                }
+
+
+
                             }
 
                             if(line.last() == null || !(line.last() instanceof Effect)){

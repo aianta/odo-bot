@@ -70,6 +70,7 @@ public class WebDriverUtils {
     }
 
     public static void explicitlyWaitForElement(WebDriver driver, By idMethod){
+
         try{
             explicitlyWaitUntil(driver, 30, d-> ExpectedConditions.elementToBeClickable(driver.findElement(idMethod)));
 

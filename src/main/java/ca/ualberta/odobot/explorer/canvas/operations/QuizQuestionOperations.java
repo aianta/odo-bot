@@ -17,6 +17,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.explorer.WebDriverUtils.*;
+import static ca.ualberta.odobot.explorer.canvas.operations.QuizOperations.navToQuizEditPage;
 
 public class QuizQuestionOperations {
     private static final Logger log = LoggerFactory.getLogger(QuizQuestionOperations.class);
@@ -35,9 +36,9 @@ public class QuizQuestionOperations {
     }
 
     public void delete(WebDriver driver){
+        navToQuizEditPage(driver, course, quiz);
 
-
-        driver.get(quiz.getQuizEditPageUrl() + "#questions_tab");
+        //driver.get(quiz.getQuizEditPageUrl() + "#questions_tab");
 
         //Now we're on the edit page for the quiz, so we have to click the questions tab.
         click(driver, By.xpath("//a[contains(@href, '#questions_tab')]"), d->d.get(quiz.getQuizEditPageUrl()));
@@ -64,7 +65,9 @@ public class QuizQuestionOperations {
 
     public void edit(WebDriver driver){
 
-        driver.get(quiz.getQuizEditPageUrl() + "#questions_tab");
+        //driver.get(quiz.getQuizEditPageUrl() + "#questions_tab");
+        navToQuizEditPage(driver, course, quiz);
+
 
         //Now we're on the edit page for the quiz, so we have to click the questions tab.
         click(driver,By.xpath("//a[contains(@href, '#questions_tab')]"), d->d.get(quiz.getQuizEditPageUrl()));
@@ -93,9 +96,10 @@ public class QuizQuestionOperations {
 
     public void create(WebDriver driver) {
 
-        //Canvas creates new tinyMCE editors over and over if you keep playing around with quiz questions without changeing the app state.
+        //Canvas creates new tinyMCE editors over and over if you keep playing around with quiz questions without changing the app state.
 
-        driver.get(quiz.getQuizEditPageUrl() + "#question_tab");
+        //driver.get(quiz.getQuizEditPageUrl() + "#question_tab");
+        navToQuizEditPage(driver, course, quiz);
 
         //Now we're on the edit page for the quiz, so we have to click the questions tab.
         click(driver, By.xpath("//a[contains(@href, '#questions_tab')]"), d->d.get(quiz.getQuizEditPageUrl()));

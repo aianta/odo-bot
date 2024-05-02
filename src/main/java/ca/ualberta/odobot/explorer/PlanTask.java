@@ -8,6 +8,7 @@ import ca.ualberta.odobot.explorer.model.Operation;
 import ca.ualberta.odobot.explorer.model.ToDo;
 import io.vertx.core.Promise;
 import io.vertx.core.json.JsonObject;
+import org.apache.regexp.RE;
 import org.apache.zookeeper.Op;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +18,7 @@ import java.util.stream.Collectors;
 public class PlanTask implements Runnable {
 
     private static final Logger log = LoggerFactory.getLogger(PlanTask.class);
+    private static final int RESOURCE_LIMIT = 5;
 
     JsonObject config;
 
@@ -71,7 +73,7 @@ public class PlanTask implements Runnable {
         //All subsequent operations depend on this operation
 
         //Create module operations
-        resources.modules().forEach(module->{
+        resources.modules().stream().limit(RESOURCE_LIMIT).forEach(module->{
 
             ModuleOperations moduleOperations = new ModuleOperations(resources.getCourse(), module);
 
@@ -102,7 +104,7 @@ public class PlanTask implements Runnable {
         });
 
         //Create Assignment operations
-        resources.assignments().forEach(assignment->{
+        resources.assignments().stream().limit(RESOURCE_LIMIT).forEach(assignment->{
 
             AssignmentOperations assignmentOperations = new AssignmentOperations(resources.getCourse(), assignment);
 
@@ -131,7 +133,7 @@ public class PlanTask implements Runnable {
         });
 
         //Create quiz operations
-        resources.quizzes().forEach(quiz->{
+        resources.quizzes().stream().limit(RESOURCE_LIMIT).forEach(quiz->{
 
             QuizOperations quizOperations = new QuizOperations(resources.getCourse(),quiz);
 
@@ -158,7 +160,7 @@ public class PlanTask implements Runnable {
 
 
             //Create the operations for the questions of this quiz as well
-            resources.getQuizQuestions(quiz).forEach(
+            resources.getQuizQuestions(quiz).stream().limit(RESOURCE_LIMIT).forEach(
                     question -> {
 
                         QuizQuestionOperations quizQuestionOperations = new QuizQuestionOperations(resources.getCourse(), quiz, question);
@@ -197,7 +199,7 @@ public class PlanTask implements Runnable {
         });
 
         //Create page operations
-        resources.pages().forEach(page->{
+        resources.pages().stream().limit(RESOURCE_LIMIT).forEach(page->{
 
             PageOperations pageOperations = new PageOperations(resources.getCourse(), page);
 

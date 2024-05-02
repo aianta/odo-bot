@@ -2,14 +2,15 @@ package ca.ualberta.odobot.explorer.canvas.operations;
 
 import ca.ualberta.odobot.explorer.canvas.resources.Assignment;
 import ca.ualberta.odobot.explorer.canvas.resources.Course;
-import ca.ualberta.odobot.explorer.model.MultiPath;
 import org.openqa.selenium.*;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static ca.ualberta.odobot.explorer.WebDriverUtils.*;
-
+import static ca.ualberta.odobot.explorer.canvas.operations.CourseOperations.navToCourseViaDashboardCard;
+import static ca.ualberta.odobot.explorer.canvas.operations.Utils.byDeleteElement;
+import static ca.ualberta.odobot.explorer.canvas.operations.Utils.byEditElement;
 
 
 public class AssignmentOperations {
@@ -28,11 +29,11 @@ public class AssignmentOperations {
     public void delete(WebDriver driver){
 
         //Navigate to the assignment page
-        driver.get(assignment.getAssignmentPageUrl());
+        navToAssignmentPage(driver, course);
 
 
         //Click the edit button
-        click(driver, By.linkText("Edit"));
+        click(driver, byEditElement);
 
         explicitlyWait(driver, 1);
 
@@ -40,7 +41,7 @@ public class AssignmentOperations {
         click(driver, By.className("icon-more"));
 
         //Click the delete option
-        click(driver, By.linkText("Delete"));
+        click(driver, byDeleteElement);
 
         //At this point, an alert should come up asking us to confirm if we'd like to delete the assignment.
         //Let's switch to that alert and accept it.
@@ -53,10 +54,10 @@ public class AssignmentOperations {
     public void edit (WebDriver driver){
 
         //Navigate to the assignment page
-        driver.get(assignment.getAssignmentPageUrl());
+        navToAssignmentPage(driver, course);
 
         //Click the edit button
-        click(driver, By.linkText("Edit"));
+        click(driver, byEditElement);
 
         explicitlyWait(driver, 3);
 
@@ -72,10 +73,11 @@ public class AssignmentOperations {
     public void create(WebDriver driver) {
 
         //Navigate to the course assignments page
-        driver.get(course.getCoursePageUrl() + "/assignments");
+        navToAssignmentPage(driver, course);
+
 
         //Click the new Assignment button
-        click(driver,By.xpath("//a[@href='"+course.getCoursePageUrl()+"/assignments/new']") );
+        click(driver, By.cssSelector("a[title='Add Assignment']") );
 
         //Enter the assignment name
         WebElement assignmentNameField = findElement(driver, By.id("assignment_name"));
@@ -105,12 +107,25 @@ public class AssignmentOperations {
 
     }
 
-    private void navOption1(WebDriver driver){
-        WebElement coursesSideBarLink = driver.findElement(By.id("global_nav_courses_link"));
-        coursesSideBarLink.click();
+    private void navToAssignmentPage(WebDriver driver, Course course){
 
-        WebElement coursesLink = driver.findElement(By.linkText(course.getName()));
-        coursesLink.click();
+        //First navigate to the course page.
+        navToCourseViaDashboardCard(driver, course);
+
+
+        WebElement assignmentsLink = findElement(driver, By.linkText("Assignments"));
+        click(driver, assignmentsLink);
     }
+
+    private void navToCourseViaSidebar(WebDriver driver){
+
+        WebElement coursesSideBarLink = findElement(driver, By.id("global_nav_courses_link"));
+        click(driver, coursesSideBarLink);
+
+
+        WebElement coursesLink = findElement(driver, By.linkText(course.getName()));
+        click(driver, coursesLink);
+    }
+
 
 }

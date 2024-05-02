@@ -9,6 +9,9 @@ import org.openqa.selenium.WebElement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import static ca.ualberta.odobot.explorer.WebDriverUtils.*;
+import static ca.ualberta.odobot.explorer.canvas.operations.CourseOperations.navToCourseViaDashboardCard;
+import static ca.ualberta.odobot.explorer.canvas.operations.Utils.byDeleteElement;
+
 public class PageOperations{
 
     private static final Logger log = LoggerFactory.getLogger(PageOperations.class);
@@ -26,8 +29,9 @@ public class PageOperations{
     public void create(WebDriver driver){
         //Navigate to the pages screen
         //navigateToPagesSection.getPath().accept(driver);
-        driver.get(course.getCoursePageUrl() + "/pages");
 
+        //driver.get(course.getCoursePageUrl() + "/pages");
+        navToPages(driver, course);
 
         //Click the new page button
         click(driver,By.xpath("//div/div/div/div/div/a"));
@@ -51,7 +55,12 @@ public class PageOperations{
 
     public void edit(WebDriver driver){
         //Navigate to the page of interest
-        driver.get(page.getPageUrl());
+
+        navToPages(driver, course);
+
+        click(driver, By.cssSelector("a[href*='%s']".formatted(page.getPageUrl())));
+//
+//        driver.get(page.getPageUrl());
 
         //Click the edit button
         click(driver,By.xpath("//span[contains(.,' Edit')]"));
@@ -74,21 +83,30 @@ public class PageOperations{
 
     public void delete(WebDriver driver){
 
+        //Navigate to the pages section of the course
+        navToPages(driver, course);
         //Navigate to the page of interest
-        driver.get(page.getPageUrl());
+        click(driver, By.cssSelector("a[href='%s']".formatted(page.getPageUrl())));
 
 
         //Click the drop-down menu beside the edit button
         click(driver, By.xpath("//div[@id='wiki_page_show']/div/div/div/div[2]/div[3]/div/a"));
 
         //click delete button
-        click(driver, By.linkText("Delete"));
+        click(driver, byDeleteElement);
 
         //Click confirm delete button
         click(driver, By.cssSelector(".btn-danger > .ui-button-text"));
 
     }
 
+    private void navToPages(WebDriver driver, Course course){
+        navToCourseViaDashboardCard(driver, course);
+
+        WebElement pagesLink = findElement(driver, By.linkText("Pages"));
+        click(driver, pagesLink);
+
+    }
 
 
 }

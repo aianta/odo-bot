@@ -16,6 +16,9 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.explorer.WebDriverUtils.*;
+import static ca.ualberta.odobot.explorer.canvas.operations.CourseOperations.navToCourseViaDashboardCard;
+import static ca.ualberta.odobot.explorer.canvas.operations.Utils.byDeleteModule;
+import static ca.ualberta.odobot.explorer.canvas.operations.Utils.byEditModule;
 
 public class ModuleOperations {
     private static final Logger log = LoggerFactory.getLogger(ModuleOperations.class);
@@ -31,7 +34,7 @@ public class ModuleOperations {
     public void delete(WebDriver driver){
         //Go to the course page
         do{
-            driver.get(course.getCoursePageUrl());
+            navToCourseViaDashboardCard(driver, course);
             explicitlyWait(driver, 2);
         }
         while(!driver.getCurrentUrl().equals(course.getCoursePageUrl()));
@@ -40,7 +43,7 @@ public class ModuleOperations {
         click(driver, getManageElement(driver));
 
         //Click the delete option
-        click(driver, By.linkText("Delete"));
+        click(driver, byDeleteModule(course, module));
 
         //At this stage an alert should come up to confirm the deletion
         driver.switchTo().alert().accept();
@@ -51,7 +54,7 @@ public class ModuleOperations {
 
         //Go to the course page
         do {
-            driver.get(course.getCoursePageUrl());
+            navToCourseViaDashboardCard(driver, course);
             explicitlyWait(driver, 2);
         }while (!driver.getCurrentUrl().equals(course.getCoursePageUrl()));
 
@@ -59,7 +62,7 @@ public class ModuleOperations {
         click(driver,getManageElement(driver));
 
         //Click the edit option from the drop-down menu
-        click(driver,By.linkText("Edit"));
+        click(driver,byEditModule(course, module));
 
         //Edit the module name
         WebElement moduleNameField = findElement(driver, By.id("context_module_name"));
@@ -77,7 +80,7 @@ public class ModuleOperations {
     public void create(WebDriver driver) {
 
         //Go to the course page
-        driver.get(course.getCoursePageUrl());
+        navToCourseViaDashboardCard(driver, course);
 
         //Get the moduleId set before creating the new module
         Set<Integer> oldModuleIds = getModuleIdsOnPage(driver);

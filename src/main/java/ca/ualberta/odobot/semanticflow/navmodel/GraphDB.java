@@ -31,7 +31,7 @@ public class GraphDB {
         managementService = new DatabaseManagementServiceBuilder(this.databaseDirectory)
                 //Set up bolt connector to allow use of Neo4J Browser.
                 .setConfig(BoltConnector.enabled, true)
-                .setConfig(GraphDatabaseSettings.data_directory,  Path.of("data_fresh_1"))
+                .setConfig(GraphDatabaseSettings.data_directory,  Path.of("data"))
                 .setConfig(GraphDatabaseSettings.auth_enabled, false)
                 .setConfig(BoltConnector.listen_address, new SocketAddress("localhost", 7687))
                 .build();

@@ -10,7 +10,12 @@ import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.net.MalformedURLException;
+import java.net.URL;
+
 import static ca.ualberta.odobot.explorer.WebDriverUtils.*;
+import static ca.ualberta.odobot.explorer.canvas.operations.Utils.byDeleteCourse;
 
 public class CourseOperations {
 
@@ -24,13 +29,13 @@ public class CourseOperations {
 
     public void delete(WebDriver driver){
         //Go to the course page
-        driver.get(course.getCoursePageUrl());
+        navToCourseViaDashboardCard(driver, course);
 
         //Go to the settings section
         click(driver, By.linkText("Settings"), d->d.get(course.getCoursePageUrl()));
 
         //Click the delete button
-        click(driver, By.linkText("Delete this Course"));
+        click(driver, byDeleteCourse(course));
 
         //Confirm deletion by clicking delete course button
         click(driver, By.xpath("//button[contains(.,'Delete Course')]"));
@@ -70,5 +75,22 @@ public class CourseOperations {
         findElement(driver, By.xpath("//div[@id='course_home_content']/div[3]/div/div/button[2]"));
 
         course.setCoursePageUrl(driver.getCurrentUrl());
+    }
+
+    public static void navToCourseViaDashboardCard(WebDriver driver, Course course){
+
+        try{
+            URL courseUrl = new URL(course.getCoursePageUrl());
+            By cssSelector = By.cssSelector("a.ic-DashboardCard__link[href*='%s']".formatted(courseUrl.getPath()));
+
+
+            WebElement courseLink = findElement(driver, cssSelector);
+            click(driver, courseLink);
+
+        }catch (MalformedURLException e){
+            log.error(e.getMessage(), e);
+        }
+
+
     }
 }
