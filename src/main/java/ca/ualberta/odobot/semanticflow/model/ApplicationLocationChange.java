@@ -9,6 +9,14 @@ public class ApplicationLocationChange extends AbstractArtifact implements Timel
     private URL from;
     private URL to;
 
+    public String getFromPath(){
+        return from.getPath().replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*");
+    }
+
+    public String getToPath(){
+        return to.getPath().replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*");
+    }
+
     public URL getFrom() {
         return from;
     }
@@ -37,7 +45,10 @@ public class ApplicationLocationChange extends AbstractArtifact implements Timel
 
     @Override
     public JsonObject toJson() {
-        return new JsonObject();
+        return new JsonObject()
+                .put("from", from.toString())
+                .put("to", to.toString())
+                .put("timestamp", getTimestamp().toString());
     }
 
     @Override

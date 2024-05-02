@@ -83,6 +83,7 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
         int clickEventCount = 0;
         int dataEntryCount = 0;
         int networkEventCount = 0;
+        int applicationLocationChangeCount = 0;
 
         log.info("Building nav model for timeline: {} [{}]: {}", timeline.getId(), timeline.size(), timeline.toString());
 
@@ -104,6 +105,11 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
             if(entity instanceof NetworkEvent){
                 networkEventCount++;
                 neo4j.processNetworkEvent(timeline, (NetworkEvent) entity);
+            }
+
+            if(entity instanceof ApplicationLocationChange){
+                applicationLocationChangeCount++;
+                neo4j.processApplicationLocationChange(timeline, (ApplicationLocationChange) entity);
             }
 
         }
@@ -166,6 +172,7 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
         log.info("Processed {} data entries for nav model", dataEntryCount);
         log.info("Processed {} network events for nav model", networkEventCount);
         log.info("Processed {} effects for nav model", effectCount);
+        log.info("Processed {} application location changes for nav model", applicationLocationChangeCount);
 
 
         return Future.succeededFuture();

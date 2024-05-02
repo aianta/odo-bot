@@ -80,6 +80,46 @@ public class Neo4JUtils {
     }
 
 
+    public void processApplicationLocationChange(Timeline timeline, ApplicationLocationChange applicationLocationChange){
+        var index = timeline.indexOf(applicationLocationChange);
+        var entityTimelineId = timeline.getId().toString()+"#"+index;
+
+        log.info("Processing application location change {}", entityTimelineId);
+
+        ApplicationLocationChangeNode applicationLocationChangeNode = getApplicationLocationChangeNode(applicationLocationChange.getFromPath(), applicationLocationChange.getToPath());
+
+        if(applicationLocationChangeNode == null){
+            //If no application location change node could be found, let's create a new one
+            ApplicationLocationChangeNode newApplicationLocationChangeNode = new ApplicationLocationChangeNode();
+            newApplicationLocationChangeNode.setId(UUID.randomUUID());
+            newApplicationLocationChangeNode.setTo(applicationLocationChange.getToPath());
+            newApplicationLocationChangeNode.setFrom(applicationLocationChange.getFromPath());
+            newApplicationLocationChangeNode.setInstances(Set.of(entityTimelineId));
+            applicationLocationChangeNode = newApplicationLocationChangeNode;
+        }else{
+            //If a application location change node was found, update its list of instances
+            applicationLocationChangeNode.getInstances().add(entityTimelineId);
+        }
+
+        final ApplicationLocationChangeNode finalApplicationLocationChangeNode = applicationLocationChangeNode;
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+            HashMap<String,Object> props = new HashMap<>();
+            props.put("id", finalApplicationLocationChangeNode.getId().toString());
+            props.put("from", finalApplicationLocationChangeNode.getFrom());
+            props.put("to", finalApplicationLocationChangeNode.getTo());
+            props.put("instances", finalApplicationLocationChangeNode.getInstances());
+
+            session.executeWrite(tx->{
+                var stmt = "MERGE (n:ApplicationLocationChangeNode {from:$from, to:$to}) ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
+                var query = new Query(stmt, parameters("from", finalApplicationLocationChangeNode.getFrom(), "to", finalApplicationLocationChangeNode.getTo(), "props", props));
+                tx.run(query);
+                return 0;
+            });
+
+        }
+
+    }
+
     public void processDataEntry(Timeline timeline, DataEntry dataEntry){
         var index = timeline.indexOf(dataEntry);
         var entityTimelineId = timeline.getId().toString()+"#"+index;
@@ -268,6 +308,11 @@ public class Neo4JUtils {
             return getEffectNodeById(effectMap.get(effect).toString());
         }
 
+        if(target instanceof ApplicationLocationChange){
+            ApplicationLocationChange applicationLocationChange = (ApplicationLocationChange) target;
+            return getApplicationLocationChangeNode(applicationLocationChange.getFromPath(), applicationLocationChange.getToPath());
+        }
+
         log.warn("Unknown entity type");
         return null;
     }
@@ -304,6 +349,10 @@ public class Neo4JUtils {
             stmt = "MATCH (a:APINode {id:$aId})-[:NEXT]->(e:EffectNode)";
         }
 
+        if(predecessor instanceof ApplicationLocationChangeNode){
+            stmt = "MATCH (a:ApplicationLocationChangeNode {id:$aId})-[:NEXT]->(e:EffectNode)";
+        }
+
         if(successor instanceof ClickNode){
             stmt += "-[:NEXT]->(b:ClickNode {id:$bId}) RETURN e;";
         }
@@ -314,6 +363,10 @@ public class Neo4JUtils {
 
         if(successor instanceof APINode){
             stmt += "-[:NEXT]->(b:APINode {id:$bId}) RETURN e;";
+        }
+
+        if(successor instanceof ApplicationLocationChangeNode){
+            stmt +="-[:NEXT]->(b:ApplicationLocationChangeNode {id:$bId}) RETURN e;";
         }
 
         Query query = new Query(stmt, parameters("aId", predecessor.getId().toString(), "bId", successor.getId().toString()));
@@ -338,6 +391,10 @@ public class Neo4JUtils {
             stmt = "MATCH (e:EffectNode)-[:NEXT]->(n:APINode {id:$id}) RETURN e;";
         }
 
+        if(successor instanceof ApplicationLocationChangeNode){
+            stmt = "MATCH (e:EffectNode)-[:NEXT]->(n:ApplicationLocationChangeNode {id:$id}) return e;";
+        }
+
         Query query = new Query(stmt, parameters("id", successor.getId().toString()));
 
         EffectNode effectNode = readNode(query, EffectNode.class);
@@ -358,6 +415,10 @@ public class Neo4JUtils {
 
         if(predecessor instanceof APINode){
             stmt = "MATCH (n:APINode {id:$id})-[:NEXT]->(e:EffectNode) RETURN e;";
+        }
+
+        if(predecessor instanceof ApplicationLocationChangeNode){
+            stmt = "MATCH (n:ApplicationLocationChangeNode {id:$id})-[:NEXT]->(e:EffectNode) RETURN e";
         }
 
         Query query = new Query(stmt, parameters("id", predecessor.getId().toString()));
@@ -386,6 +447,13 @@ public class Neo4JUtils {
         var query = new Query(stmt, parameters("path", path, "method", method));
 
         return readNode(query, APINode.class);
+    }
+
+    private ApplicationLocationChangeNode getApplicationLocationChangeNode(String from, String to){
+        var stmt = "MATCH (n:ApplicationLocationChangeNode {from:$from, to:$to}) return n";
+        var query = new Query(stmt, parameters("from", from, "to", to));
+
+        return readNode(query, ApplicationLocationChangeNode.class);
     }
 
     private DataEntryNode getDataEntryNode(String xpath){
