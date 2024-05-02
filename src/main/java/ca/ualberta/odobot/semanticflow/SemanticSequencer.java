@@ -206,16 +206,16 @@ public class SemanticSequencer {
                                     throw new RuntimeException("Invalid Effect BaseURI set size!");
                                 }
 
-                                String previousBaseURI = effect.getBaseURIs().iterator().next();
-                                String currentBaseURI = domEffect.getBaseURI();
+                                String previousBasePath = new URL(effect.getBaseURIs().iterator().next()).getPath().replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*");;
+                                String currentBasePath = new URL(domEffect.getBaseURI()).getPath().replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*");;
 
-                                if(previousBaseURI.equals(currentBaseURI)){
+                                if(previousBasePath.equals(currentBasePath)){
                                     effect.add(domEffect);
                                 }else{
 
                                     ApplicationLocationChange applicationLocationChange = new ApplicationLocationChange();
-                                    applicationLocationChange.setFrom(new URL(previousBaseURI));
-                                    applicationLocationChange.setTo(new URL(currentBaseURI));
+                                    applicationLocationChange.setFrom(new URL(effect.getBaseURIs().iterator().next()));
+                                    applicationLocationChange.setTo(new URL(domEffect.getBaseURI()));
 
                                     //Set the location change timestamp as the average between the current and last domEffect timestamps.
                                     long lastTimestamp = effect.get(effect.size()-1).getTimestamp().toInstant().toEpochMilli();
@@ -238,6 +238,24 @@ public class SemanticSequencer {
                             }
 
                             if(line.last() == null || !(line.last() instanceof Effect)){
+
+                                String currentBasePath = new URL(domEffect.getBaseURI()).getPath().replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*");;
+
+                                if(line.last() instanceof NetworkEvent &&
+                                        !new URL(((NetworkEvent)line.last()).getRequestHeader("Referer")).getPath().replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*").equals(currentBasePath)){
+                                    ApplicationLocationChange applicationLocationChange = new ApplicationLocationChange();
+                                    applicationLocationChange.setFrom(new URL(((NetworkEvent) line.last()).getRequestHeader("Referer")));
+                                    applicationLocationChange.setTo(new URL(domEffect.getBaseURI()));
+
+                                    long lastTimestamp = ((NetworkEvent)line.last()).timestamp();
+                                    long thisTimestamp = domEffect.getTimestamp().toInstant().toEpochMilli();
+
+                                    long applicationLocationChangeTimestamp  = (lastTimestamp + thisTimestamp)/2;
+                                    applicationLocationChange.setTimestamp(ZonedDateTime.ofInstant(Instant.ofEpochMilli(applicationLocationChangeTimestamp), domEffect.getTimestamp().getZone()));
+
+                                    line.add(applicationLocationChange);
+                                }
+
                                 Effect effect = new Effect();
                                 effect.add(domEffect);
                                 line.add(effect);

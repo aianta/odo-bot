@@ -4,6 +4,7 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import scala.concurrent.impl.FutureConvertersImpl;
 
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -50,6 +51,12 @@ public class NetworkEvent extends AbstractArtifact implements TimelineEntity, Fi
         this.dbOps = dbOps;
     }
 
+    public String getRequestHeader(String key){
+        if(requestHeaders != null){
+            return requestHeaders.getString(key);
+        }
+        return null;
+    }
     public ZonedDateTime getResponseHeaderDate(){
         if (responseHeaders == null){
             log.warn("Could not get response header date because responseHeaders are null");
@@ -260,5 +267,14 @@ public class NetworkEvent extends AbstractArtifact implements TimelineEntity, Fi
     @Override
     public String getActivityLabel() {
         return getMethod() + " " + getPath();
+    }
+
+    public String getNormalizedDocumentPath(){
+        try{
+            return new URL(getDocumentUrl()).getPath().replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*");
+        }catch (MalformedURLException e) {
+            log.error(e.getMessage(), e);
+        }
+        return null;
     }
 }
