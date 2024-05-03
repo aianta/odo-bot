@@ -155,12 +155,12 @@ public class ExploreTask implements Runnable{
     public void run() {
         int completedCases = 0;
 
-        //START DEBUGGING
-        //Filter out various other tasks for debugging purposes.
-        primaryToDo = primaryToDo.stream()
-                .filter(operation -> operation.getResource().equals(Course.class) || operation.getResource().equals(Module.class) ).collect(ToDo::new, ToDo::add, ToDo::addAll);
-
-        //END DEBUGGING
+//        //START DEBUGGING
+//        //Filter out various other tasks for debugging purposes.
+//        primaryToDo = primaryToDo.stream()
+//                .filter(operation -> operation.getResource().equals(Course.class) || operation.getResource().equals(Module.class) ).collect(ToDo::new, ToDo::add, ToDo::addAll);
+//
+//        //END DEBUGGING
 
 
         /* Create an Operation failures object to store operations that throw execptions during execution.
