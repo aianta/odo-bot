@@ -2,10 +2,29 @@ package ca.ualberta.odobot.semanticflow;
 
 import io.vertx.core.json.JsonObject;
 import org.jsoup.nodes.Element;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.function.Predicate;
 
 public class Utils {
+
+    private static final Logger log = LoggerFactory.getLogger(Utils.class);
+
+    public static String getNormalizedPath(String url){
+        try{
+            return getNormalizedPath(new URL(url));
+        }catch (MalformedURLException e){
+            log.error(e.getMessage(), e);
+        }
+        return null;
+    }
+
+    public static String getNormalizedPath(URL url){
+        return url.getPath().replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*");
+    }
 
     public static JsonObject elementAttributesToJson(Element e){
         return e.attributes().asList().stream().collect(

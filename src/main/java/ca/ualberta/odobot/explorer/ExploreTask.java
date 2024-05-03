@@ -155,12 +155,12 @@ public class ExploreTask implements Runnable{
     public void run() {
         int completedCases = 0;
 
-//        //START DEBUGGING
-//        //Filter out various other tasks for debugging purposes.
-//        primaryToDo = primaryToDo.stream()
-//                .filter(operation -> operation.getResource().equals(Course.class) || operation.getResource().equals(Page.class) ).collect(ToDo::new, ToDo::add, ToDo::addAll);
-//
-//        //END DEBUGGING
+        //START DEBUGGING
+        //Filter out various other tasks for debugging purposes.
+        primaryToDo = primaryToDo.stream()
+                .filter(operation -> operation.getResource().equals(Course.class) || operation.getResource().equals(Module.class) ).collect(ToDo::new, ToDo::add, ToDo::addAll);
+
+        //END DEBUGGING
 
 
         /* Create an Operation failures object to store operations that throw execptions during execution.
@@ -232,37 +232,7 @@ public class ExploreTask implements Runnable{
                             primaryToDo = pruneDependents(op, primaryToDo);
                         }
 
-                        //Restart everything if this happens. I feel like this might help.
                         stopRecording();
-
-//                        Instant end = Instant.now();
-//                        log.info("took {}ms", end.toEpochMilli()-start.toEpochMilli());
-//
-//                        log.info("primaryToDo: {}", primaryToDo.size());
-//
-//                        driver.quit();
-//
-//                        options = new FirefoxOptions();
-//
-//                        options.setProfile(buildProfile());
-//
-//                        driver = new FirefoxDriver(options);
-//
-//                        driver.installExtension(Path.of(config.getString(ExploreRequestFields.ODOSIGHT_PATH.field)), true);
-//                        //Setup OdoSight
-//                        setupOdoSight();
-//
-//                        //Start the OdoSight recording
-//                        startRecording();
-//
-//                        start = Instant.now();
-//
-//                        //Each session starts by logging in.
-//                        loginOperation.execute(driver);
-
-
-
-
 
 
                     }finally {

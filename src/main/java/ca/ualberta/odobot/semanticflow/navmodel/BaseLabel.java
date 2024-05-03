@@ -10,6 +10,7 @@ public enum BaseLabel{
     CLICK_NODE("ClickNode"),
     DATA_ENTRY_NODE("DataEntryNode"),
     EFFECT_NODE("EffectNode"),
+    APPLICATION_LOCATION_CHANGE_NODE("ApplicationLocationChangeNode"),
 
     API_NODE("APINode");
 

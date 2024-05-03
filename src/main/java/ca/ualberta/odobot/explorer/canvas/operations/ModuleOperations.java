@@ -33,14 +33,10 @@ public class ModuleOperations {
 
     public void delete(WebDriver driver){
         //Go to the course page
-        do{
-            navToCourseViaDashboardCard(driver, course);
-            explicitlyWait(driver, 2);
-        }
-        while(!driver.getCurrentUrl().equals(course.getCoursePageUrl()));
+        navToCourseViaDashboardCard(driver, course);
 
         //Click the dropdown menu for our module
-        click(driver, getManageElement(driver));
+        click(driver, By.cssSelector("#context_module_%s button.Button--icon-action.al-trigger".formatted(module.getId())));
 
         //Click the delete option
         click(driver, byDeleteModule(course, module));
@@ -53,13 +49,11 @@ public class ModuleOperations {
     public void edit(WebDriver driver){
 
         //Go to the course page
-        do {
-            navToCourseViaDashboardCard(driver, course);
-            explicitlyWait(driver, 2);
-        }while (!driver.getCurrentUrl().equals(course.getCoursePageUrl()));
+        navToCourseViaDashboardCard(driver, course);
+
 
         //Click the dropdown menu for our module
-        click(driver,getManageElement(driver));
+        click(driver,By.cssSelector("#context_module_%s button.Button--icon-action.al-trigger".formatted(module.getId())));
 
         //Click the edit option from the drop-down menu
         click(driver,byEditModule(course, module));
@@ -81,6 +75,8 @@ public class ModuleOperations {
 
         //Go to the course page
         navToCourseViaDashboardCard(driver, course);
+
+        hardWait(3000);
 
         //Get the moduleId set before creating the new module
         Set<Integer> oldModuleIds = getModuleIdsOnPage(driver);
@@ -127,10 +123,10 @@ public class ModuleOperations {
                         return []
                     }
                     
-                    //Setup a regex for identifying existing question divs.
+                    //Setup a regex for identifying existing module divs.
                     let regex = new RegExp("context_module_[0-9]+")
                     
-                    //Setup an array to store the question ids
+                    //Setup an array to store the module ids
                     let ids = []
                     
                     //Go through the child elements of the modules container

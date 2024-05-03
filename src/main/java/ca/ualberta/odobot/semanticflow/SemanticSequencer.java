@@ -26,6 +26,8 @@ import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
+import static ca.ualberta.odobot.semanticflow.Utils.getNormalizedPath;
+
 
 public class SemanticSequencer {
     private static final Logger log = LoggerFactory.getLogger(SemanticSequencer.class);
@@ -212,7 +214,7 @@ public class SemanticSequencer {
                                 if(previousBasePath.equals(currentBasePath)){
                                     effect.add(domEffect);
                                 }else{
-
+                                    //Handle URL change in the middle of a series of DOM Effects
                                     ApplicationLocationChange applicationLocationChange = new ApplicationLocationChange();
                                     applicationLocationChange.setFrom(new URL(effect.getBaseURIs().iterator().next()));
                                     applicationLocationChange.setTo(new URL(domEffect.getBaseURI()));
@@ -239,22 +241,45 @@ public class SemanticSequencer {
 
                             if(line.last() == null || !(line.last() instanceof Effect)){
 
-                                String currentBasePath = new URL(domEffect.getBaseURI()).getPath().replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*");;
+                                String currentBasePath = getNormalizedPath(domEffect.getBaseURI());
+                                String lastBasePath = null;
+                                String lastURL = null;
+                                long lastTimestamp = line.last().timestamp();
 
-                                if(line.last() instanceof NetworkEvent &&
-                                        !new URL(((NetworkEvent)line.last()).getRequestHeader("Referer")).getPath().replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*").equals(currentBasePath)){
+                                if(line.last() instanceof NetworkEvent){
+                                    NetworkEvent lastEntity = (NetworkEvent) line.last();
+                                    lastURL = lastEntity.getRequestHeader("Referer");
+                                    lastBasePath = getNormalizedPath(lastURL);
+
+                                }
+
+                                if(line.last() instanceof ClickEvent){
+                                    ClickEvent lastEntity = (ClickEvent) line.last();
+                                    lastURL = lastEntity.getBaseURI();
+                                    lastBasePath = getNormalizedPath(lastURL);
+                                }
+
+                                //I don't think this one should ever be possible...
+                                if(line.last() instanceof DataEntry){
+                                    DataEntry lastEntity = (DataEntry)line.last();
+                                    lastURL = lastEntity.lastChange().getBaseURI();
+                                    lastBasePath = getNormalizedPath(lastURL);
+                                }
+
+                                if(lastBasePath != null && !currentBasePath.equals(lastBasePath)){
+
+                                    //Handle URL change preceding this DOM Effect
                                     ApplicationLocationChange applicationLocationChange = new ApplicationLocationChange();
-                                    applicationLocationChange.setFrom(new URL(((NetworkEvent) line.last()).getRequestHeader("Referer")));
-                                    applicationLocationChange.setTo(new URL(domEffect.getBaseURI()));
+                                    applicationLocationChange.setFrom(lastURL);
+                                    applicationLocationChange.setTo(domEffect.getBaseURI());
 
-                                    long lastTimestamp = ((NetworkEvent)line.last()).timestamp();
                                     long thisTimestamp = domEffect.getTimestamp().toInstant().toEpochMilli();
-
-                                    long applicationLocationChangeTimestamp  = (lastTimestamp + thisTimestamp)/2;
+                                    long applicationLocationChangeTimestamp = (lastTimestamp + thisTimestamp)/2;
                                     applicationLocationChange.setTimestamp(ZonedDateTime.ofInstant(Instant.ofEpochMilli(applicationLocationChangeTimestamp), domEffect.getTimestamp().getZone()));
 
                                     line.add(applicationLocationChange);
                                 }
+
 
                                 Effect effect = new Effect();
                                 effect.add(domEffect);

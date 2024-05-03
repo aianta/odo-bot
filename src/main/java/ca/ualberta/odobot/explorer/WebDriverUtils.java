@@ -38,6 +38,14 @@ public class WebDriverUtils {
 
     }
 
+    public static void hardWait(long millis){
+        try{
+            Thread.sleep( millis);
+        }catch (InterruptedException e){
+            log.error(e.getMessage(), e);
+        }
+    }
+
 
     public static WebElement findElement(WebDriver driver, By by){
         try{

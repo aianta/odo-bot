@@ -29,7 +29,7 @@ public class AssignmentOperations {
     public void delete(WebDriver driver){
 
         //Navigate to the assignment page
-        navToAssignmentPage(driver, course);
+        navToAssignmentPage(driver, course, assignment);
 
 
         //Click the edit button
@@ -54,7 +54,7 @@ public class AssignmentOperations {
     public void edit (WebDriver driver){
 
         //Navigate to the assignment page
-        navToAssignmentPage(driver, course);
+        navToAssignmentPage(driver, course, assignment);
 
         //Click the edit button
         click(driver, byEditElement);
@@ -73,8 +73,7 @@ public class AssignmentOperations {
     public void create(WebDriver driver) {
 
         //Navigate to the course assignments page
-        navToAssignmentPage(driver, course);
-
+        navToAssignmentsPage(driver, course);
 
         //Click the new Assignment button
         click(driver, By.cssSelector("a[title='Add Assignment']") );
@@ -107,7 +106,13 @@ public class AssignmentOperations {
 
     }
 
-    private void navToAssignmentPage(WebDriver driver, Course course){
+    private void navToAssignmentPage(WebDriver driver, Course course, Assignment assignment){
+        navToAssignmentsPage(driver,course);
+
+        click(driver, By.cssSelector("a[href='%s']".formatted(assignment.getAssignmentPageUrl())));
+    }
+
+    private void navToAssignmentsPage(WebDriver driver, Course course){
 
         //First navigate to the course page.
         navToCourseViaDashboardCard(driver, course);
@@ -115,6 +120,7 @@ public class AssignmentOperations {
 
         WebElement assignmentsLink = findElement(driver, By.linkText("Assignments"));
         click(driver, assignmentsLink);
+
     }
 
     private void navToCourseViaSidebar(WebDriver driver){

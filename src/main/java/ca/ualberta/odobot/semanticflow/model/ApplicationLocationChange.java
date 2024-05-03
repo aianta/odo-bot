@@ -1,10 +1,15 @@
 package ca.ualberta.odobot.semanticflow.model;
 
 import io.vertx.core.json.JsonObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.net.MalformedURLException;
 import java.net.URL;
 
 public class ApplicationLocationChange extends AbstractArtifact implements TimelineEntity{
+
+    private static final Logger log = LoggerFactory.getLogger(ApplicationLocationChange.class);
 
     private URL from;
     private URL to;
@@ -21,12 +26,28 @@ public class ApplicationLocationChange extends AbstractArtifact implements Timel
         return from;
     }
 
+    public void setFrom(String fromUrl){
+        try{
+            setFrom(new URL(fromUrl));
+        }catch (MalformedURLException e){
+            log.error(e.getMessage(), e);
+        }
+    }
+
     public void setFrom(URL from) {
         this.from = from;
     }
 
     public URL getTo() {
         return to;
+    }
+
+    public void setTo(String toUrl){
+        try{
+            setTo(new URL(toUrl));
+        }catch (MalformedURLException e){
+            log.error(e.getMessage(), e);
+        }
     }
 
     public void setTo(URL to) {
