@@ -115,6 +115,7 @@ public class OdoSightSupport extends AbstractVerticle {
                 .doAfterTerminate(()->log.info("Bulk scrape pipeline started!"))
                 .subscribe();
 
+        rc.response().setStatusCode(200).end();
 
     }
 

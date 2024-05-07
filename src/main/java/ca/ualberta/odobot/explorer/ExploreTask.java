@@ -175,6 +175,7 @@ public class ExploreTask implements Runnable{
                 try{
 
                 FirefoxOptions options = new FirefoxOptions();
+                options.addArguments("--headless");
 
                 options.setProfile(buildProfile());
 
