@@ -84,6 +84,7 @@ public class CollapsingEvaluator implements Evaluator {
             String[] splits = result.elementId.split(":");
             result.id = Long.parseLong(splits[splits.length-1]);
             result.incomingNextEdges = n.getDegree(RelationshipType.withName("NEXT"), Direction.INCOMING);
+            result.outgoingNextEdges = n.getDegree(RelationshipType.withName("NEXT"), Direction.OUTGOING);
 
             return result;
         }
@@ -92,6 +93,7 @@ public class CollapsingEvaluator implements Evaluator {
         public String elementId;
         public String label;
         public int incomingNextEdges;
+        public int outgoingNextEdges;
 
     }
 
@@ -196,9 +198,19 @@ public class CollapsingEvaluator implements Evaluator {
 
                 log.info("incoming edges {} for {}", pathNode.incomingNextEdges,  pathNode.toString());
 
+                /**
+                 * Because we terminate when we find a set of patterns that join together on the same node (the ending anchor),
+                 * we can 'detect' if nodes are ending anchors because they will have the same element ID.
+                 *
+                 * () -> (A)
+                 * () -> (A)
+                 *
+                 * A is the ending anchor for the two patterns.
+                 *
+                 */
                 if(!patternNode.label.equals(pathNode.label) || //If the labels do not match, then this is not a match.
-                        (patternNode.label.equals("APINode") && pathNode.label.equals("APINode") && !patternNode.elementId.equals(pathNode.elementId)) //If the nodes have matching APINode labels, they must be an ending anchor (that is, the same elementId), otherwise, no match.
-
+                        (patternNode.label.equals("APINode") && pathNode.label.equals("APINode") && !patternNode.elementId.equals(pathNode.elementId))  ||//If the nodes have matching APINode labels, they must be an ending anchor (that is, the same elementId), otherwise, no match.
+                        (patternNode.label.equals("ApplicationLocationChangeNode") && pathNode.label.equals("ApplicationLocationChangeNode") && !patternNode.elementId.equals(pathNode.elementId)) //Similarly if the nodes have matching ApplicationLocationChangeNode labels, they must be an ending anchor (that is, the same elementId), otherwise no match.
                 ){
                     log.info("MISMATCH FOR {}", pathNode.toString());
                     return false;
@@ -211,6 +223,12 @@ public class CollapsingEvaluator implements Evaluator {
                     return false;
                 }
 
+                //If this isn't the last element of the pattern, then the number of outgoing NEXT edges should never be more than 1.
+                //Intuition: We shouldn't be collapsing something that acts as an entry point towards more paths.
+                if(patternIterator.hasNext() && patternIterator.previousIndex() != 0 && pathNode.outgoingNextEdges > 1){
+                    log.info("MISMATCH FOR {}", pathNode.toString());
+                    return false;
+                }
             }
 
             return true;

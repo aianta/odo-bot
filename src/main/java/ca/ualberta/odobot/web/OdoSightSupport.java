@@ -111,11 +111,63 @@ public class OdoSightSupport extends AbstractVerticle {
         String collectionsRegex = makeCollectionsRegex(flightIds);
         log.info("Computed collections regex for logstash pipeline: {}", collectionsRegex);
 
+//        List<String> collectionRegexes = makeCollectionsRegex(flightIds, 100);
+//        Iterator<String> it = collectionRegexes.iterator();
+//        Future f = null;
+//        while (it.hasNext()){
+//            String currRegex = it.next();
+//            if (f == null){
+//                f = vertx.getDelegate().executeBlocking(blocking->scrapeV3(blocking, currRegex, esIndex));
+//            }else{
+//                f.compose(result->vertx.getDelegate().executeBlocking(blocking->scrapeV3(blocking, currRegex, esIndex)));
+//            }
+//
+//        }
+
+
+
+
+
+
         vertx.executeBlocking(blocking->scrapeV3(blocking.getDelegate(), collectionsRegex, esIndex))
                 .doAfterTerminate(()->log.info("Bulk scrape pipeline started!"))
                 .subscribe();
 
         rc.response().setStatusCode(200).end();
+
+    }
+
+    /**
+     * Like {@link #makeCollectionsRegex(Set), but returns a list of regexes such that each one contains no more than maxSize collections.
+     *
+     * This is necessary to avoid error 206 when invoking the mongo scrape script.
+     *
+     * @param flightIds a set of flightIds from which to create regexes
+     * @param maxSize the maximum number of collections a single regex should represent.
+     * @return
+     */
+    private List<String> makeCollectionsRegex(Set<String> flightIds, int maxSize){
+
+        List<String> result = new ArrayList<>();
+
+        Set<String> batch = new HashSet<>();
+
+        Iterator<String> it = flightIds.iterator();
+        while (it.hasNext()){
+            batch.add(it.next());
+
+            if(batch.size() == maxSize){
+                result.add(makeCollectionsRegex(batch));
+                batch.clear();
+            }
+        }
+
+        //Handle any left over flights
+        if(batch.size() > 0){
+            result.add(makeCollectionsRegex(batch));
+        }
+
+        return result;
 
     }
 
@@ -131,7 +183,6 @@ public class OdoSightSupport extends AbstractVerticle {
         }
 
         return sb.toString();
-
     }
 
     public void bulkScrapeV2(RoutingContext rc){
@@ -278,7 +329,7 @@ public class OdoSightSupport extends AbstractVerticle {
      */
     private void scrapeV3(Promise promise, String mongoCollectionRegex, String esIndex){
         try{
-            log.info("Executing mongo scrape v2 script for {}  into es-index: {}", mongoCollectionRegex, esIndex);
+            log.info("Executing mongo scrape v3 script for {}  into es-index: {}", mongoCollectionRegex, esIndex);
             ProcessBuilder pb = new ProcessBuilder("wsl", SCRAPE_SCRIPT_V3_PATH, "\""+mongoCollectionRegex +"\"", esIndex);
             pb.inheritIO();
             Process scrapeProcess = pb.start();
@@ -286,6 +337,11 @@ public class OdoSightSupport extends AbstractVerticle {
             promise.complete();
         }catch (IOException | InterruptedException e){
             log.error(e.getMessage(), e);
+
+            if(e.getMessage().contains("CreateProcess error=206")){
+                log.error("Too many flights being scraped at once try splitting your request in half.");
+            }
+
         }
     }
 

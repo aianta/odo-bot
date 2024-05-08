@@ -21,7 +21,9 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.Iterator;
 import java.util.List;
+import java.util.ListIterator;
 import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -307,13 +309,19 @@ public class SemanticSequencer {
 
                             ) {
 
-                                //Only process network requests that are missing the odo-sight-flag, or have it set to 'true'.
-                                //This flag, if it exists indicates whether a network request was triggered by the user.
-                                //The purpose of this is to filter out API calls that are automatically invoked by application scripts.
-                                if(networkEvent.getRequestHeader("odo-sight-flag") == null ||
-                                        networkEvent.getRequestHeader("odo-sight-flag").equals("true")){
+
+                                if(hasTriggeringClick(line.listIterator(line.size()-1))){
                                     line.add(networkEvent);
                                 }
+
+
+//                                //Only process network requests that are missing the odo-sight-flag, or have it set to 'true'.
+//                                //This flag, if it exists indicates whether a network request was triggered by the user.
+//                                //The purpose of this is to filter out API calls that are automatically invoked by application scripts.
+//                                if(networkEvent.getRequestHeader("odo-sight-flag") == null ||
+//                                        networkEvent.getRequestHeader("odo-sight-flag").equals("true")){
+//                                    line.add(networkEvent);
+//                                }
 
 
 
@@ -325,6 +333,31 @@ public class SemanticSequencer {
 
 
         }
+    }
+
+    /**
+     * Searches backwards using the given iterator for a ClickEvent. ClickEvent must appear before the start of the timeline or before the last ApplicationLocationChange in order
+     * for this method to return true.
+     *
+     * @param iterator
+     * @return
+     */
+    private boolean hasTriggeringClick(ListIterator<TimelineEntity> iterator){
+
+
+        while (iterator.hasPrevious()){
+            TimelineEntity entity = iterator.previous();
+
+            if(entity instanceof ClickEvent){
+                return true;
+            }
+
+            if(entity instanceof ApplicationLocationChange){
+                return false;
+            }
+        }
+
+        return false;
     }
 
 
