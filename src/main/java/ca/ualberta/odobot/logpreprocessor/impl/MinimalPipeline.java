@@ -29,6 +29,9 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
 
     public Future<Timeline> makeTimeline(String flightName, List<JsonObject> events){
         SemanticSequencer sequencer = new SemanticSequencer();
+//        sequencer.setNetworkEventFilter(networkEvent -> !networkEvent.getMethod().toLowerCase().equals("get") && //Exclude get requests
+//                !networkEvent.getPath().equals("/api/v*/users/*/colors/course_*") //Exclude color API calls which are sometimes triggered automatically.
+//        );
 
 
         //Timeline data structure construction

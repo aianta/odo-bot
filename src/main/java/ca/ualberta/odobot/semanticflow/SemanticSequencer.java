@@ -27,6 +27,7 @@ import java.util.ListIterator;
 import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 import static ca.ualberta.odobot.semanticflow.Utils.getNormalizedPath;
 
@@ -47,6 +48,8 @@ public class SemanticSequencer {
     private InputChangeMapper inputChangeMapper = new InputChangeMapper();
     private NetworkEventMapper networkEventMapper = new NetworkEventMapper();
 
+    private Predicate<NetworkEvent> networkEventFilter = null;
+
     private Timeline line;
 
     /**
@@ -63,7 +66,14 @@ public class SemanticSequencer {
         this.artifactConsumer = consumer;
     }
 
-
+    /**
+     * Allows the caller to specify a predicate with which to test NetworkEvents captured in low-level traces. If this predicate
+     * returns true, it will be included in the high-level trace (timeline) output.
+     * @param networkEventFilter
+     */
+    public void setNetworkEventFilter(Predicate<NetworkEvent> networkEventFilter) {
+        this.networkEventFilter = networkEventFilter;
+    }
 
     public Timeline parse(List<JsonObject> events){
         line = new Timeline();
@@ -304,13 +314,16 @@ public class SemanticSequencer {
                             }
 
                             log.info("{} - {}", networkEvent.getMethod(), networkEvent.getUrl());
-                            //TODO - Temporarily ignore all GET requests. See 'Integrating Network Events # Network Event Summarization Options' in obsidian for details
-                            if(!networkEvent.getMethod().toLowerCase().equals("get")
 
-                            ) {
+                            //Use a network event filter if one is provided.
+                            if(networkEventFilter != null && networkEventFilter.test(networkEvent)){
+                                line.add(networkEvent);
 
+                                //TODO - Temporarily ignore all GET requests. See 'Integrating Network Events # Network Event Summarization Options' in obsidian for details
+                            }else if(!networkEvent.getMethod().toLowerCase().equals("get")) {
+                                //line.add(networkEvent);
 
-                                if(hasTriggeringClick(line.listIterator(line.size()-1))){
+                                if(hasTriggeringClick(line.listIterator(line.size()))){
                                     line.add(networkEvent);
                                 }
 
