@@ -3,6 +3,7 @@ package ca.ualberta.odobot.logpreprocessor.impl;
 import ca.ualberta.odobot.extractors.SemanticArtifactExtractor;
 import ca.ualberta.odobot.semanticflow.SemanticSequencer;
 import ca.ualberta.odobot.semanticflow.model.*;
+import ca.ualberta.odobot.semanticflow.navmodel.LocationNode;
 import ca.ualberta.odobot.semanticflow.navmodel.NavNode;
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonArray;
@@ -94,6 +95,11 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
 
             TimelineEntity entity = it.next();
 
+            if(it.previousIndex() == 0){ //On the first entity of the timeline, get or create the location where the timeline starts.
+                neo4j.getOrCreateLocation(TimelineEntity.getLocationPath(entity), timeline);
+            }
+
+
             if(entity instanceof ClickEvent){
                 clickEventCount++;
                 neo4j.processClickEvent(timeline, (ClickEvent) entity);
@@ -145,17 +151,26 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
             ListIterator<TimelineEntity> successorIt = timeline.listIterator();
             successorIt.next();
 
+
             while (it.hasNext() && successorIt.hasNext()){
 
                 TimelineEntity curr = it.next();
                 TimelineEntity next = successorIt.next();
 
                 if((curr instanceof Effect && it.previousIndex() == 0) || (next instanceof Effect && !successorIt.hasNext())){
+                    continue; //Ignore effects at the start or end of timelines
+                }
+
+                //Ignore double clicks
+                if(curr instanceof ClickEvent && next instanceof ClickEvent && ((ClickEvent)curr).getXpath().equals(((ClickEvent) next).getXpath())){
                     continue;
                 }
 
-                if(curr instanceof ClickEvent && next instanceof ClickEvent && ((ClickEvent)curr).getXpath().equals(((ClickEvent) next).getXpath())){
-                    continue;
+                //If this is the first element in the timeline
+                if(it.previousIndex() == 0){
+                    LocationNode startingLocation = neo4j.getLocationNode(TimelineEntity.getLocationPath(curr));
+                    //Link the starting location to the first node.
+                    neo4j.bind(startingLocation, neo4j.resolveNavNode(timeline, it.previousIndex()));
                 }
 
                 NavNode a = neo4j.resolveNavNode(timeline, it.previousIndex());
@@ -166,6 +181,8 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
 
                 neo4j.bind(a, b);
             }
+        }else{
+            throw new RuntimeException("Timeline size is too small!");
         }
 
 

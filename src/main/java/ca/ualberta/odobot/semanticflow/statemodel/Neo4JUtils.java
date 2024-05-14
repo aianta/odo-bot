@@ -35,6 +35,51 @@ public class Neo4JUtils {
         return id;
     }
 
+    public LocationNode getOrCreateLocation(String path, Timeline timeline){
+
+        LocationNode result = getLocationNode(path);
+
+        if(result == null){
+            //No existing location node found, create one.
+            LocationNode newLocation = new LocationNode();
+            newLocation.setId(UUID.randomUUID());
+            newLocation.setPath(path);
+            newLocation.setInstances(Set.of(timeline.getId().toString()));
+            result = newLocation;
+        }else{
+            //If a location node was found, update its list of instances.
+            result.getInstances().add(timeline.getId().toString());
+        }
+
+        final LocationNode location = result;
+
+        //Write the changes back into the database
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+
+            HashMap<String,Object> props = new HashMap<>();
+            props.put("path", location.getPath());
+            props.put("id", location.getId().toString());
+            props.put("instances", location.getInstances());
+
+            session.executeWrite(tx->{
+                var stmt = "MERGE (n:LocationNode {path:$path}) ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
+                var query = new Query(stmt, parameters("path", location.getPath(), "props", props));
+                tx.run(query);
+                return 0;
+            });
+
+        }
+
+        return result;
+
+    }
+
+    public LocationNode getLocationNode(String path){
+        var stmt = "MATCH (n:LocationNode {path:$path}) return n;";
+        var query = new Query(stmt, parameters("path", path));
+
+        return readNode(query, LocationNode.class);
+    }
 
     public void processNetworkEvent(Timeline timeline, NetworkEvent networkEvent){
         var index = timeline.indexOf(networkEvent);
@@ -85,38 +130,43 @@ public class Neo4JUtils {
         var entityTimelineId = timeline.getId().toString()+"#"+index;
 
         log.info("Processing application location change {}", entityTimelineId);
+        getOrCreateLocation(applicationLocationChange.getToPath(), timeline);
 
-        ApplicationLocationChangeNode applicationLocationChangeNode = getApplicationLocationChangeNode(applicationLocationChange.getFromPath(), applicationLocationChange.getToPath());
 
-        if(applicationLocationChangeNode == null){
-            //If no application location change node could be found, let's create a new one
-            ApplicationLocationChangeNode newApplicationLocationChangeNode = new ApplicationLocationChangeNode();
-            newApplicationLocationChangeNode.setId(UUID.randomUUID());
-            newApplicationLocationChangeNode.setTo(applicationLocationChange.getToPath());
-            newApplicationLocationChangeNode.setFrom(applicationLocationChange.getFromPath());
-            newApplicationLocationChangeNode.setInstances(Set.of(entityTimelineId));
-            applicationLocationChangeNode = newApplicationLocationChangeNode;
-        }else{
-            //If a application location change node was found, update its list of instances
-            applicationLocationChangeNode.getInstances().add(entityTimelineId);
-        }
-
-        final ApplicationLocationChangeNode finalApplicationLocationChangeNode = applicationLocationChangeNode;
-        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
-            HashMap<String,Object> props = new HashMap<>();
-            props.put("id", finalApplicationLocationChangeNode.getId().toString());
-            props.put("from", finalApplicationLocationChangeNode.getFrom());
-            props.put("to", finalApplicationLocationChangeNode.getTo());
-            props.put("instances", finalApplicationLocationChangeNode.getInstances());
-
-            session.executeWrite(tx->{
-                var stmt = "MERGE (n:ApplicationLocationChangeNode {from:$from, to:$to}) ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
-                var query = new Query(stmt, parameters("from", finalApplicationLocationChangeNode.getFrom(), "to", finalApplicationLocationChangeNode.getTo(), "props", props));
-                tx.run(query);
-                return 0;
-            });
-
-        }
+//
+//
+//
+//        ApplicationLocationChangeNode applicationLocationChangeNode = getApplicationLocationChangeNode(applicationLocationChange.getFromPath(), applicationLocationChange.getToPath());
+//
+//        if(applicationLocationChangeNode == null){
+//            //If no application location change node could be found, let's create a new one
+//            ApplicationLocationChangeNode newApplicationLocationChangeNode = new ApplicationLocationChangeNode();
+//            newApplicationLocationChangeNode.setId(UUID.randomUUID());
+//            newApplicationLocationChangeNode.setTo(applicationLocationChange.getToPath());
+//            newApplicationLocationChangeNode.setFrom(applicationLocationChange.getFromPath());
+//            newApplicationLocationChangeNode.setInstances(Set.of(entityTimelineId));
+//            applicationLocationChangeNode = newApplicationLocationChangeNode;
+//        }else{
+//            //If a application location change node was found, update its list of instances
+//            applicationLocationChangeNode.getInstances().add(entityTimelineId);
+//        }
+//
+//        final ApplicationLocationChangeNode finalApplicationLocationChangeNode = applicationLocationChangeNode;
+//        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+//            HashMap<String,Object> props = new HashMap<>();
+//            props.put("id", finalApplicationLocationChangeNode.getId().toString());
+//            props.put("from", finalApplicationLocationChangeNode.getFrom());
+//            props.put("to", finalApplicationLocationChangeNode.getTo());
+//            props.put("instances", finalApplicationLocationChangeNode.getInstances());
+//
+//            session.executeWrite(tx->{
+//                var stmt = "MERGE (n:ApplicationLocationChangeNode {from:$from, to:$to}) ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
+//                var query = new Query(stmt, parameters("from", finalApplicationLocationChangeNode.getFrom(), "to", finalApplicationLocationChangeNode.getTo(), "props", props));
+//                tx.run(query);
+//                return 0;
+//            });
+//
+//        }
 
     }
 
@@ -310,7 +360,12 @@ public class Neo4JUtils {
 
         if(target instanceof ApplicationLocationChange){
             ApplicationLocationChange applicationLocationChange = (ApplicationLocationChange) target;
-            return getApplicationLocationChangeNode(applicationLocationChange.getFromPath(), applicationLocationChange.getToPath());
+            LocationNode node = getLocationNode(applicationLocationChange.getToPath());
+            if(node == null){
+                throw new RuntimeException("ApplicationLocationChange failed to resolve to location node!");
+            }
+            return node;
+            //return getApplicationLocationChangeNode(applicationLocationChange.getFromPath(), applicationLocationChange.getToPath());
         }
 
         log.warn("Unknown entity type");
@@ -353,6 +408,10 @@ public class Neo4JUtils {
             stmt = "MATCH (a:ApplicationLocationChangeNode {id:$aId})-[:NEXT]->(e:EffectNode)";
         }
 
+        if(predecessor instanceof LocationNode){
+            stmt = "MATCH (a:LocationNode {id:$aId})-[:NEXT]->(e:EffectNode)";
+        }
+
         if(successor instanceof ClickNode){
             stmt += "-[:NEXT]->(b:ClickNode {id:$bId}) RETURN e;";
         }
@@ -363,6 +422,10 @@ public class Neo4JUtils {
 
         if(successor instanceof APINode){
             stmt += "-[:NEXT]->(b:APINode {id:$bId}) RETURN e;";
+        }
+
+        if(successor instanceof LocationNode){
+            stmt += "-[:NEXT]->(b:LocationNode {id:$bId}) RETURN e;";
         }
 
         if(successor instanceof ApplicationLocationChangeNode){
@@ -392,7 +455,11 @@ public class Neo4JUtils {
         }
 
         if(successor instanceof ApplicationLocationChangeNode){
-            stmt = "MATCH (e:EffectNode)-[:NEXT]->(n:ApplicationLocationChangeNode {id:$id}) return e;";
+            stmt = "MATCH (e:EffectNode)-[:NEXT]->(n:ApplicationLocationChangeNode {id:$id}) RETURN e;";
+        }
+
+        if(successor instanceof LocationNode){
+            stmt = "MATCH (e:EffectNode)-[:NEXT]->(n:LocationNode {id:$id}) RETURN e;";
         }
 
         Query query = new Query(stmt, parameters("id", successor.getId().toString()));
@@ -418,7 +485,11 @@ public class Neo4JUtils {
         }
 
         if(predecessor instanceof ApplicationLocationChangeNode){
-            stmt = "MATCH (n:ApplicationLocationChangeNode {id:$id})-[:NEXT]->(e:EffectNode) RETURN e";
+            stmt = "MATCH (n:ApplicationLocationChangeNode {id:$id})-[:NEXT]->(e:EffectNode) RETURN e;";
+        }
+
+        if(predecessor instanceof LocationNode){
+            stmt = "MATCH (n:LocationNode {id:$id})-[:NEXT]->(e:EffectNode) RETURN e;";
         }
 
         Query query = new Query(stmt, parameters("id", predecessor.getId().toString()));
