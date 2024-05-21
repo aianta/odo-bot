@@ -9,10 +9,7 @@ import ca.ualberta.odobot.semanticflow.model.Timeline;
 
 import ca.ualberta.odobot.semanticflow.model.TrainingMaterials;
 import ca.ualberta.odobot.semanticflow.model.semantictrace.SemanticTrace;
-import ca.ualberta.odobot.semanticflow.navmodel.Collapse;
-import ca.ualberta.odobot.semanticflow.navmodel.CollapsingTraversal;
-import ca.ualberta.odobot.semanticflow.navmodel.GraphDB;
-import ca.ualberta.odobot.semanticflow.navmodel.NavModel;
+import ca.ualberta.odobot.semanticflow.navmodel.*;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import ca.ualberta.odobot.sqlite.impl.TrainingExemplar;
 import ca.ualberta.odobot.tpg.service.TPGService;
@@ -234,6 +231,7 @@ public class LogPreprocessor extends AbstractVerticle {
             api.route().method(HttpMethod.GET).path("/DOMSequences/hashed").handler(this::getHashedSequences);
             api.route().method(HttpMethod.POST).path("/html2xpath").handler(this::html2xpath);
             api.route().method(HttpMethod.GET).path("/collapseTest").handler(this::testingCollapse);
+            api.route().method(HttpMethod.GET).path("/postLocationMergerTest").handler(this::testingPostLocationEffectMerger);
 
 
             //Mount handlers to main router
@@ -579,6 +577,18 @@ public class LogPreprocessor extends AbstractVerticle {
         log.info("Found {} collapsable patterns!", collapses.size());
 
         rc.response().setStatusCode(200).end();
+
+    }
+
+    private void testingPostLocationEffectMerger(RoutingContext rc){
+
+        PostLocationEffectMerger merger = new PostLocationEffectMerger(graphDB);
+        merger.doPass();
+
+
+
+        rc.response().setStatusCode(200).end();
+
 
     }
 
