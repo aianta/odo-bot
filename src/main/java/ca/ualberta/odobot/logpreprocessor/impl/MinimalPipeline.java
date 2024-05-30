@@ -157,6 +157,14 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
                 TimelineEntity curr = it.next();
                 TimelineEntity next = successorIt.next();
 
+//                while (curr instanceof Effect && it.hasNext()){
+//                    curr = it.next();
+//                }
+//
+//                while (next instanceof Effect && successorIt.hasNext()){
+//                    next = successorIt.next();
+//                }
+
                 if((curr instanceof Effect && it.previousIndex() == 0) || (next instanceof Effect && !successorIt.hasNext())){
                     continue; //Ignore effects at the start or end of timelines
                 }

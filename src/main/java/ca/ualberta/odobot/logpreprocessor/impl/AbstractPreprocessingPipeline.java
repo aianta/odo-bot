@@ -387,7 +387,7 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
             rc.put("flights", flights);
         }else{
 
-            String identifierField = rc.request().getParam("flight_identifier_field", "flight_name.keyword");
+            String identifierField = rc.request().getParam("flight_identifier_field", "flightID.keyword");
 
             rc.put("flightIdentifierField", identifierField );
 

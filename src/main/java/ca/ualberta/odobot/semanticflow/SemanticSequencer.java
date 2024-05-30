@@ -138,11 +138,34 @@ public class SemanticSequencer {
                     case CLICK -> {
                         ClickEvent clickEvent = clickEventMapper.map(event);
                         clickEvent.setTimestamp(ZonedDateTime.parse(event.getString(TIMESTAMP_FIELD), timeFormatter));
-                        line.add(clickEvent);
+//                        line.add(clickEvent);
+//
+//                        if(artifactConsumer != null){ //If we have an artifact consumer set
+//                            artifactConsumer.accept(clickEvent); //Invoke them with the newly processed artifact.
+//                        }
+
+
+                        /**
+                         * Special Case:
+                         * If the last element in the timeline is also a click event, only add this click event if the xpaths differ.
+                         * This arises from the fact that Odo-Sight can report the same click multiple times.
+                         * Since we listen for click on <a> and <li> tags, if we have an element <li><a/></li> our listener will
+                         * report the click twice, once for the <a> tag, and once for the <li> tag.
+                         */
+                         if(
+                                 (line.last() instanceof ClickEvent && !((ClickEvent)line.last()).getXpath().equals(clickEvent.getXpath())) || //See special case
+                                 !(line.last() instanceof ClickEvent) //Always add click events if the previous timeline entity wasn't a click event.
+                        ){
+                            line.add(clickEvent);
+
+
+                        }
+
 
                         if(artifactConsumer != null){ //If we have an artifact consumer set
                             artifactConsumer.accept(clickEvent); //Invoke them with the newly processed artifact.
                         }
+
 
                         log.info("handled CLICK");
 
@@ -256,7 +279,8 @@ public class SemanticSequencer {
                                 String currentBasePath = getNormalizedPath(domEffect.getBaseURI());
                                 String lastBasePath = null;
                                 String lastURL = null;
-                                long lastTimestamp = line.last().timestamp();
+                                //Get the timestamp of the last entity in the timeline if it exists otherwise just use the same timestamp as the current dom effect
+                                long lastTimestamp = line.last() == null?domEffect.getTimestamp().toInstant().toEpochMilli():line.last().timestamp();
 
                                 if(line.last() instanceof NetworkEvent){
                                     NetworkEvent lastEntity = (NetworkEvent) line.last();
