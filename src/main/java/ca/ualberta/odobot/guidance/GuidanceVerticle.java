@@ -2,10 +2,12 @@ package ca.ualberta.odobot.guidance;
 
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
+import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpServer;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.http.ServerWebSocket;
 import io.vertx.core.http.WebSocket;
+import io.vertx.core.json.JsonObject;
 import io.vertx.core.net.JksOptions;
 import io.vertx.core.net.TrustOptions;
 import io.vertx.ext.web.Router;
@@ -13,6 +15,10 @@ import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.LoggerHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
 public class GuidanceVerticle extends AbstractVerticle {
 
@@ -26,6 +32,8 @@ public class GuidanceVerticle extends AbstractVerticle {
     private HttpServer server;
 
     private Router mainRouter;
+
+    private Map<UUID, Request> requestMap = new HashMap<>();
 
     @Override
     public void start(Promise<Void> startPromise) throws Exception {
@@ -48,7 +56,7 @@ public class GuidanceVerticle extends AbstractVerticle {
 
         server = vertx.createHttpServer(options);
 
-        server.webSocketHandler(this::handleWebsocketConnection);
+        server.webSocketHandler(WebSocketConnection::new);
 
         mainRouter = Router.router(vertx);
         mainRouter.route().handler(LoggerHandler.create());
@@ -66,6 +74,39 @@ public class GuidanceVerticle extends AbstractVerticle {
     }
 
     private void handleWebsocketConnection(ServerWebSocket serverWebSocket) {
+
+        log.info("Websocket connection made!");
+
+
+
+        serverWebSocket.handler(buffer->{
+           log.info("Received data on secure web socket");
+           log.info("{}", buffer.toJsonObject().encodePrettily());
+        });
+
+
+
+        serverWebSocket.closeHandler(event->{
+           log.info("Websocket connection closed!");
+        });
+
+    }
+
+    private void onMessage(Buffer buffer){
+        JsonObject message = buffer.toJsonObject();
+        final String type = message.getString("type");
+
+        switch (type){
+            case "CANCEL_REQUEST":
+                break; 
+            case "PATHS_REQUEST":
+                break;
+            case "LOGUI_EVENTS":
+                break;
+            default:
+                log.warn("Received unknown message type from odobot extension! {}", type);
+        }
+
 
 
     }
