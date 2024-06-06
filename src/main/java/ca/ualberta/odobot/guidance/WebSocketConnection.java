@@ -55,6 +55,10 @@ public class WebSocketConnection {
         log.info("[{}][{}] Connection Closed", boundRequest.id().toString(), boundSource.name);
     }
 
+    public void send(JsonObject data){
+        socket.writeTextMessage(data.encode(), result->log.info("data sent on socket!"));
+    }
+
     private void onMessage(Buffer buffer){
         JsonObject message = buffer.toJsonObject();
 
@@ -68,6 +72,9 @@ public class WebSocketConnection {
 
             //Set the bound request and source
             boundRequest = requestMap.get(pathsRequestId);
+            if(boundRequest == null){
+                return;
+            }
             boundSource = Source.getSourceByName(message.getString("source"));
 
             switch (boundSource){
@@ -82,6 +89,10 @@ public class WebSocketConnection {
 
         log.info("[{}][{}] got message:\n{}", boundRequest.id().toString(), boundSource.name, message.encodePrettily());
         messageConsumer.accept(message);
+    }
+
+    public void setMessageConsumer(Consumer<JsonObject> consumer){
+        this.messageConsumer = consumer;
     }
 
 }
