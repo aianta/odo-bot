@@ -26,6 +26,7 @@ public abstract class JsonMapper<T extends AbstractArtifact> {
      */
     public abstract T map(JsonObject event);
 
+
     protected Document getDOMSnapshot(JsonObject event){
         JsonObject domSnapshot = new JsonObject(event.getString(DOM_FIELD));
         return Jsoup.parse(domSnapshot.getString("outerHTML"));

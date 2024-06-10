@@ -54,7 +54,7 @@ public class InputChangeMapper extends JsonMapper<InputChange> {
         return result;
     }
 
-    public String getMetadataValue(String key, JsonArray metadata){
+    public static String getMetadataValue(String key, JsonArray metadata){
         Optional<JsonObject> meta = metadata.stream()
                 .map(o->(JsonObject)o)
                 .filter(json->json.getString("name").equals(key))

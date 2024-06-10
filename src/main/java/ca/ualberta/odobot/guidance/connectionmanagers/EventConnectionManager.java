@@ -51,7 +51,11 @@ public class EventConnectionManager implements ConnectionManager{
                 activePromises.remove("TRANSMISSION_STOPPED");
                 break;
             case "EVENT":
-                log.info("{}", message.encodePrettily());
+               if(message.encode().contains("NETWORK_EVENT")){
+                   log.info("{}", message.encodePrettily());
+               }
+
+
                 break;
         }
     }

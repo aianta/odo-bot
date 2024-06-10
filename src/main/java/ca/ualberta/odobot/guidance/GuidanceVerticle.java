@@ -52,6 +52,8 @@ public class GuidanceVerticle extends AbstractVerticle {
                 .setPort(PORT)
                 .setSsl(true)
                 .setKeyStoreOptions(jksOptions)
+                .setMaxWebSocketFrameSize(10000000)  //10MB
+                .setMaxWebSocketMessageSize(10000000)//10MB
                 ;
 
         server = vertx.createHttpServer(options);
