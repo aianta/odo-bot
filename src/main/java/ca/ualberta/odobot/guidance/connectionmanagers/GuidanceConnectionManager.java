@@ -11,7 +11,7 @@ import org.slf4j.LoggerFactory;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-public class GuidanceConnectionManager implements ConnectionManager {
+public class GuidanceConnectionManager extends AbstractConnectionManager implements ConnectionManager {
 
     private static final Logger log = LoggerFactory.getLogger(GuidanceConnectionManager.class);
 
@@ -19,16 +19,8 @@ public class GuidanceConnectionManager implements ConnectionManager {
 
     private Request request;
 
-    private WebSocketConnection connection = null;
-
     public GuidanceConnectionManager(Request request){
         this.request = request;
-    }
-
-    @Override
-    public void updateConnection(WebSocketConnection connection) {
-        this.connection = connection;
-        this.connection.setMessageConsumer(this::onMessage);
     }
 
     public void onMessage(JsonObject message){
@@ -50,7 +42,7 @@ public class GuidanceConnectionManager implements ConnectionManager {
         Promise<JsonObject> promise = Promise.promise();
         activePromises.put("NAVIGATION_OPTIONS_SHOW_RESULT", promise);
 
-        connection.send(showNavigationOptionsRequest);
+        send(showNavigationOptionsRequest);
 
         return promise.future();
     }

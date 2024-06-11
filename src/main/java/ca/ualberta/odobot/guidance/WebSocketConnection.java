@@ -9,6 +9,11 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.function.Consumer;
 
+/**
+ * Low-level wrapper around WebSocket connections.
+ *
+ *
+ */
 public class WebSocketConnection {
 
     private static final Logger log = LoggerFactory.getLogger(WebSocketConnection.class);
@@ -16,7 +21,7 @@ public class WebSocketConnection {
     private ServerWebSocket socket;
 
 
-    static Map<UUID, Request> requestMap = new HashMap<>();
+    static Map<String, Request> requestMap = new HashMap<>();
 
     private boolean isBound = false;
 
@@ -52,26 +57,55 @@ public class WebSocketConnection {
 
     private void onClose(Void event){
         this.isConnected = false;
-        log.info("[{}][{}] Connection Closed", boundRequest.id().toString(), boundSource.name);
+        if(boundRequest != null){
+            log.info("[{}][{}] Connection Closed", boundRequest.id().toString(), boundSource.name);
+        }else{
+            log.info("[{}] Connection Closed", boundSource.name);
+        }
+
+    }
+
+    public void send(String data){
+        socket.writeTextMessage(data, result->log.info("data sent on socket!"));
     }
 
     public void send(JsonObject data){
         socket.writeTextMessage(data.encode(), result->log.info("data sent on socket!"));
     }
 
+    public boolean isConnected() {
+        return isConnected;
+    }
+
+    /**
+     * This method works to associate the websocket with the appropriate request upon receiving the first message from the client.
+     * The appropriate request is identified by a 'pathsRequestId' field.
+     *
+     * Additionally, each requests has {@link Request#control}, {@link Request#event}, and {@link Request#guidance} fields for {@link WebSocketConnection} to
+     * be assigned to. This method reads the 'source' field in the in initial message to appropriately assign itself to the corresponding Request.
+     *
+     * Requests are held in a static map {@link WebSocketConnection#requestMap}.
+     *
+     * All messages from the client are expected to have, at minimum, the 'source' and 'pathsRequestId' field.
+     *
+     * @param buffer
+     */
     private void onMessage(Buffer buffer){
         JsonObject message = buffer.toJsonObject();
 
         if(!isBound){ //Associate this WebSocket connection with the appropriate paths request.
             UUID pathsRequestId = UUID.fromString(message.getString("pathsRequestId"));
-
-            if(!requestMap.containsKey(pathsRequestId)){
+            printRequestMap();
+            if(!requestMap.containsKey(pathsRequestId.toString())){
+                log.info("Making new request with id: {}", pathsRequestId.toString());
                 Request request = new Request(pathsRequestId);
-                requestMap.put(pathsRequestId, request);
+                requestMap.put(pathsRequestId.toString(), request);
+            }else{
+                log.info("Binding websocket to existing request! {}", pathsRequestId.toString());
             }
 
             //Set the bound request and source
-            boundRequest = requestMap.get(pathsRequestId);
+            boundRequest = requestMap.get(pathsRequestId.toString());
             if(boundRequest == null){
                 return;
             }
@@ -87,7 +121,7 @@ public class WebSocketConnection {
 
         }
 
-        log.info("[{}][{}] got message:\n{}", boundRequest.id().toString(), boundSource.name, message.encodePrettily());
+        log.info("[{}][{}] got message:\n{}", boundRequest.id().toString(), boundSource.name, message.encodePrettily().substring(0, Math.min(message.encodePrettily().length(), 150)));
         messageConsumer.accept(message);
     }
 
@@ -95,4 +129,9 @@ public class WebSocketConnection {
         this.messageConsumer = consumer;
     }
 
+
+    public void printRequestMap(){
+        log.info("Request map [size: {}]",requestMap.size());
+        requestMap.entrySet().forEach(entry->log.info("{} - {}", entry.getKey(), entry.getValue()));
+    }
 }

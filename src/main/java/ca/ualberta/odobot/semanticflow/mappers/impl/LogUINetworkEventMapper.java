@@ -54,7 +54,7 @@ public class LogUINetworkEventMapper extends JsonMapper<NetworkEvent> {
         }
 
         long timestamp = Long.parseLong(eventDetails.getString("timeStamp"));
-        int requestId = eventDetails.getInteger("requestId");
+        int requestId = Integer.parseInt(eventDetails.getString("requestId"));
         result.setMillisecondTimestamp(timestamp);
         result.setRequestId(requestId);
 

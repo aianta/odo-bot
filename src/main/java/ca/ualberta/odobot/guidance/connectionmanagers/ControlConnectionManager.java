@@ -8,7 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.function.Consumer;
 
-public class ControlConnectionManager implements ConnectionManager{
+public class ControlConnectionManager extends AbstractConnectionManager implements ConnectionManager{
 
     private static final Logger log = LoggerFactory.getLogger(ControlConnectionManager.class);
 
@@ -34,13 +34,9 @@ public class ControlConnectionManager implements ConnectionManager{
                 newRequestTargetNodeConsumer.accept(request.getTargetNode());
                 break;
             case "STOP_GUIDANCE_REQUEST":
+                request.getEventConnectionManager().stopTransmitting();
                 break;
         }
-    }
-
-    @Override
-    public void updateConnection(WebSocketConnection connection) {
-        connection.setMessageConsumer(this::onMessage);
     }
 
     public Consumer<String> getNewRequestTargetNodeConsumer() {

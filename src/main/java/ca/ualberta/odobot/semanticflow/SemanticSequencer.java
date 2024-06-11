@@ -352,14 +352,6 @@ public class SemanticSequencer {
                                 }
 
 
-//                                //Only process network requests that are missing the odo-sight-flag, or have it set to 'true'.
-//                                //This flag, if it exists indicates whether a network request was triggered by the user.
-//                                //The purpose of this is to filter out API calls that are automatically invoked by application scripts.
-//                                if(networkEvent.getRequestHeader("odo-sight-flag") == null ||
-//                                        networkEvent.getRequestHeader("odo-sight-flag").equals("true")){
-//                                    line.add(networkEvent);
-//                                }
-
 
 
                             }

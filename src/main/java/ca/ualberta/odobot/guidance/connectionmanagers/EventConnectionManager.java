@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.guidance.connectionmanagers;
 
+import ca.ualberta.odobot.guidance.OnlineEventProcessor;
 import ca.ualberta.odobot.guidance.Request;
 import ca.ualberta.odobot.guidance.WebSocketConnection;
 import io.vertx.core.Future;
@@ -14,26 +15,24 @@ import java.util.LinkedList;
 import java.util.Map;
 import java.util.Queue;
 
-public class EventConnectionManager implements ConnectionManager{
+public class EventConnectionManager extends AbstractConnectionManager implements ConnectionManager{
 
     Map<String, Promise> activePromises = new LinkedHashMap<>();
 
     private static final Logger log = LoggerFactory.getLogger(EventConnectionManager.class);
 
-    private Request request;
+    private OnlineEventProcessor eventProcessor = new OnlineEventProcessor();
 
-    private WebSocketConnection connection = null;
+    private Request request;
 
 
     public EventConnectionManager(Request request){
         this.request = request;
+
+        eventProcessor.setOnEntity(entity -> log.info("Last entity: {}", entity.symbol()));
     }
 
-    @Override
-    public void updateConnection(WebSocketConnection connection) {
-        this.connection = connection;
-        this.connection.setMessageConsumer(this::onMessage);
-    }
+
 
     public void onMessage(JsonObject message){
         switch (message.getString("type")){
@@ -51,9 +50,9 @@ public class EventConnectionManager implements ConnectionManager{
                 activePromises.remove("TRANSMISSION_STOPPED");
                 break;
             case "EVENT":
-               if(message.encode().contains("NETWORK_EVENT")){
-                   log.info("{}", message.encodePrettily());
-               }
+
+                JsonObject event = message.getJsonObject("event");
+                eventProcessor.process(event);
 
 
                 break;
@@ -72,7 +71,7 @@ public class EventConnectionManager implements ConnectionManager{
 
         log.info("Sending local context request!");
 
-        connection.send(localContextRequest);
+        send(localContextRequest);
 
         return promise.future().compose( response-> Future.succeededFuture(response.getJsonArray("localContext")));
     }
@@ -89,7 +88,7 @@ public class EventConnectionManager implements ConnectionManager{
 
         log.info("Requesting transmission of user events!");
 
-        connection.send(startTransmissionRequest);
+        send(startTransmissionRequest);
 
         return promise.future().compose(response->Future.succeededFuture());
     }
@@ -106,7 +105,7 @@ public class EventConnectionManager implements ConnectionManager{
 
         log.info("Requesting transmission of user events to end!");
 
-        connection.send(stopTransmissionRequest);
+        send(stopTransmissionRequest);
 
         return promise.future().compose(response->Future.succeededFuture());
     }

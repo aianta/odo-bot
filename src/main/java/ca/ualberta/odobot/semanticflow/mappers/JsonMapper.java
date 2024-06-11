@@ -65,7 +65,7 @@ public abstract class JsonMapper<T extends AbstractArtifact> {
             doc.body().children().forEach(child->log.warn("{}",child));
         }
 
-        log.info("Extracted element from:\n {}", html);
+        //log.debug("Extracted element from:\n {}", html);
 
         return doc.body().firstElementChild();
     }
