@@ -3,10 +3,12 @@ package ca.ualberta.odobot.guidance;
 import ca.ualberta.odobot.guidance.connectionmanagers.ControlConnectionManager;
 import ca.ualberta.odobot.guidance.connectionmanagers.EventConnectionManager;
 import ca.ualberta.odobot.guidance.connectionmanagers.GuidanceConnectionManager;
+import ca.ualberta.odobot.semanticflow.navmodel.NavPath;
 import io.vertx.core.http.ServerWebSocket;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Set;
 import java.util.UUID;
 
 public class Request {
@@ -25,6 +27,8 @@ public class Request {
     private WebSocketConnection control = new WebSocketConnection();
     private WebSocketConnection guidance = new WebSocketConnection();
     private WebSocketConnection event = new WebSocketConnection();
+
+    private Set<NavPath> navigationPaths = null;
 
     private UUID id;
 

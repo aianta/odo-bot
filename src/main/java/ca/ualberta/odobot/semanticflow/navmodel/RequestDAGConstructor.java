@@ -5,6 +5,9 @@ import org.neo4j.graphdb.traversal.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Iterator;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -20,7 +23,7 @@ public class RequestDAGConstructor {
         this.db = graphDB.db;
     }
 
-    public void construct(UUID src, UUID tgt){
+    public Set<NavPath> construct(UUID src, UUID tgt){
 
         try(Transaction tx = db.beginTx();
             Result result = tx.execute("MATCH (src), (tgt) WHERE src.id = '%s' AND tgt.id = '%s' RETURN src, tgt; ".formatted(src.toString(), tgt.toString()));
@@ -51,12 +54,18 @@ public class RequestDAGConstructor {
 
             Traverser traverser = traversal.traverse(srcNode);
 
-            //traverser.
+            Iterator<Path> it = traverser.iterator();
+
+            LinkedHashSet<NavPath> navPaths = new LinkedHashSet<>();
+
+            while (it.hasNext()){
+                NavPath navPath = new NavPath();
+                navPath.setPath(it.next());
+                navPaths.add(navPath);
+            }
+
+            return navPaths;
         }
-
-
-
-
     }
 
 

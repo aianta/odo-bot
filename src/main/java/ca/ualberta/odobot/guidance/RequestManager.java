@@ -25,7 +25,17 @@ public class RequestManager {
         TimelineEntity lastEntity;
         String url;
 
+        String pathRequestId;
+
         String targetNode;
+
+        public String getPathRequestId() {
+            return pathRequestId;
+        }
+
+        public void setPathRequestId(String pathRequestId) {
+            this.pathRequestId = pathRequestId;
+        }
 
         public String getTargetNode() {
             return targetNode;
