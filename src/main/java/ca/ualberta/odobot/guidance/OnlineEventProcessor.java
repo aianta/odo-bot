@@ -38,7 +38,7 @@ public class OnlineEventProcessor {
     private JsonMapper<DomEffect> domEffectMapper = new LogUIDomEffectMapper();
     private JsonMapper<NetworkEvent> networkEventMapper = new LogUINetworkEventMapper();
     private JsonMapper<InputChange> inputChangeMapper = new LogUIInputChangeMapper();
-    private Timeline line = new Timeline();
+    private OnlineTimeline line = new OnlineTimeline();
 
 
     /**
@@ -47,6 +47,7 @@ public class OnlineEventProcessor {
      */
     public void setOnEntity(Consumer<TimelineEntity> consumer){
         this.entityConsumer = consumer;
+        line.addListener(this::notify); //TODO -> this whole notification system might make more sense to refactor into a functionality of OnlineTimeline.
     }
 
     /**
@@ -56,7 +57,7 @@ public class OnlineEventProcessor {
      */
     public void setOnEntity(Consumer<TimelineEntity> consumer, Predicate<TimelineEntity> predicate){
         this.entityPredicate = predicate;
-        this.entityConsumer = consumer;
+        setOnEntity(consumer);
     }
 
     public void process(JsonArray events){
@@ -72,7 +73,7 @@ public class OnlineEventProcessor {
     public void process(JsonObject event){
         try{
 
-            int _preprocessLineSize = line.size();
+//            int _preprocessLineSize = line.size();
 
             JsonObject eventDetails = event.getJsonObject("eventDetails");
 
@@ -97,16 +98,16 @@ public class OnlineEventProcessor {
                     break;
             }
 
-            if(_preprocessLineSize != line.size()){ //Only notify if a new entity has been added to the line. IE: if the line size has changed. For example, a GET network request is ignored, thus no change in line size.
-                if(line.size() > 0){
-                    log.info("Notifying of {}", line.last().symbol());
-                    notify(line.last());
-                }
-
-                if(line.size() > 2){
-                    line.remove(0);
-                }
-            }
+//            if(_preprocessLineSize != line.size()){ //Only notify if a new entity has been added to the line. IE: if the line size has changed. For example, a GET network request is ignored, thus no change in line size.
+//                if(line.size() > 0){
+//                    log.info("Notifying of {}", line.last().symbol());
+//                    notify(line.last());
+//                }
+//
+//                if(line.size() > 2){
+//                    line.remove(0);
+//                }
+//            }
 
         }catch (Exception e){
             log.error(e.getMessage(), e);

@@ -17,6 +17,9 @@ public abstract class AbstractConnectionManager implements ConnectionManager {
     protected WebSocketConnection connection = null;
 
 
+    public void clearMessageQueue(){
+        queue.clear();
+    }
 
 
     public void updateConnection(WebSocketConnection connection){

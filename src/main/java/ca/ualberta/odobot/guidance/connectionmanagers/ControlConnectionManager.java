@@ -34,7 +34,13 @@ public class ControlConnectionManager extends AbstractConnectionManager implemen
                 newRequestTargetNodeConsumer.accept(request.getTargetNode());
                 break;
             case "STOP_GUIDANCE_REQUEST":
+                //Stop transmitting
                 request.getEventConnectionManager().stopTransmitting();
+
+                //Clear the message queues... I think we want this.
+                request.getEventConnectionManager().clearMessageQueue();
+                request.getGuidanceConnectionManager().clearMessageQueue();
+                clearMessageQueue();
                 break;
         }
     }
