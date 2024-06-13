@@ -1,4 +1,4 @@
-package ca.ualberta.odobot.semanticflow.navmodel;
+package ca.ualberta.odobot.semanticflow.navmodel.nodes;
 
 import org.neo4j.driver.Record;
 import org.neo4j.driver.types.Node;
@@ -6,7 +6,7 @@ import org.neo4j.driver.types.Node;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-public class ApplicationLocationChangeNode extends NavNode{
+public class ApplicationLocationChangeNode extends NavNode {
 
     private String from;
     private String to;

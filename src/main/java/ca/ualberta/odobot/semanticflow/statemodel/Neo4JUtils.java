@@ -1,8 +1,8 @@
 package ca.ualberta.odobot.semanticflow.statemodel;
 
 import ca.ualberta.odobot.semanticflow.model.*;
-import ca.ualberta.odobot.semanticflow.navmodel.*;
 
+import ca.ualberta.odobot.semanticflow.navmodel.nodes.*;
 import org.neo4j.driver.*;
 import org.neo4j.driver.Record;
 import org.neo4j.driver.exceptions.NoSuchRecordException;

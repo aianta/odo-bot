@@ -19,6 +19,8 @@ public class NavPath {
 
     private static final Logger log = LoggerFactory.getLogger(NavPath.class);
 
+    public  static  Pattern pattern = Pattern.compile("[a-zA-Z]+");
+
     private Path path = null;
 
     private UUID id = UUID.randomUUID();
@@ -199,11 +201,7 @@ public class NavPath {
         tagString = tagString.substring(0, tagString.length()-suffix.length());
         log.info("tagString: {}", tagString);
 
-        Pattern pattern = Pattern.compile("[a-zA-Z]+");
-        Matcher matcher = pattern.matcher(tagString);
-        matcher.find();
-
-        String tag = matcher.group();
+        String tag = extractTag(tagString);
         log.info("tag: {}", tag);
 
         DynamicXPath dXpath = new DynamicXPath();
@@ -214,6 +212,11 @@ public class NavPath {
         return dXpath;
     }
 
+    public static String extractTag(String input){
+        Matcher matcher = pattern.matcher(input);
+        matcher.find();
+        return matcher.group();
+    }
 
 
 }

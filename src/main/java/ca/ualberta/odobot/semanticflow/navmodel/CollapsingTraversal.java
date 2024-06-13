@@ -1,5 +1,9 @@
 package ca.ualberta.odobot.semanticflow.navmodel;
 
+import ca.ualberta.odobot.semanticflow.navmodel.nodes.CollapsedClickNode;
+import ca.ualberta.odobot.semanticflow.navmodel.nodes.CollapsedDataEntryNode;
+import ca.ualberta.odobot.semanticflow.navmodel.nodes.CollapsedEffectNode;
+import ca.ualberta.odobot.semanticflow.navmodel.nodes.CollapsedNode;
 import org.neo4j.graphdb.*;
 import org.neo4j.graphdb.traversal.TraversalDescription;
 import org.neo4j.graphdb.traversal.Traverser;
@@ -99,7 +103,7 @@ public class CollapsingTraversal {
 
             StringBuilder sb = new StringBuilder();
             nodeSet.forEach(n->sb.append(String.format("%s", n.getElementId())));
-            log.info("Collapsing [{}] into a single node {}!", sb.toString(), collapsedNode.id.toString());
+            log.info("Collapsing [{}] into a single node {}!", sb.toString(), collapsedNode.id().toString());
 
             //Delete the nodes in the node set.
             nodeSet.forEach(node ->tx.execute("MATCH (n) WHERE elementId(n) = '%s' detach delete n".formatted(node.getElementId())));

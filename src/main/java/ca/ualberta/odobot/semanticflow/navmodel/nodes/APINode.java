@@ -1,4 +1,4 @@
-package ca.ualberta.odobot.semanticflow.navmodel;
+package ca.ualberta.odobot.semanticflow.navmodel.nodes;
 
 import org.neo4j.driver.Record;
 import org.neo4j.driver.types.Node;
@@ -6,7 +6,7 @@ import org.neo4j.driver.types.Node;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-public class APINode extends NavNode{
+public class APINode extends NavNode {
 
     //TODO - Sadly, path and method are not sufficiently differentiating, will have to deal with that at some point.
     private String path;

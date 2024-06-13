@@ -1,4 +1,4 @@
-package ca.ualberta.odobot.semanticflow.navmodel;
+package ca.ualberta.odobot.semanticflow.navmodel.nodes;
 
 import org.neo4j.graphdb.Label;
 import org.neo4j.graphdb.Node;

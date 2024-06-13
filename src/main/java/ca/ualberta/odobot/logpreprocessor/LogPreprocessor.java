@@ -59,7 +59,11 @@ public class LogPreprocessor extends AbstractVerticle {
     Router api;
     HttpServer server;
 
-    GraphDB graphDB;
+    public static GraphDB graphDB;
+
+    public static Localizer localizer;
+
+    public static NavPathsConstructor pathsConstructor;
 
     public Completable rxStart(){
         try {
@@ -68,6 +72,12 @@ public class LogPreprocessor extends AbstractVerticle {
             //Init embedded Neo4J
             //TODO -> this should probably be its own service
             graphDB = new GraphDB("/graphdb/", "embedded");
+
+            //TODO -> refactor this, probably...
+            localizer = new Localizer(graphDB);
+
+            //TODO -> refactor this, probably...
+            pathsConstructor = new NavPathsConstructor(graphDB);
 
             //Init Http Server
             HttpServerOptions options = new HttpServerOptions()

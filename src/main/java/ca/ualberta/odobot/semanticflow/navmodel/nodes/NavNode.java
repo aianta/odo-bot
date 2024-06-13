@@ -1,4 +1,4 @@
-package ca.ualberta.odobot.semanticflow.navmodel;
+package ca.ualberta.odobot.semanticflow.navmodel.nodes;
 
 import java.util.HashSet;
 import java.util.Set;

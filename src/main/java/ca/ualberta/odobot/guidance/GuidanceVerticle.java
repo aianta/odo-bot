@@ -1,5 +1,7 @@
 package ca.ualberta.odobot.guidance;
 
+import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
+import ca.ualberta.odobot.semanticflow.navmodel.Localizer;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
 import io.vertx.core.buffer.Buffer;
@@ -34,6 +36,7 @@ public class GuidanceVerticle extends AbstractVerticle {
     private Router mainRouter;
 
     private Map<UUID, Request> requestMap = new HashMap<>();
+
 
     @Override
     public void start(Promise<Void> startPromise) throws Exception {

@@ -1,5 +1,6 @@
-package ca.ualberta.odobot.semanticflow.navmodel;
+package ca.ualberta.odobot.semanticflow.navmodel.nodes;
 
+import ca.ualberta.odobot.semanticflow.navmodel.BaseLabel;
 import org.neo4j.graphdb.Label;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Transaction;
@@ -23,6 +24,10 @@ public abstract class CollapsedNode {
         });
 
 
+    }
+
+    public UUID id() {
+        return id;
     }
 
     private void validate(Set<Node> nodeSet){

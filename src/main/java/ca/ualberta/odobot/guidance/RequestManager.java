@@ -1,14 +1,18 @@
 package ca.ualberta.odobot.guidance;
 
+import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import ca.ualberta.odobot.semanticflow.model.ClickEvent;
 import ca.ualberta.odobot.semanticflow.model.DataEntry;
 import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
+import ca.ualberta.odobot.semanticflow.navmodel.NavPath;
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
-import org.jsoup.nodes.Document;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.*;
+import java.util.stream.IntStream;
 
 public class RequestManager {
 
@@ -19,56 +23,6 @@ public class RequestManager {
     private Request request = null;
 
     private PathsRequestInput _input = null;
-
-    private class PathsRequestInput{
-        Document dom;
-        TimelineEntity lastEntity;
-        String url;
-
-        String pathRequestId;
-
-        String targetNode;
-
-        public String getPathRequestId() {
-            return pathRequestId;
-        }
-
-        public void setPathRequestId(String pathRequestId) {
-            this.pathRequestId = pathRequestId;
-        }
-
-        public String getTargetNode() {
-            return targetNode;
-        }
-
-        public void setTargetNode(String targetNode) {
-            this.targetNode = targetNode;
-        }
-
-        public Document getDom() {
-            return dom;
-        }
-
-        public void setDom(Document dom) {
-            this.dom = dom;
-        }
-
-        public TimelineEntity getLastEntity() {
-            return lastEntity;
-        }
-
-        public void setLastEntity(TimelineEntity lastEntity) {
-            this.lastEntity = lastEntity;
-        }
-
-        public String getUrl() {
-            return url;
-        }
-
-        public void setUrl(String url) {
-            this.url = url;
-        }
-    }
 
     public RequestManager(Request request){
         this.request = request;
@@ -95,10 +49,49 @@ public class RequestManager {
         eventProcessor.process(localContext);
 
         _input.setTargetNode(targetNode);
+        _input.setPathRequestId(request.id().toString());
         log.info("LastEntity: {}", _input.lastEntity.symbol());
         log.info("URL: {}", _input.url);
         log.info("DOM: {}", _input.dom.toString().substring(0, Math.min(_input.dom.toString().length(), 150)));
         log.info("TargetNode: {}", _input.targetNode);
+
+        try{
+            Optional<UUID> startingNode = LogPreprocessor.localizer.resolveStartingNode(_input);
+            log.info("Found starting node? {}", startingNode.isPresent());
+
+            UUID src = startingNode.get();
+            UUID tgt = UUID.fromString(targetNode);
+
+            log.info("Resolving path from {} to {}", src.toString(), tgt.toString());
+
+            List<NavPath> paths = LogPreprocessor.pathsConstructor.construct(src, tgt);
+
+//            paths.sort(Comparator.comparingInt(navPath -> navPath.getPath().length()));
+//
+//            IntStream.range(0, paths.size())
+//                    .limit(30)
+//                    .forEach(i->{
+//
+//
+//                                StringBuilder sb = new StringBuilder();
+//                                paths.get(i).getPath().nodes().forEach(n->{
+//                                    StringBuilder nsb = new StringBuilder();
+//                                    nsb.append("(");
+//                                    n.getLabels().forEach(label->nsb.append(":" + label.name()));
+//                                    nsb.append("| id:%s)".formatted((String)n.getProperty("id")));
+//                                    nsb.append("-->");
+//                                    sb.append(nsb.toString());
+//                                });
+//
+//                                log.info("Path[{}] length: {}: {}", i, paths.get(i).getPath().length(), sb.toString());
+//
+//                            });
+
+            log.info("Found {} paths", paths.size());
+        }catch (Exception e){
+            log.error(e.getMessage(), e);
+        }
+
 
         return Future.succeededFuture(new JsonObject()
                 .put("navigationOptions", new JsonArray()

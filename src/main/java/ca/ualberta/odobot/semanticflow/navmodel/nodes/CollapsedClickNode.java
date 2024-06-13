@@ -1,4 +1,4 @@
-package ca.ualberta.odobot.semanticflow.navmodel;
+package ca.ualberta.odobot.semanticflow.navmodel.nodes;
 
 import org.neo4j.graphdb.Label;
 import org.neo4j.graphdb.Node;
@@ -9,7 +9,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-public class CollapsedClickNode extends CollapsedNode{
+public class CollapsedClickNode extends CollapsedNode {
 
     public Set<String> xpaths = new HashSet<>();
     public Set<String> texts = new HashSet<>();
