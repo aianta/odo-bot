@@ -1,17 +1,23 @@
 package ca.ualberta.odobot.guidance;
 
+import ca.ualberta.odobot.guidance.instructions.DynamicXPathInstruction;
+import ca.ualberta.odobot.guidance.instructions.Instruction;
+import ca.ualberta.odobot.guidance.instructions.XPathInstruction;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import ca.ualberta.odobot.semanticflow.model.ClickEvent;
 import ca.ualberta.odobot.semanticflow.model.DataEntry;
 import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
+import ca.ualberta.odobot.semanticflow.navmodel.DynamicXPath;
 import ca.ualberta.odobot.semanticflow.navmodel.NavPath;
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import org.neo4j.graphdb.Transaction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 public class RequestManager {
@@ -22,7 +28,11 @@ public class RequestManager {
 
     private Request request = null;
 
+    private List<NavPath> navPaths = null;
+
     private PathsRequestInput _input = null;
+
+    private Transaction tx;
 
     public RequestManager(Request request){
         this.request = request;
@@ -64,39 +74,18 @@ public class RequestManager {
 
             log.info("Resolving path from {} to {}", src.toString(), tgt.toString());
 
-            List<NavPath> paths = LogPreprocessor.pathsConstructor.construct(src, tgt);
+            tx = LogPreprocessor.graphDB.db.beginTx();
 
-//            paths.sort(Comparator.comparingInt(navPath -> navPath.getPath().length()));
-//
-//            IntStream.range(0, paths.size())
-//                    .limit(30)
-//                    .forEach(i->{
-//
-//
-//                                StringBuilder sb = new StringBuilder();
-//                                paths.get(i).getPath().nodes().forEach(n->{
-//                                    StringBuilder nsb = new StringBuilder();
-//                                    nsb.append("(");
-//                                    n.getLabels().forEach(label->nsb.append(":" + label.name()));
-//                                    nsb.append("| id:%s)".formatted((String)n.getProperty("id")));
-//                                    nsb.append("-->");
-//                                    sb.append(nsb.toString());
-//                                });
-//
-//                                log.info("Path[{}] length: {}: {}", i, paths.get(i).getPath().length(), sb.toString());
-//
-//                            });
+            navPaths = LogPreprocessor.pathsConstructor.construct(tx, src, tgt);
 
-            log.info("Found {} paths", paths.size());
+            buildNavigationOptions(navPaths);
+
+            log.info("Found {} paths", navPaths.size());
         }catch (Exception e){
             log.error(e.getMessage(), e);
         }
 
-
-        return Future.succeededFuture(new JsonObject()
-                .put("navigationOptions", new JsonArray()
-                        .add(new JsonObject().put("xpath", "//html/body/div[3]/div[2]/div/div/div[1]/div/div/div/div/div/div[2]/form[1]/div[3]/div[2]/button"))
-                ));
+        return Future.succeededFuture(new JsonObject().put("navigationOptions", buildNavigationOptions(navPaths)));
     }
 
     private void buildPathsRequestInput(TimelineEntity entity){
@@ -119,6 +108,47 @@ public class RequestManager {
         _input = result;
     }
 
+    private JsonArray buildNavigationOptions(List<NavPath> paths){
+
+
+        /**
+         * We want to get distinct instructions from our set of possible paths. Many paths will overlap
+         * and thus may have identical instructions.
+         */
+        JsonArray navOptions = paths.stream()
+                .map(NavPath::getInstruction)
+                .distinct()
+                .peek(instruction -> {
+                    if(instruction instanceof XPathInstruction){
+                        log.info(" {} - {}", instruction.hashCode(), ((XPathInstruction)instruction).xpath);
+                    }else{
+                        log.info("{} - {}", instruction.hashCode(), ((DynamicXPathInstruction)instruction).dynamicXPath.toJson().encodePrettily());
+                    }
+                })
+                //Convert instruction objects into JsonObjects
+                .map(instruction -> {
+                    if(instruction instanceof XPathInstruction){
+                        XPathInstruction xPathInstruction = (XPathInstruction) instruction;
+                        return new JsonObject().put("xpath", xPathInstruction.xpath);
+                    }
+
+                    if(instruction instanceof DynamicXPathInstruction){
+                        DynamicXPathInstruction dynamicXPathInstruction = (DynamicXPathInstruction) instruction;
+                        return new JsonObject().put("xpath", dynamicXPathInstruction.dynamicXPath.toJson());
+                    }
+
+                    return null;
+                })
+                //Filter out any nulls, and collect it all into a JsonArray
+                .filter(Objects::nonNull)
+                .collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+
+
+        log.info("Produced {} instructions/unique navigation options.", navOptions.size());
+
+        return navOptions;
+
+    }
 
 
 }

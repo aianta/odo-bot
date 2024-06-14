@@ -1,5 +1,8 @@
 package ca.ualberta.odobot.semanticflow.navmodel;
 
+import ca.ualberta.odobot.guidance.instructions.DynamicXPathInstruction;
+import ca.ualberta.odobot.guidance.instructions.Instruction;
+import ca.ualberta.odobot.guidance.instructions.XPathInstruction;
 import io.vertx.core.json.JsonObject;
 import org.neo4j.graphdb.Label;
 import org.neo4j.graphdb.Node;
@@ -7,13 +10,11 @@ import org.neo4j.graphdb.Path;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.Iterator;
-import java.util.UUID;
+import java.util.*;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.IntStream;
 
 public class NavPath {
 
@@ -49,39 +50,91 @@ public class NavPath {
         iterator = path.nodes().iterator();
     }
 
-    public JsonObject getInstruction(){
-        JsonObject result = new JsonObject()
-                .put("id", id.toString());
+
+    public Instruction getInstruction(){
+
 
         while (iterator.hasNext()){
             Node node = iterator.next();
 
             if(instructionNodePredicate.test(node)){
-                JsonObject instruction = null;
+                Instruction instruction = null;
+
 
                 if(node.hasLabel(Label.label("CollapsedClickNode")) ||
                         node.hasLabel(Label.label("CollapsedDataEntryNode"))
                 ){
-                    instruction = makeInstructionFromCollapsedNode(node);
+                    DynamicXPathInstruction dynamicXPathInstruction = new DynamicXPathInstruction();
+                    dynamicXPathInstruction.dynamicXPath = nodeToDynamicXPath(node);
+                    instruction = dynamicXPathInstruction;
                 }else{
-                    instruction = makeInstructionFromNode(node);
+                    XPathInstruction xPathInstruction = new XPathInstruction();
+                    xPathInstruction.xpath = nodeToXPath(node);
+                    instruction = xPathInstruction;
                 }
 
-                result.mergeIn(makeInstructionFromNode(node));
-                return result;
+
+                return instruction;
             }
         }
 
         log.warn("No valid instruction nodes left in path {}!", id.toString());
         return null;
-
     }
+
+
+//    public JsonObject getInstruction(){
+//        JsonObject result = new JsonObject()
+//                .put("id", id.toString());
+//
+//        while (iterator.hasNext()){
+//            Node node = iterator.next();
+//
+//            if(instructionNodePredicate.test(node)){
+//                JsonObject instruction = null;
+//
+//                if(node.hasLabel(Label.label("CollapsedClickNode")) ||
+//                        node.hasLabel(Label.label("CollapsedDataEntryNode"))
+//                ){
+//                    instruction = makeInstructionFromCollapsedNode(node);
+//                }else{
+//                    instruction = makeInstructionFromNode(node);
+//                }
+//
+//                result.mergeIn(makeInstructionFromNode(node));
+//                return result;
+//            }
+//        }
+//
+//        log.warn("No valid instruction nodes left in path {}!", id.toString());
+//        return null;
+//
+//    }
 
     private JsonObject makeInstructionFromNode(Node n){
         JsonObject result = new JsonObject()
                 .put("xpath", (String)n.getProperty("xpath"));
 
         return result;
+    }
+
+    private String nodeToXPath(Node n){
+        if(!n.hasProperty("xpath")){
+            log.error("Node does not have xpath property!");
+            throw new RuntimeException("Node does not have xpaths property!");
+        }
+
+        return (String)n.getProperty("xpath");
+    }
+
+    private DynamicXPath nodeToDynamicXPath(Node n){
+        if(!n.hasProperty("xpaths")){
+            log.error("Node does not have xpaths property!");
+            throw new RuntimeException("Node does not have xpaths property!");
+        }
+
+        String [] xpaths = (String[]) n.getProperty("xpaths");
+        return findDynamicXPath(xpaths);
     }
 
     private JsonObject makeInstructionFromCollapsedNode(Node n){
@@ -93,7 +146,7 @@ public class NavPath {
         }
 
         String [] xpaths = (String[]) n.getProperty("xpaths");
-        result.put("xpath", findCommonXpath(xpaths));
+        result.put("xpath", findDynamicXPath(xpaths).toJson());
 
         return result;
     }
@@ -216,6 +269,27 @@ public class NavPath {
         Matcher matcher = pattern.matcher(input);
         matcher.find();
         return matcher.group();
+    }
+
+    public static void printNavPaths(List<NavPath> paths, int limit){
+        IntStream.range(0, paths.size())
+                .limit(limit)
+                .forEach(i->{
+
+
+                    StringBuilder sb = new StringBuilder();
+                    paths.get(i).getPath().nodes().forEach(n->{
+                        StringBuilder nsb = new StringBuilder();
+                        nsb.append("(");
+                        n.getLabels().forEach(label->nsb.append(":" + label.name()));
+                        nsb.append("| id:%s)".formatted((String)n.getProperty("id")));
+                        nsb.append("-->");
+                        sb.append(nsb.toString());
+                    });
+
+                    log.info("Path[{}] length: {}: {}", i, paths.get(i).getPath().length(), sb.toString());
+
+                });
     }
 
 

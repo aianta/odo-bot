@@ -31,9 +31,7 @@ public class NavPathsConstructor {
         }
     }
 
-    public List<NavPath> construct(UUID src, UUID tgt){
-
-        try(Transaction tx = db.beginTx()){
+    public List<NavPath> construct(Transaction tx, UUID src, UUID tgt){
 
             Node srcNode = fetchNodeById(tx, src.toString());
             Node tgtNode = fetchNodeById(tx, tgt.toString());
@@ -66,27 +64,10 @@ public class NavPathsConstructor {
 
             paths.sort(Comparator.comparingInt(navPath -> navPath.getPath().length()));
 
-            IntStream.range(0, paths.size())
-                    .limit(30)
-                    .forEach(i->{
-
-
-                        StringBuilder sb = new StringBuilder();
-                        paths.get(i).getPath().nodes().forEach(n->{
-                            StringBuilder nsb = new StringBuilder();
-                            nsb.append("(");
-                            n.getLabels().forEach(label->nsb.append(":" + label.name()));
-                            nsb.append("| id:%s)".formatted((String)n.getProperty("id")));
-                            nsb.append("-->");
-                            sb.append(nsb.toString());
-                        });
-
-                        log.info("Path[{}] length: {}: {}", i, paths.get(i).getPath().length(), sb.toString());
-
-                    });
+            NavPath.printNavPaths(paths, 3);
 
             return paths;
-        }
+
     }
 
 

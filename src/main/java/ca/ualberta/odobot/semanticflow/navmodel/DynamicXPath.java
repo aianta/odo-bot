@@ -1,5 +1,8 @@
 package ca.ualberta.odobot.semanticflow.navmodel;
 
+import io.vertx.core.json.JsonObject;
+import org.apache.commons.lang3.builder.HashCodeBuilder;
+
 public class DynamicXPath {
 
     private String prefix;
@@ -55,5 +58,32 @@ public class DynamicXPath {
         String sampleTag = NavPath.extractTag(sampleDynamicTagString);
 
         return this.dynamicTag.equals(sampleTag);
+    }
+
+    public JsonObject toJson(){
+        JsonObject result = new JsonObject()
+                .put("prefix", getPrefix())
+                .put("suffix", getSuffix())
+                .put("dynamicTag", getDynamicTag());
+
+        return result;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if(!(obj instanceof DynamicXPath)){
+            return false;
+        }
+
+        DynamicXPath other = (DynamicXPath) obj;
+        return this.toJson().equals(other.toJson()); //This is probably slow...
+    }
+
+    public int hashCode(){
+        HashCodeBuilder builder = new HashCodeBuilder(21, 31);
+        builder.append(prefix);
+        builder.append(suffix);
+        builder.append(dynamicTag);
+        return builder.toHashCode();
     }
 }
