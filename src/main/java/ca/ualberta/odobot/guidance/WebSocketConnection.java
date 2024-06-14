@@ -121,7 +121,9 @@ public class WebSocketConnection {
 
         }
 
-        log.info("[{}][{}] got message:\n{}", boundRequest.id().toString(), boundSource.name, message.encodePrettily().substring(0, Math.min(message.encodePrettily().length(), 150)));
+        if(boundSource != Source.EVENT_SOCKET){
+            log.info("[{}][{}] got message:\n{}", boundRequest.id().toString(), boundSource.name, message.encodePrettily().substring(0, Math.min(message.encodePrettily().length(), 150)));
+        }
         messageConsumer.accept(message);
     }
 

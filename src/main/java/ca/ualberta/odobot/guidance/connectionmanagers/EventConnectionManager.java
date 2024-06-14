@@ -3,6 +3,8 @@ package ca.ualberta.odobot.guidance.connectionmanagers;
 import ca.ualberta.odobot.guidance.OnlineEventProcessor;
 import ca.ualberta.odobot.guidance.Request;
 import ca.ualberta.odobot.guidance.WebSocketConnection;
+import ca.ualberta.odobot.semanticflow.model.ClickEvent;
+import ca.ualberta.odobot.semanticflow.model.DataEntry;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.json.JsonArray;
@@ -28,8 +30,7 @@ public class EventConnectionManager extends AbstractConnectionManager implements
 
     public EventConnectionManager(Request request){
         this.request = request;
-
-        eventProcessor.setOnEntity(entity -> log.info("Last entity: {}", entity.symbol()));
+        eventProcessor.setOnEntity(request.getRequestManager()::entityWatcher, entity -> entity instanceof DataEntry || entity instanceof ClickEvent);
     }
 
 

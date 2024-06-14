@@ -7,7 +7,10 @@ public class DynamicXPathInstruction extends Instruction {
     public DynamicXPath dynamicXPath;
 
     public boolean equals(Object o){
-        return dynamicXPath.equals(o);
+        if(!(o instanceof DynamicXPathInstruction)){
+            return false;
+        }
+        return dynamicXPath.equals(((DynamicXPathInstruction) o).dynamicXPath);
     }
 
     public int hashCode(){

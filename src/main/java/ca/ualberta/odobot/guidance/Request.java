@@ -76,10 +76,12 @@ public class Request {
 
     public Request(UUID id){
         this.id = id;
+
         this.controlConnectionManager = new ControlConnectionManager(this);
-        this.eventConnectionManager = new EventConnectionManager(this);
+        this.requestManager = new RequestManager(this); //Request Manager must be initalized after control connection manager
+        this.eventConnectionManager = new EventConnectionManager(this); //Event connection manager must be called after RequestManager is bound to the request.
         this.guidanceConnectionManager = new GuidanceConnectionManager(this);
-        this.requestManager = new RequestManager(this);
+
 
     }
 
@@ -93,5 +95,13 @@ public class Request {
 
     public GuidanceConnectionManager getGuidanceConnectionManager() {
         return guidanceConnectionManager;
+    }
+
+    public RequestManager getRequestManager() {
+        return requestManager;
+    }
+
+    public void setRequestManager(RequestManager requestManager) {
+        this.requestManager = requestManager;
     }
 }

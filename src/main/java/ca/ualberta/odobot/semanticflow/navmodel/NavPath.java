@@ -30,7 +30,13 @@ public class NavPath {
 
     private Predicate<Node> instructionNodePredicate = (node)->node.hasLabel(Label.label("ClickNode")) || node.hasLabel(Label.label("DataEntryNode"));
 
+    private Instruction lastInstruction;
+
     public NavPath(){
+    }
+
+    public Instruction lastInstruction(){
+        return lastInstruction;
     }
 
     public UUID getId() {
@@ -73,12 +79,13 @@ public class NavPath {
                     instruction = xPathInstruction;
                 }
 
-
+                lastInstruction = instruction;
                 return instruction;
             }
         }
 
         log.warn("No valid instruction nodes left in path {}!", id.toString());
+        lastInstruction = null;
         return null;
     }
 

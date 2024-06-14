@@ -61,7 +61,7 @@ public abstract class JsonMapper<T extends AbstractArtifact> {
         Document doc = Jsoup.parseBodyFragment(html);
         if(doc.body().childrenSize() != 1){
             log.warn("More than one or no ({}) elements found when trying to extract HTML element from: {}", doc.body().childrenSize(), html);
-            log.warn("ParsedDocument: {}\n", doc.outerHtml());
+            //log.warn("ParsedDocument: {}\n", doc.outerHtml());
             doc.body().children().forEach(child->log.warn("{}",child));
         }
 

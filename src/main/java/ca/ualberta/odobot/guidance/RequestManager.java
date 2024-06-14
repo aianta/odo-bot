@@ -36,6 +36,7 @@ public class RequestManager {
 
     public RequestManager(Request request){
         this.request = request;
+        this.request.setRequestManager(this);
         this.request.getControlConnectionManager().setNewRequestTargetNodeConsumer(this::handleNewPathsRequest);
     }
 
@@ -147,6 +148,67 @@ public class RequestManager {
         log.info("Produced {} instructions/unique navigation options.", navOptions.size());
 
         return navOptions;
+
+    }
+
+    public void entityWatcher(TimelineEntity entity){
+
+        if(navPaths == null){ // If there are no navigation paths currently being managed for this request, then we can ignore realtime events.
+            return;
+        }
+
+        String xpath = null;
+
+        if(entity instanceof DataEntry){
+            DataEntry dataEntry = (DataEntry) entity;
+            xpath = dataEntry.lastChange().getXpath();
+        }
+
+        if(entity instanceof ClickEvent){
+            ClickEvent clickEvent = (ClickEvent) entity;
+            xpath = clickEvent.getXpath();
+        }
+
+        final String observedXPath = xpath;
+        log.info("Observed {} on xpath: {}", entity.symbol(), observedXPath);
+
+        /**
+         * Update the navPaths associated with this request.
+         * Prune all paths whose last instruction was not followed by the user.
+         */
+        List<NavPath> tempNavPaths = navPaths.stream()
+                .filter(navPath -> {
+                    Instruction lastInstruction = navPath.lastInstruction();
+
+                    if(lastInstruction == null){
+                        log.error("Last instruction is null!");
+                        throw new RuntimeException("Last instruction was null!");
+                    }
+
+                    if(lastInstruction instanceof XPathInstruction){
+                        return observedXPath.equals(((XPathInstruction) lastInstruction).xpath);
+                    }
+
+                    if(lastInstruction instanceof DynamicXPathInstruction){
+                        DynamicXPathInstruction dynamicXPathInstruction = (DynamicXPathInstruction) lastInstruction;
+                        return dynamicXPathInstruction.dynamicXPath.matches(observedXPath) || dynamicXPathInstruction.dynamicXPath.stillMatches(observedXPath);
+                    }
+
+
+                    log.warn("Unknown instruction type detected in navPath.lastInstruction()");
+                    return false;
+                })
+                .collect(Collectors.toList())
+        ;
+
+        if(tempNavPaths.size() > 0){
+            this.navPaths = tempNavPaths;
+            request.getGuidanceConnectionManager().showNavigationOptions(
+                    new JsonObject().put("navigationOptions", buildNavigationOptions(this.navPaths))
+            );
+        }
+
+
 
     }
 

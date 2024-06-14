@@ -43,11 +43,27 @@ public class DynamicXPath {
      */
     public boolean matches(String sampleXPath){
 
+
+
         //NOTE: Check dynamic tag AFTER prefix and suffix, as dynamic tag extraction assumes prefix and suffix match.
         return sampleXPath.startsWith(prefix) && //Prefix matches
                 sampleXPath.endsWith(suffix) && //Suffix matches
                 matchesDynamicTag(sampleXPath); //Dynamic tag matches
 
+
+    }
+
+    public boolean stillMatches(String sampleXPath){
+
+        while (!matches(sampleXPath) && sampleXPath.contains("/")){
+            sampleXPath = sampleXPath.substring(0, sampleXPath.lastIndexOf("/"));
+        }
+
+        if(sampleXPath.isEmpty() || sampleXPath.isBlank() || sampleXPath.length() == 0){
+            return false;
+        }else{
+            return true;
+        }
 
     }
 
