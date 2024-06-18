@@ -32,6 +32,20 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
         }
     }
 
+    public Future<JsonObject> clearNavigationOptions(){
+        JsonObject clearNavigationOptionsRequest = new JsonObject()
+                .put("type", "CLEAR_NAVIGATION_OPTIONS")
+                .put("source", "GuidanceConnectionManager")
+                .put("pathsRequestId", request.id().toString());
+
+        Promise<JsonObject> promise = Promise.promise();
+        activePromises.put("CLEAR_NAVIGATION_OPTIONS_RESULT", promise);
+
+        send(clearNavigationOptionsRequest);
+
+        return promise.future();
+    }
+
     public Future<JsonObject> showNavigationOptions(JsonObject navigationOptions){
         JsonObject showNavigationOptionsRequest = new JsonObject()
                 .put("type", "SHOW_NAVIGATION_OPTIONS")

@@ -40,10 +40,10 @@ public class RequestManager {
         this.request.getControlConnectionManager().setNewRequestTargetNodeConsumer(this::handleNewPathsRequest);
     }
 
-    public void handleNewPathsRequest(String targetNode){
+    public void handleNewPathsRequest(String targetNode, String userLocation){
 
         request.getEventConnectionManager().getLocalContext()
-                .compose(localContext->getPaths(targetNode, localContext))
+                .compose(localContext->getPaths(targetNode, userLocation, localContext))
                 .compose(navigationOptions->request.getGuidanceConnectionManager().showNavigationOptions(navigationOptions))
                 .onSuccess(navigationOptionsShown->request.getEventConnectionManager().startTransmitting());
         ;
@@ -51,22 +51,30 @@ public class RequestManager {
 
     }
 
-    public Future<JsonObject> getPaths(String targetNode, JsonArray localContext){
+    public Future<JsonObject> getPaths(String targetNode, String userLocation, JsonArray localContext){
 
-        log.info("Processing local context into PathsRequestInput");
+        log.info("Processing local context[size:{}] into PathsRequestInput", localContext.size());
 
         //TODO: Should we really only be looking at DataEntries and ClickEvents, even for sourcing the last DOM and URL?
         eventProcessor.setOnEntity( this::buildPathsRequestInput , (entity)->entity instanceof DataEntry || entity instanceof ClickEvent);
         eventProcessor.process(localContext);
 
-        _input.setTargetNode(targetNode);
-        _input.setPathRequestId(request.id().toString());
-        log.info("LastEntity: {}", _input.lastEntity.symbol());
-        log.info("URL: {}", _input.url);
-        log.info("DOM: {}", _input.dom.toString().substring(0, Math.min(_input.dom.toString().length(), 150)));
-        log.info("TargetNode: {}", _input.targetNode);
-
+        log.info("Done processing local context!");
         try{
+            if(_input == null){
+                //This happens when there is no meaningful local context. IE: local context that includes a data entry or click event
+                _input = new PathsRequestInput();
+            }
+
+            _input.setUserLocation(userLocation);
+            _input.setTargetNode(targetNode);
+            _input.setPathRequestId(request.id().toString());
+            log.info("LastEntity: {}", _input.getLastEntity() != null?_input.lastEntity.symbol(): "N/A");
+            log.info("URL: {}", _input.getUrl() != null? _input.getUrl(): "N/A");
+            log.info("DOM: {}", _input.getDom() != null? _input.dom.toString().substring(0, Math.min(_input.dom.toString().length(), 150)): "N/A");
+            log.info("TargetNode: {}", _input.targetNode);
+
+
             Optional<UUID> startingNode = LogPreprocessor.localizer.resolveStartingNode(_input);
             log.info("Found starting node? {}", startingNode.isPresent());
 

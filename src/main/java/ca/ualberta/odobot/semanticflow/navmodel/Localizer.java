@@ -7,6 +7,8 @@ import org.neo4j.graphdb.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -20,7 +22,19 @@ public class Localizer {
 
     private GraphDatabaseService db;
 
+    /**
+     * Index for resolving userLocation urls to node ids. These will map to LocationNode
+     */
+    private Map<String, UUID> locationIndex = new HashMap<>();
+
+    /**
+     * Index for resolving DynamicXPaths to node ids. These will map to Collapsed nodes of some type.
+     */
     private Map<DynamicXPath, UUID> dynamicXPathLocationIndex = new HashMap<>();
+
+    /**
+     * Index for resolving xpaths to node ids. These will map to non-Collapsed nodes of some type.
+     */
     private Map<String, UUID> xPathLocationIndex = new HashMap<>();
 
     public Localizer(GraphDB graphDB){
@@ -31,6 +45,7 @@ public class Localizer {
     public void refreshIndices(){
         xPathLocationIndex = buildXpathLocationIndex();
         dynamicXPathLocationIndex = buildDynamicXPathLocationIndex();
+        locationIndex = buildLocationIndex();
     }
 
     private Map<DynamicXPath, UUID> buildDynamicXPathLocationIndex(){
@@ -47,18 +62,28 @@ public class Localizer {
 
     }
 
+    private Map<String, UUID> buildLocationIndex(){
+        Map<String, UUID> index = new HashMap<>();
+        executeNodesQuery("match (n:LocationNode) return n;", "n", node->{
+            StringKeyIndexEntry entry = buildLocationIndexEntry(node);
+            index.put(entry.key(), entry.nodeId());
+        });
+        return index;
+    }
+
 
     private Map<String, UUID> buildXpathLocationIndex(){
         Map<String,UUID> index = new HashMap<>();
 
         executeNodesQuery("match (n) where (n:ClickNode OR n:DataEntryNode) AND NOT n:CollapsedClickNode AND NOT n:CollapsedDataEntryNode return n;", "n",
                 (node)->{
-                    XPathIndexEntry entry = buildXpathIndexEntry(node);
-                    index.put(entry.xpath(), entry.nodeId());
+                    StringKeyIndexEntry entry = buildXpathIndexEntry(node);
+                    index.put(entry.key(), entry.nodeId());
         });
 
         return index;
     }
+
 
     private record DynamicXPathIndexEntry(DynamicXPath dynamicXPath, UUID nodeId){};
 
@@ -72,11 +97,18 @@ public class Localizer {
         );
     }
 
-    private record XPathIndexEntry(String xpath, UUID nodeId){};
+    private record StringKeyIndexEntry(String key, UUID nodeId){};
 
-    private XPathIndexEntry buildXpathIndexEntry(Node node){
-        return new XPathIndexEntry(
+    private StringKeyIndexEntry buildXpathIndexEntry(Node node){
+        return new StringKeyIndexEntry(
                 (String)node.getProperty("xpath"),
+                UUID.fromString((String)node.getProperty("id"))
+        );
+    }
+
+    private StringKeyIndexEntry buildLocationIndexEntry(Node node){
+        return new StringKeyIndexEntry(
+                (String)node.getProperty("path"),
                 UUID.fromString((String)node.getProperty("id"))
         );
     }
@@ -111,7 +143,18 @@ public class Localizer {
             //No last entity because of sparse/minimal/empty local context. Need to resolve using url.
             //TODO -> make sure URL is sent even without local context.
             //TODO -> implement a method for resolving using location.
-            return Optional.empty();
+            //TODO -> this is a hard coded implementation for normalizing specifically canvas paths, need to refactor this for generalization purposes.
+            try{
+               URL url = new URL(input.getUserLocation());
+               String location = url.getPath().replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*");
+
+               return findNodeByLocation(location);
+
+            }catch (MalformedURLException e){
+                log.error("Failed to parse userLocation: {}", input.getUserLocation());
+                log.error(e.getMessage(), e);
+                return Optional.empty();
+            }
         }
 
         String xpath = null;
@@ -130,6 +173,14 @@ public class Localizer {
         return findNodeIdByXPath(xpath);
     }
 
+    private Optional<UUID> findNodeByLocation(String location){
+        //Look for a match in the location index
+        Optional<UUID> result = locationIndex.entrySet().stream()
+                .filter(entry->entry.getKey().equals(location))
+                .map(Map.Entry::getValue)
+                .findAny();
+        return result;
+    }
 
     private Optional<UUID> findNodeIdByXPath(String xpath){
         //Look for a match in the dynamic xpath location index

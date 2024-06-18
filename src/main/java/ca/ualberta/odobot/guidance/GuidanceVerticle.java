@@ -5,16 +5,18 @@ import ca.ualberta.odobot.semanticflow.navmodel.Localizer;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
 import io.vertx.core.buffer.Buffer;
-import io.vertx.core.http.HttpServer;
-import io.vertx.core.http.HttpServerOptions;
-import io.vertx.core.http.ServerWebSocket;
-import io.vertx.core.http.WebSocket;
+import io.vertx.core.http.*;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.net.JksOptions;
 import io.vertx.core.net.TrustOptions;
 import io.vertx.ext.web.Router;
+import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BodyHandler;
 import io.vertx.ext.web.handler.LoggerHandler;
+import org.neo4j.graphdb.GraphDatabaseService;
+import org.neo4j.graphdb.Result;
+import org.neo4j.graphdb.Transaction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -34,6 +36,8 @@ public class GuidanceVerticle extends AbstractVerticle {
     private HttpServer server;
 
     private Router mainRouter;
+
+    private Router api;
 
     private Map<UUID, Request> requestMap = new HashMap<>();
 
@@ -64,12 +68,18 @@ public class GuidanceVerticle extends AbstractVerticle {
         server.webSocketHandler(WebSocketConnection::new);
 
         mainRouter = Router.router(vertx);
+        api = Router.router(vertx);
+
+        //Define API routes
+        api.route().method(HttpMethod.GET).path("/targetNodes").handler(this::getTargetNodes);
+
         mainRouter.route().handler(LoggerHandler.create());
         mainRouter.route().handler(BodyHandler.create());
         mainRouter.route().handler(rc->{
             rc.response().putHeader("Access-Control-Allow-Origin", "*");
             rc.next();
         });
+        mainRouter.route(API_PATH_PREFIX).subRouter(api);
         mainRouter.route().handler(rc->rc.response().setStatusCode(200).end("Greetings! This should be a secure line!"));
 
         server.requestHandler(mainRouter).listen(PORT);
@@ -78,41 +88,36 @@ public class GuidanceVerticle extends AbstractVerticle {
 
     }
 
-    private void handleWebsocketConnection(ServerWebSocket serverWebSocket) {
+    public void getTargetNodes(RoutingContext rc){
 
-        log.info("Websocket connection made!");
+        JsonArray targetNodes = new JsonArray();
 
+        GraphDatabaseService db = LogPreprocessor.graphDB.db;
+        try(Transaction tx = db.beginTx();
+            Result result = tx.execute("MATCH (n:APINode) return n.method, n.path, n.id;")
+        ){
+            while (result.hasNext()){
+                JsonObject targetNode = new JsonObject();
+                Map<String, Object> row = result.next();
+                for(Map.Entry<String,Object> column: row.entrySet()){
+                    if(column.getKey().equals("n.id")){
+                        targetNode.put("id", (String)column.getValue());
+                    }
+                    if(column.getKey().equals("n.path")){
+                        targetNode.put("path", (String)column.getValue());
+                    }
+                    if(column.getKey().equals("n.method")){
+                        targetNode.put("method", (String)column.getValue());
+                    }
+                }
 
-
-        serverWebSocket.handler(buffer->{
-           log.info("Received data on secure web socket");
-           log.info("{}", buffer.toJsonObject().encodePrettily());
-        });
-
-
-
-        serverWebSocket.closeHandler(event->{
-           log.info("Websocket connection closed!");
-        });
-
-    }
-
-    private void onMessage(Buffer buffer){
-        JsonObject message = buffer.toJsonObject();
-        final String type = message.getString("type");
-
-        switch (type){
-            case "CANCEL_REQUEST":
-                break; 
-            case "PATHS_REQUEST":
-                break;
-            case "LOGUI_EVENTS":
-                break;
-            default:
-                log.warn("Received unknown message type from odobot extension! {}", type);
+                targetNodes.add(targetNode);
+            }
         }
 
+        log.info("{}", targetNodes.encodePrettily());
 
+        rc.response().setStatusCode(200).end(targetNodes.encode());
 
     }
 

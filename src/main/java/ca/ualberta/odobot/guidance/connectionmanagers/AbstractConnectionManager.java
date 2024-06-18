@@ -21,9 +21,15 @@ public abstract class AbstractConnectionManager implements ConnectionManager {
         queue.clear();
     }
 
+    public void close(){
+        if(connection != null){
+            connection.close();
+        }
+    }
 
     public void updateConnection(WebSocketConnection connection){
         this.connection = connection;
+        this.connection.setMessageConsumer(this::onMessage);
         log.info("Clearing queue: {} messages {}", queue.size(), getClass().getName());
         while (!queue.isEmpty()){
             if(!this.send(queue.poll())){
@@ -31,7 +37,7 @@ public abstract class AbstractConnectionManager implements ConnectionManager {
             }
         }
 
-        this.connection.setMessageConsumer(this::onMessage);
+
     }
 
     public abstract void onMessage(JsonObject message);

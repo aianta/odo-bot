@@ -21,7 +21,7 @@ public class WebSocketConnection {
     private ServerWebSocket socket;
 
 
-    static Map<String, Request> requestMap = new HashMap<>();
+    public static Map<String, Request> requestMap = new HashMap<>();
 
     private boolean isBound = false;
 
@@ -37,6 +37,10 @@ public class WebSocketConnection {
 
     public WebSocketConnection(ServerWebSocket socket){
         handleConnection(socket);
+    }
+
+    public void close(){
+        socket.close();
     }
 
     public void handleConnection(ServerWebSocket socket){
@@ -118,6 +122,7 @@ public class WebSocketConnection {
             }
 
             isBound = true;
+            log.info("Underlying message type: {} ", message.getString("type"));
 
         }
 

@@ -6,11 +6,27 @@ import org.jsoup.nodes.Document;
 public class PathsRequestInput {
     Document dom;
     TimelineEntity lastEntity;
+    /**
+     * The url field is likely to be identical to the userLocation field. The difference is where they are sourced from.
+     * The 'url' field is parsed from the local context. While the 'userLocation' field is submitted directly with the
+     * paths requests. In situations where there is no local context, the url will be null, while the 'userLocation'
+     * value should still be populated.
+     */
     String url;
+
+    String userLocation;
 
     String pathRequestId;
 
     String targetNode;
+
+    public String getUserLocation() {
+        return userLocation;
+    }
+
+    public void setUserLocation(String userLocation) {
+        this.userLocation = userLocation;
+    }
 
     public String getPathRequestId() {
         return pathRequestId;

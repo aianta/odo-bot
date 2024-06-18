@@ -34,12 +34,22 @@ public class Request {
 
     private String targetNode;
 
+    private String userLocation;
+
     public String getTargetNode() {
         return targetNode;
     }
 
     public void setTargetNode(String targetNode) {
         this.targetNode = targetNode;
+    }
+
+    public String getUserLocation() {
+        return userLocation;
+    }
+
+    public void setUserLocation(String userLocation) {
+        this.userLocation = userLocation;
     }
 
     public UUID id(){
@@ -81,8 +91,12 @@ public class Request {
         this.requestManager = new RequestManager(this); //Request Manager must be initalized after control connection manager
         this.eventConnectionManager = new EventConnectionManager(this); //Event connection manager must be called after RequestManager is bound to the request.
         this.guidanceConnectionManager = new GuidanceConnectionManager(this);
+    }
 
-
+    public void clearConnectionManagers(){
+        this.controlConnectionManager = null;
+        this.eventConnectionManager = null;
+        this.guidanceConnectionManager = null;
     }
 
     public ControlConnectionManager getControlConnectionManager() {
