@@ -39,7 +39,6 @@ public class GuidanceVerticle extends AbstractVerticle {
 
     private Router api;
 
-    private Map<UUID, Request> requestMap = new HashMap<>();
 
 
     @Override
@@ -114,8 +113,6 @@ public class GuidanceVerticle extends AbstractVerticle {
                 targetNodes.add(targetNode);
             }
         }
-
-        log.info("{}", targetNodes.encodePrettily());
 
         rc.response().setStatusCode(200).end(targetNodes.encode());
 

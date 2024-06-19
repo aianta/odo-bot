@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.guidance.connectionmanagers;
 
+import ca.ualberta.odobot.guidance.OdoClient;
 import ca.ualberta.odobot.guidance.WebSocketConnection;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
@@ -15,6 +16,12 @@ public abstract class AbstractConnectionManager implements ConnectionManager {
     protected Queue<String> queue = new LinkedList<String>();
 
     protected WebSocketConnection connection = null;
+
+    protected OdoClient client;
+
+    public AbstractConnectionManager(OdoClient client){
+        this.client = client;
+    }
 
 
     public void clearMessageQueue(){
@@ -56,6 +63,7 @@ public abstract class AbstractConnectionManager implements ConnectionManager {
     }
 
     protected boolean send(JsonObject data){
+        log.info("Sending: \n{}",data.encodePrettily());
         return send(data.encode());
     }
 

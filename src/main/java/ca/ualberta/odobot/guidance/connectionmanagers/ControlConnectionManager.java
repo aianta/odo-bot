@@ -1,26 +1,22 @@
 package ca.ualberta.odobot.guidance.connectionmanagers;
 
+import ca.ualberta.odobot.guidance.OdoClient;
 import ca.ualberta.odobot.guidance.Request;
 import ca.ualberta.odobot.guidance.WebSocketConnection;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.UUID;
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 
 public class ControlConnectionManager extends AbstractConnectionManager implements ConnectionManager{
 
     private static final Logger log = LoggerFactory.getLogger(ControlConnectionManager.class);
 
-    private Request request;
-
-    private BiConsumer<String,String> newRequestTargetNodeConsumer;
-
-    public ControlConnectionManager(Request request){
-        this.request = request;
+    public ControlConnectionManager(OdoClient client){
+        super(client);
     }
-
 
 
     /**
@@ -31,30 +27,33 @@ public class ControlConnectionManager extends AbstractConnectionManager implemen
         log.info("ControlConnectionManager onMessage invoked! - {}", message.getString("type"));
         switch (message.getString("type")){
             case "PATHS_REQUEST":
+                Request request = new Request(UUID.fromString(message.getString("pathsRequestId")));
                 request.setTargetNode(message.getString("targetNode"));
                 request.setUserLocation(message.getString("userLocation"));
-                log.info("Target node is: {}", request.getTargetNode());
-                newRequestTargetNodeConsumer.accept(request.getTargetNode(), message.getString("userLocation"));
+
+                client.getRequestManager().addNewRequest(request);
+
+
                 break;
             case "STOP_GUIDANCE_REQUEST":
 
                 //TODO -> this looks like a good place for a composite future
                 //Stop transmitting
-                request.getEventConnectionManager().stopTransmitting();
+                client.getEventConnectionManager().stopTransmitting();
 
-                //Clear any existing navigation options being displayed.
-                request.getGuidanceConnectionManager().clearNavigationOptions().onSuccess(done->{
-                    //Close connections
-                    request.getControlConnectionManager().close();
-                    request.getGuidanceConnectionManager().close();
-                    request.getEventConnectionManager().close();
-
-                    //Clear connection managers
-                    request.clearConnectionManagers();
-
-                    //Remove request from request map.
-                    WebSocketConnection.requestMap.remove(request.id().toString());
-                });
+//                //Clear any existing navigation options being displayed.
+//                client.getGuidanceConnectionManager().clearNavigationOptions().onSuccess(done->{
+//                    //Close connections
+//                    client.getControlConnectionManager().close();
+//                    client.getGuidanceConnectionManager().close();
+//                    client.getEventConnectionManager().close();
+//
+//                    //Clear connection managers
+//                    client.clearConnectionManagers();
+//
+//                    //Remove request from request map.
+//                    WebSocketConnection.requestMap.remove(request.id().toString());
+//                });
 
 
                 //Clear the message queues... I think we want this.
@@ -65,11 +64,6 @@ public class ControlConnectionManager extends AbstractConnectionManager implemen
         }
     }
 
-    public BiConsumer<String,String> getNewRequestTargetNodeConsumer() {
-        return newRequestTargetNodeConsumer;
-    }
 
-    public void setNewRequestTargetNodeConsumer(BiConsumer<String,String> newRequestTargetNodeConsumer) {
-        this.newRequestTargetNodeConsumer = newRequestTargetNodeConsumer;
-    }
+
 }

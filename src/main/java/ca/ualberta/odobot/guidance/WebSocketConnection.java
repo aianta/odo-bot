@@ -20,12 +20,12 @@ public class WebSocketConnection {
 
     private ServerWebSocket socket;
 
+    public static Map<UUID, OdoClient> clientMap = new HashMap<>();
 
-    public static Map<String, Request> requestMap = new HashMap<>();
 
     private boolean isBound = false;
 
-    private Request boundRequest = null;
+    private OdoClient boundClient = null;
 
     private Source boundSource = null;
 
@@ -55,14 +55,14 @@ public class WebSocketConnection {
     }
 
     private void onError(Throwable error){
-        String errLine = "[%s][%s] WebSocket Error %s".formatted(boundRequest.id().toString(), boundSource.name, error.getMessage() );
+        String errLine = "[%s][%s] WebSocket Error %s".formatted(boundClient.id().toString(), boundSource.name, error.getMessage() );
         log.error(errLine, error);
     }
 
     private void onClose(Void event){
         this.isConnected = false;
-        if(boundRequest != null){
-            log.info("[{}][{}] Connection Closed", boundRequest.id().toString(), boundSource.name);
+        if(boundClient != null){
+            log.info("[{}][{}] Connection Closed", boundClient.id().toString(), boundSource.name);
         }else{
             log.info("[{}] Connection Closed", boundSource.name);
         }
@@ -82,15 +82,15 @@ public class WebSocketConnection {
     }
 
     /**
-     * This method works to associate the websocket with the appropriate request upon receiving the first message from the client.
-     * The appropriate request is identified by a 'pathsRequestId' field.
+     * This method works to associate the websocket with the appropriate client upon receiving the first message from the extension.
+     * The appropriate client is identified by a 'clientId' field.
      *
-     * Additionally, each requests has {@link Request#control}, {@link Request#event}, and {@link Request#guidance} fields for {@link WebSocketConnection} to
-     * be assigned to. This method reads the 'source' field in the in initial message to appropriately assign itself to the corresponding Request.
+     * Additionally, each client has {@link OdoClient#control}, {@link OdoClient#event}, and {@link OdoClient#guidance} fields for {@link WebSocketConnection} to
+     * be assigned to. This method reads the 'source' field in the in initial message to appropriately assign itself to the corresponding field.
      *
-     * Requests are held in a static map {@link WebSocketConnection#requestMap}.
+     * Clients are held in a static map {@link WebSocketConnection#clientMap}.
      *
-     * All messages from the client are expected to have, at minimum, the 'source' and 'pathsRequestId' field.
+     * All messages from the extension are expected to have, at minimum, the 'source' and 'clientId' field.
      *
      * @param buffer
      */
@@ -98,36 +98,37 @@ public class WebSocketConnection {
         JsonObject message = buffer.toJsonObject();
 
         if(!isBound){ //Associate this WebSocket connection with the appropriate paths request.
-            UUID pathsRequestId = UUID.fromString(message.getString("pathsRequestId"));
-            printRequestMap();
-            if(!requestMap.containsKey(pathsRequestId.toString())){
-                log.info("Making new request with id: {}", pathsRequestId.toString());
-                Request request = new Request(pathsRequestId);
-                requestMap.put(pathsRequestId.toString(), request);
+            UUID clientId = UUID.fromString(message.getString("clientId"));
+
+            if(!clientMap.containsKey(clientId)){
+                log.info("Registering new OdoClient {}", clientId.toString());
+                OdoClient client = new OdoClient(clientId);
+                clientMap.put(clientId, client);
             }else{
-                log.info("Binding websocket to existing request! {}", pathsRequestId.toString());
+                log.info("Binding websocket to existing OdoClient {}", clientId.toString());
             }
 
-            //Set the bound request and source
-            boundRequest = requestMap.get(pathsRequestId.toString());
-            if(boundRequest == null){
-                return;
-            }
+            //Set the bound client and source
+            printClientMap();
+
+            boundClient = clientMap.get(clientId);
+
+            //Set the bound client and source
             boundSource = Source.getSourceByName(message.getString("source"));
 
             switch (boundSource){
-                case EVENT_SOCKET -> boundRequest.setEvent(this);
-                case CONTROL_SOCKET -> boundRequest.setControl(this);
-                case GUIDANCE_SOCKET -> boundRequest.setGuidance(this);
+                case EVENT_SOCKET -> boundClient.setEvent(this);
+                case CONTROL_SOCKET -> boundClient.setControl(this);
+                case GUIDANCE_SOCKET -> boundClient.setGuidance(this);
             }
 
             isBound = true;
             log.info("Underlying message type: {} ", message.getString("type"));
 
         }
-
+//        if(true){
         if(boundSource != Source.EVENT_SOCKET){
-            log.info("[{}][{}] got message:\n{}", boundRequest.id().toString(), boundSource.name, message.encodePrettily().substring(0, Math.min(message.encodePrettily().length(), 150)));
+            log.info("[{}][{}] got message:\n{}", boundClient.id().toString(), boundSource.name, message.encodePrettily().substring(0, Math.min(message.encodePrettily().length(), 150)));
         }
         messageConsumer.accept(message);
     }
@@ -137,8 +138,8 @@ public class WebSocketConnection {
     }
 
 
-    public void printRequestMap(){
-        log.info("Request map [size: {}]",requestMap.size());
-        requestMap.entrySet().forEach(entry->log.info("{} - {}", entry.getKey(), entry.getValue()));
+    public void printClientMap(){
+        log.info("Client map [size: {}]",clientMap.size());
+        clientMap.entrySet().forEach(entry->log.info("{} - {}", entry.getKey(), entry.getValue()));
     }
 }

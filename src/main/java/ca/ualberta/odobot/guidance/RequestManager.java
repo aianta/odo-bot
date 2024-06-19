@@ -7,7 +7,6 @@ import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import ca.ualberta.odobot.semanticflow.model.ClickEvent;
 import ca.ualberta.odobot.semanticflow.model.DataEntry;
 import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
-import ca.ualberta.odobot.semanticflow.navmodel.DynamicXPath;
 import ca.ualberta.odobot.semanticflow.navmodel.NavPath;
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonArray;
@@ -18,7 +17,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 public class RequestManager {
 
@@ -26,7 +24,10 @@ public class RequestManager {
 
     private OnlineEventProcessor eventProcessor = new OnlineEventProcessor();
 
-    private Request request = null;
+
+    private OdoClient client = null;
+
+    private Request activeRequest = null;
 
     private List<NavPath> navPaths = null;
 
@@ -34,24 +35,30 @@ public class RequestManager {
 
     private Transaction tx;
 
-    public RequestManager(Request request){
-        this.request = request;
-        this.request.setRequestManager(this);
-        this.request.getControlConnectionManager().setNewRequestTargetNodeConsumer(this::handleNewPathsRequest);
+    public RequestManager(OdoClient client){
+        this.client = client;
+        this.client.setRequestManager(this);
+
     }
 
-    public void handleNewPathsRequest(String targetNode, String userLocation){
+    public Request getActiveRequest() {
+        return activeRequest;
+    }
 
-        request.getEventConnectionManager().getLocalContext()
-                .compose(localContext->getPaths(targetNode, userLocation, localContext))
-                .compose(navigationOptions->request.getGuidanceConnectionManager().showNavigationOptions(navigationOptions))
-                .onSuccess(navigationOptionsShown->request.getEventConnectionManager().startTransmitting());
+    public void setActiveRequest(Request activeRequest) {
+        this.activeRequest = activeRequest;
+    }
+
+    public void addNewRequest(Request request){
+        setActiveRequest(request);
+        client.getEventConnectionManager().getLocalContext()
+                .compose(localContext->getPaths(request, localContext))
+                .compose(navigationOptions->client.getGuidanceConnectionManager().showNavigationOptions(navigationOptions))
+                .onSuccess(navigationOptionsShown->client.getEventConnectionManager().startTransmitting());
         ;
-
-
     }
 
-    public Future<JsonObject> getPaths(String targetNode, String userLocation, JsonArray localContext){
+    public Future<JsonObject> getPaths(Request request,  JsonArray localContext){
 
         log.info("Processing local context[size:{}] into PathsRequestInput", localContext.size());
 
@@ -66,8 +73,8 @@ public class RequestManager {
                 _input = new PathsRequestInput();
             }
 
-            _input.setUserLocation(userLocation);
-            _input.setTargetNode(targetNode);
+            _input.setUserLocation(request.getUserLocation());
+            _input.setTargetNode(request.getTargetNode());
             _input.setPathRequestId(request.id().toString());
             log.info("LastEntity: {}", _input.getLastEntity() != null?_input.lastEntity.symbol(): "N/A");
             log.info("URL: {}", _input.getUrl() != null? _input.getUrl(): "N/A");
@@ -79,7 +86,7 @@ public class RequestManager {
             log.info("Found starting node? {}", startingNode.isPresent());
 
             UUID src = startingNode.get();
-            UUID tgt = UUID.fromString(targetNode);
+            UUID tgt = UUID.fromString(request.getTargetNode());
 
             log.info("Resolving path from {} to {}", src.toString(), tgt.toString());
 
@@ -211,7 +218,7 @@ public class RequestManager {
 
         if(tempNavPaths.size() > 0){
             this.navPaths = tempNavPaths;
-            request.getGuidanceConnectionManager().showNavigationOptions(
+            client.getGuidanceConnectionManager().showNavigationOptions(
                     new JsonObject().put("navigationOptions", buildNavigationOptions(this.navPaths))
             );
         }

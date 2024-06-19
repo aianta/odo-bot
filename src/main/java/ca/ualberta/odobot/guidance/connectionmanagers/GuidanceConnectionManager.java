@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.guidance.connectionmanagers;
 
+import ca.ualberta.odobot.guidance.OdoClient;
 import ca.ualberta.odobot.guidance.Request;
 import ca.ualberta.odobot.guidance.WebSocketConnection;
 import io.vertx.core.Future;
@@ -17,10 +18,9 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
 
     private Map<String, Promise> activePromises = new LinkedHashMap<>();
 
-    private Request request;
 
-    public GuidanceConnectionManager(Request request){
-        this.request = request;
+    public GuidanceConnectionManager(OdoClient client){
+        super(client);
     }
 
     public void onMessage(JsonObject message){
@@ -36,7 +36,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
         JsonObject clearNavigationOptionsRequest = new JsonObject()
                 .put("type", "CLEAR_NAVIGATION_OPTIONS")
                 .put("source", "GuidanceConnectionManager")
-                .put("pathsRequestId", request.id().toString());
+                .put("pathsRequestId", client.getRequestManager().getActiveRequest().id().toString());
 
         Promise<JsonObject> promise = Promise.promise();
         activePromises.put("CLEAR_NAVIGATION_OPTIONS_RESULT", promise);
@@ -50,7 +50,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
         JsonObject showNavigationOptionsRequest = new JsonObject()
                 .put("type", "SHOW_NAVIGATION_OPTIONS")
                 .put("source", "GuidanceConnectionManager")
-                .put("pathsRequestId", request.id().toString())
+                .put("pathsRequestId", client.getRequestManager().getActiveRequest().id().toString())
                 .mergeIn(navigationOptions);
 
         Promise<JsonObject> promise = Promise.promise();

@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.guidance.connectionmanagers;
 
+import ca.ualberta.odobot.guidance.OdoClient;
 import ca.ualberta.odobot.guidance.OnlineEventProcessor;
 import ca.ualberta.odobot.guidance.Request;
 import ca.ualberta.odobot.guidance.WebSocketConnection;
@@ -25,12 +26,10 @@ public class EventConnectionManager extends AbstractConnectionManager implements
 
     private OnlineEventProcessor eventProcessor = new OnlineEventProcessor();
 
-    private Request request;
 
-
-    public EventConnectionManager(Request request){
-        this.request = request;
-        eventProcessor.setOnEntity(request.getRequestManager()::entityWatcher, entity -> entity instanceof DataEntry || entity instanceof ClickEvent);
+    public EventConnectionManager(OdoClient client){
+        super(client);
+        eventProcessor.setOnEntity(client.getRequestManager()::entityWatcher, entity -> entity instanceof DataEntry || entity instanceof ClickEvent);
     }
 
 
@@ -65,7 +64,7 @@ public class EventConnectionManager extends AbstractConnectionManager implements
         JsonObject localContextRequest = new JsonObject()
                 .put("type", "GET_LOCAL_CONTEXT")
                 .put("source", "EventConnectionManager")
-                .put("pathsRequestId", request.id().toString());
+                .put("pathsRequestId", client.getRequestManager().getActiveRequest().id().toString());
 
         Promise<JsonObject> promise = Promise.promise();
         activePromises.put("LOCAL_CONTEXT", promise);
@@ -82,7 +81,7 @@ public class EventConnectionManager extends AbstractConnectionManager implements
         JsonObject startTransmissionRequest = new JsonObject()
                 .put("type", "START_TRANSMISSION")
                 .put("source", "EventConnectionManager")
-                .put("pathsRequestId", request.id().toString());
+                .put("pathsRequestId", client.getRequestManager().getActiveRequest().id().toString());
 
         Promise<JsonObject> promise = Promise.promise();
         activePromises.put("TRANSMISSION_STARTED", promise);
@@ -99,7 +98,7 @@ public class EventConnectionManager extends AbstractConnectionManager implements
         JsonObject stopTransmissionRequest = new JsonObject()
                 .put("type", "STOP_TRANSMISSION")
                 .put("source", "EventConnectionManager")
-                .put("pathsRequestId", request.id().toString());
+                .put("pathsRequestId", client.getRequestManager().getActiveRequest().id().toString());
 
         Promise<JsonObject> promise = Promise.promise();
         activePromises.put("TRANSMISSION_STOPPED", promise);
