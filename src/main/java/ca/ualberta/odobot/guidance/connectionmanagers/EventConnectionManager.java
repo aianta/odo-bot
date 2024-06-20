@@ -2,10 +2,9 @@ package ca.ualberta.odobot.guidance.connectionmanagers;
 
 import ca.ualberta.odobot.guidance.OdoClient;
 import ca.ualberta.odobot.guidance.OnlineEventProcessor;
-import ca.ualberta.odobot.guidance.Request;
-import ca.ualberta.odobot.guidance.WebSocketConnection;
 import ca.ualberta.odobot.semanticflow.model.ClickEvent;
 import ca.ualberta.odobot.semanticflow.model.DataEntry;
+import ca.ualberta.odobot.semanticflow.model.NetworkEvent;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.json.JsonArray;
@@ -14,22 +13,22 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.LinkedHashMap;
-import java.util.LinkedList;
 import java.util.Map;
-import java.util.Queue;
 
 public class EventConnectionManager extends AbstractConnectionManager implements ConnectionManager{
 
     Map<String, Promise> activePromises = new LinkedHashMap<>();
 
     private static final Logger log = LoggerFactory.getLogger(EventConnectionManager.class);
+    private static final String SOURCE = "EventConnectionManager";
 
     private OnlineEventProcessor eventProcessor = new OnlineEventProcessor();
 
 
     public EventConnectionManager(OdoClient client){
         super(client);
-        eventProcessor.setOnEntity(client.getRequestManager()::entityWatcher, entity -> entity instanceof DataEntry || entity instanceof ClickEvent);
+        eventProcessor.setOnEntity(client.getRequestManager()::instructionWatcher, entity -> entity instanceof DataEntry || entity instanceof ClickEvent);
+        eventProcessor.setOnEntity(client.getRequestManager()::pathCompletionWatcher, entity -> entity instanceof NetworkEvent);
     }
 
 
@@ -49,6 +48,11 @@ public class EventConnectionManager extends AbstractConnectionManager implements
                 activePromises.get("TRANSMISSION_STOPPED").complete(message);
                 activePromises.remove("TRANSMISSION_STOPPED");
                 break;
+            case "PATH_COMPLETE_ACK":
+                //TODO -> What, if anything, should the server do here?
+                activePromises.get("PATH_COMPLETE_ACK").complete(message);
+                activePromises.remove("PATH_COMPLETE_ACK");
+                break;
             case "EVENT":
 
                 JsonObject event = message.getJsonObject("event");
@@ -57,6 +61,14 @@ public class EventConnectionManager extends AbstractConnectionManager implements
 
                 break;
         }
+    }
+
+    public Future<JsonObject> notifyPathComplete(){
+        JsonObject notifyPathCompleteRequest = makeNotifyPathCompleteRequest(SOURCE);
+        Promise<JsonObject> promise = Promise.promise();
+        activePromises.put("PATH_COMPLETE_ACK", promise);
+        send(notifyPathCompleteRequest);
+        return promise.future();
     }
 
     public Future<JsonArray> getLocalContext(){

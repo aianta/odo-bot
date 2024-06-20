@@ -15,8 +15,9 @@ import java.util.Map;
 public class GuidanceConnectionManager extends AbstractConnectionManager implements ConnectionManager {
 
     private static final Logger log = LoggerFactory.getLogger(GuidanceConnectionManager.class);
-
+    private static final String SOURCE = "GuidanceConnectionManager";
     private Map<String, Promise> activePromises = new LinkedHashMap<>();
+
 
 
     public GuidanceConnectionManager(OdoClient client){
@@ -28,6 +29,11 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
             case "NAVIGATION_OPTIONS_SHOW_RESULT":
                 Promise promise = activePromises.get("NAVIGATION_OPTIONS_SHOW_RESULT");
                 promise.complete(message);
+                activePromises.remove("NAVIGATION_OPTIONS_SHOW_RESULT");
+                break;
+            case "PATH_COMPLETE_ACK":
+                activePromises.get("PATH_COMPLETE_ACK").complete(message);
+                activePromises.remove("PATH_COMPLETE_ACK");
                 break;
         }
     }
@@ -35,7 +41,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
     public Future<JsonObject> clearNavigationOptions(){
         JsonObject clearNavigationOptionsRequest = new JsonObject()
                 .put("type", "CLEAR_NAVIGATION_OPTIONS")
-                .put("source", "GuidanceConnectionManager")
+                .put("source", SOURCE)
                 .put("pathsRequestId", client.getRequestManager().getActiveRequest().id().toString());
 
         Promise<JsonObject> promise = Promise.promise();
@@ -46,10 +52,19 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
         return promise.future();
     }
 
+    public Future<JsonObject> notifyPathComplete(){
+        JsonObject notifyPathCompleteRequest = makeNotifyPathCompleteRequest(SOURCE);
+        Promise<JsonObject> promise = Promise.promise();
+        activePromises.put("PATH_COMPLETE_ACK", promise);
+
+        send(notifyPathCompleteRequest);
+        return promise.future();
+    }
+
     public Future<JsonObject> showNavigationOptions(JsonObject navigationOptions){
         JsonObject showNavigationOptionsRequest = new JsonObject()
                 .put("type", "SHOW_NAVIGATION_OPTIONS")
-                .put("source", "GuidanceConnectionManager")
+                .put("source", SOURCE)
                 .put("pathsRequestId", client.getRequestManager().getActiveRequest().id().toString())
                 .mergeIn(navigationOptions);
 

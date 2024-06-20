@@ -6,6 +6,7 @@ import ca.ualberta.odobot.guidance.instructions.XPathInstruction;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import ca.ualberta.odobot.semanticflow.model.ClickEvent;
 import ca.ualberta.odobot.semanticflow.model.DataEntry;
+import ca.ualberta.odobot.semanticflow.model.NetworkEvent;
 import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
 import ca.ualberta.odobot.semanticflow.navmodel.NavPath;
 import io.vertx.core.Future;
@@ -94,14 +95,15 @@ public class RequestManager {
 
             navPaths = LogPreprocessor.pathsConstructor.construct(tx, src, tgt);
 
-            buildNavigationOptions(navPaths);
-
             log.info("Found {} paths", navPaths.size());
+
+            return Future.succeededFuture(new JsonObject().put("navigationOptions", buildNavigationOptions(navPaths)));
         }catch (Exception e){
             log.error(e.getMessage(), e);
+            return Future.failedFuture(e);
         }
 
-        return Future.succeededFuture(new JsonObject().put("navigationOptions", buildNavigationOptions(navPaths)));
+
     }
 
     private void buildPathsRequestInput(TimelineEntity entity){
@@ -166,7 +168,29 @@ public class RequestManager {
 
     }
 
-    public void entityWatcher(TimelineEntity entity){
+    /**
+     * This method checks if a given timeline entity matches corresponds with the specified target node for the active request.
+     *
+     * @param entity
+     */
+    public void pathCompletionWatcher(TimelineEntity entity){
+
+        NetworkEvent apiCall = (NetworkEvent) entity; //Note: When we set up this watcher we ensure it only receives network events.
+        if(
+                apiCall.getMethod().toLowerCase().equals(activeRequest.getTargetMethod().toLowerCase()) && //If the method matches
+                apiCall.getPath().equals(activeRequest.getTargetPath())
+        ){
+            client.getGuidanceConnectionManager().notifyPathComplete();
+        }
+    }
+
+    /**
+     * This method checks if a given timeline entity matches an instruction that was given to the user. If so, it computes the next instruction
+     * to give to the user.
+     *
+     * @param entity
+     */
+    public void instructionWatcher(TimelineEntity entity){
 
         if(navPaths == null){ // If there are no navigation paths currently being managed for this request, then we can ignore realtime events.
             return;

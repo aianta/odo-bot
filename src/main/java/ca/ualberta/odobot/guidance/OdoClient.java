@@ -3,6 +3,7 @@ package ca.ualberta.odobot.guidance;
 import ca.ualberta.odobot.guidance.connectionmanagers.ControlConnectionManager;
 import ca.ualberta.odobot.guidance.connectionmanagers.EventConnectionManager;
 import ca.ualberta.odobot.guidance.connectionmanagers.GuidanceConnectionManager;
+import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,6 +29,16 @@ public class OdoClient {
     private WebSocketConnection control = new WebSocketConnection();
     private WebSocketConnection guidance = new WebSocketConnection();
     private WebSocketConnection event = new WebSocketConnection();
+
+    public JsonObject statusReport(){
+        JsonObject report = new JsonObject()
+                .put("id", id().toString())
+                .put("ControlSocket", control.isConnected()?"connected":"disconnected")
+                .put("GuidanceSocket", guidance.isConnected()?"connected":"disconnected")
+                .put("EventSocket", event.isConnected()?"connected":"disconnected");
+
+        return report;
+    }
 
     public UUID id(){
         return this.id;

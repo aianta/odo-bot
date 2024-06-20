@@ -37,29 +37,7 @@ public class ControlConnectionManager extends AbstractConnectionManager implemen
                 break;
             case "STOP_GUIDANCE_REQUEST":
 
-                //TODO -> this looks like a good place for a composite future
-                //Stop transmitting
-                client.getEventConnectionManager().stopTransmitting();
-
-//                //Clear any existing navigation options being displayed.
-//                client.getGuidanceConnectionManager().clearNavigationOptions().onSuccess(done->{
-//                    //Close connections
-//                    client.getControlConnectionManager().close();
-//                    client.getGuidanceConnectionManager().close();
-//                    client.getEventConnectionManager().close();
-//
-//                    //Clear connection managers
-//                    client.clearConnectionManagers();
-//
-//                    //Remove request from request map.
-//                    WebSocketConnection.requestMap.remove(request.id().toString());
-//                });
-
-
-                //Clear the message queues... I think we want this.
-//                request.getEventConnectionManager().clearMessageQueue();
-//                request.getGuidanceConnectionManager().clearMessageQueue();
-//                clearMessageQueue();
+                //TODO -> What, if any, responsibilities does the server have in this case.
                 break;
         }
     }

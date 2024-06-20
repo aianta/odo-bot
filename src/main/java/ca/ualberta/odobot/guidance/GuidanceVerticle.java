@@ -32,6 +32,7 @@ public class GuidanceVerticle extends AbstractVerticle {
     private static final String API_PATH_PREFIX = "/api/*";
     private static final String HOST = "0.0.0.0";
     private static final int PORT = 7080;
+    private static final int PERIODIC_REPORTING_INTERVAL = 10000; //10s
 
     private HttpServer server;
 
@@ -84,6 +85,13 @@ public class GuidanceVerticle extends AbstractVerticle {
         server.requestHandler(mainRouter).listen(PORT);
 
         log.info("Guidance verticle started and server listening on port {}", PORT);
+
+        vertx.setPeriodic(PERIODIC_REPORTING_INTERVAL, interval->{
+           log.info("{} registered clients, generating status report!", WebSocketConnection.clientMap.size());
+           WebSocketConnection.clientMap.values().forEach(client->{
+               log.info("{}", client.statusReport().encodePrettily());
+           });
+        });
 
     }
 

@@ -67,4 +67,13 @@ public abstract class AbstractConnectionManager implements ConnectionManager {
         return send(data.encode());
     }
 
+
+    protected JsonObject makeNotifyPathCompleteRequest(String source){
+        JsonObject notifyPathCompleteRequest = new JsonObject()
+                .put("type", "PATH_COMPLETE")
+                .put("source", source)
+                .put("pathsRequestId", client.getRequestManager().getActiveRequest().id().toString());
+
+        return notifyPathCompleteRequest;
+    }
 }

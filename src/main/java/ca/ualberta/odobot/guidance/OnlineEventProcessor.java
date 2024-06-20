@@ -16,7 +16,9 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -32,22 +34,25 @@ public class OnlineEventProcessor {
 
     private static final Logger log = LoggerFactory.getLogger(OnlineEventProcessor.class);
     public static DateTimeFormatter timeFormatter = DateTimeFormatter.ISO_INSTANT.withZone(ZoneId.systemDefault());
-    private Consumer<TimelineEntity> entityConsumer = null;
-    private Predicate<TimelineEntity> entityPredicate = null;
+
+    private Map<Consumer<TimelineEntity>, Predicate<TimelineEntity>> listeners = new HashMap<>();
+
     private JsonMapper<ClickEvent> clickEventMapper = new LogUIClickEventMapper();
     private JsonMapper<DomEffect> domEffectMapper = new LogUIDomEffectMapper();
     private JsonMapper<NetworkEvent> networkEventMapper = new LogUINetworkEventMapper();
     private JsonMapper<InputChange> inputChangeMapper = new LogUIInputChangeMapper();
     private OnlineTimeline line = new OnlineTimeline();
 
+    public OnlineEventProcessor(){
+        line.addListener(this::notify);
+    }
 
     /**
      * Set a method to call when a timeline entity is processed.
      * @param consumer
      */
     public void setOnEntity(Consumer<TimelineEntity> consumer){
-        this.entityConsumer = consumer;
-        line.addListener(this::notify); //TODO -> this whole notification system might make more sense to refactor into a functionality of OnlineTimeline.
+        listeners.put(consumer, (entity -> true));
     }
 
     /**
@@ -56,8 +61,7 @@ public class OnlineEventProcessor {
      * @param predicate
      */
     public void setOnEntity(Consumer<TimelineEntity> consumer, Predicate<TimelineEntity> predicate){
-        this.entityPredicate = predicate;
-        setOnEntity(consumer);
+        listeners.put(consumer, predicate);
     }
 
     public void process(JsonArray events){
@@ -301,17 +305,14 @@ public class OnlineEventProcessor {
     }
 
     private void notify(TimelineEntity entity){
-        if(entityConsumer != null){
-            if(entityPredicate != null){
-                if(entityPredicate.test(entity)){
-                    //If a predicate is set (not null) and the entity passes the predicate, notify the entity consumer.
-                    entityConsumer.accept(entity);
+
+        if(listeners.size() > 0){ //If we have listeners registered for timeline entity notifications...
+            listeners.forEach((listener,predicate)->{
+                //Go through each of them, and if the timeline entity matches the listener's associated predicate, notify them.
+                if(predicate.test(entity)){
+                    listener.accept(entity);
                 }
-                return;
-            }else{
-                //If no predicate is set, notify the entity consumer.
-                entityConsumer.accept(entity);
-            }
+            });
 
         }
     }
