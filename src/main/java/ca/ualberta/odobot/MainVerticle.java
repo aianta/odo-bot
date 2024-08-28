@@ -4,6 +4,7 @@ package ca.ualberta.odobot;
 import ca.ualberta.odobot.explorer.ExplorerVerticle;
 import ca.ualberta.odobot.guidance.GuidanceVerticle;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
+import ca.ualberta.odobot.snippets.Extractor;
 import ca.ualberta.odobot.tpg.TPGVerticle;
 import ca.ualberta.odobot.web.OdoSightSupport;
 import ca.ualberta.odobot.web.TimelineWebApp;
@@ -25,6 +26,7 @@ public class MainVerticle extends AbstractVerticle {
         LogPreprocessor logPreprocessor = new LogPreprocessor();
         ExplorerVerticle explorerVerticle = new ExplorerVerticle();
         //GuidanceVerticle guidanceVerticle = new GuidanceVerticle();
+        Extractor extractorVerticle = new Extractor();
 
         vertx.deployVerticle(logPreprocessor);
         vertx.deployVerticle(timelineWebApp);
@@ -32,6 +34,7 @@ public class MainVerticle extends AbstractVerticle {
         //vertx.deployVerticle(tpgVerticle);
         vertx.deployVerticle(explorerVerticle);
         //vertx.deployVerticle(guidanceVerticle);
+        vertx.deployVerticle(extractorVerticle);
 
         return super.rxStart();
     }

@@ -36,6 +36,7 @@ dependencies {
     implementation 'io.vertx:vertx-service-proxy'
     implementation 'io.vertx:vertx-jdbc-client'
     implementation 'io.vertx:vertx-config'
+    implementation 'io.vertx:vertx-config-yaml'
     annotationProcessor 'io.vertx:vertx-codegen:4.5.9:processor'
     annotationProcessor 'io.vertx:vertx-service-proxy:4.5.9'
 
