@@ -16,7 +16,7 @@ repositories {
 vertx{
     launcher = "ca.ualberta.odobot.Launcher"
     mainVerticle = "ca.ualberta.odobot.MainVerticle"
-    vertxVersion = "4.4.6"
+    vertxVersion = "4.5.9"
     redeploy = false
 //    jvmArgs = ["-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"]
 }
@@ -35,8 +35,9 @@ dependencies {
     implementation 'io.vertx:vertx-web-client'
     implementation 'io.vertx:vertx-service-proxy'
     implementation 'io.vertx:vertx-jdbc-client'
-    annotationProcessor 'io.vertx:vertx-codegen:4.4.1:processor'
-    annotationProcessor 'io.vertx:vertx-service-proxy:4.4.1'
+    implementation 'io.vertx:vertx-config'
+    annotationProcessor 'io.vertx:vertx-codegen:4.5.9:processor'
+    annotationProcessor 'io.vertx:vertx-service-proxy:4.5.9'
 
     /**
      * Logging

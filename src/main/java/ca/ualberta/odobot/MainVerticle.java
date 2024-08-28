@@ -24,14 +24,14 @@ public class MainVerticle extends AbstractVerticle {
         TimelineWebApp timelineWebApp = TimelineWebApp.getInstance();
         LogPreprocessor logPreprocessor = new LogPreprocessor();
         ExplorerVerticle explorerVerticle = new ExplorerVerticle();
-        GuidanceVerticle guidanceVerticle = new GuidanceVerticle();
+        //GuidanceVerticle guidanceVerticle = new GuidanceVerticle();
 
         vertx.deployVerticle(logPreprocessor);
         vertx.deployVerticle(timelineWebApp);
         vertx.deployVerticle(odoSightSupport);
         //vertx.deployVerticle(tpgVerticle);
         vertx.deployVerticle(explorerVerticle);
-        vertx.deployVerticle(guidanceVerticle);
+        //vertx.deployVerticle(guidanceVerticle);
 
         return super.rxStart();
     }
