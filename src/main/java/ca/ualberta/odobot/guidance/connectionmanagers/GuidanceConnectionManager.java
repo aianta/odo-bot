@@ -70,7 +70,11 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
 
         Promise<JsonObject> promise = Promise.promise();
         activePromises.put("NAVIGATION_OPTIONS_SHOW_RESULT", promise);
-
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
         send(showNavigationOptionsRequest);
 
         return promise.future();

@@ -2,8 +2,12 @@ package ca.ualberta.odobot.semanticflow.navmodel;
 
 import io.vertx.core.json.JsonObject;
 import org.apache.commons.lang3.builder.HashCodeBuilder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class DynamicXPath {
+
+    private static final Logger log = LoggerFactory.getLogger(DynamicXPath.class);
 
     private String prefix;
 
@@ -68,12 +72,17 @@ public class DynamicXPath {
     }
 
     private boolean matchesDynamicTag(String sampleXPath){
+        try{
+            String sampleDynamicTagString = sampleXPath.substring(0, prefix.length());
+            sampleDynamicTagString = sampleDynamicTagString.substring(sampleDynamicTagString.length()-suffix.length());
+            String sampleTag = NavPath.extractTag(sampleDynamicTagString);
 
-        String sampleDynamicTagString = sampleXPath.substring(0, prefix.length());
-        sampleDynamicTagString = sampleDynamicTagString.substring(sampleDynamicTagString.length()-suffix.length());
-        String sampleTag = NavPath.extractTag(sampleDynamicTagString);
+            return this.dynamicTag.equals(sampleTag);
+        }catch (StringIndexOutOfBoundsException e){
+            log.error(e.getMessage(), e);
 
-        return this.dynamicTag.equals(sampleTag);
+            return false;
+        }
     }
 
     public JsonObject toJson(){

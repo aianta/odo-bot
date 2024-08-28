@@ -165,6 +165,7 @@ public class OnlineEventProcessor {
 
                 if(effect.getBaseURIs().size() == 0 || effect.getBaseURIs().size() > 1){
                     log.error("Effect baseURI set is of an invalid size! {}", effect.getBaseURIs().size());
+                    effect.getBaseURIs().forEach(uri->log.error("{}", uri));
                     throw new RuntimeException("Invalid Effect BaseURI set size!");
                 }
 

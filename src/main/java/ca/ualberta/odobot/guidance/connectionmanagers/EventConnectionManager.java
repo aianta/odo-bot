@@ -12,6 +12,8 @@ import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -38,6 +40,16 @@ public class EventConnectionManager extends AbstractConnectionManager implements
             case "LOCAL_CONTEXT":
                 Promise promise = activePromises.get("LOCAL_CONTEXT");
                 promise.complete(message);
+                try(FileOutputStream fos = new FileOutputStream(new File("local-context.json"));
+                    BufferedOutputStream bos = new BufferedOutputStream(fos);
+                ){
+                    bos.write(message.encodePrettily().getBytes(StandardCharsets.UTF_8));
+
+                } catch (FileNotFoundException e) {
+                    throw new RuntimeException(e);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
                 activePromises.remove("LOCAL_CONTEXT");
                 break;
             case "TRANSMISSION_STARTED":

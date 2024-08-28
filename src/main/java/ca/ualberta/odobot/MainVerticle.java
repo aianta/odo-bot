@@ -29,7 +29,7 @@ public class MainVerticle extends AbstractVerticle {
         vertx.deployVerticle(logPreprocessor);
         vertx.deployVerticle(timelineWebApp);
         vertx.deployVerticle(odoSightSupport);
-        vertx.deployVerticle(tpgVerticle);
+        //vertx.deployVerticle(tpgVerticle);
         vertx.deployVerticle(explorerVerticle);
         vertx.deployVerticle(guidanceVerticle);
 

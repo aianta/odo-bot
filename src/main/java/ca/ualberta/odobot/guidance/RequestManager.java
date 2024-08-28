@@ -97,6 +97,8 @@ public class RequestManager {
 
             log.info("Found {} paths", navPaths.size());
 
+            buildNavigationOptions(navPaths);
+
             return Future.succeededFuture(new JsonObject().put("navigationOptions", buildNavigationOptions(navPaths)));
         }catch (Exception e){
             log.error(e.getMessage(), e);
@@ -181,6 +183,7 @@ public class RequestManager {
                 apiCall.getPath().equals(activeRequest.getTargetPath())
         ){
             client.getGuidanceConnectionManager().notifyPathComplete();
+            client.getEventConnectionManager().notifyPathComplete();
         }
     }
 

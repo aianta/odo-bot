@@ -170,6 +170,8 @@ public class Localizer {
             xpath = entity.lastChange().getXpath();
         }
 
+        log.info("Localizing via xpath: {}", xpath);
+
         return findNodeIdByXPath(xpath);
     }
 

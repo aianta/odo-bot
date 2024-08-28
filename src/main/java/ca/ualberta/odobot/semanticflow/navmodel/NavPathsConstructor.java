@@ -66,7 +66,10 @@ public class NavPathsConstructor {
 
             NavPath.printNavPaths(paths, 3);
 
-            return paths;
+            List<NavPath> shortestPath = new ArrayList<>();
+            shortestPath.add(paths.get(0));
+
+            return shortestPath;
 
     }
 
