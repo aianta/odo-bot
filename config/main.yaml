@@ -1,0 +1,8 @@
+# Services to deploy
+LogPreProcessor: true
+TimelineWebApp: true
+OdoSightSupport: true
+TPG: false
+Explorer: false
+SnippetExtractor: true
+Guidance: false

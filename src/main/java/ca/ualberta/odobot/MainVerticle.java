@@ -1,6 +1,7 @@
 package ca.ualberta.odobot;
 
 
+import ca.ualberta.odobot.common.ConfigurableVerticle;
 import ca.ualberta.odobot.explorer.ExplorerVerticle;
 import ca.ualberta.odobot.guidance.GuidanceVerticle;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
@@ -13,29 +14,62 @@ import io.vertx.rxjava3.core.AbstractVerticle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class MainVerticle extends AbstractVerticle {
+public class MainVerticle extends ConfigurableVerticle {
     private static final Logger log = LoggerFactory.getLogger(MainVerticle.class);
 
+
     @Override
-    public Completable rxStart() {
+    public String configFilePath() {
+        return "config/main.yaml";
+    }
+
+    @Override
+    public String serviceName() {
+        return "Main Verticle";
+    }
+
+    @Override
+    public Completable onStart() {
+
         log.info("MainVerticle starting!");
 
-        OdoSightSupport odoSightSupport = new OdoSightSupport();
-        TPGVerticle tpgVerticle = new TPGVerticle();
-        TimelineWebApp timelineWebApp = TimelineWebApp.getInstance();
-        LogPreprocessor logPreprocessor = new LogPreprocessor();
-        ExplorerVerticle explorerVerticle = new ExplorerVerticle();
-        //GuidanceVerticle guidanceVerticle = new GuidanceVerticle();
-        Extractor extractorVerticle = new Extractor();
+        if(_config.getBoolean("LogPreProcessor")){
+            LogPreprocessor logPreprocessor = new LogPreprocessor();
+            vertx.deployVerticle(logPreprocessor);
+        }
 
-        vertx.deployVerticle(logPreprocessor);
-        vertx.deployVerticle(timelineWebApp);
-        vertx.deployVerticle(odoSightSupport);
-        //vertx.deployVerticle(tpgVerticle);
-        vertx.deployVerticle(explorerVerticle);
-        //vertx.deployVerticle(guidanceVerticle);
-        vertx.deployVerticle(extractorVerticle);
+        if(_config.getBoolean("TimelineWebApp")){
+            TimelineWebApp timelineWebApp = new TimelineWebApp();
+            vertx.deployVerticle(timelineWebApp);
+        }
 
-        return super.rxStart();
+        if(_config.getBoolean("OdoSightSupport")){
+            OdoSightSupport odoSightSupport = new OdoSightSupport();
+            vertx.deployVerticle(odoSightSupport);
+        }
+
+        if(_config.getBoolean("TPG")){
+            TPGVerticle tpgVerticle = new TPGVerticle();
+            vertx.deployVerticle(tpgVerticle);
+        }
+
+        if(_config.getBoolean("Explorer")){
+            ExplorerVerticle explorerVerticle = new ExplorerVerticle();
+            vertx.deployVerticle(explorerVerticle);
+        }
+
+        if(_config.getBoolean("SnippetExtractor")){
+            Extractor extractor = new Extractor();
+            vertx.deployVerticle(extractor);
+        }
+
+        if(_config.getBoolean("Guidance")){
+            GuidanceVerticle guidanceVerticle = new GuidanceVerticle();
+            vertx.deployVerticle(guidanceVerticle);
+        }
+
+
+
+        return Completable.complete();
     }
 }
