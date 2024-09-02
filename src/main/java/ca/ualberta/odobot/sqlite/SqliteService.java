@@ -32,6 +32,10 @@ public interface SqliteService {
 
     Future<Void> saveTrainingExemplar(JsonObject json);
 
+    Future<Void> saveDynamicXpath(JsonObject xpathData, String xpathId, String nodeId);
+
+    Future<Void> saveSnippet(String snippet, String xpathId, String type, String sourceHTML, String sourceInstance);
+
     /**
      * Returns the list of {@link ca.ualberta.odobot.sqlite.impl.TrainingExemplar} in json form
      * that belong to the training dataset with the specified name.

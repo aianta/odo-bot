@@ -134,7 +134,8 @@ public class NavPath {
         return (String)n.getProperty("xpath");
     }
 
-    private DynamicXPath nodeToDynamicXPath(Node n){
+    //TODO: This method is also used by the snippet extraction logic, should probably move this to a common/util or refactor in some other way.
+    public static DynamicXPath nodeToDynamicXPath(Node n){
         if(!n.hasProperty("xpaths")){
             log.error("Node does not have xpaths property!");
             throw new RuntimeException("Node does not have xpaths property!");
@@ -207,6 +208,7 @@ public class NavPath {
         String first = xpaths[0];
         int length = 1;
 
+        //Determine how long of a common sequence there is between xpaths starting from the first character.
         while (length < first.length()){
             final int _length = length;
             if(Arrays.stream(xpaths).allMatch(example->example.regionMatches(true, 0, first, 0, _length))){
@@ -216,8 +218,8 @@ public class NavPath {
             }
         }
 
+        final int MATCHING_LENGTH = length; //Matching length is the number of characters from the start of the xpaths that are identical.
 
-        final int MATCHING_LENGTH = length;
         log.info("Matching length was: {}", MATCHING_LENGTH);
         String prefix = Arrays.stream(xpaths).map(s->{
                     String slice = s.substring(0, MATCHING_LENGTH);

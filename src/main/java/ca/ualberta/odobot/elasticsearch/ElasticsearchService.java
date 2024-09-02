@@ -10,6 +10,7 @@ import io.vertx.core.json.JsonObject;
 
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -56,6 +57,19 @@ public interface ElasticsearchService {
      * oversharding and was not scalable for larger datasets.
      */
     Future<List<JsonObject>> fetchAndSortAll(String index, JsonArray sortOptions);
+
+    /**
+     * Like {@link #fetchFlightEvents(String, String, String, JsonArray)} only accepts a list of flight identifiers. So it can retrieve multiple timelines sequentially
+     * to avoid out of memory exceptions.
+     *
+     * @param index the index containing the events of the specified flights
+     * @param flightIdentifiers A list of timeline/flightIds to retrieve
+     * @param flightIdentifierField the field containing the flight identifier. Should probably end in '.keyword'
+     * @param sortOptions Options regarding the order of the retrieved documents. Right now, this is treated as a boolean, any non-null value will return documents oldest to newest, while any null value will return documents using the default elasticsearch _score value.
+     * @return a map of flightIds and associated events as a list of json objects.
+     */
+    Future<Map<String,List<JsonObject>>> fetchMultipleFlightEvents(String index, List<String> flightIdentifiers, String flightIdentifierField, JsonArray sortOptions);
+
 
     /**
      * Returns all documents associated with a particular flight from a specified index. These documents will correspond to events scraped from LogUI's mongoDB.

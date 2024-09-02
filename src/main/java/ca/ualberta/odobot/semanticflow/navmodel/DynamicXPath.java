@@ -104,6 +104,10 @@ public class DynamicXPath {
         return this.toJson().equals(other.toJson()); //This is probably slow...
     }
 
+    public String toString(){
+        return getPrefix() + "/" + getDynamicTag() + getSuffix();
+    }
+
     public int hashCode(){
         HashCodeBuilder builder = new HashCodeBuilder(21, 31);
         builder.append(prefix);

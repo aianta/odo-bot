@@ -25,7 +25,6 @@ public abstract class ConfigurableVerticle  extends AbstractVerticle {
             .setFormat("yaml");
 
     public Completable rxStart(){
-
         configStoreOptions.setConfig(
                 new JsonObject()
                         .put("path", configFilePath())

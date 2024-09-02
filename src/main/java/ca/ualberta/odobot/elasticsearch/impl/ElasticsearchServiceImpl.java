@@ -20,6 +20,7 @@ import co.elastic.clients.transport.ElasticsearchTransport;
 import co.elastic.clients.transport.rest_client.RestClientTransport;
 import co.elastic.clients.util.BinaryData;
 import co.elastic.clients.util.ContentType;
+import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
@@ -33,6 +34,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.EXECUTIONS_INDEX;
 
@@ -172,6 +174,54 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
 
 
         return promise.future();
+    }
+
+
+    public Future<Map<String, List<JsonObject>>> fetchMultipleFlightEvents(String index, List<String> flightIdentifiers, String flightIdentifierField, JsonArray sortOptions){
+
+        Map<String, List<JsonObject>> result = new HashMap<>();
+
+        //Do each fetch in a separate thread so vertx event loop doesn't get blocked.
+
+        Iterator<String> flightIdentifierIt = flightIdentifiers.iterator();
+
+        Future f = null;
+
+        while (flightIdentifierIt.hasNext()){
+            String flightIdentifier = flightIdentifierIt.next();
+
+            if (f == null){
+
+                Promise<List<JsonObject>> promise = Promise.promise();
+                promise.future()
+                        .onSuccess(data->result.put(flightIdentifier, data))
+                        .onFailure(err->log.error(err.getMessage(), err))
+                        .onComplete(data->log.info("got data back from thread!"));
+
+                FetchAllTask task = new FetchAllTask(promise, client, index, flightIdentifier, flightIdentifierField, sortOptions);
+                Thread thread = new Thread(task);
+                thread.start();
+
+                f = promise.future();
+            }else{
+                f.compose(previousResult->{
+                    Promise<List<JsonObject>> promise = Promise.promise();
+                    promise.future()
+                            .onSuccess(data->result.put(flightIdentifier, data))
+                            .onFailure(err->log.error(err.getMessage(), err))
+                            .onComplete(data->log.info("got data back from thread!"));
+
+                    FetchAllTask task = new FetchAllTask(promise, client, index, flightIdentifier, flightIdentifierField, sortOptions);
+                    Thread thread = new Thread(task);
+                    thread.start();
+
+                    return promise.future();
+                });
+            }
+        }
+
+        return Future.succeededFuture(result);
+
     }
 
 

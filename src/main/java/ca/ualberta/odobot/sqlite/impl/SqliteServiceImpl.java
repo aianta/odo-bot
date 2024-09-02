@@ -40,7 +40,11 @@ public class SqliteServiceImpl implements SqliteService {
         createTrainingDatasetTable();
         createTrainingMaterialsTable();
         createStateSampleTable();
+        createSnippetTable();
+        createDynamicXPathTable();
     }
+
+
 
     public Future<JsonArray> selectLogs(long timestampMilli, long range){
         Promise promise = Promise.promise();
@@ -264,6 +268,57 @@ public class SqliteServiceImpl implements SqliteService {
         return saveExemplar(TrainingExemplar.fromJson(json));
     }
 
+    @Override
+    public Future<Void> saveDynamicXpath(JsonObject xpathData, String xpathId, String nodeId) {
+        Promise<Void> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            INSERT INTO dynamic_xpaths (
+                id, prefix, tag, suffix, source_node_id
+            ) VALUES (?,?,?,?,?);
+        """).execute(Tuple.of(
+                xpathId,
+                xpathData.getString("prefix"),
+                xpathData.getString("dynamicTag"),
+                xpathData.getString("suffix"),
+                nodeId
+        )).onSuccess(done->promise.complete())
+                .onFailure(err->{
+                    log.error(err.getMessage(), err);
+                    promise.fail(err);
+                });
+
+        return promise.future();
+    }
+
+    @Override
+    public Future<Void> saveSnippet(String snippet, String xpathId, String type, String sourceHTML, String sourceInstance) {
+        Promise<Void> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            INSERT INTO snippets (
+                id,
+                snippet, 
+                dynamic_xpath,
+                snippet_type,
+                source_html,
+                source_instance
+            ) VALUES (?,?,?,?,?,?)
+        """).execute(Tuple.of(
+                UUID.randomUUID().toString(),
+                snippet,
+                xpathId,
+                type,
+                sourceHTML,
+                sourceInstance
+        )).onSuccess(done->promise.complete())
+                .onFailure(err->{
+                    log.error(err.getMessage(),err);
+                    promise.fail(err);
+                });
+        return promise.future();
+    }
+
     private Future<Void> saveExemplar(TrainingExemplar exemplar){
 
         Promise<Void> promise = Promise.promise();
@@ -402,5 +457,53 @@ public class SqliteServiceImpl implements SqliteService {
 
         return promise.future();
     }
+
+    private Future<Void> createDynamicXPathTable(){
+        Promise<Void> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            CREATE TABLE IF NOT EXISTS dynamic_xpaths(
+                id text primary key,
+                prefix text not null,
+                tag text not null,
+                suffix text not null,
+                source_node_id text not null
+            )
+        """).execute(result->{
+            if(result.succeeded()){
+                promise.complete();
+            }else{
+                promise.fail(result.cause());
+            }
+        });
+
+        return promise.future();
+    }
+
+    private Future<Void> createSnippetTable(){
+        Promise<Void> promise = Promise.promise();
+        pool.preparedQuery("""
+            CREATE TABLE IF NOT EXISTS snippets(
+                id text primary key,
+                snippet text not null,
+                dynamic_xpath text not null, 
+                snippet_type text not null,
+                source_html text not null,
+                source_instance text not null 
+            )
+        """).execute(result->{
+            if(result.succeeded()){
+                promise.complete();
+            }else{
+                promise.fail(result.cause());
+            }
+        });
+
+
+        return promise.future();
+    }
+
+
+
 
 }
