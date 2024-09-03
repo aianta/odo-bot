@@ -10,6 +10,7 @@ import ca.ualberta.odobot.semanticflow.model.Timeline;
 import ca.ualberta.odobot.semanticflow.model.TrainingMaterials;
 import ca.ualberta.odobot.semanticflow.model.semantictrace.SemanticTrace;
 import ca.ualberta.odobot.semanticflow.navmodel.*;
+import ca.ualberta.odobot.snippets.SnippetExtractorService;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import ca.ualberta.odobot.sqlite.impl.TrainingExemplar;
 import ca.ualberta.odobot.tpg.service.TPGService;
@@ -28,6 +29,7 @@ import io.vertx.rxjava3.ext.web.handler.BodyHandler;
 import io.vertx.rxjava3.ext.web.handler.LoggerHandler;
 import io.vertx.serviceproxy.ServiceBinder;
 
+import io.vertx.serviceproxy.ServiceProxyBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -50,6 +52,8 @@ public class LogPreprocessor extends AbstractVerticle {
     private static ElasticsearchService elasticsearchService;
 
     private static DOMSequencingService domSequencingService;
+
+    private static SnippetExtractorService snippetExtractorService;
 
     private static SqliteService sqliteService;
 
@@ -102,8 +106,13 @@ public class LogPreprocessor extends AbstractVerticle {
                     .setAddress(DOMSEQUENCING_SERVICE_ADDRESS)
                     .register(DOMSequencingService.class, domSequencingService);
 
+            //Init Snippet Extractor Service
+            ServiceProxyBuilder snippetExtractorServiceProxyBuilder = new ServiceProxyBuilder(vertx.getDelegate())
+                    .setAddress(SNIPPET_EXTRACTOR_SERVICE_ADDRESS);
+            snippetExtractorService = snippetExtractorServiceProxyBuilder.build(SnippetExtractorService.class);
+
             //Init Elasticsearch Service
-            elasticsearchService = ElasticsearchService.create(vertx.getDelegate(), "localhost", 9200);
+            elasticsearchService = ElasticsearchService.create(vertx.getDelegate(), "localhost", 9200, snippetExtractorService);
             new ServiceBinder(vertx.getDelegate())
                     .setAddress(ELASTICSEARCH_SERVICE_ADDRESS)
                     .setTimeoutSeconds(86400)

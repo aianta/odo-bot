@@ -2,6 +2,7 @@ package ca.ualberta.odobot.elasticsearch;
 
 import ca.ualberta.odobot.elasticsearch.impl.ElasticsearchServiceImpl;
 import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
+import ca.ualberta.odobot.snippets.SnippetExtractorService;
 import io.vertx.codegen.annotations.ProxyGen;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
@@ -19,8 +20,8 @@ import java.util.Set;
 @ProxyGen
 public interface ElasticsearchService {
 
-    static ElasticsearchService create(Vertx vertx, String host, int port){
-        return new ElasticsearchServiceImpl(vertx, host, port);
+    static ElasticsearchService create(Vertx vertx, String host, int port, SnippetExtractorService snippetExtractorService){
+        return new ElasticsearchServiceImpl(vertx, host, port, snippetExtractorService);
     }
 
     static ElasticsearchService createProxy(Vertx vertx, String address){
@@ -80,6 +81,16 @@ public interface ElasticsearchService {
      * @return The corresponding documents matching the specified criteria.
      */
     Future<List<JsonObject>> fetchFlightEvents(String index, String flightIdentifier, String flightIdentifierField, JsonArray sortOptions);
+
+    /**
+     *
+     * @param index the index containing the events of the specified flight
+     * @param flightIdentifier the name of the flight whose events will be used to find snippets.
+     * @param flightIdentifierField the field containing the flight identifier. Should probably end in '.keyword'
+     * @param sortOptions Options regarding the order of the retrieved documents. Right now, this is treated as a boolean, any non-null value will return documents oldest to newest, while any null value will return documents using the default elasticsearch _score value.
+     * @return
+     */
+    Future<List<JsonObject>> findSnippetsInFlight(String index, String flightIdentifier, String flightIdentifierField, JsonArray sortOptions);
 
     /**
      * Inserts the specified items into the specified elasticsearch index.

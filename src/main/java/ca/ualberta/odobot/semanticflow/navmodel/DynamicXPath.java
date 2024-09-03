@@ -9,6 +9,36 @@ public class DynamicXPath {
 
     private static final Logger log = LoggerFactory.getLogger(DynamicXPath.class);
 
+    public static DynamicXPath fromJson(JsonObject json){
+        DynamicXPath result = new DynamicXPath();
+
+        if(json.containsKey("prefix")){
+            result.setPrefix(json.getString("prefix"));
+        }else{
+            return missingField("prefix", json);
+        }
+
+
+        if(json.containsKey("suffix")){
+            result.setSuffix(json.getString("suffix"));
+        }else {
+            return missingField("suffix", json);
+        }
+
+        if(json.containsKey("dynamicTag")){
+            result.setDynamicTag(json.getString("dynamicTag"));
+        }else{
+            return missingField("dynamicTag", json);
+        }
+
+        return result;
+    }
+
+    private static DynamicXPath missingField(String fieldName, JsonObject json){
+        log.error("Could not create DynamicXPath from json object, missing '{}' field.\n{}", fieldName, json.encodePrettily());
+        return null;
+    }
+
     private String prefix;
 
     private String suffix;

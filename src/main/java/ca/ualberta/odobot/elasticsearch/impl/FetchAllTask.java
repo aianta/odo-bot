@@ -25,20 +25,20 @@ import java.util.function.BiFunction;
 
 public class FetchAllTask implements Runnable{
     private static final Logger log = LoggerFactory.getLogger(FetchAllTask.class);
-    private static final Time keepAliveValue = Time.of(t->t.time("10m"));
+    protected static final Time keepAliveValue = Time.of(t->t.time("10m"));
 
     private static final String ELASTICSEARCH_TIMEOUT = "1800000ms"; //30 min
 
-    private ElasticsearchClient client;
-    private Promise<List<JsonObject>> promise;
-    private String index;
-    private JsonArray sortOptions;
+    protected ElasticsearchClient client;
+    protected Promise<List<JsonObject>> promise;
+    protected String index;
+    protected JsonArray sortOptions;
 
-    private SortOptions esSortOptions;
+    protected SortOptions esSortOptions;
 
-    private String flightIdentifier;
+    protected String flightIdentifier;
 
-    private String flightIdentifierField;
+    protected String flightIdentifierField;
 
     /**
      * Constructor used to create a FetchAllTask object that retrieves all documents (events) for a given flight/trace from its parent index.
@@ -110,7 +110,7 @@ public class FetchAllTask implements Runnable{
      * @param requestFunction a function that returns the desired search request to execute given a String:PIT Id and List<FieldValue>:sortInfo
      * @return A list of all available documents from that index.
      */
-    private void fetch(BiFunction<String, List<FieldValue>,SearchRequest> requestFunction){
+    protected void fetch(BiFunction<String, List<FieldValue>,SearchRequest> requestFunction){
         List<JsonObject> results = new ArrayList<>();
 
 

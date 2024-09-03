@@ -3,6 +3,7 @@ package ca.ualberta.odobot.elasticsearch.impl;
 import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 
 import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
+import ca.ualberta.odobot.snippets.SnippetExtractorService;
 import co.elastic.clients.elasticsearch.ElasticsearchClient;
 import co.elastic.clients.elasticsearch._types.*;
 import co.elastic.clients.elasticsearch._types.aggregations.Aggregate;
@@ -33,6 +34,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -41,21 +44,28 @@ import static ca.ualberta.odobot.logpreprocessor.Constants.EXECUTIONS_INDEX;
 public class ElasticsearchServiceImpl implements ElasticsearchService {
     private static final Logger log = LoggerFactory.getLogger(ElasticsearchServiceImpl.class);
 
+    private SnippetExtractorService snippetExtractorService = null;
 
     //Constants
     private static final Time keepAliveValue = Time.of(t->t.time("1m"));
     private static final int MAX_FLIGHTS_PER_INDEX = 10000;
+
+    private static ThreadPoolExecutor executor;
 
     //Elasticsearch communication
     private RestClient restClient;
     private ElasticsearchTransport transport;
     private ElasticsearchClient client;
 
-    public ElasticsearchServiceImpl(Vertx vertx, String host, int port){
+    public ElasticsearchServiceImpl(Vertx vertx, String host, int port, SnippetExtractorService snippetExtractorService){
+        this.snippetExtractorService = snippetExtractorService;
         log.info("Initializing Elasticsearch client");
         restClient = RestClient.builder(new HttpHost(host, port)).build();
         transport = new RestClientTransport(restClient, new JacksonJsonpMapper());
         client = new ElasticsearchClient(transport);
+
+        executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(3);
+
     }
 
     public Future<Set<String>> getAliases(String pattern){
@@ -236,6 +246,22 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
         FetchAllTask task = new FetchAllTask(promise, client, index, flightIdentifier, flightIdentifierField, sortOptions);
         Thread thread = new Thread(task);
         thread.start();
+
+        return promise.future();
+    }
+
+    @Override
+    public Future<List<JsonObject>> findSnippetsInFlight(String index, String flightIdentifier, String flightIdentifierField, JsonArray sortOptions) {
+
+        Promise<List<JsonObject>> promise = Promise.promise();
+
+        promise.future()
+                .onFailure(err->log.error("Error finding snippets in flight {} in {}", flightIdentifier, index))
+                .onSuccess(done->log.info("Snippet processing done for flight {} in {}", flightIdentifier, index));
+
+        ProcessSnippetsTask task = new ProcessSnippetsTask(promise, client, index, flightIdentifier, flightIdentifierField, sortOptions, snippetExtractorService);
+        executor.execute(task);
+
 
         return promise.future();
     }
