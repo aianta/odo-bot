@@ -201,15 +201,17 @@ public class Extractor extends HttpServiceVerticle {
             log.info("Retrieved data for instance {}#{}", flightId, i);
 
             //Save the snippets to the filesystem.
-            ListIterator<String> iterator = getSnippets(xpath, flightData.get(i), i).listIterator();
-            while (iterator.hasNext()){
+
+            getSnippets(xpath, flightData.get(i)).onSuccess(snippets->{
+                Iterator<String> iterator = snippets.iterator();
                 String snippet = iterator.next();
 
                 vertx.fileSystem()
                         .writeFile(_config.getString("snippetOutputDir") + UUID.randomUUID().toString() + ".html", Buffer.buffer(snippet))
                         .subscribe()
                 ;
-            }
+            });
+
 
         });
 
@@ -217,54 +219,6 @@ public class Extractor extends HttpServiceVerticle {
     }
 
 
-    /**
-     * Apply a dynamic xpath to a timeline entity containing a DOMSnapshot to extract snippets.
-     * @param xPath the dynamic xpath to use when extracting snippets
-     * @param entity the JSON object representation of the timeline entity from which to extract snippets.
-     * @param entityIndex the index of that entity in its parent timeline
-     * @return a list of snippets.
-     */
-    public static List<String> getSnippets(DynamicXPath xPath, JsonObject entity, int entityIndex){
-
-        if(!entity.containsKey("eventDetails_domSnapshot")){
-            log.error("Entity does not contain DOMSnapshot, cannot extract snippets");
-            return List.of();
-        }
-
-        List<String> snippets = new ArrayList<>();
-
-        JsonObject _DOMSnapshotJson = new JsonObject(entity.getString("eventDetails_domSnapshot"));
-        String htmlString = _DOMSnapshotJson.getString("outerHTML");
-
-        Document document = Jsoup.parse(htmlString);
-
-        log.info("Attempting to extract snippet with dynamic tag:\n{}", xPath.toJson().encodePrettily());
-
-        Elements parentElements = document.selectXpath(xPath.getPrefix()); //This should yield the parent element.
-        log.info("Found {} parent elements matching dynamic xpath prefix.", parentElements.size());
-
-        parentElements.forEach(element -> {
-
-            //Add individual children matching the dynamic tag as snippets as well.
-            Elements children = element.children();
-            int childSnippetCount = 0;
-            for(Element child: children){
-                if(child.tagName().equals(xPath.getDynamicTag()) && matchesSuffix(child, xPath)){
-                    snippets.add(child.outerHtml());
-                    sqliteService.saveSnippet(child.outerHtml(), xPath.toString(), "child", htmlString, entity.getString("flightID") + "#" + entityIndex );
-                    childSnippetCount++;
-                }
-            }
-            //Save the parent element if we found multiple children matching the dynamic xpath.
-            if(childSnippetCount > 1){
-                snippets.add(element.outerHtml());
-                sqliteService.saveSnippet(element.outerHtml(), xPath.toString(), "parent", htmlString, entity.getString("flightID") + "#" + entityIndex);
-            }
-
-        });
-
-        return snippets;
-    }
 
     /**
      * Apply a dynamic xpath to a timeline entity containing a DOMSnapshot to extract snippets.
@@ -272,7 +226,7 @@ public class Extractor extends HttpServiceVerticle {
      * Optimized for bulk processing. Waits for SQLite saves to complete before returning the future. Timeline ID is used as instance source.
      *
      * @param xPath the dynamic xpath to use when extracting snippets
-     * @param entity the JSON object representation of the timeline entity from which to extract snippets.
+     * @param entity the JSON object representation of a raw trace event from which to extract snippets.
 
      * @return a list of snippets.
      */
@@ -308,14 +262,14 @@ public class Extractor extends HttpServiceVerticle {
             for(Element child: children){
                 if(child.tagName().equals(xPath.getDynamicTag()) && matchesSuffix(child, xPath)){
                     snippets.add(child.outerHtml());
-                    sqliteSaveFutures.add(sqliteService.saveSnippet(child.outerHtml(), xPath.toString(), "child", htmlString, entity.getString("flightID") ));
+                    sqliteSaveFutures.add(sqliteService.saveSnippet(child.outerHtml(), xPath.toString(), "child", htmlString));
                     childSnippetCount++;
                 }
             }
             //Save the parent element if we found multiple children matching the dynamic xpath.
             if(childSnippetCount > 1){
                 snippets.add(element.outerHtml());
-                sqliteSaveFutures.add(sqliteService.saveSnippet(element.outerHtml(), xPath.toString(), "parent", htmlString, entity.getString("flightID")));
+                sqliteSaveFutures.add(sqliteService.saveSnippet(element.outerHtml(), xPath.toString(), "parent", htmlString));
             }
 
         });
@@ -401,29 +355,38 @@ public class Extractor extends HttpServiceVerticle {
             List<String> flights = rc.get("todo");
 
 
-
-            Future f = null;
+            Future cf = null;
+            log.info("{} flights to process!", flights.size());
             while (flights.size() > 0){
-                log.info("{} flights to process!", flights.size());
-                String flight = flights.remove(0);
-                log.info("Starting snippet extraction for flight {} in index {} ", flight, index);
 
-                if(f == null){
-                    f = elasticsearchService.findSnippetsInFlight(index, flight, "flightID.keyword", new JsonArray())
-                            .onSuccess(done->log.info("Done flight {} in index {}", flight, index));
+                int concurrentTaskCount = 6;
+                List<Future> tasks = new ArrayList<>();
+
+                while (concurrentTaskCount > 0 && flights.size() > 0){
+                    String flight = flights.remove(0);
+                    concurrentTaskCount--;
+
+                    log.info("Queuing snippet extraction for flight {} in index {} ", flight, index);
+                    tasks.add(elasticsearchService.findSnippetsInFlight(index, flight, "flightID.keyword", new JsonArray())
+                            .onSuccess(done->log.info("Done flight {} in index {}", flight, index)));
+                }
+
+                if(cf == null){
+                    cf = CompositeFuture.all(tasks);
                 }else{
-                    f = f.compose(previousDone->{
-                        log.info("Starting next flight");
-                        return elasticsearchService.findSnippetsInFlight(index, flight, "flightID.keyword", new JsonArray())
-                                .onSuccess(done->log.info("Done flight {} in index {}", flight, index));
+                    cf = cf.compose(previousDone->{
+                        log.info("Starting next batch, {} flights left.", flights.size());
+                        return CompositeFuture.all(tasks);
                     });
                 }
+
+
 
             }
 
             log.info("Queued up all processing.");
 
-            f.onFailure(err->{
+            cf.onFailure(err->{
                 log.error("Error while extracting snippets!");
                 log.error(((Throwable)err).getMessage(), (Throwable) err);
                     })

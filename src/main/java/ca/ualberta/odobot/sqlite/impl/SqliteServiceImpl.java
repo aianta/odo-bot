@@ -292,7 +292,7 @@ public class SqliteServiceImpl implements SqliteService {
     }
 
     @Override
-    public Future<Void> saveSnippet(String snippet, String xpathId, String type, String sourceHTML, String sourceInstance) {
+    public Future<Void> saveSnippet(String snippet, String xpathId, String type, String sourceHTML) {
         Promise<Void> promise = Promise.promise();
 
         pool.preparedQuery("""
@@ -301,20 +301,23 @@ public class SqliteServiceImpl implements SqliteService {
                 snippet, 
                 dynamic_xpath,
                 snippet_type,
-                source_html,
-                source_instance
-            ) VALUES (?,?,?,?,?,?)
+                source_html
+            ) VALUES (?,?,?,?,?)
         """).execute(Tuple.of(
                 UUID.randomUUID().toString(),
                 snippet,
                 xpathId,
                 type,
-                sourceHTML,
-                sourceInstance
+                sourceHTML
         )).onSuccess(done->promise.complete())
                 .onFailure(err->{
-                    log.error(err.getMessage(),err);
-                    promise.fail(err);
+                    //Uniqueness constraint errors are fine. We don't want duplicates of snippet/xpath/source.
+                    if(err.getMessage().contains("[SQLITE_CONSTRAINT_UNIQUE] A UNIQUE constraint failed")){
+                        promise.complete();
+                    }else{
+                        log.error(err.getMessage(),err);
+                        promise.fail(err);
+                    }
                 });
         return promise.future();
     }
@@ -489,7 +492,7 @@ public class SqliteServiceImpl implements SqliteService {
                 dynamic_xpath text not null, 
                 snippet_type text not null,
                 source_html text not null,
-                source_instance text not null 
+                UNIQUE(snippet, dynamic_xpath, source_html)
             )
         """).execute(result->{
             if(result.succeeded()){

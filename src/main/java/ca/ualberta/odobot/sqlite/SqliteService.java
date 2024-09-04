@@ -34,7 +34,7 @@ public interface SqliteService {
 
     Future<Void> saveDynamicXpath(JsonObject xpathData, String xpathId, String nodeId);
 
-    Future<Void> saveSnippet(String snippet, String xpathId, String type, String sourceHTML, String sourceInstance);
+    Future<Void> saveSnippet(String snippet, String xpathId, String type, String sourceHTML);
 
     /**
      * Returns the list of {@link ca.ualberta.odobot.sqlite.impl.TrainingExemplar} in json form

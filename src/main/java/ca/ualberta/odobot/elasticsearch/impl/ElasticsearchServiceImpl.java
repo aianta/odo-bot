@@ -64,7 +64,7 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
         transport = new RestClientTransport(restClient, new JacksonJsonpMapper());
         client = new ElasticsearchClient(transport);
 
-        executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(3);
+        executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(6);
 
     }
 

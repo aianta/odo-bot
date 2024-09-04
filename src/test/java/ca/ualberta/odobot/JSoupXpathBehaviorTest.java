@@ -73,11 +73,15 @@ public class JSoupXpathBehaviorTest {
         JsonObject input = new JsonObject()
                 .put("eventDetails_domSnapshot", new JsonObject().put("outerHTML", problemHTML).encode());
 
-        List<String> snippets = getSnippets(xPath, input, 0);
+        getSnippets(xPath, input).onSuccess(
+                snippets->{
+                    log.info("found {} snippets", snippets.size());
 
-        log.info("found {} snippets", snippets.size());
+                    log.info("{}", snippets.get(0));
+                }
+        );
 
-        log.info("{}", snippets.get(0));
+
 
     }
 
