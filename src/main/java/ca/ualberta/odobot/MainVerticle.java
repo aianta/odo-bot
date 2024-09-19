@@ -5,6 +5,7 @@ import ca.ualberta.odobot.common.ConfigurableVerticle;
 import ca.ualberta.odobot.explorer.ExplorerVerticle;
 import ca.ualberta.odobot.guidance.GuidanceVerticle;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
+import ca.ualberta.odobot.mind2web.Mind2WebService;
 import ca.ualberta.odobot.snippets.Extractor;
 import ca.ualberta.odobot.tpg.TPGVerticle;
 import ca.ualberta.odobot.web.OdoSightSupport;
@@ -66,6 +67,11 @@ public class MainVerticle extends ConfigurableVerticle {
         if(_config.getBoolean("Guidance")){
             GuidanceVerticle guidanceVerticle = new GuidanceVerticle();
             vertx.deployVerticle(guidanceVerticle);
+        }
+
+        if(_config.getBoolean("Mind2Web")){
+            Mind2WebService mind2WebService = new Mind2WebService();
+            vertx.deployVerticle(mind2WebService);
         }
 
 

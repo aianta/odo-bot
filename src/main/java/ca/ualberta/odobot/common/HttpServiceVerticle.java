@@ -37,7 +37,7 @@ public abstract class HttpServiceVerticle extends ConfigurableVerticle {
         api = Router.router(vertx);
 
         mainRouter.route().handler(LoggerHandler.create());
-        mainRouter.route().handler(BodyHandler.create());
+        mainRouter.route().handler(BodyHandler.create().setBodyLimit(1048576000)); //Let's set it to ~1GB
         mainRouter.route().handler(rc->{ //Configure permissive CORS
             rc.response().putHeader("Access-Control-Allow-Origin", "*");
             rc.next();
