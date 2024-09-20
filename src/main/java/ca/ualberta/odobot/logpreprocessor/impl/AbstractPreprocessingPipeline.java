@@ -17,14 +17,13 @@ import ca.ualberta.odobot.semanticflow.model.Timeline;
 
 import ca.ualberta.odobot.semanticflow.model.TrainingMaterials;
 import ca.ualberta.odobot.semanticflow.model.semantictrace.SemanticTrace;
-import ca.ualberta.odobot.semanticflow.statemodel.Neo4JUtils;
+import ca.ualberta.odobot.semanticflow.navmodel.Neo4JUtils;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import io.vertx.core.CompositeFuture;
 
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.eventbus.DeliveryOptions;
-import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.core.Vertx;
@@ -33,7 +32,6 @@ import io.vertx.rxjava3.core.buffer.Buffer;
 import io.vertx.rxjava3.ext.web.RoutingContext;
 import io.vertx.rxjava3.ext.web.client.WebClient;
 import io.vertx.serviceproxy.ServiceProxyBuilder;
-import org.apache.http.protocol.HTTP;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -48,7 +46,6 @@ import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.*;
-import static ca.ualberta.odobot.logpreprocessor.LogPreprocessor.API_PATH_PREFIX;
 
 /**
  * Provide base/common/core fields, resources, and services to all pipelines.

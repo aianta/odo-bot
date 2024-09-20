@@ -10,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import static ca.ualberta.odobot.semanticflow.Utils.computeXpath;
+import static ca.ualberta.odobot.semanticflow.Utils.computeXpathNoRoot;
 
 
 public class Mind2WebUtils {
@@ -82,7 +83,7 @@ public class Mind2WebUtils {
 
         Document document = Jsoup.parse(rawHTML);
         Element targetElement = document.selectXpath("//*[@data_pw_testid_buckeye='%s']".formatted(actionId)).get(0);
-        return computeXpath(targetElement);
+        return computeXpathNoRoot(targetElement);
 
     }
 

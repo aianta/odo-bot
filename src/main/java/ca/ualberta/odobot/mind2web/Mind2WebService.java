@@ -57,6 +57,10 @@ public class Mind2WebService extends HttpServiceVerticle {
         log.info("{} types", traces.stream().mapToLong(Trace::numTypes).sum());
         log.info("{} total actions", traces.stream().mapToInt(Trace::size).sum());
 
+        log.info("XPaths:");
+
+        traces.stream().forEach(trace->trace.forEach(operation -> log.info("{}", operation.getTargetElementXpath())));
+
         rc.put("traces", traces);
 
         rc.next();

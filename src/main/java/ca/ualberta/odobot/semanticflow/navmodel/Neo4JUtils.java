@@ -1,5 +1,7 @@
-package ca.ualberta.odobot.semanticflow.statemodel;
+package ca.ualberta.odobot.semanticflow.navmodel;
 
+import ca.ualberta.odobot.mind2web.Click;
+import ca.ualberta.odobot.mind2web.Type;
 import ca.ualberta.odobot.semanticflow.model.*;
 
 import ca.ualberta.odobot.semanticflow.navmodel.nodes.*;
@@ -13,6 +15,8 @@ import java.lang.reflect.InvocationTargetException;
 import java.util.HashMap;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 import static org.neo4j.driver.Values.parameters;
 
@@ -29,50 +33,19 @@ public class Neo4JUtils {
         driver = GraphDatabase.driver(uri, AuthTokens.basic(user,password));
     }
 
-    public UUID createState(UUID modelId){
-        UUID id = UUID.randomUUID();
-        createState(id, modelId);
-        return id;
-    }
 
+    /**
+     * A wrapper method for {@link #processLocation(String, String)}
+     * @param path
+     * @param timeline
+     * @return
+     */
     public LocationNode getOrCreateLocation(String path, Timeline timeline){
 
-        LocationNode result = getLocationNode(path);
-
-        if(result == null){
-            //No existing location node found, create one.
-            LocationNode newLocation = new LocationNode();
-            newLocation.setId(UUID.randomUUID());
-            newLocation.setPath(path);
-            newLocation.setInstances(Set.of(timeline.getId().toString()));
-            result = newLocation;
-        }else{
-            //If a location node was found, update its list of instances.
-            result.getInstances().add(timeline.getId().toString());
-        }
-
-        final LocationNode location = result;
-
-        //Write the changes back into the database
-        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
-
-            HashMap<String,Object> props = new HashMap<>();
-            props.put("path", location.getPath());
-            props.put("id", location.getId().toString());
-            props.put("instances", location.getInstances());
-
-            session.executeWrite(tx->{
-                var stmt = "MERGE (n:LocationNode {path:$path}) ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
-                var query = new Query(stmt, parameters("path", location.getPath(), "props", props));
-                tx.run(query);
-                return 0;
-            });
-
-        }
-
-        return result;
-
+        return processLocation(timeline.getId().toString(), path);
     }
+
+
 
     public LocationNode getLocationNode(String path){
         var stmt = "MATCH (n:LocationNode {path:$path}) return n;";
@@ -81,178 +54,282 @@ public class Neo4JUtils {
         return readNode(query, LocationNode.class);
     }
 
-    public void processNetworkEvent(Timeline timeline, NetworkEvent networkEvent){
-        var index = timeline.indexOf(networkEvent);
-        var entityTimelineId = timeline.getId().toString()+"#"+index;
 
-        log.info("Processing data entry {}", entityTimelineId);
-
-        APINode apiNode = getAPINode(networkEvent.getPath(), networkEvent.getMethod());
-
-        if(apiNode == null){
-            //If no data entry node could be found, let's create one
-            APINode newApiNode = new APINode();
-            newApiNode.setPath(networkEvent.getPath());
-            newApiNode.setMethod(networkEvent.getMethod());
-            newApiNode.setId(UUID.randomUUID());
-            newApiNode.setInstances(Set.of(entityTimelineId));
-            apiNode = newApiNode;
-        }else{
-            //If an api node was found, update its list of instances
-            apiNode.getInstances().add(entityTimelineId);
-        }
-
-        final APINode finalApiNode = apiNode;
-
-        //Write the changes to the data entry node back into the database
-        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
-
-
-            HashMap<String, Object> props = new HashMap<>();
-            props.put("path", finalApiNode.getPath());
-            props.put("method", finalApiNode.getMethod());
-            props.put("id", finalApiNode.getId().toString());
-            props.put("instances", finalApiNode.getInstances());
-
-            session.executeWrite(tx->{
-                var stmt = "MERGE (n:APINode { path:$path, method:$method }) ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
-                var query = new Query(stmt, parameters("path", finalApiNode.getPath(), "method", finalApiNode.getMethod() , "props", props));
-                tx.run(query);
-                return 0;
-            });
-        }
-
-    }
-
-
+    /**
+     * A wrapper method for {@link #processLocation(String, String)} to simplify processing {@link ApplicationLocationChange}s
+     * @param timeline
+     * @param applicationLocationChange
+     */
     public void processApplicationLocationChange(Timeline timeline, ApplicationLocationChange applicationLocationChange){
         var index = timeline.indexOf(applicationLocationChange);
         var entityTimelineId = timeline.getId().toString()+"#"+index;
 
-        log.info("Processing application location change {}", entityTimelineId);
-        getOrCreateLocation(applicationLocationChange.getToPath(), timeline);
-
-
-//
-//
-//
-//        ApplicationLocationChangeNode applicationLocationChangeNode = getApplicationLocationChangeNode(applicationLocationChange.getFromPath(), applicationLocationChange.getToPath());
-//
-//        if(applicationLocationChangeNode == null){
-//            //If no application location change node could be found, let's create a new one
-//            ApplicationLocationChangeNode newApplicationLocationChangeNode = new ApplicationLocationChangeNode();
-//            newApplicationLocationChangeNode.setId(UUID.randomUUID());
-//            newApplicationLocationChangeNode.setTo(applicationLocationChange.getToPath());
-//            newApplicationLocationChangeNode.setFrom(applicationLocationChange.getFromPath());
-//            newApplicationLocationChangeNode.setInstances(Set.of(entityTimelineId));
-//            applicationLocationChangeNode = newApplicationLocationChangeNode;
-//        }else{
-//            //If a application location change node was found, update its list of instances
-//            applicationLocationChangeNode.getInstances().add(entityTimelineId);
-//        }
-//
-//        final ApplicationLocationChangeNode finalApplicationLocationChangeNode = applicationLocationChangeNode;
-//        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
-//            HashMap<String,Object> props = new HashMap<>();
-//            props.put("id", finalApplicationLocationChangeNode.getId().toString());
-//            props.put("from", finalApplicationLocationChangeNode.getFrom());
-//            props.put("to", finalApplicationLocationChangeNode.getTo());
-//            props.put("instances", finalApplicationLocationChangeNode.getInstances());
-//
-//            session.executeWrite(tx->{
-//                var stmt = "MERGE (n:ApplicationLocationChangeNode {from:$from, to:$to}) ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
-//                var query = new Query(stmt, parameters("from", finalApplicationLocationChangeNode.getFrom(), "to", finalApplicationLocationChangeNode.getTo(), "props", props));
-//                tx.run(query);
-//                return 0;
-//            });
-//
-//        }
+        //TODO - Unsure which of the two invokations below is best.
+        processLocation(entityTimelineId, applicationLocationChange.getToPath());
+        //processLocation(timeline.getId().toString(), applicationLocationChange.getToPath());
 
     }
 
+
+    /**
+     * A wrapper method for {@link #processDataEntry(String, String)} to simplify processing {@link Type}s.
+     * @param type
+     */
+    public void processType(Type type){
+        processDataEntry(type.getTargetElementXpath(), type.getActionId());
+    }
+
+
+    /**
+     * A wrapper method for {@link #processDataEntry(String, String)} to simplify processing {@link DataEntry}s.
+     * @param timeline
+     * @param dataEntry
+     */
     public void processDataEntry(Timeline timeline, DataEntry dataEntry){
         var index = timeline.indexOf(dataEntry);
         var entityTimelineId = timeline.getId().toString()+"#"+index;
 
-        log.info("Processing data entry {}", entityTimelineId);
+        processDataEntry(dataEntry.xpath(), entityTimelineId);
+    }
 
-        DataEntryNode dataEntryNode = getDataEntryNode(dataEntry.xpath());
+    /**
+     * A wrapper method for {@link #processNetworkEvent(String, String, String)} to simplify processing {@link NetworkEvent}s.
+     * @param timeline
+     * @param networkEvent
+     */
+    public void processNetworkEvent(Timeline timeline, NetworkEvent networkEvent){
+        var index = timeline.indexOf(networkEvent);
+        var entityTimelineId = timeline.getId().toString()+"#"+index;
 
-        if(dataEntryNode == null){
-            //If no data entry node could be found, let's create one
-            DataEntryNode newDataEntryNode = new DataEntryNode();
-            newDataEntryNode.setId(UUID.randomUUID());
-            newDataEntryNode.setXpath(dataEntry.xpath());
-            newDataEntryNode.setInstances(Set.of(entityTimelineId));
-            dataEntryNode = newDataEntryNode;
+        processNetworkEvent(entityTimelineId, networkEvent.getPath(), networkEvent.getMethod());
+    }
+
+    public LocationNode processLocation(String eventId, String path){
+
+        //If a location node for this event already exists in the database, this supplier will be used to retrieve it.
+        Supplier<LocationNode> existingLocationNodeSupplier = ()->getLocationNode(path);
+
+        //If no location node could be found, this supplier will be used to create one
+        Supplier<LocationNode> newLocationNodeSupplier = ()->{
+            LocationNode node = new LocationNode();
+            node.setId(UUID.randomUUID());
+            node.setPath(path);
+            node.setInstances(Set.of(eventId));
+            return node;
+        };
+
+        //The update query used to update/merge the processed location node into the database.
+        Function<LocationNode,Query> queryFunction = (locationNode)->{
+            HashMap<String,Object> props = new HashMap<>();
+            props.put("path", locationNode.getPath());
+            props.put("id", locationNode.getId().toString());
+            props.put("instances", locationNode.getInstances());
+
+            var stmt = "MERGE (n:LocationNode {path:$path}) ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
+            var query = new Query(stmt, parameters("path", locationNode.getPath(), "props", props));
+
+            return query;
+        };
+
+        //Invoke generic processing logic
+        return processNode(eventId, LocationNode.class, existingLocationNodeSupplier, newLocationNodeSupplier, queryFunction);
+    }
+
+    public void processSelectOption(String xpath, String eventId){
+
+        //If a select option node for this event already exists in the database, this supplier will be used to retrieve it.
+        Supplier<SelectOptionNode> existingSelectOptionNodeSupplier = ()->getSelectOptionNode(xpath);
+
+        //If no select option node could be found, this supplier will be used to create one
+        Supplier<SelectOptionNode> newSelectOptionNodeSupplier = ()->{
+            SelectOptionNode node = new SelectOptionNode();
+            node.setId(UUID.randomUUID());
+            node.setXpath(xpath);
+            node.setInstances(Set.of(eventId));
+            return node;
+        };
+
+        //The update query used to update/merge the processed select option node into the database.
+        Function<SelectOptionNode, Query> queryFunction = (selectOptionNode)->{
+            HashMap<String, Object> props = new HashMap<>();
+            props.put("xpath", selectOptionNode.getXpath());
+            props.put("id", selectOptionNode.getId().toString());
+            props.put("instances", selectOptionNode.getInstances());
+
+            var stmt = "MERGE (n:SelectOptionNode { xpath:$xpath }) ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
+            var query = new Query(stmt, parameters("xpath", selectOptionNode.getXpath(), "props", props));
+
+            return query;
+        };
+
+        //Invoke generic processing logic
+        processNode(eventId, SelectOptionNode.class, existingSelectOptionNodeSupplier, newSelectOptionNodeSupplier, queryFunction);
+
+    }
+
+    public void processNetworkEvent(String eventId, String networkEventPath, String networkEventMethod){
+
+        //If an API node for this event already exists in the database, this supplier will be used to retrieve it.
+        Supplier<APINode> existingAPINodeSupplier = ()->getAPINode(networkEventPath, networkEventMethod);
+
+        //If no API node could be found, this supplier will be used to create one
+        Supplier<APINode> newAPINodeSupplier = ()->{
+            APINode node = new APINode();
+            node.setPath(networkEventPath);
+            node.setMethod(networkEventMethod);
+            node.setId(UUID.randomUUID());
+            node.setInstances(Set.of(eventId));
+            return node;
+        };
+
+        //The update query used to update/merge the processed API node into the database.
+        Function<APINode, Query> queryFunction = (apiNode)->{
+            HashMap<String, Object> props = new HashMap<>();
+            props.put("path", apiNode.getPath());
+            props.put("method", apiNode.getMethod());
+            props.put("id", apiNode.getId().toString());
+            props.put("instances", apiNode.getInstances());
+
+            var stmt = "MERGE (n:APINode { path:$path, method:$method }) ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
+            var query = new Query(stmt, parameters("path", apiNode.getPath(), "method", apiNode.getMethod() , "props", props));
+
+            return query;
+        };
+
+        //Invoke generic processing logic.
+        processNode(eventId, APINode.class, existingAPINodeSupplier, newAPINodeSupplier, queryFunction);
+    }
+
+    public void processDataEntry(String xpath, String eventId){
+
+        //If a data entry node for this event already exists in the database, this supplier will be used to retrieve it.
+        Supplier<DataEntryNode> existingDataEntryNodeSupplier = ()->getDataEntryNode(xpath);
+
+        //If no data entry node could be found, this supplier will be used to create one
+        Supplier<DataEntryNode> newDataEntryNodeSupplier = ()->{
+            DataEntryNode node = new DataEntryNode();
+            node.setId(UUID.randomUUID());
+            node.setXpath(xpath);
+            node.setInstances(Set.of(eventId));
+            return node;
+        };
+
+        //The update query used to update/merge the processed data entry node into the database.
+        Function<DataEntryNode, Query> queryFunction = (dataEntryNode)->{
+            HashMap<String, Object> props = new HashMap<>();
+            props.put("xpath", dataEntryNode.getXpath());
+            props.put("id", dataEntryNode.getId().toString());
+            props.put("instances", dataEntryNode.getInstances());
+
+            var stmt = "MERGE (n:DataEntryNode { xpath:$xpath }) ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
+            var query = new Query(stmt, parameters("xpath", dataEntryNode.getXpath(), "props", props));
+
+            return query;
+        };
+
+        //Invoke generic processing logic.
+        processNode(eventId, DataEntryNode.class, existingDataEntryNodeSupplier, newDataEntryNodeSupplier, queryFunction);
+
+    }
+
+    public void processClick(String clickText, String clickXpath, String eventId){
+
+        //If a click node for this event already exists in the database, this supplier will be used to retrieve it.
+        Supplier<ClickNode> existingClickNodeSupplier = ()->getClickNode(clickXpath, clickText);
+
+        //If no click node could be found, this supplier will be used to create one
+        Supplier<ClickNode> newClickNodeSupplier = ()->{
+            ClickNode clickNode = new ClickNode();
+            clickNode.setId(UUID.randomUUID());
+            clickNode.setText(clickText);
+            clickNode.setXpath(clickXpath);
+            clickNode.setInstances(Set.of(eventId));
+            return clickNode;
+        };
+
+        //The update query used to update/merge the processed click node into the database.
+        Function<ClickNode, Query> queryFunction = (clickNode)->{
+            HashMap<String, Object> props = new HashMap<>();
+            props.put("xpath", clickNode.getXpath());
+            props.put("text", clickNode.getText());
+            props.put("id", clickNode.getId().toString());
+            props.put("instances", clickNode.getInstances());
+
+            var stmt = "MERGE (n:ClickNode { xpath: $xpath, text: $text} ) ON CREATE SET n =  $props ON MATCH SET n = $props RETURN n;";
+            Query query = new Query(stmt, parameters("xpath", clickNode.getXpath(),  "text", clickNode.getText(), "props", props));
+
+            return query;
+        };
+
+        //Invoke generic processing logic.
+        processNode(eventId, ClickNode.class, existingClickNodeSupplier, newClickNodeSupplier, queryFunction);
+
+
+    }
+
+    /**
+     * Generic method for processing simple {@link NavNode}s.
+     *
+     * First the method checks if the nav node already exists in the database. If so, it updates the existing
+     * nav node's instances. Otherwise, it creates a new nav node.
+     *
+     * The new or updated nav node is then updated/merged in the database.
+     *
+     * @param eventId the UUID of the event for which a nav node is being created or updated.
+     * @param nodeClass the class of NavNode being processed.
+     * @param existingNodeSupplier A supplier that returns the corresponding nav node if it already exists in the database.
+     * @param newNodeSupplier A supplier that create a new nav node, invoked if the nav node does not already exist in the database.
+     * @param queryFunction A function that returns the update query for the nav node being processed.
+     * @param <T> The type of nav node being processed.
+     * @return The processed nav node.
+     */
+    private <T extends NavNode> T processNode(String eventId,
+                             Class<T> nodeClass,
+                             Supplier<T> existingNodeSupplier,
+                             Supplier<T> newNodeSupplier,
+                             Function<T,Query> queryFunction){
+
+        log.info("Processing {} event", nodeClass.getName());
+
+        T node = existingNodeSupplier.get();
+
+        if(node == null){ //Node cannot be found
+            //Create it
+            node = newNodeSupplier.get();
         }else{
-            //If a data entry node was found, update its list of instances
-            dataEntryNode.getInstances().add(entityTimelineId);
+            //If the node was found, update its list of instances.
+            node.getInstances().add(eventId);
         }
 
-        final DataEntryNode finalDataEntryNode = dataEntryNode;
+        final T finalNode = node;
 
-        //Write the changes to the data entry node back into the database
+        //Write changes to the node back into the database
         try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
 
-            HashMap<String, Object> props = new HashMap<>();
-            props.put("xpath", finalDataEntryNode.getXpath());
-            props.put("id", finalDataEntryNode.getId().toString());
-            props.put("instances", finalDataEntryNode.getInstances());
-
             session.executeWrite(tx->{
-                var stmt = "MERGE (n:DataEntryNode { xpath:$xpath }) ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
-                var query = new Query(stmt, parameters("xpath", finalDataEntryNode.getXpath(), "props", props));
-                tx.run(query);
+                tx.run(queryFunction.apply(finalNode));
                 return 0;
             });
         }
 
+        return node;
+    }
+
+    public void processClick(Click click){
+        String clickText = click.targetElement().ownText();
+        String xpath = click.getTargetElementXpath();
+
+        processClick(clickText, xpath, click.getActionId());
     }
 
     public void processClickEvent(Timeline timeline, ClickEvent clickEvent){
         var index  = timeline.indexOf(clickEvent);
         var entityTimelineId = timeline.getId().toString()+"#"+index;
 
-        log.info("Processing click event {}", entityTimelineId);
-
         String clickText = clickEvent.getTriggerElement() != null?clickEvent.getTriggerElement().ownText():"";
         String clickXpath = clickEvent.getXpath();
 
-        ClickNode clickNode = getClickNode(clickXpath, clickText);
-
-        if(clickNode == null){ //If no click node could be found
-            //Create the click node
-            ClickNode newClickNode = new ClickNode();
-            newClickNode.setId(UUID.randomUUID());
-            newClickNode.setText(clickText);
-            newClickNode.setXpath(clickXpath);
-            newClickNode.setInstances(Set.of(entityTimelineId));
-            clickNode = newClickNode;
-        }else{
-            //If a click node was found, update its list of instances
-            clickNode.getInstances().add(entityTimelineId);
-        }
-
-        final ClickNode finalClickNode = clickNode;
-
-        //Write the changes to the click node back into the database
-        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
-
-            HashMap<String, Object> props = new HashMap<>();
-            props.put("xpath", finalClickNode.getXpath());
-            props.put("text", finalClickNode.getText());
-            props.put("id", finalClickNode.getId().toString());
-            props.put("instances", finalClickNode.getInstances());
-
-            session.executeWrite(tx->{
-                var stmt = "MERGE (n:ClickNode { xpath: $xpath, text: $text} ) ON CREATE SET n =  $props ON MATCH SET n = $props RETURN n;";
-                var query = new Query(stmt, parameters("xpath", finalClickNode.getXpath(), "text", finalClickNode.getText(), "props", props));
-                tx.run(query);
-
-                return 0;
-            });
-        }
+        processClick(clickText, clickXpath, entityTimelineId);
     }
 
     public void processEffect(Timeline timeline, Effect effect){
@@ -520,12 +597,14 @@ public class Neo4JUtils {
         return readNode(query, APINode.class);
     }
 
-    private ApplicationLocationChangeNode getApplicationLocationChangeNode(String from, String to){
-        var stmt = "MATCH (n:ApplicationLocationChangeNode {from:$from, to:$to}) return n";
-        var query = new Query(stmt, parameters("from", from, "to", to));
 
-        return readNode(query, ApplicationLocationChangeNode.class);
+    private SelectOptionNode getSelectOptionNode(String xpath){
+        var stmt = "MATCH (n:SelectOptionNode {xpath:$xpath}) return n";
+        var query = new Query(stmt, parameters("xpath", xpath));
+
+        return readNode(query, SelectOptionNode.class);
     }
+
 
     private DataEntryNode getDataEntryNode(String xpath){
         var stmt = "MATCH (n:DataEntryNode {xpath:$xpath}) return n";
@@ -543,80 +622,7 @@ public class Neo4JUtils {
 
     }
 
-    public void createState(UUID id, UUID modelId){
-        var stmt = "CREATE (n:ApplicationState {id:$id, model:$model}) RETURN n";
-        var query = new Query(stmt, parameters("id", id.toString(), "model", modelId.toString()));
-        write(query);
-    }
 
-    public void createTimelineEntity(TimelineEntity e, Timeline t, UUID modelId){
-        var index = t.indexOf(e);
-        log.info("entity {} index: {}", e.symbol(),  index);
-        log.info("timeline: {}", t.toJson().encodePrettily());
-        var stmt = "CREATE (n:TimelineEntity {symbol:$symbol, terms: $terms, timeline:$tId, index:$index, model:$model }) RETURN n";
-        //TODO-migrate to post pipeline api data structures
-//        var query = new Query(stmt, parameters("symbol", e.symbol(), "terms", e.terms(), "tId", t.getId().toString(), "index", index, "model",modelId.toString()));
-//        write(query);
-    }
-
-    public void createEntitiesForTimeline(Timeline t, UUID modelId){
-        t.forEach(entity -> createTimelineEntity(entity, t, modelId));
-    }
-
-    public void connectStateToEntity(UUID stateId, UUID timelineId, int timelineIndex){
-        var stmt = "MATCH (s:ApplicationState {id:$sId}), (e:TimelineEntity {timeline:$tId, index:$index}) CREATE (s)-[r:causes]->(e) RETURN r";
-        var query = new Query(stmt, parameters("sId", stateId.toString(), "tId", timelineId.toString(), "index", timelineIndex));
-        write(query);
-    }
-
-    public void connectEntityToState(UUID timelineId, int timelineIndex, UUID stateId){
-        var stmt = "MATCH (e:TimelineEntity {timeline:$tId, index:$index}), (s:ApplicationState {id:$sId}) CREATE (e)-[r:causes]->(s) RETURN r";
-        var query = new Query(stmt, parameters("tId", timelineId.toString(), "index", timelineIndex, "sId", stateId.toString()));
-        write(query);
-    }
-
-
-    public DataEntryNode readDataEntryNode(Query query){
-        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
-            Record node = session.executeRead(tx->{
-                var result = tx.run(query);
-                try{
-                    return result.single();
-                }catch (NoSuchRecordException err){
-                    log.info("Data Entry node could not be found.");
-                    return null;
-                }
-            });
-
-            if(node != null){
-                return DataEntryNode.fromRecord(node);
-            }else{
-                return null;
-            }
-        }
-    }
-
-    public ClickNode readClickNode(Query query){
-        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
-             Record node = session.executeRead(tx -> {
-
-                var result = tx.run(query);
-
-                try{
-                    return result.single();
-                }catch(NoSuchRecordException err) {
-                    log.info("Click node could not be found.");
-                    return null;
-                }
-            });
-
-            if(node != null){
-                return ClickNode.fromRecord(node);
-            }else{
-                return null;
-            }
-        }
-    }
 
     public <T extends NavNode> T readNode(Query query, Class<T> tClass){
         try(var session = driver.session(SessionConfig.forDatabase(databaseName))){

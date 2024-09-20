@@ -55,6 +55,10 @@ public class Utils {
         return computeXpath(element, "", e->true);
     }
 
+    public static String computeXpathNoRoot(Element element){
+        return computeXpath(element, "", e->!e.tagName().equals("#root"));
+    }
+
     /**
      * Returns the xpath of a given element to its root
      * @param element the element
