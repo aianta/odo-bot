@@ -1,6 +1,8 @@
 package ca.ualberta.odobot.semanticflow.navmodel;
 
 import ca.ualberta.odobot.mind2web.Click;
+import ca.ualberta.odobot.mind2web.Operation;
+import ca.ualberta.odobot.mind2web.SelectOption;
 import ca.ualberta.odobot.mind2web.Type;
 import ca.ualberta.odobot.semanticflow.model.*;
 
@@ -133,6 +135,14 @@ public class Neo4JUtils {
 
         //Invoke generic processing logic
         return processNode(eventId, LocationNode.class, existingLocationNodeSupplier, newLocationNodeSupplier, queryFunction);
+    }
+
+    /**
+     * A wrapper method for {@link #processSelectOption(String, String)} to simplify processing {@link SelectOption}
+     * @param selectOption
+     */
+    public void processSelectOption(SelectOption selectOption){
+        processSelectOption(selectOption.getTargetElementXpath(), selectOption.getActionId());
     }
 
     public void processSelectOption(String xpath, String eventId){
@@ -407,6 +417,29 @@ public class Neo4JUtils {
         effectMap.put(effect, finalEffectNode.getId());
 
     }
+
+    public NavNode resolveNavNode(Operation operation){
+
+        if(operation instanceof Click){
+            Click click = (Click) operation;
+            return getClickNode(click.getTargetElementXpath(), click.targetElement().ownText());
+        }
+
+        if(operation instanceof Type){
+            Type type = (Type) operation;
+            return getDataEntryNode(type.getTargetElementXpath());
+        }
+
+        if(operation instanceof SelectOption){
+            SelectOption selectOption = (SelectOption) operation;
+            return getSelectOptionNode(selectOption.getTargetElementXpath());
+        }
+
+        log.warn("Unrecognized Mind2Web event type!");
+        return null;
+
+    }
+
 
     public NavNode resolveNavNode(Timeline timeline, int index){
         log.info("Attempting to resolve {}[{}]", timeline.get(index).symbol(), index);

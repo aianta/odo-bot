@@ -7,6 +7,9 @@ import org.slf4j.LoggerFactory;
 
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 import java.util.function.Predicate;
 
 public class Utils {
@@ -41,7 +44,7 @@ public class Utils {
      * @return
      */
     public static String computeComponentXpath(Element element){
-        return computeXpath(element,"", e->!e.tagName().equals("html") && !e.tagName().equals("body"));
+        return computeXpath(element, e->!e.tagName().equals("html") && !e.tagName().equals("body"));
     }
 
     /**
@@ -52,41 +55,62 @@ public class Utils {
      */
     public static String computeXpath(Element element){
 //        return computeXpath(element, "", e->!e.tagName().equals("#root"));
-        return computeXpath(element, "", e->true);
+        return computeXpath(element, e->true);
     }
 
     public static String computeXpathNoRoot(Element element){
-        return computeXpath(element, "", e->!e.tagName().equals("#root"));
+        return computeXpath(element, e->!e.tagName().equals("#root"));
     }
+
 
     /**
      * Returns the xpath of a given element to its root
-     * @param element the element
-     * @param xpath the recursive variable
-     * @param stopCondition a predicate at which we stop computing the xpath.
-     * @return the xpath to the element
+     * Logic ported over from: https://stackoverflow.com/questions/3454526/how-to-calculate-the-xpath-position-of-an-element-using-javascript
+     *
+     * @param element element for which to compute the xpath.
+     * @param stopCondition custom stop condition
+     * @return the xpath to the element.
      */
-    public static String computeXpath(Element element, String xpath, Predicate<Element> stopCondition){
+    public static String computeXpath(Element element, Predicate<Element> stopCondition){
+        List<String> paths = new ArrayList<>();
 
-        String tag = element.tagName();
-        int index = element.elementSiblingIndex(); //NOTE: siblingIndex() lies for some reason... It doesn't lie it gives me the node index
+        for(; element != null && element instanceof Element && stopCondition.test(element); element = element.parent()){
 
-        String chunk = index > 0?(tag + "[" + Integer.toString(index) + "]"):tag;
+            int index = 0;
+            boolean hasFollowingSiblings = false;
+            for(Element sibling = element.previousElementSibling(); sibling != null; sibling = sibling.previousElementSibling()){
 
+                if(sibling.nodeName() == element.nodeName()){
+                    index++;
+                }
 
-        if(element.hasParent() && stopCondition.test(element.parent())){
-            Element parent = element.parent();
-            xpath = xpath.isEmpty()?chunk:(chunk + "/" + xpath);
-            return computeXpath(parent, xpath, stopCondition);
-        }else{
-            if(xpath.isEmpty()){
-                return "/" + chunk;
-            }else{
-                xpath = "/" + chunk + "/" + xpath;
-                return xpath;
             }
 
+            for(Element sibling = element.nextElementSibling(); sibling != null && !hasFollowingSiblings; sibling = sibling.nextElementSibling()){
+                if(sibling.nodeName() == element.nodeName()){
+                    hasFollowingSiblings = true;
+                }
+            }
+
+            String tagName = (element.tagName());
+            String pathIndex = (index > 0 || hasFollowingSiblings)?("[" + (index + 1) + "]"):"";
+            paths.add(0,tagName+pathIndex);
+
         }
+
+        String result = "//";
+        Iterator<String> it = paths.iterator();
+        while (it.hasNext()){
+            String segment = it.next();
+            if(it.hasNext()){
+                result += segment + "/";
+            }else {
+                result += segment;
+            }
+        }
+
+        return result;
+
     }
 
 }

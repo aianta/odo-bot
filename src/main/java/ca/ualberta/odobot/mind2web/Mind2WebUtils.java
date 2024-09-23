@@ -9,8 +9,12 @@ import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static ca.ualberta.odobot.semanticflow.Utils.computeXpath;
-import static ca.ualberta.odobot.semanticflow.Utils.computeXpathNoRoot;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+
+import static ca.ualberta.odobot.semanticflow.Utils.*;
 
 
 public class Mind2WebUtils {
@@ -81,9 +85,36 @@ public class Mind2WebUtils {
 
     private static String resolveXPath(String rawHTML, String actionId ){
 
+        File htmlFile = new File("state.html");
+        try(FileWriter fw = new FileWriter(htmlFile);
+            BufferedWriter bw = new BufferedWriter(fw);
+        ){
+            bw.write(rawHTML);
+            bw.flush();
+            fw.flush();
+        }catch (IOException e){
+            log.error(e.getMessage(), e);
+        }
+
         Document document = Jsoup.parse(rawHTML);
-        Element targetElement = document.selectXpath("//*[@data_pw_testid_buckeye='%s']".formatted(actionId)).get(0);
-        return computeXpathNoRoot(targetElement);
+        String targetAttribute = "//*[@data_pw_testid_buckeye='%s']".formatted(actionId);
+        log.info("Identifying target element with buckeye attribute: {}", targetAttribute );
+        Element targetElement = document.selectXpath(targetAttribute).get(0);
+
+        String computedXpath = computeXpathNoRoot(targetElement);
+        log.info("Computed xpath: {}", computedXpath);
+
+
+
+        Element verifiedElement = document.selectXpath(computedXpath).get(0);
+
+        if(!targetElement.equals(verifiedElement)){
+            log.error("Failed to resolve proper xpath!");
+            throw new RuntimeException("Failed to resolve proper xpath!");
+        }
+
+
+        return computedXpath;
 
     }
 
