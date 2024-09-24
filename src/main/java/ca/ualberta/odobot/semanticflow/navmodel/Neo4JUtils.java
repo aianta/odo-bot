@@ -7,6 +7,7 @@ import ca.ualberta.odobot.mind2web.Type;
 import ca.ualberta.odobot.semanticflow.model.*;
 
 import ca.ualberta.odobot.semanticflow.navmodel.nodes.*;
+import com.github.jsonldjava.utils.Obj;
 import org.neo4j.driver.*;
 import org.neo4j.driver.Record;
 import org.neo4j.driver.exceptions.NoSuchRecordException;
@@ -14,9 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.InvocationTargetException;
-import java.util.HashMap;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
@@ -81,6 +80,9 @@ public class Neo4JUtils {
         processDataEntry(type.getTargetElementXpath(), type.getActionId());
     }
 
+    public void processType(Type type, String website){
+        processDataEntry(type.getTargetElementXpath(), type.getActionId(), website);
+    }
 
     /**
      * A wrapper method for {@link #processDataEntry(String, String)} to simplify processing {@link DataEntry}s.
@@ -145,12 +147,51 @@ public class Neo4JUtils {
         processSelectOption(selectOption.getTargetElementXpath(), selectOption.getActionId());
     }
 
+    public void processSelectOption(SelectOption selectOption, String website){
+        processSelectOption(selectOption.getTargetElementXpath(), selectOption.getActionId(), website);
+    }
+
+    public void processSelectOption(String xpath, String eventId, String website){
+        //If a select option node for this event already exists in the database, this supplier will be used to retrieve it.
+        Supplier<SelectOptionNode> existingSelectOptionNodeSupplier = ()->getSelectOptionNode(xpath, website);
+
+        //Invoke generic processing logic
+        processNode(
+                eventId,
+                SelectOptionNode.class,
+                existingSelectOptionNodeSupplier,
+                newSelectOptionNodeSupplier(xpath, eventId, website),
+                processSelectOptionNodeQueryFunction()
+        );
+
+    }
+
     public void processSelectOption(String xpath, String eventId){
 
         //If a select option node for this event already exists in the database, this supplier will be used to retrieve it.
         Supplier<SelectOptionNode> existingSelectOptionNodeSupplier = ()->getSelectOptionNode(xpath);
 
-        //If no select option node could be found, this supplier will be used to create one
+
+        //Invoke generic processing logic
+        processNode(
+                eventId,
+                SelectOptionNode.class,
+                existingSelectOptionNodeSupplier, //If a select option node for this event already exists in the database, this supplier will be used to retrieve it.
+                newSelectOptionNodeSupplier(xpath, eventId), //If no select option node could be found, this supplier will be used to create one
+                processSelectOptionNodeQueryFunction()
+        );
+
+    }
+
+    private Supplier<SelectOptionNode> newSelectOptionNodeSupplier(String xpath, String eventId, String website){
+        return ()->{
+            SelectOptionNode node = this.newSelectOptionNodeSupplier(xpath, eventId).get();
+            node.setWebsite(website);
+            return node;
+        };
+    }
+
+    private Supplier<SelectOptionNode> newSelectOptionNodeSupplier(String xpath, String eventId){
         Supplier<SelectOptionNode> newSelectOptionNodeSupplier = ()->{
             SelectOptionNode node = new SelectOptionNode();
             node.setId(UUID.randomUUID());
@@ -158,7 +199,10 @@ public class Neo4JUtils {
             node.setInstances(Set.of(eventId));
             return node;
         };
+        return newSelectOptionNodeSupplier;
+    }
 
+    private Function<SelectOptionNode, Query> processSelectOptionNodeQueryFunction(){
         //The update query used to update/merge the processed select option node into the database.
         Function<SelectOptionNode, Query> queryFunction = (selectOptionNode)->{
             HashMap<String, Object> props = new HashMap<>();
@@ -166,15 +210,10 @@ public class Neo4JUtils {
             props.put("id", selectOptionNode.getId().toString());
             props.put("instances", selectOptionNode.getInstances());
 
-            var stmt = "MERGE (n:SelectOptionNode { xpath:$xpath }) ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
-            var query = new Query(stmt, parameters("xpath", selectOptionNode.getXpath(), "props", props));
-
-            return query;
+            return makeGenericMergeQuery("SelectOptionNode", selectOptionNode, props, "xpath", selectOptionNode.getXpath(), "props", props);
         };
 
-        //Invoke generic processing logic
-        processNode(eventId, SelectOptionNode.class, existingSelectOptionNodeSupplier, newSelectOptionNodeSupplier, queryFunction);
-
+        return queryFunction;
     }
 
     public void processNetworkEvent(String eventId, String networkEventPath, String networkEventMethod){
@@ -207,7 +246,26 @@ public class Neo4JUtils {
         };
 
         //Invoke generic processing logic.
-        processNode(eventId, APINode.class, existingAPINodeSupplier, newAPINodeSupplier, queryFunction);
+        processNode(
+                eventId,
+                APINode.class,
+                existingAPINodeSupplier,
+                newAPINodeSupplier,
+                queryFunction);
+    }
+
+    public void processDataEntry(String xpath, String eventId, String website){
+        //If a data entry node for this event already exists in the database, this supplier will be used to retrieve it.
+        Supplier<DataEntryNode> existingDataEntryNodeSupplier = ()->getDataEntryNode(xpath, website);
+
+        //Invoke generic processing logic.
+        processNode(
+                eventId,
+                DataEntryNode.class,
+                existingDataEntryNodeSupplier,
+                newDataEntryNodeSupplier(xpath, eventId, website),
+                processDataEntryNodeQueryFunction()
+        );
     }
 
     public void processDataEntry(String xpath, String eventId){
@@ -215,6 +273,41 @@ public class Neo4JUtils {
         //If a data entry node for this event already exists in the database, this supplier will be used to retrieve it.
         Supplier<DataEntryNode> existingDataEntryNodeSupplier = ()->getDataEntryNode(xpath);
 
+        //Invoke generic processing logic.
+        processNode(
+                eventId,
+                DataEntryNode.class,
+                existingDataEntryNodeSupplier, //If a data entry node for this event already exists in the database, this supplier will be used to retrieve it.
+                newDataEntryNodeSupplier(xpath, eventId), //If no data entry node could be found, this supplier will be used to create one
+                processDataEntryNodeQueryFunction()//The update query used to update/merge the processed data entry node into the database.
+        );
+
+    }
+
+    private Function<DataEntryNode, Query> processDataEntryNodeQueryFunction(){
+
+        Function<DataEntryNode, Query> queryFunction = (dataEntryNode)->{
+            HashMap<String, Object> props = new HashMap<>();
+            props.put("xpath", dataEntryNode.getXpath());
+            props.put("id", dataEntryNode.getId().toString());
+            props.put("instances", dataEntryNode.getInstances());
+
+            return makeGenericMergeQuery("DataEntryNode", dataEntryNode, props, "xpath", dataEntryNode.getXpath(), "props", props);
+        };
+
+        return queryFunction;
+    }
+
+    private Supplier<DataEntryNode> newDataEntryNodeSupplier (String xpath, String eventId, String website){
+        Supplier<DataEntryNode> newDataEntryNodeSupplier = ()->{
+            DataEntryNode node = this.newDataEntryNodeSupplier(xpath, eventId).get();
+            node.setWebsite(website);
+            return node;
+        };
+        return newDataEntryNodeSupplier;
+    }
+
+    private Supplier<DataEntryNode> newDataEntryNodeSupplier (String xpath, String eventId){
         //If no data entry node could be found, this supplier will be used to create one
         Supplier<DataEntryNode> newDataEntryNodeSupplier = ()->{
             DataEntryNode node = new DataEntryNode();
@@ -223,22 +316,21 @@ public class Neo4JUtils {
             node.setInstances(Set.of(eventId));
             return node;
         };
+        return newDataEntryNodeSupplier;
+    }
 
-        //The update query used to update/merge the processed data entry node into the database.
-        Function<DataEntryNode, Query> queryFunction = (dataEntryNode)->{
-            HashMap<String, Object> props = new HashMap<>();
-            props.put("xpath", dataEntryNode.getXpath());
-            props.put("id", dataEntryNode.getId().toString());
-            props.put("instances", dataEntryNode.getInstances());
-
-            var stmt = "MERGE (n:DataEntryNode { xpath:$xpath }) ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
-            var query = new Query(stmt, parameters("xpath", dataEntryNode.getXpath(), "props", props));
-
-            return query;
-        };
+    public void processClick(String clickText, String clickXpath, String eventId, String website){
+        //If a click node for this event already exists in the database, this supplier will be used to retrieve it.
+        Supplier<ClickNode> existingClickNodeSupplier = ()->getClickNode(clickXpath, clickText, website);
 
         //Invoke generic processing logic.
-        processNode(eventId, DataEntryNode.class, existingDataEntryNodeSupplier, newDataEntryNodeSupplier, queryFunction);
+        processNode(
+                eventId,
+                ClickNode.class,
+                existingClickNodeSupplier, //If a click node for this event already exists in the database, this supplier will be used to retrieve it.
+                newClickNodeSupplier(clickText, clickXpath, eventId, website), //If no click node could be found, this supplier will be used to create one
+                processClickQueryFunction()
+        );
 
     }
 
@@ -247,7 +339,38 @@ public class Neo4JUtils {
         //If a click node for this event already exists in the database, this supplier will be used to retrieve it.
         Supplier<ClickNode> existingClickNodeSupplier = ()->getClickNode(clickXpath, clickText);
 
-        //If no click node could be found, this supplier will be used to create one
+        //Invoke generic processing logic.
+        processNode(
+                eventId,
+                ClickNode.class,
+                existingClickNodeSupplier, //If a click node for this event already exists in the database, this supplier will be used to retrieve it.
+                newClickNodeSupplier(clickText, clickXpath, eventId), //If no click node could be found, this supplier will be used to create one
+                processClickQueryFunction()
+        );
+    }
+
+    /**
+     * Supplies new click nodes
+     * @param clickText
+     * @param clickXpath
+     * @param eventId
+     * @param website
+     * @return
+     */
+    private Supplier<ClickNode> newClickNodeSupplier(String clickText, String clickXpath, String eventId, String website){
+        Supplier<ClickNode> newClickNodeSupplier = ()->{
+            ClickNode clickNode = this.newClickNodeSupplier(clickText, clickXpath, eventId).get();
+            clickNode.setWebsite(website);
+            return clickNode;
+        };
+        return newClickNodeSupplier;
+    }
+
+    /**
+     *  Supplies new click nodes
+     * @return
+     */
+    private Supplier<ClickNode> newClickNodeSupplier(String clickText, String clickXpath, String eventId){
         Supplier<ClickNode> newClickNodeSupplier = ()->{
             ClickNode clickNode = new ClickNode();
             clickNode.setId(UUID.randomUUID());
@@ -256,7 +379,13 @@ public class Neo4JUtils {
             clickNode.setInstances(Set.of(eventId));
             return clickNode;
         };
+        return newClickNodeSupplier;
+    }
 
+    /**
+     * @return A cypher query for matching or creating a ClickNode.
+     */
+    private Function<ClickNode, Query> processClickQueryFunction(){
         //The update query used to update/merge the processed click node into the database.
         Function<ClickNode, Query> queryFunction = (clickNode)->{
             HashMap<String, Object> props = new HashMap<>();
@@ -265,16 +394,78 @@ public class Neo4JUtils {
             props.put("id", clickNode.getId().toString());
             props.put("instances", clickNode.getInstances());
 
-            var stmt = "MERGE (n:ClickNode { xpath: $xpath, text: $text} ) ON CREATE SET n =  $props ON MATCH SET n = $props RETURN n;";
-            Query query = new Query(stmt, parameters("xpath", clickNode.getXpath(),  "text", clickNode.getText(), "props", props));
+            return makeGenericMergeQuery("ClickNode", clickNode, props, "xpath", clickNode.getXpath(), "text", clickNode.getText(), "props", props);
 
-            return query;
         };
+        return queryFunction;
+    }
 
-        //Invoke generic processing logic.
-        processNode(eventId, ClickNode.class, existingClickNodeSupplier, newClickNodeSupplier, queryFunction);
 
+    /**
+     * Helper method that returns a cypher query to match or create a specific node based on its propery values.
+     * @param nodeLabel
+     * @param node
+     * @param props the properties of the node to create/update.
+     * @param keysAndValues the properties used to match the node + props.
+     * @return
+     * @param <T>
+     */
+    private  <T extends NavNode> Query makeGenericMergeQuery(String nodeLabel, T node, HashMap<String,Object> props, Object... keysAndValues){
 
+        Map<String,Object> map = keysAndValuesToMap(keysAndValues);
+
+        String stmt = null;
+        Query query = null;
+        //If we're working with mind2web data, click nodes will have an additional website property we need to match.
+        if(node.getWebsite() != null){
+            props.put("website", node.getWebsite()); //Add website to the list of properties the node should have.
+            map.put("website", node.getWebsite()); //Add website to the list of properties used to match the node.
+            String[] stringProps = map.keySet().stream()
+                    .filter(k->!k.equals("props")) //'props' should not be a property value, it is passed so we can use it in the parameters() call, and it represents node properties as a whole, but is not in fact a property 'props' with corresponding map value.
+                    .toArray(String[]::new); //Convert matching properties to a string array for use with makeSimpleNodeQuerySegment
+            stmt = "MERGE "+ makeSimpleNodeQuerySegment("n", nodeLabel, stringProps) + " ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
+            query = new Query(stmt, parameters(mapToKeysAndValues(map)));
+        }else{
+            String [] stringProps = map.keySet().stream()
+                    .filter(k->!k.equals("props")) //'props' should not be a property value, it is passed so we can use it in the parameters() call.
+                    .toArray(String[]::new); //Convert matching properties to a string array for use with makeSimpleNodeQuerySegment
+            stmt = "MERGE "+ makeSimpleNodeQuerySegment("n", nodeLabel, stringProps) + " ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
+            query = new Query(stmt, parameters(keysAndValues));
+        }
+
+        log.info("Merge Query:\n{}", stmt);
+
+        return query;
+
+    }
+
+    private static Object[] mapToKeysAndValues(Map<String,Object> map){
+
+        List<Object> objects = new ArrayList<>();
+
+        Iterator<Map.Entry<String,Object>> it = map.entrySet().iterator();
+        while (it.hasNext()){
+            Map.Entry<String,Object> entry = it.next();
+            objects.add(entry.getKey());
+            objects.add(entry.getValue());
+        }
+
+        return objects.toArray();
+    }
+
+    private static Map<String,Object> keysAndValuesToMap(Object... keysAndValues){
+        Map<String, Object> map = new HashMap<>();
+        String key = null;
+        Object value = null;
+        for(int i = 0; i < keysAndValues.length; i++){
+            if(i % 2 == 0){ //If i is even it is an index to a key.
+                key = (String) keysAndValues[i];
+            }else{ //Otherwise i is odd and is an index to a value.
+                value = keysAndValues[i];
+                map.put(key, value);
+            }
+        }
+        return map;
     }
 
     /**
@@ -330,6 +521,10 @@ public class Neo4JUtils {
         String xpath = click.getTargetElementXpath();
 
         processClick(clickText, xpath, click.getActionId());
+    }
+
+    public void processClick(Click click, String website){
+        processClick(click.targetElement().ownText(), click.getTargetElementXpath(), click.getActionId(), website);
     }
 
     public void processClickEvent(Timeline timeline, ClickEvent clickEvent){
@@ -418,6 +613,28 @@ public class Neo4JUtils {
 
     }
 
+    public NavNode resolveNavNode(Operation operation, String website){
+
+        if(operation instanceof Click){
+            Click click = (Click) operation;
+            return getClickNode(click.getTargetElementXpath(), click.targetElement().ownText(), website);
+        }
+
+        if(operation instanceof Type){
+            Type type = (Type) operation;
+            return getDataEntryNode(type.getTargetElementXpath(), website);
+        }
+
+        if(operation instanceof SelectOption){
+            SelectOption selectOption = (SelectOption) operation;
+            return getSelectOptionNode(selectOption.getTargetElementXpath(), website);
+        }
+
+        log.warn("Unrecognized Mind2Web event type!");
+        return null;
+
+    }
+
     public NavNode resolveNavNode(Operation operation){
 
         if(operation instanceof Click){
@@ -475,7 +692,6 @@ public class Neo4JUtils {
                 throw new RuntimeException("ApplicationLocationChange failed to resolve to location node!");
             }
             return node;
-            //return getApplicationLocationChangeNode(applicationLocationChange.getFromPath(), applicationLocationChange.getToPath());
         }
 
         log.warn("Unknown entity type");
@@ -630,6 +846,11 @@ public class Neo4JUtils {
         return readNode(query, APINode.class);
     }
 
+    private APINode getAPINode(String path, String method, String website){
+        var stmt = makeSimplePropertyBasedMatchQueryString("APINode", "path", "method", "website");
+        var query = new Query(stmt, parameters("path", path, "method", method, "website", website));
+        return readNode(query, APINode.class);
+    }
 
     private SelectOptionNode getSelectOptionNode(String xpath){
         var stmt = "MATCH (n:SelectOptionNode {xpath:$xpath}) return n";
@@ -638,24 +859,95 @@ public class Neo4JUtils {
         return readNode(query, SelectOptionNode.class);
     }
 
+    private SelectOptionNode getSelectOptionNode(String xpath, String website){
+        var stmt = makeSimplePropertyBasedMatchQueryString("SelectOptionNode", "xpath", "website");
+        var query = new Query(stmt, parameters("xpath", xpath, "website", website));
+
+        log.info("getSelectOptionNode Query: {}", stmt);
+
+        return readNode(query, SelectOptionNode.class);
+    }
 
     private DataEntryNode getDataEntryNode(String xpath){
         var stmt = "MATCH (n:DataEntryNode {xpath:$xpath}) return n";
         var query = new Query(stmt, parameters("xpath", xpath));
+        return readNode(query, DataEntryNode.class);
+    }
+
+    private DataEntryNode getDataEntryNode(String xpath, String website){
+        var stmt = makeSimplePropertyBasedMatchQueryString("DataEntryNode", "xpath", "website");
+        var query = new Query(stmt, parameters("xpath", xpath, "website", website));
+
+        log.info("getDataEntryNode Query: {}", stmt);
 
         return readNode(query, DataEntryNode.class);
     }
 
     private ClickNode getClickNode(String xpath, String text){
-
         var stmt = "MATCH (n:ClickNode {xpath:$xpath, text:$text}) return n;";
         var query = new Query(stmt, parameters("xpath", xpath, "text", text));
-
         return readNode(query, ClickNode.class);
 
     }
 
+    private ClickNode getClickNode(String xpath, String text, String website){
+        var stmt = makeSimplePropertyBasedMatchQueryString("ClickNode", "xpath", "text", "website");
+        var query = new Query(stmt, parameters("xpath", xpath, "text", text, "website", website));
+        log.info("getClickNode Query:\n{}\n{}", stmt, stmt.replaceAll("\\$xpath", "\""+xpath+"\"").replaceAll("\\$text", "\""+text+"\"").replaceAll("\\$website", "\""+website+"\""));
 
+        return readNode(query, ClickNode.class);
+    }
+
+    /**
+     * Helper method for constructing cypher query that matches nodes via simple property match.
+     *
+     * For example: passing in (ClickNode, xpath, text) will produce "MATCH (n:ClickNode {xpath:$xpath, text:$text}) return n;"
+     *
+     * @param nodeLabel the label of the node being matched
+     * @param props the properties to include
+     * @return the query string
+     */
+    private static String makeSimplePropertyBasedMatchQueryString(String nodeLabel, String... props ){
+        var stmt = "MATCH "+ makeSimpleNodeQuerySegment("n", nodeLabel, props)+" return n;";
+        return stmt;
+    }
+
+    /**
+     * Helper method for constructing cypher queries.
+     *
+     * For example: passing in (n, ClickNode, xpath, text) will produce: "(n:ClickNode {xpath:$xpath, text:$text})"
+     * @param nodeVariable
+     * @param nodeLabel
+     * @param props
+     * @return
+     */
+    private static String makeSimpleNodeQuerySegment(String nodeVariable, String nodeLabel, String... props){
+        var stmt = "(" + nodeVariable + ":" + nodeLabel + " " + makeNodePropertyQuerySegment(props) + ")";
+        return stmt;
+    }
+
+    /**
+     * Helper method for constructing cypher query node property segments.
+     *
+     * For example: passing in "xpath, text" will produce "{xpath:$xpath, text:$text}".
+     *
+     * @param props the properties to create the segment for.
+     * @return
+     */
+    private static String makeNodePropertyQuerySegment(String... props){
+        String result = "{";
+        Iterator<String> it = Arrays.stream(props).iterator();
+        while (it.hasNext()){
+            String property = it.next();
+            result += property + ":$" + property;
+            if(it.hasNext()){
+                result += ",";
+            }
+        }
+        result += "}";
+
+        return result;
+    }
 
     public <T extends NavNode> T readNode(Query query, Class<T> tClass){
         try(var session = driver.session(SessionConfig.forDatabase(databaseName))){

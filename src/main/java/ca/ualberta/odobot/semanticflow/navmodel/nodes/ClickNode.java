@@ -17,11 +17,11 @@ public class ClickNode extends NavNode {
 
         Node n = record.get(0).asNode();
 
-        ClickNode result = new ClickNode();
-        result.setId(UUID.fromString(n.get("id").asString()));
+        ClickNode result = fromRecord(record, new ClickNode());
+
         result.setXpath(n.get("xpath").asString());
         result.setText(n.get("text").asString());
-        result.setInstances(n.get("instances").asList().stream().map(o->(String)o).collect(Collectors.toSet()));
+
         return result;
 
     }

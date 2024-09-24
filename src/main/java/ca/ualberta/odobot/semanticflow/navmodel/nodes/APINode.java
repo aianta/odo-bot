@@ -17,11 +17,9 @@ public class APINode extends NavNode {
     public static APINode fromRecord(Record record){
         Node n = record.get(0).asNode();
 
-        APINode result = new APINode();
-        result.setId(UUID.fromString(n.get("id").asString()));
+        APINode result = fromRecord(record, new APINode());
         result.setMethod(n.get("method").asString());
         result.setPath(n.get("path").asString());
-        result.setInstances(n.get("instances").asList().stream().map(o->(String)o).collect(Collectors.toSet()));
 
         return result;
     }

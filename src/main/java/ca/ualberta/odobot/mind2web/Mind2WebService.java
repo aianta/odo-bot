@@ -12,6 +12,10 @@ import io.vertx.rxjava3.ext.web.RoutingContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.ListIterator;
 import java.util.stream.Collectors;
@@ -22,7 +26,8 @@ public class Mind2WebService extends HttpServiceVerticle {
 
     Neo4JUtils neo4j;
 
-    Route modelConstructionPath;
+    Route modelConstructionRoute;
+    String modelConstructionPath;
 
     @Override
     public String serviceName() {
@@ -37,21 +42,89 @@ public class Mind2WebService extends HttpServiceVerticle {
     public Completable onStart(){
         super.onStart();
 
-        modelConstructionPath = api.route().method(HttpMethod.POST).path("/model");
+        modelConstructionRoute = api.route().method(HttpMethod.POST).path("/model");
+        this.modelConstructionPath = modelConstructionRoute.getPath();
 
-        modelConstructionPath.handler(this::buildTraces);
+        modelConstructionRoute.handler(this::loadDataSetup);
+        modelConstructionRoute.handler(this::loadDataFromFile);
+        modelConstructionRoute.handler(this::buildTraces);
 
         neo4j = new Neo4JUtils("bolt://localhost:7687", "neo4j", "odobotdb");
 
         return Completable.complete();
     }
 
+    private void loadDataSetup(RoutingContext rc){
+
+        if(!(boolean)rc.get("loadDataSetup", false)){ //If data setup has not yet been performed
+
+            //Setup routing context for data loading.
+            List<String> dataFiles = rc.request().params().getAll("file").stream().collect(Collectors.toList());
+
+            log.info("dataFiles {}", dataFiles.getClass().getName());
+
+            //If no data files are specified, assume task data is being sent in request body.
+            if(dataFiles == null || dataFiles.size() == 0){
+                JsonArray tasks = rc.body().asJsonArray();
+                rc.put("taskData", tasks);
+            }else{
+                //Otherwise, if data files were specified
+                log.info("Loading data from {} files", dataFiles.size());
+
+                rc.put("dataFiles", dataFiles);
+                rc.put("processedFiles", new ArrayList<String>());
+                rc.put("currentFile", dataFiles.remove(0));
+            }
+
+            rc.put("loadDataSetup", true);
+        }
+
+
+        rc.next();
+    }
+
+    private void loadDataFromFile(RoutingContext rc){
+        String currentFile = rc.get("currentFile");
+        if(currentFile != null && !currentFile.isBlank() && !currentFile.isEmpty()){
+
+            try{
+                log.info("Reading data from {} into memory", currentFile );
+                JsonArray tasks = new JsonArray(new String(Files.readAllBytes(Path.of(currentFile))));
+                //Set the task data for the current request
+                rc.put("taskData", tasks);
+
+                log.info("Adding {} to processed files list.", currentFile);
+                //Add the current file to the list of processed files.
+                ArrayList<String> processedFiles = rc.get("processedFiles");
+                processedFiles.add(currentFile);
+
+                //Update the current file to the next unprocessed file.
+                ArrayList<String> dataFiles = rc.get("dataFiles");
+                rc.put("currentFile", dataFiles.size() > 0?dataFiles.remove(0):null);
+
+                log.info("{} data files left.", dataFiles.size());
+                log.info("Next data file is {}", (String)rc.get("currentFile"));
+
+            }catch (IOException e){
+                log.error("Error reading data file @{}", currentFile);
+                log.error(e.getMessage(), e);
+                rc.response().setStatusCode(500).end();
+                return;
+            }
+
+
+        }
+
+        rc.next();
+
+    }
+
     private void buildTraces(RoutingContext rc){
 
         log.info("Hit build traces!");
 
-        //Get the json traces from the request body
-        JsonArray tasks = rc.body().asJsonArray();
+        //Get the json traces from the routing context
+        JsonArray tasks = rc.get("taskData");
 
         List<Trace> traces = tasks.stream()
                 .map(o->(JsonObject)o)
@@ -74,7 +147,16 @@ public class Mind2WebService extends HttpServiceVerticle {
 
         rc.put("traces", traces);
 
-        rc.next();
+        //Check to see if we have more files to process.
+        String nextFile = rc.get("currentFile");
+        if(nextFile != null){
+            rc.reroute(HttpMethod.POST, modelConstructionPath);
+        }else{
+            log.info("Model construction complete");
+            rc.response().setStatusCode(200).end();
+        }
+
+
     }
 
 
@@ -91,15 +173,15 @@ public class Mind2WebService extends HttpServiceVerticle {
             Operation op = it.next();
 
             if(op instanceof Click){
-                neo4j.processClick((Click) op);
+                neo4j.processClick((Click) op, trace.getWebsite());
             }
 
             if(op instanceof Type){
-                neo4j.processType((Type) op);
+                neo4j.processType((Type) op, trace.getWebsite());
             }
 
             if(op instanceof SelectOption){
-                neo4j.processSelectOption((SelectOption) op);
+                neo4j.processSelectOption((SelectOption) op, trace.getWebsite());
             }
 
         }
@@ -114,8 +196,8 @@ public class Mind2WebService extends HttpServiceVerticle {
                 Operation curr = it.next();
                 Operation next = successorIt.next();
 
-                NavNode a = neo4j.resolveNavNode(curr);
-                NavNode b = neo4j.resolveNavNode(next);
+                NavNode a = neo4j.resolveNavNode(curr, trace.getWebsite());
+                NavNode b = neo4j.resolveNavNode(next, trace.getWebsite());
 
                 neo4j.bind(a, b);
             }
@@ -123,8 +205,8 @@ public class Mind2WebService extends HttpServiceVerticle {
 
         }else if(trace.size() == 2){
 
-            NavNode a = neo4j.resolveNavNode(trace.get(0));
-            NavNode b = neo4j.resolveNavNode(trace.get(1));
+            NavNode a = neo4j.resolveNavNode(trace.get(0), trace.getWebsite());
+            NavNode b = neo4j.resolveNavNode(trace.get(1), trace.getWebsite());
 
             neo4j.bind(a,b);
 

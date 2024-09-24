@@ -13,10 +13,8 @@ public class SelectOptionNode extends NavNode{
     public static SelectOptionNode fromRecord(Record record){
         Node n = record.get(0).asNode();
 
-        SelectOptionNode result = new SelectOptionNode();
-        result.setId(UUID.fromString(n.get("id").asString()));
+        SelectOptionNode result = fromRecord(record, new SelectOptionNode());
         result.setXpath(n.get("xpath").asString());
-        result.setInstances(n.get("instances").asList().stream().map(o->(String)o).collect(Collectors.toSet()));
 
         return result;
     }

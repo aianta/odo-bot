@@ -13,10 +13,8 @@ public class LocationNode extends NavNode {
     public static LocationNode fromRecord(Record record){
         Node n = record.get(0).asNode();
 
-        LocationNode result = new LocationNode();
-        result.setId(UUID.fromString(n.get("id").asString()));
+        LocationNode result = fromRecord(record, new LocationNode());
         result.setPath(n.get("path").asString());
-        result.setInstances(n.get("instances").asList().stream().map(o->(String)o).collect(Collectors.toSet()));
 
         return result;
     }

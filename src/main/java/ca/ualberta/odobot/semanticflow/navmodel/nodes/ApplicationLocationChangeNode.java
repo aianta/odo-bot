@@ -14,11 +14,9 @@ public class ApplicationLocationChangeNode extends NavNode {
     public static ApplicationLocationChangeNode fromRecord(Record record){
         Node n = record.get(0).asNode();
 
-        ApplicationLocationChangeNode result = new ApplicationLocationChangeNode();
-        result.setId(UUID.fromString(n.get("id").asString()));
+        ApplicationLocationChangeNode result = fromRecord(record, new ApplicationLocationChangeNode());
         result.setFrom(n.get("from").asString());
         result.setTo(n.get("to").asString());
-        result.setInstances(n.get("instances").asList().stream().map(o->(String)o).collect(Collectors.toSet()));
 
         return result;
     }

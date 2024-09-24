@@ -14,10 +14,8 @@ public class DataEntryNode extends NavNode {
 
         Node n  = record.get(0).asNode();
 
-        DataEntryNode result = new DataEntryNode();
-        result.setId(UUID.fromString(n.get("id").asString()));
+        DataEntryNode result = fromRecord(record, new DataEntryNode());
         result.setXpath(n.get("xpath").asString());
-        result.setInstances(n.get("instances").asList().stream().map(o->(String)o).collect(Collectors.toSet()));
 
         return  result;
     }

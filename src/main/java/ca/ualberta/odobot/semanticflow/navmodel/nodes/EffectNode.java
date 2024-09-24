@@ -17,9 +17,10 @@ public class EffectNode extends NavNode {
     }
 
     public static EffectNode fromRecord(Record record){
-        Node n = record.get(0).asNode();
 
-       return fromNode(n);
+        EffectNode result = fromRecord(record, new EffectNode());
+
+       return result;
     }
 
 }

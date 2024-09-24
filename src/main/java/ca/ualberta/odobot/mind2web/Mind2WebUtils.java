@@ -13,6 +13,8 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import static ca.ualberta.odobot.semanticflow.Utils.*;
 
@@ -21,6 +23,15 @@ public class Mind2WebUtils {
 
     private static final Logger log = LoggerFactory.getLogger(Mind2WebUtils.class);
 
+
+    private static class BuckeyeMismatch extends Exception{
+        public String expectedAttributeXpath;
+
+        public BuckeyeMismatch(String xpath){
+            this.expectedAttributeXpath = xpath;
+        }
+
+    }
 
     public static Trace processTask(JsonObject task){
 
@@ -49,8 +60,18 @@ public class Mind2WebUtils {
 
         JsonObject opJson = action.getJsonObject("operation");
 
+        action.put("raw_html", action.getString("raw_html").replaceAll("iframe", "div"));//Replace all iframes with divs, certain target elements within iframes will not resolve otherwise.
 
-        String targetElementXPath = resolveXPath(action.getString("raw_html"), action.getString("action_uid"));
+        String targetElementXPath = null;
+        try{
+            targetElementXPath = resolveXPath(action.getString("raw_html"), action.getString("action_uid"));
+        }catch (BuckeyeMismatch e){
+            log.error("Buckeye Mismatch! Expected {}", e.expectedAttributeXpath);
+            log.error("Action: \n{}", action.put("raw_html", "<see state.html>").put("cleaned_html", "<removed>").encodePrettily());
+            System.exit(0);
+        }catch (IOException ioe){
+            log.error(ioe.getMessage(), ioe);
+        }
 
         Operation op = null;
 
@@ -83,9 +104,12 @@ public class Mind2WebUtils {
     }
 
 
-    private static String resolveXPath(String rawHTML, String actionId ){
+    private static String resolveXPath(String rawHTML, String actionId ) throws BuckeyeMismatch, IOException {
+
+        Files.deleteIfExists(Path.of("state.html"));
 
         File htmlFile = new File("state.html");
+
         try(FileWriter fw = new FileWriter(htmlFile);
             BufferedWriter bw = new BufferedWriter(fw);
         ){
@@ -96,13 +120,23 @@ public class Mind2WebUtils {
             log.error(e.getMessage(), e);
         }
 
+
+
+
         Document document = Jsoup.parse(rawHTML);
         String targetAttribute = "//*[@data_pw_testid_buckeye='%s']".formatted(actionId);
-        log.info("Identifying target element with buckeye attribute: {}", targetAttribute );
-        Element targetElement = document.selectXpath(targetAttribute).get(0);
+        //log.info("Identifying target element with buckeye attribute: {}", targetAttribute );
+
+        Element targetElement = null;
+        try{
+            targetElement = document.selectXpath(targetAttribute).get(0);
+        }catch (IndexOutOfBoundsException e){
+            throw new BuckeyeMismatch(targetAttribute);
+        }
+
 
         String computedXpath = computeXpathNoRoot(targetElement);
-        log.info("Computed xpath: {}", computedXpath);
+        //log.info("Computed xpath: {}", computedXpath);
 
 
 
