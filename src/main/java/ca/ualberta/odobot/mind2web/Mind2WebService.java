@@ -27,7 +27,6 @@ public class Mind2WebService extends HttpServiceVerticle {
     Neo4JUtils neo4j;
 
     Route modelConstructionRoute;
-    String modelConstructionPath;
 
     @Override
     public String serviceName() {
@@ -39,15 +38,24 @@ public class Mind2WebService extends HttpServiceVerticle {
         return "config/mind2web.yaml";
     }
 
+    /**
+     * Define the model construction path.
+     * When registering the route in {@link #onStart()} we simply use {@link #MODEL_CONSTRUCTION_PATH},
+     * but for rerouting requests when processing multiple data files we use {@link #getFullModelConstructionRoutePath()} to compute the full
+     * path including the api prefix defined in {@link #configFilePath()}.
+     *
+     * By setting the model construction path through this final static string field we ensure the re-route functionality doesn't break when changes are made to the path.
+     */
+    private static final String MODEL_CONSTRUCTION_PATH = "/model";
+
     public Completable onStart(){
         super.onStart();
 
-        modelConstructionRoute = api.route().method(HttpMethod.POST).path("/model");
-        this.modelConstructionPath = modelConstructionRoute.getPath();
+        modelConstructionRoute = api.route().method(HttpMethod.POST).path(MODEL_CONSTRUCTION_PATH);
 
-        modelConstructionRoute.handler(this::loadDataSetup);
-        modelConstructionRoute.handler(this::loadDataFromFile);
-        modelConstructionRoute.handler(this::buildTraces);
+        modelConstructionRoute.handler(this::loadDataSetup); //Figure out what/how to load
+        modelConstructionRoute.handler(this::loadDataFromFile); //Load
+        modelConstructionRoute.handler(this::buildTraces); //Build traces from loaded data
 
         neo4j = new Neo4JUtils("bolt://localhost:7687", "neo4j", "odobotdb");
 
@@ -150,9 +158,10 @@ public class Mind2WebService extends HttpServiceVerticle {
         //Check to see if we have more files to process.
         String nextFile = rc.get("currentFile");
         if(nextFile != null){
-            rc.reroute(HttpMethod.POST, modelConstructionPath);
+            rc.reroute(HttpMethod.POST, getFullModelConstructionRoutePath());
         }else{
             log.info("Model construction complete");
+            neo4j.createNodeLabelsUsingWebsiteProperty();
             rc.response().setStatusCode(200).end();
         }
 
@@ -215,5 +224,9 @@ public class Mind2WebService extends HttpServiceVerticle {
             throw new RuntimeException("Trace is too small to model!");
         }
 
+    }
+
+    private String getFullModelConstructionRoutePath(){
+        return _config.getString("apiPathPrefix").substring(0, _config.getString("apiPathPrefix").length()-2) + MODEL_CONSTRUCTION_PATH;
     }
 }

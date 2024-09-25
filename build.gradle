@@ -101,6 +101,15 @@ dependencies {
         // https://mvnrepository.com/artifact/org.neo4j/neo4j
     implementation (group: 'org.neo4j', name: 'neo4j', version: neo4j_version)
 
+    // https://mvnrepository.com/artifact/org.neo4j.procedure/apoc-extended
+    implementation(group: 'org.neo4j.procedure', name:'apoc-extended', version: neo4j_version)
+    implementation(group: 'org.neo4j.procedure', name:'apoc-core', version: neo4j_version)
+    implementation(group: 'org.neo4j.procedure', name:'apoc-common', version: neo4j_version)
+
+
+
+
+
     // https://mvnrepository.com/artifact/org.neo4j/neo4j-bolt
     implementation (group: 'org.neo4j', name: 'neo4j-bolt', version: neo4j_version)
 

@@ -49,7 +49,7 @@ public class Operation {
         }
 
         Document document = Jsoup.parse(rawHTML);
-        log.info("Retrieving element @: {}", this.getTargetElementXpath());
+        //log.info("Retrieving element @: {}", this.getTargetElementXpath());
         return document.selectXpath(this.targetElementXpath).get(0);
     }
 }

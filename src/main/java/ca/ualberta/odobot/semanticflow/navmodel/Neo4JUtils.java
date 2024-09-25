@@ -877,9 +877,6 @@ public class Neo4JUtils {
     private DataEntryNode getDataEntryNode(String xpath, String website){
         var stmt = makeSimplePropertyBasedMatchQueryString("DataEntryNode", "xpath", "website");
         var query = new Query(stmt, parameters("xpath", xpath, "website", website));
-
-        log.info("getDataEntryNode Query: {}", stmt);
-
         return readNode(query, DataEntryNode.class);
     }
 
@@ -893,8 +890,7 @@ public class Neo4JUtils {
     private ClickNode getClickNode(String xpath, String text, String website){
         var stmt = makeSimplePropertyBasedMatchQueryString("ClickNode", "xpath", "text", "website");
         var query = new Query(stmt, parameters("xpath", xpath, "text", text, "website", website));
-        log.info("getClickNode Query:\n{}\n{}", stmt, stmt.replaceAll("\\$xpath", "\""+xpath+"\"").replaceAll("\\$text", "\""+text+"\"").replaceAll("\\$website", "\""+website+"\""));
-
+        //log.info("getClickNode Query:\n{}\n{}", stmt, stmt.replaceAll("\\$xpath", "\""+xpath+"\"").replaceAll("\\$text", "\""+text+"\"").replaceAll("\\$website", "\""+website+"\""));
         return readNode(query, ClickNode.class);
     }
 
@@ -956,7 +952,7 @@ public class Neo4JUtils {
                 try{
                     return result.single();
                 }catch (NoSuchRecordException err){
-                    log.info("Could not find {} node. ", tClass.getName());
+                    //log.info("Could not find {} node. ", tClass.getName());
                     return null;
                 }
             });
@@ -977,6 +973,32 @@ public class Neo4JUtils {
         }
     }
 
+    public void createNodeLabelsUsingWebsiteProperty(){
+
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+            session.executeWriteWithoutResult(txContext->{
+
+                /**
+                 * This cypher query begins by getting all values for the website property from all nodes.
+                 * It then collects those values and removes any duplicates, resulting in a list of unique website property values.
+                 * Then, for each unique website property value, it matches all nodes whose website property has that value
+                 * and adds a label with that value to the node.
+                 */
+                var stmt = """
+                        match (n) with collect(n.website) as websites 
+                        unwind websites as website with distinct website with collect(website) as unique_sites 
+                        unwind unique_sites as site 
+                        match(n) where n.website = site 
+                        call apoc.create.addLabels(n,[site]) yield node 
+                        return node
+                        """;
+
+                txContext.run(stmt);
+
+            });
+        }
+
+    }
 
     public void write(Query query){
         try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
