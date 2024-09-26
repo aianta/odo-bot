@@ -433,7 +433,7 @@ public class Neo4JUtils {
             query = new Query(stmt, parameters(keysAndValues));
         }
 
-        log.info("Merge Query:\n{}", stmt);
+        //log.info("Merge Query:\n{}", stmt); //For debugging
 
         return query;
 

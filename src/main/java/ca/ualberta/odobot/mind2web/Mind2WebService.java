@@ -95,36 +95,42 @@ public class Mind2WebService extends HttpServiceVerticle {
         String currentFile = rc.get("currentFile");
         if(currentFile != null && !currentFile.isBlank() && !currentFile.isEmpty()){
 
-            try{
-                log.info("Reading data from {} into memory", currentFile );
-                JsonArray tasks = new JsonArray(new String(Files.readAllBytes(Path.of(currentFile))));
-                //Set the task data for the current request
-                rc.put("taskData", tasks);
+            /**
+             * Execute in separate thread to avoid blocking main event loop.
+             */
+            vertx.executeBlocking(blocking->{
+                    try{
 
-                log.info("Adding {} to processed files list.", currentFile);
-                //Add the current file to the list of processed files.
-                ArrayList<String> processedFiles = rc.get("processedFiles");
-                processedFiles.add(currentFile);
 
-                //Update the current file to the next unprocessed file.
-                ArrayList<String> dataFiles = rc.get("dataFiles");
-                rc.put("currentFile", dataFiles.size() > 0?dataFiles.remove(0):null);
+                    log.info("Reading data from {} into memory", currentFile );
+                    JsonArray tasks = new JsonArray(new String(Files.readAllBytes(Path.of(currentFile))));
+                    //Set the task data for the current request
+                    rc.put("taskData", tasks);
 
-                log.info("{} data files left.", dataFiles.size());
-                log.info("Next data file is {}", (String)rc.get("currentFile"));
+                    log.info("Adding {} to processed files list.", currentFile);
+                    //Add the current file to the list of processed files.
+                    ArrayList<String> processedFiles = rc.get("processedFiles");
+                    processedFiles.add(currentFile);
 
-            }catch (IOException e){
-                log.error("Error reading data file @{}", currentFile);
-                log.error(e.getMessage(), e);
-                rc.response().setStatusCode(500).end();
-                return;
-            }
+                    //Update the current file to the next unprocessed file.
+                    ArrayList<String> dataFiles = rc.get("dataFiles");
+                    rc.put("currentFile", dataFiles.size() > 0?dataFiles.remove(0):null);
 
+                    log.info("{} data files left.", dataFiles.size());
+                    log.info("Next data file is {}", (String)rc.get("currentFile"));
+
+                    rc.next();
+
+                    }catch (IOException e){
+                        log.error("Error reading data file @{}", currentFile);
+                        log.error(e.getMessage(), e);
+                        rc.response().setStatusCode(500).end();
+                    }
+
+                    blocking.complete();
+                }).subscribe();
 
         }
-
-        rc.next();
-
     }
 
     private void buildTraces(RoutingContext rc){
@@ -134,38 +140,47 @@ public class Mind2WebService extends HttpServiceVerticle {
         //Get the json traces from the routing context
         JsonArray tasks = rc.get("taskData");
 
-        List<Trace> traces = tasks.stream()
-                .map(o->(JsonObject)o)
-                .map(Mind2WebUtils::processTask)
-                .collect(Collectors.toList());
+        vertx.<List<Trace>>executeBlocking(blocking->{
+            List<Trace> traces = tasks.stream()
+                    .map(o->(JsonObject)o)
+                    .map(Mind2WebUtils::processTask)
+                    .collect(Collectors.toList());
 
-        log.info("Processed {} traces", traces.size());
-        log.info("{} clicks", traces.stream().mapToLong(Trace::numClicks).sum());
-        log.info("{} selects", traces.stream().mapToLong(Trace::numSelects).sum());
-        log.info("{} types", traces.stream().mapToLong(Trace::numTypes).sum());
-        log.info("{} total actions", traces.stream().mapToInt(Trace::size).sum());
+            blocking.complete(traces);
 
-        log.info("XPaths:");
+        }).subscribe(traces->{
 
-        traces.stream().forEach(trace->trace.forEach(operation -> log.info("{}", operation.getTargetElementXpath())));
+            log.info("Processed {} traces", traces.size());
+            log.info("{} clicks", traces.stream().mapToLong(Trace::numClicks).sum());
+            log.info("{} selects", traces.stream().mapToLong(Trace::numSelects).sum());
+            log.info("{} types", traces.stream().mapToLong(Trace::numTypes).sum());
+            log.info("{} total actions", traces.stream().mapToInt(Trace::size).sum());
 
-        log.info("Constructing nav model from traces!");
+//            log.info("XPaths:");
+//            traces.stream().forEach(trace->trace.forEach(operation -> log.info("{}", operation.getTargetElementXpath())));
 
-        traces.stream().forEach(this::buildNavModel);
+            log.info("Constructing nav model from traces!");
 
-        rc.put("traces", traces);
+            vertx.executeBlocking(blocking->{
+                traces.stream().forEach(this::buildNavModel);
+                log.info("Trace construction complete. ");
+                blocking.complete(traces);
+            }).subscribe(_traces->{
 
-        //Check to see if we have more files to process.
-        String nextFile = rc.get("currentFile");
-        if(nextFile != null){
-            rc.reroute(HttpMethod.POST, getFullModelConstructionRoutePath());
-        }else{
-            log.info("Model construction complete");
-            neo4j.createNodeLabelsUsingWebsiteProperty();
-            rc.response().setStatusCode(200).end();
-        }
+                log.info("Saving traces to routing context.");
+                rc.put("traces", traces);
 
-
+                //Check to see if we have more files to process.
+                String nextFile = rc.get("currentFile");
+                if(nextFile != null){
+                    rc.reroute(HttpMethod.POST, getFullModelConstructionRoutePath());
+                }else{
+                    log.info("Model construction complete");
+                    neo4j.createNodeLabelsUsingWebsiteProperty();
+                    rc.response().setStatusCode(200).end();
+                }
+            });
+        });
     }
 
 
