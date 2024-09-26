@@ -52,6 +52,9 @@ public class Mind2WebUtils {
                 .map(json->processAction(json))
                 .forEach(operation -> trace.add(operation));
 
+        //Add start and end 'operations' to trace. These help in aligning all traces/paths for a particular website in the nav model.
+        trace.add(0, new Start());
+        trace.add(new End());
 
         return trace;
     }

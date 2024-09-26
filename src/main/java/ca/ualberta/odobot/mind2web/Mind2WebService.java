@@ -208,6 +208,16 @@ public class Mind2WebService extends HttpServiceVerticle {
                 neo4j.processSelectOption((SelectOption) op, trace.getWebsite());
             }
 
+            if(op instanceof Start){
+                //EventId for startNodes feel more meaningful if they were populated with the trace annotationId. Maybe this is a bad idea...idk...
+                neo4j.processStart(trace.getWebsite(), trace.getAnnotationId());
+            }
+
+            if(op instanceof End){
+                //EventId for endNodes feel more meaningful if they were populated with the trace annotationId. Maybe this is a bad idea...idk...
+                neo4j.processEnd(trace.getWebsite(), trace.getAnnotationId());
+            }
+
         }
 
         //Now do another pass to connect everything

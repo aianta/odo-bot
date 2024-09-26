@@ -1,13 +1,9 @@
 package ca.ualberta.odobot.semanticflow.navmodel;
 
-import ca.ualberta.odobot.mind2web.Click;
-import ca.ualberta.odobot.mind2web.Operation;
-import ca.ualberta.odobot.mind2web.SelectOption;
-import ca.ualberta.odobot.mind2web.Type;
+import ca.ualberta.odobot.mind2web.*;
 import ca.ualberta.odobot.semanticflow.model.*;
 
 import ca.ualberta.odobot.semanticflow.navmodel.nodes.*;
-import com.github.jsonldjava.utils.Obj;
 import org.neo4j.driver.*;
 import org.neo4j.driver.Record;
 import org.neo4j.driver.exceptions.NoSuchRecordException;
@@ -166,6 +162,44 @@ public class Neo4JUtils {
 
     }
 
+    public void processEnd(String website, String eventId){
+        //If a start node for this event already exists in the database, this supplier will be used to retrieve it.
+        Supplier<EndNode> existingEndNodeSupplier = ()->getEndNode(website);
+
+        //Invoke generic processing logic.
+        processNode(
+                eventId,
+                EndNode.class,
+                existingEndNodeSupplier,
+                ()->{
+                    EndNode node = new EndNode();
+                    node.setId(UUID.randomUUID());
+                    node.setWebsite(website);
+                    node.setInstances(Set.of(eventId));
+                    return node;},
+                processEndNodeQueryFunction()
+        );
+    }
+
+    public void processStart(String website, String eventId){
+        //If a start node for this event already exists in the database, this supplier will be used to retrieve it.
+        Supplier<StartNode> existingStartNodeSupplier = ()->getStartNode(website);
+
+        //Invoke generic processing logic.
+        processNode(
+                eventId,
+                StartNode.class,
+                existingStartNodeSupplier,
+                ()->{
+                    StartNode node = new StartNode();
+                    node.setId(UUID.randomUUID());
+                    node.setWebsite(website);
+                    node.setInstances(Set.of(eventId));
+                    return node;},
+                processStartNodeQueryFunction()
+        );
+    }
+
     public void processSelectOption(String xpath, String eventId){
 
         //If a select option node for this event already exists in the database, this supplier will be used to retrieve it.
@@ -200,6 +234,33 @@ public class Neo4JUtils {
             return node;
         };
         return newSelectOptionNodeSupplier;
+    }
+
+    private Function<EndNode, Query> processEndNodeQueryFunction(){
+        //The update query used to update/merge the processed start node into the database.
+        Function<EndNode, Query> queryFunction = (endNode)->{
+            HashMap<String, Object> props = new HashMap<>();
+            props.put("id", endNode.getId().toString());
+            props.put("instances", endNode.getInstances());
+
+            return makeGenericMergeQuery("EndNode", endNode, props, "props", props);
+        };
+
+        return queryFunction;
+    }
+
+
+    private Function<StartNode, Query> processStartNodeQueryFunction(){
+        //The update query used to update/merge the processed start node into the database.
+        Function<StartNode, Query> queryFunction = (startNode)->{
+            HashMap<String, Object> props = new HashMap<>();
+            props.put("id", startNode.getId().toString());
+            props.put("instances", startNode.getInstances());
+
+            return makeGenericMergeQuery("StartNode", startNode, props, "props", props);
+        };
+
+        return queryFunction;
     }
 
     private Function<SelectOptionNode, Query> processSelectOptionNodeQueryFunction(){
@@ -630,6 +691,14 @@ public class Neo4JUtils {
             return getSelectOptionNode(selectOption.getTargetElementXpath(), website);
         }
 
+        if(operation instanceof Start){
+            return getStartNode(website);
+        }
+
+        if(operation instanceof End){
+            return getEndNode(website);
+        }
+
         log.warn("Unrecognized Mind2Web event type!");
         return null;
 
@@ -850,6 +919,18 @@ public class Neo4JUtils {
         var stmt = makeSimplePropertyBasedMatchQueryString("APINode", "path", "method", "website");
         var query = new Query(stmt, parameters("path", path, "method", method, "website", website));
         return readNode(query, APINode.class);
+    }
+
+    private EndNode getEndNode(String website){
+        var stmt = makeSimplePropertyBasedMatchQueryString("EndNode", "website");
+        var query = new Query(stmt, parameters("website", website));
+        return readNode(query, EndNode.class);
+    }
+
+    private StartNode getStartNode(String website){
+        var stmt = makeSimplePropertyBasedMatchQueryString("StartNode", "website");
+        var query = new Query(stmt, parameters("website", website));
+        return readNode(query, StartNode.class);
     }
 
     private SelectOptionNode getSelectOptionNode(String xpath){
