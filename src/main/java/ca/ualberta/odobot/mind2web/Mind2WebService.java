@@ -123,6 +123,16 @@ public class Mind2WebService extends HttpServiceVerticle {
                     .putHeader("Content-Type","application/json")
                     .end(response.encode());
 
+            //If the actions list was empty we're done with this guidance request.
+            if(actionIds.size() == 0){
+                guidancePathMap.remove(guidanceId);
+                guidanceRequests.remove(guidanceId);
+                guidanceValidActionIds.remove(guidanceId);
+                Transaction tx = guidanceTransactions.get(guidanceId);
+                tx.close();
+                guidanceTransactions.remove(guidanceId);
+            }
+
         }else{
             //If there is no id, then this is a new guidance request.
             UUID guidanceId = UUID.randomUUID();
