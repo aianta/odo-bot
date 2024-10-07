@@ -73,5 +73,52 @@ public class NavPathsConstructor {
 
     }
 
+    public List<NavPath> constructMind2Web(Transaction tx, UUID src, UUID tgt){
+
+        Node srcNode = fetchNodeById(tx, src.toString());
+        Node tgtNode = fetchNodeById(tx, tgt.toString());
+
+        NavPathsEvaluator evaluator = new NavPathsEvaluator(tgtNode);
+
+        TraversalDescription traversal = tx.traversalDescription()
+                .breadthFirst()
+                .uniqueness(Uniqueness.NODE_PATH)
+                .relationships(RelationshipType.withName("NEXT"), Direction.OUTGOING)
+                .evaluator(evaluator);
+
+        Traverser traverser = traversal.traverse(srcNode);
+
+        Iterator<Path> it = traverser.iterator();
+
+
+        List<NavPath> paths = new ArrayList<>();
+
+        while (it.hasNext()){
+            it.next();
+        }
+
+        it = evaluator._paths.iterator();
+        while (it.hasNext()){
+            NavPath navPath = new NavPath();
+            navPath.setPath(it.next());
+            paths.add(navPath);
+        }
+
+        return paths;
+
+        // Sorts paths by length and returns shortest one.
+//        paths.sort(Comparator.comparingInt(navPath -> navPath.getPath().length()));
+//
+//        NavPath.printNavPaths(paths, 3);
+//
+//        List<NavPath> shortestPath = new ArrayList<>();
+//        shortestPath.add(paths.get(0));
+//
+//        return shortestPath;
+
+    }
+
+
+
 
 }

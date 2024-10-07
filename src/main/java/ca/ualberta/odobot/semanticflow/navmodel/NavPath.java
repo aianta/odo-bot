@@ -16,7 +16,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.IntStream;
 
-public class NavPath {
+public class    NavPath {
 
     private static final Logger log = LoggerFactory.getLogger(NavPath.class);
 
@@ -56,6 +56,23 @@ public class NavPath {
         iterator = path.nodes().iterator();
     }
 
+
+    public List<String> getActionIds(Collection<String> validActionIds){
+        while (iterator.hasNext()){
+            Node node = iterator.next();
+
+            if(node.hasLabel(Label.label("StartNode")) || node.hasLabel(Label.label("EndNode"))){
+                continue;
+            }
+
+            return Arrays.stream(((String[])node.getProperty("instances"))) //Get the node's instances, which for are action ids if the node isn't a start or end node.
+                    .filter(actionId->validActionIds.contains(actionId)) //Filter out actionIds that do not appear in the valid actions list
+                    .toList();
+        }
+
+        log.warn("No actionIds left for this path.");
+        return List.of();
+    }
 
     public Instruction getInstruction(){
 

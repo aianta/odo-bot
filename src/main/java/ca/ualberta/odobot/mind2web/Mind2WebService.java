@@ -1,23 +1,26 @@
 package ca.ualberta.odobot.mind2web;
 
 import ca.ualberta.odobot.common.HttpServiceVerticle;
+import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
+import ca.ualberta.odobot.semanticflow.navmodel.NavPath;
 import ca.ualberta.odobot.semanticflow.navmodel.Neo4JUtils;
+import ca.ualberta.odobot.semanticflow.navmodel.nodes.EndNode;
 import ca.ualberta.odobot.semanticflow.navmodel.nodes.NavNode;
+import ca.ualberta.odobot.semanticflow.navmodel.nodes.StartNode;
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.ext.web.Route;
 import io.vertx.rxjava3.ext.web.RoutingContext;
+import org.neo4j.graphdb.Transaction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.ListIterator;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class Mind2WebService extends HttpServiceVerticle {
@@ -48,19 +51,148 @@ public class Mind2WebService extends HttpServiceVerticle {
      */
     private static final String MODEL_CONSTRUCTION_PATH = "/model";
 
+    /**
+     * Stores <guidanceId, current step>
+     */
+    Map<UUID, Integer> guidanceRequests = new HashMap<>();
+
+    /**
+     * Stores <guidanceId, List<NavPaths>
+     * @return
+     */
+    Map<UUID, List<NavPath>> guidancePathMap = new HashMap<>();
+
+    /**
+     * Stores <guidanceId, Transaction>
+     * @return
+     */
+    Map<UUID, Transaction> guidanceTransactions = new HashMap<>();
+
+    /**
+     * Stores<guidanceId, validActionIds>
+     * @return
+     */
+    Map<UUID, Collection<String>> guidanceValidActionIds = new HashMap<>();
+
     public Completable onStart(){
         super.onStart();
 
+        //Configure model construction route
         modelConstructionRoute = api.route().method(HttpMethod.POST).path(MODEL_CONSTRUCTION_PATH);
-
         modelConstructionRoute.handler(this::loadDataSetup); //Figure out what/how to load
         modelConstructionRoute.handler(this::loadDataFromFile); //Load
         modelConstructionRoute.handler(this::buildTraces); //Build traces from loaded data
+
+        //Configure guidance route
+        api.route().method(HttpMethod.POST).path("/guidance").handler(this::handleGuidance);
 
         neo4j = new Neo4JUtils("bolt://localhost:7687", "neo4j", "odobotdb");
 
         return Completable.complete();
     }
+
+    private void handleGuidance(RoutingContext rc){
+
+        JsonObject request = rc.body().asJsonObject();
+
+        //A request that contains a guidance id is a 'follow-up' request, asking for the relevant action ids for the subsequent step.
+        if(request.containsKey("id")){
+            UUID guidanceId = UUID.fromString(request.getString("id"));
+
+            //Update the step for this guidance request.
+            guidanceRequests.put(guidanceId, guidanceRequests.get(guidanceId) + 1);
+
+            //Fetch the paths for this guidance request
+            List<NavPath> paths =  guidancePathMap.get(guidanceId);
+
+            //Fetch valid action ids for this guidance request
+            Collection<String> validActionIds = guidanceValidActionIds.get(guidanceId);
+
+            //Produce the actions for the current step
+            JsonArray actionIds = paths.stream().map(path->path.getActionIds(validActionIds))
+                    .collect(ArrayList::new, (list, ids)->list.addAll(ids), ArrayList::addAll)
+                    .stream().distinct()// Filter out duplicates.
+                    .collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+
+            JsonObject response = new JsonObject()
+                    .put("id", guidanceId)
+                    .put("step", guidanceRequests.get(guidanceId))
+                    .put("actions", actionIds);
+
+            rc.response().setStatusCode(200)
+                    .putHeader("Content-Type","application/json")
+                    .end(response.encode());
+
+        }else{
+            //If there is no id, then this is a new guidance request.
+            UUID guidanceId = UUID.randomUUID();
+
+            rc.put("guidanceId",  guidanceId);
+
+            /**
+             * Construct a map containing entries of the form:
+             *
+             * <annotation_id, [action_id, action_id, ...]
+             */
+            Map<String, List<String>> relevantTraces =
+                    request.stream()
+                            .map(entry->{
+
+                                //Parse the JsonArray into a list of strings.
+                                List<String> actionIds = ((JsonArray) entry.getValue()).stream().map(o->(String)o).collect(Collectors.toList());
+
+                                return Map.entry(entry.getKey(), actionIds);
+                            })
+                            .collect(HashMap::new, (map, entry)->map.put(entry.getKey(), entry.getValue()), HashMap::putAll);
+            rc.put("relevantTraces", relevantTraces);
+
+            log.info("relevantTraces size: {}", relevantTraces.size());
+
+            //Collect all annotationIds together
+            List<String> annotationIds = relevantTraces.keySet().stream().toList();
+
+            //Collect all actionIds together;
+            List<String> validActionIds = relevantTraces.values().stream().collect(ArrayList::new, (all, list)->all.addAll(list), ArrayList::addAll);
+            log.info("number of valid actions: {}", validActionIds.size());
+
+
+            //Get start nodes
+            List<StartNode> startNodes = neo4j.getStartNodes(annotationIds);
+            log.info("number of start nodes: {}", startNodes.size());
+
+
+            //Get end nodes
+            List<EndNode> endNodes = neo4j.getEndNodes(annotationIds);
+            log.info("number of end nodes: {}", endNodes.size());
+
+
+            Transaction tx = LogPreprocessor.graphDB.db.beginTx();
+
+            List<NavPath> paths = neo4j.getMind2WebPaths(tx, startNodes, endNodes);
+
+            guidanceValidActionIds.put(guidanceId, validActionIds);
+            guidancePathMap.put(guidanceId, paths);
+            guidanceRequests.put(guidanceId, 0);
+            guidanceTransactions.put(guidanceId, tx);
+
+            JsonArray actionIds = paths.stream().map(path->path.getActionIds(validActionIds))
+                    .collect(ArrayList::new, (list, ids)->list.addAll(ids), ArrayList::addAll)
+                    .stream().distinct()// Filter out duplicates.
+                    .collect(JsonArray::new, JsonArray::add,JsonArray::addAll);
+
+            JsonObject response = new JsonObject()
+                    .put("id", guidanceId.toString())
+                    .put("step", guidanceRequests.get(guidanceId))
+                    .put("actions", actionIds);
+
+            rc.response().setStatusCode(200)
+                    .putHeader("Content-Type","application/json")
+                    .end(response.encode());
+
+        }
+
+    }
+
 
     private void loadDataSetup(RoutingContext rc){
 
@@ -156,6 +288,7 @@ public class Mind2WebService extends HttpServiceVerticle {
             log.info("{} types", traces.stream().mapToLong(Trace::numTypes).sum());
             log.info("{} total actions", traces.stream().mapToInt(Trace::size).sum());
 
+            //For debugging
 //            log.info("XPaths:");
 //            traces.stream().forEach(trace->trace.forEach(operation -> log.info("{}", operation.getTargetElementXpath())));
 

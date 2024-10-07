@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.semanticflow.navmodel;
 
+import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import ca.ualberta.odobot.mind2web.*;
 import ca.ualberta.odobot.semanticflow.model.*;
 
@@ -7,6 +8,7 @@ import ca.ualberta.odobot.semanticflow.navmodel.nodes.*;
 import org.neo4j.driver.*;
 import org.neo4j.driver.Record;
 import org.neo4j.driver.exceptions.NoSuchRecordException;
+import org.neo4j.graphdb.Transaction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -14,6 +16,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.util.*;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import static org.neo4j.driver.Values.parameters;
 
@@ -1024,6 +1027,80 @@ public class Neo4JUtils {
         result += "}";
 
         return result;
+    }
+
+    /**
+     * For a collection of annotation_ids (in the mind2web dataset), returns all corresponding start nodes.
+     * @param ids
+     */
+    public List<StartNode> getStartNodes(List<String> ids){
+        log.info("annotationIds: {}", ids);
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+            String sQuery = """
+                match (s:StartNode) where ANY (id in s.instances WHERE id in $annotation_ids) return s;
+                """;
+            Query query = new Query(sQuery, parameters("annotation_ids", ids));
+
+            List<Record> results =session.executeRead(tx->{
+                var result = tx.run(query);
+
+                return result.list();
+            });
+
+            List<StartNode> startNodes = results.stream()
+                    .map(record->StartNode.fromRecord(record))
+                    .collect(Collectors.toList());
+
+            return startNodes;
+        }
+    }
+
+    /**
+     * For a collection of annotation_ids (in the mind2web dataset), returns all corresponding start nodes.
+     * @param ids
+     */
+    public List<EndNode> getEndNodes(List<String> ids){
+
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+            String sQuery = """
+                match (s:EndNode) where ANY (id in s.instances WHERE id in $annotation_ids) return s;
+                """;
+            Query query = new Query(sQuery, parameters("annotation_ids", ids));
+
+            List<Record> results =session.executeRead(tx->{
+                var result = tx.run(query);
+
+                return result.list();
+            });
+
+            List<EndNode> endNodes = results.stream()
+                    .map(record->EndNode.fromRecord(record))
+                    .collect(Collectors.toList());
+
+            return endNodes;
+        }
+    }
+
+    public List<NavPath> getMind2WebPaths(Transaction tx, List<StartNode> startNodes, List<EndNode> endNodes){
+
+        if(startNodes.size() != endNodes.size()){
+            log.error("Expecting the same number of start ({}) and end ({}) nodes!", startNodes.size(),endNodes.size());
+            return null;
+        }
+
+        List<NavPath> paths = startNodes.stream()
+                .map(startNode->{
+
+                    EndNode correspondingEndNode = endNodes.stream().filter(endNode->endNode.getInstances().containsAll(startNode.getInstances())).findFirst().get();
+
+                    return LogPreprocessor.pathsConstructor.constructMind2Web(tx, startNode.getId(), correspondingEndNode.getId());
+
+
+                })
+                .collect(ArrayList::new, (allPaths, p)->allPaths.addAll(p), ArrayList::addAll);
+
+        return paths;
+
     }
 
     public <T extends NavNode> T readNode(Query query, Class<T> tClass){
