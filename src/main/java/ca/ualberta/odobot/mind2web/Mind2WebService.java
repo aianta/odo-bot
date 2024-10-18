@@ -13,6 +13,9 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.ext.web.Route;
 import io.vertx.rxjava3.ext.web.RoutingContext;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.safety.Safelist;
 import org.neo4j.graphdb.Transaction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,6 +33,8 @@ public class Mind2WebService extends HttpServiceVerticle {
     Neo4JUtils neo4j;
 
     Route modelConstructionRoute;
+
+    Route stateAbstractionRoute;
 
     @Override
     public String serviceName() {
@@ -74,6 +79,8 @@ public class Mind2WebService extends HttpServiceVerticle {
      */
     Map<UUID, Collection<String>> guidanceValidActionIds = new HashMap<>();
 
+
+
     public Completable onStart(){
         super.onStart();
 
@@ -86,9 +93,58 @@ public class Mind2WebService extends HttpServiceVerticle {
         //Configure guidance route
         api.route().method(HttpMethod.POST).path("/guidance").handler(this::handleGuidance);
 
+        //Configure state abstraction route
+        stateAbstractionRoute = api.route().method(HttpMethod.POST).path("/state-abstraction");
+        stateAbstractionRoute.handler(this::cleanHTML);
+        stateAbstractionRoute.handler(this::identifyCandidates);
+        stateAbstractionRoute.handler(this::prune);
+        stateAbstractionRoute.handler(this::annotate);
+
+
         neo4j = new Neo4JUtils("bolt://localhost:7687", "neo4j", "odobotdb");
 
         return Completable.complete();
+    }
+
+    /**
+     * Expects raw HTML in the post body.
+     *
+     * Cleans it by:
+     *  * removing styles, scripts, svgs, CHARDATA
+     *
+     * @param rc
+     */
+    private void cleanHTML(RoutingContext rc){
+
+        String rawHTMLString = rc.body().asString();
+
+        String cleanHTMLString = HTMLCleaningTools.clean(rawHTMLString);
+
+        //Save raw and clean strings to the routing context
+        rc.put("rawHTMLString", rawHTMLString);
+        rc.put("cleanHTMLString", cleanHTMLString);
+
+        log.info("cleanedHTMLString: \n{}", cleanHTMLString);
+
+        //Compute some cleaning metrics
+        double sizeDelta = rawHTMLString.length() - cleanHTMLString.length();
+        double compressionRatio = (double)cleanHTMLString.length()/(double)rawHTMLString.length();
+
+        log.info("RawHTML size: {} - CleanHTML size: {} delta: {} compressionRatio: {}", rawHTMLString.length(), cleanHTMLString.length(), sizeDelta, compressionRatio);
+
+        rc.next();
+    }
+
+    private void identifyCandidates(RoutingContext rc){
+
+    }
+
+    private void prune(RoutingContext rc){
+
+    }
+
+    private void annotate(RoutingContext rc){
+
     }
 
     private void handleGuidance(RoutingContext rc){
@@ -98,6 +154,11 @@ public class Mind2WebService extends HttpServiceVerticle {
         //A request that contains a guidance id is a 'follow-up' request, asking for the relevant action ids for the subsequent step.
         if(request.containsKey("id")){
             UUID guidanceId = UUID.fromString(request.getString("id"));
+
+            if(guidanceRequests.get(guidanceId) == null){
+                rc.response().setStatusCode(400).end(new JsonObject().put("error", "no guidance request with id " + guidanceId.toString()).encode());
+                return;
+            }
 
             //Update the step for this guidance request.
             guidanceRequests.put(guidanceId, guidanceRequests.get(guidanceId) + 1);

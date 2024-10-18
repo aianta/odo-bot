@@ -61,6 +61,7 @@ public class    NavPath {
         while (iterator.hasNext()){
             Node node = iterator.next();
 
+            //Instances associated with start and end nodes are annotation ids not action ids
             if(node.hasLabel(Label.label("StartNode")) || node.hasLabel(Label.label("EndNode"))){
                 continue;
             }

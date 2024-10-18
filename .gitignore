@@ -26,3 +26,5 @@ neo4j-logs/*
 neo4j-plugins/*
 !neo4j-plugins/.gitkeep
 !neo4j-logs/.gitkeep
+test_task
+test_task_results
