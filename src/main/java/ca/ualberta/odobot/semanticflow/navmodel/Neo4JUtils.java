@@ -1166,4 +1166,44 @@ public class Neo4JUtils {
             });
         }
     }
+
+
+    public List<String> getAllXpaths(){
+        String sQuery = """
+                    match (n) where n.xpath is not null return n.xpath;
+                    """;
+        Query query = new Query(sQuery);
+        return getXpaths(query);
+    }
+
+    public List<String> getXpathsForWebsite(String website){
+        String sQuery = """
+                match (n) where n.xpath is not null and n.website = $website return n.xpath;
+                """;
+        Query  query = new Query(sQuery, parameters("website", website));
+
+        return getXpaths(query);
+    }
+
+    /**
+     * Returns xpaths in the graph model.
+     * @return
+     */
+    private List<String> getXpaths(Query query){
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+
+            List<Record> results = session.executeRead(tx->{
+                var result = tx.run(query);
+                return result.list();
+            });
+
+            List<String> xpaths = new ArrayList<>();
+            for(Record r: results){
+                xpaths.add(r.get(0).asString());
+            }
+
+            return xpaths;
+
+        }
+    }
 }
