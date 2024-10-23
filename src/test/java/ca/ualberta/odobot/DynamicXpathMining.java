@@ -25,31 +25,36 @@ public class DynamicXpathMining {
         Document doc4 = Jsoup.parse(sampleDocument4);
         Document doc5 = Jsoup.parse(sampleDocument5);
         Document doc6 = Jsoup.parse(sampleDocument6);
+        Document doc7 = Jsoup.parse(sampleDocument7);
 
         List<DynamicXPath> dynamicXpaths = DynamicXpathMiner.mine(doc, List.of(sampleXpath1));
 
         log.info("Dynamic Xpaths 1: ");
-        dynamicXpaths.forEach(x->log.info("{}", x.toString()));
+        dynamicXpaths.forEach(x->log.info("{}", x.toJson().encodePrettily()));
 
         log.info("Dynamic Xpaths 2:");
         dynamicXpaths = DynamicXpathMiner.mine(doc2, List.of(sampleXpath1));
-        dynamicXpaths.forEach(x->log.info("{}", x.toString()));
+        dynamicXpaths.forEach(x->log.info("{}", x.toJson().encodePrettily()));
 
         log.info("Dynamic Xpaths 3:");
         dynamicXpaths = DynamicXpathMiner.mine(doc3, List.of(sampleXpath1));
-        dynamicXpaths.forEach(x->log.info("{}", x.toString()));
+        dynamicXpaths.forEach(x->log.info("{}", x.toJson().encodePrettily()));
 
         log.info("Dynamic Xpaths 4:");
         dynamicXpaths = DynamicXpathMiner.mine(doc4, List.of(sampleXpath1));
-        dynamicXpaths.forEach(x->log.info("{}", x.toString()));
+        dynamicXpaths.forEach(x->log.info("{}", x.toJson().encodePrettily()));
 
         log.info("Dynamic Xpaths 5:");
         dynamicXpaths = DynamicXpathMiner.mine(doc5, List.of(sampleXpath1));
-        dynamicXpaths.forEach(x->log.info("{}", x.toString()));
+        dynamicXpaths.forEach(x->log.info("{}", x.toJson().encodePrettily()));
 
         log.info("Dynamic Xpaths 6:");
         dynamicXpaths = DynamicXpathMiner.mine(doc6, List.of(sampleXpath1));
-        dynamicXpaths.forEach(x->log.info("{}", x.toString()));
+        dynamicXpaths.forEach(x->log.info("{}", x.toJson().encodePrettily()));
+
+        log.info("Dynamic Xpaths 7:");
+        dynamicXpaths = DynamicXpathMiner.mine(doc7, List.of(sampleXpath3));
+        dynamicXpaths.forEach(x->log.info("{}", x.toJson().encodePrettily()));
     }
 
     String sampleDocument1 = """
@@ -158,9 +163,29 @@ public class DynamicXpathMining {
             </html>
             """;
 
+    String sampleDocument7 = """
+            <html>
+                <body>
+                    <div>
+                        <div>
+                            <label>Some label
+                                <span>inner span</span>
+                            </label>
+                            <span>Element</span>
+                        </div>
+                        <div>
+                            <label>Some label
+                                <span>inner span</span>
+                            </label>
+                            <span>Element</span>
+                        </div>
+                    </div>
+                </body>
+            </html>
+            """;
+
     String sampleXpath1 = "/html/body/div/div";
     String sampleXpath2 = "/html/body/div/div/span";
-
-
+    String sampleXpath3 = "/html/body/div/div/label/span";
 
 }

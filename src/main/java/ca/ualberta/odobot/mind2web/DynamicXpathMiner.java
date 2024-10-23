@@ -30,6 +30,11 @@ public class DynamicXpathMiner {
 
     private static Optional<DynamicXPath> searchForDynamicXpathNear(Document document, String xpath){
 
+        /**
+         * Trim the ending slash off the xpath to the element if one exists.
+         *
+         * This allows us to later use lastIndexOf("/") with subString() to compute the xpath of any parent leading to the element @ xpath.
+         */
         if(xpath.endsWith("/")){
             xpath = xpath.substring(0, xpath.length()-1);
         }
@@ -43,6 +48,44 @@ public class DynamicXpathMiner {
 
         Element target = document.selectXpath(xpath).get(0);
 
+        Optional<DynamicXPath>  dynamicXPath = extractDynamicXpathAtElement(target, xpath);
+
+        if(dynamicXPath.isPresent()){
+            return dynamicXPath;
+        }
+
+
+        /** If we're here, none of the target element's siblings look the same, so the element is
+         *  definitely not the dynamic tag in a dynamic xpath, but it may yet be part of a dynamic xpath's suffix.
+         *
+         *  Thus, we should search up the DOM tree for an element that could serve as a dynamic tag.
+         */
+        while (target.parent() != null){
+            target = target.parent();
+            xpath = xpath.substring(0, xpath.lastIndexOf("/")); //This should never return -1, since we only climb up the tree if the target element has another parent.
+
+            dynamicXPath = extractDynamicXpathAtElement(target, xpath);
+
+            if(dynamicXPath.isPresent()){
+                return dynamicXPath;
+            }
+        }
+
+        return Optional.empty();
+    }
+
+    /**
+     * Assume that the target element is the dynamic tag in a dynamic xpath and try to retrieve a dynamic xpath
+     * on the basis of that assumption.
+     *
+     * That is, find siblings of the target element with the same tag, and recursively check that the subtrees match between
+     * the siblings and target element. If they do, then we have a dynamic xpath on our hands. Otherwise return an empty optional.
+     *
+     * @param target element assumed to be dynamic tag in dynamic xpath.
+     * @param xpath the xpath to the target element.
+     * @return Optional either containing a dynamic xpath if one was found, empty otherwise.
+     */
+    private static Optional<DynamicXPath> extractDynamicXpathAtElement(Element target, String xpath){
         //Case 1: Check for siblings.
         Elements siblings = target.siblingElements();
 
@@ -52,7 +95,7 @@ public class DynamicXpathMiner {
                 .collect(Collectors.toList());
 
         //If we found such siblings, then we have a dynamic xpath, with the target element as the dynamic tag.
-        if(siblingsToCheck.size() > 0){
+        if(siblingsToCheck.size() > 0) {
             DynamicXPath dynamicXPath = new DynamicXPath();
             dynamicXPath.setDynamicTag(target.tagName());
             dynamicXPath.setPrefix(xpath.substring(0, xpath.lastIndexOf("/")));
@@ -60,16 +103,15 @@ public class DynamicXpathMiner {
             log.info("Path 2 leaf: {}", pathToLeaf(target));
             dynamicXPath.setSuffix(pathToLeaf(target));
 
-            //TODO: Should these have suffixes?
+            // Should these have suffixes? Yes! And now they do using path-to-leaf.
             return Optional.of(dynamicXPath);
         }
-
-
-
 
         return Optional.empty();
     }
 
+
+    //TODO: Implement this without recursion to avoid stackoverflow on large trees.
     private static boolean haveCommonSubTree(Element a, Element b){
 
         if (a.children().size() != b.children().size()){
