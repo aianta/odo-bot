@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 
 
 import java.util.List;
+import java.util.Set;
 
 public class DynamicXpathMining {
 
@@ -27,7 +28,7 @@ public class DynamicXpathMining {
         Document doc6 = Jsoup.parse(sampleDocument6);
         Document doc7 = Jsoup.parse(sampleDocument7);
 
-        List<DynamicXPath> dynamicXpaths = DynamicXpathMiner.mine(doc, List.of(sampleXpath1));
+        Set<DynamicXPath> dynamicXpaths = DynamicXpathMiner.mine(doc, List.of(sampleXpath1));
 
         log.info("Dynamic Xpaths 1: ");
         dynamicXpaths.forEach(x->log.info("{}", x.toJson().encodePrettily()));

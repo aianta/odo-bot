@@ -1,6 +1,7 @@
 package ca.ualberta.odobot.mind2web;
 
 import ca.ualberta.odobot.semanticflow.navmodel.DynamicXPath;
+import ca.ualberta.odobot.sqlite.SqliteService;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
@@ -8,15 +9,20 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 public class DynamicXpathMiner {
 
     private static final Logger log = LoggerFactory.getLogger(DynamicXpathMiner.class);
 
-    public static List<DynamicXPath> mine(Document document, List<String> xpaths){
+    public static ExecutorService executorService = Executors.newFixedThreadPool(8);
 
-        List<DynamicXPath> dynamicXPaths = new ArrayList<>();
+
+    public static Set<DynamicXPath> mine(Document document, List<String> xpaths){
+
+        Set<DynamicXPath> dynamicXPaths = new HashSet<>();
 
         for(String xpath: xpaths){
             Optional<DynamicXPath> dynamicXPath = searchForDynamicXpathNear(document, xpath);
@@ -42,7 +48,7 @@ public class DynamicXpathMiner {
         // handle case where element is not found.
         Elements _elements = document.selectXpath(xpath);
         if(_elements.size() == 0){
-            log.warn("Xpath {} did not resolve to any element in document. ", xpath);
+            //log.debug("Xpath {} did not resolve to any element in document. ", xpath);
             return Optional.empty();
         }
 

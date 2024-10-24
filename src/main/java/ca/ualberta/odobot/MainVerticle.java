@@ -11,9 +11,12 @@ import ca.ualberta.odobot.tpg.TPGVerticle;
 import ca.ualberta.odobot.web.OdoSightSupport;
 import ca.ualberta.odobot.web.TimelineWebApp;
 import io.reactivex.rxjava3.core.Completable;
+import io.vertx.core.DeploymentOptions;
 import io.vertx.rxjava3.core.AbstractVerticle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.concurrent.TimeUnit;
 
 public class MainVerticle extends ConfigurableVerticle {
     private static final Logger log = LoggerFactory.getLogger(MainVerticle.class);
@@ -71,7 +74,12 @@ public class MainVerticle extends ConfigurableVerticle {
 
         if(_config.getBoolean("Mind2Web")){
             Mind2WebService mind2WebService = new Mind2WebService();
-            vertx.deployVerticle(mind2WebService);
+            vertx.deployVerticle(mind2WebService, new DeploymentOptions()
+                    .setWorkerPoolName("mind2web-pool")
+                    .setWorkerPoolSize(8)
+                    .setMaxWorkerExecuteTime(1)
+                    .setMaxWorkerExecuteTimeUnit(TimeUnit.HOURS) //TODO: make this configrable?
+            );
         }
 
 

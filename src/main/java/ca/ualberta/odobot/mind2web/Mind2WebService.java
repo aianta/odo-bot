@@ -2,20 +2,22 @@ package ca.ualberta.odobot.mind2web;
 
 import ca.ualberta.odobot.common.HttpServiceVerticle;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
+import ca.ualberta.odobot.semanticflow.navmodel.DynamicXPath;
 import ca.ualberta.odobot.semanticflow.navmodel.NavPath;
 import ca.ualberta.odobot.semanticflow.navmodel.Neo4JUtils;
 import ca.ualberta.odobot.semanticflow.navmodel.nodes.EndNode;
 import ca.ualberta.odobot.semanticflow.navmodel.nodes.NavNode;
 import ca.ualberta.odobot.semanticflow.navmodel.nodes.StartNode;
+import ca.ualberta.odobot.sqlite.SqliteService;
 import io.reactivex.rxjava3.core.Completable;
+import io.vertx.core.CompositeFuture;
+import io.vertx.core.Future;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.ext.web.Route;
 import io.vertx.rxjava3.ext.web.RoutingContext;
-import org.jsoup.Jsoup;
-import org.jsoup.nodes.Document;
-import org.jsoup.safety.Safelist;
+import io.vertx.serviceproxy.ServiceBinder;
 import org.neo4j.graphdb.Transaction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,6 +28,8 @@ import java.nio.file.Path;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static ca.ualberta.odobot.logpreprocessor.Constants.SQLITE_SERVICE_ADDRESS;
+
 public class Mind2WebService extends HttpServiceVerticle {
 
     private static final Logger log = LoggerFactory.getLogger(Mind2WebService.class);
@@ -35,6 +39,8 @@ public class Mind2WebService extends HttpServiceVerticle {
     Route modelConstructionRoute;
 
     Route stateAbstractionRoute;
+
+    Route mineDynamicXpathsRoute;
 
     @Override
     public String serviceName() {
@@ -55,6 +61,8 @@ public class Mind2WebService extends HttpServiceVerticle {
      * By setting the model construction path through this final static string field we ensure the re-route functionality doesn't break when changes are made to the path.
      */
     private static final String MODEL_CONSTRUCTION_PATH = "/model";
+
+    private static final String MINE_DYNAMIC_XPATHS_PATH = "/mineDXpaths";
 
     /**
      * Stores <guidanceId, current step>
@@ -80,15 +88,32 @@ public class Mind2WebService extends HttpServiceVerticle {
     Map<UUID, Collection<String>> guidanceValidActionIds = new HashMap<>();
 
 
+    Set<DynamicXPath> dynamicXPaths = new HashSet<>();
+
+    public static SqliteService sqliteService;
+
 
     public Completable onStart(){
         super.onStart();
+
+        //Init SQLite Service
+        sqliteService = SqliteService.create(vertx.getDelegate());
+        new ServiceBinder(vertx.getDelegate())
+                .setAddress(SQLITE_SERVICE_ADDRESS)
+                .register(SqliteService.class, sqliteService);
 
         //Configure model construction route
         modelConstructionRoute = api.route().method(HttpMethod.POST).path(MODEL_CONSTRUCTION_PATH);
         modelConstructionRoute.handler(this::loadDataSetup); //Figure out what/how to load
         modelConstructionRoute.handler(this::loadDataFromFile); //Load
         modelConstructionRoute.handler(this::buildTraces); //Build traces from loaded data
+
+        //Configure a route for mining dynamic xpaths, this should be invoked after model construction.
+        mineDynamicXpathsRoute = api.route().method(HttpMethod.POST).path(MINE_DYNAMIC_XPATHS_PATH)
+                .handler(this::loadDataSetup)
+                .handler(this::loadDataFromFile)
+                .handler(this::mineDynamicXpaths);
+
 
         //Configure guidance route
         api.route().method(HttpMethod.POST).path("/guidance").handler(this::handleGuidance);
@@ -346,7 +371,7 @@ public class Mind2WebService extends HttpServiceVerticle {
         vertx.<List<Trace>>executeBlocking(blocking->{
             List<Trace> traces = tasks.stream()
                     .map(o->(JsonObject)o)
-                    .map(Mind2WebUtils::processTask)
+                    .map(Mind2WebUtils::taskToTrace)
                     .collect(Collectors.toList());
 
             blocking.complete(traces);
@@ -381,7 +406,7 @@ public class Mind2WebService extends HttpServiceVerticle {
                 }else{
                     log.info("Model construction complete");
                     neo4j.createNodeLabelsUsingWebsiteProperty();
-                    rc.response().setStatusCode(200).end();
+                    rc.response().setStatusCode(200).end(Mind2WebUtils.targetTags.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encodePrettily());
                 }
             });
         });
@@ -455,7 +480,53 @@ public class Mind2WebService extends HttpServiceVerticle {
 
     }
 
+    private void mineDynamicXpaths(RoutingContext rc){
+
+        log.info("Hit Mine Dynamic Xpaths!");
+
+        //Get the json traces from the routing context
+        JsonArray tasks = rc.get("taskData");
+
+        //Get all the xpaths once
+        final List<String> xpathsFromModel = neo4j.getAllXpaths();
+
+        List<Future<Set<DynamicXPath>>> futures = tasks.stream()
+                .map(o->(JsonObject)o)
+                .map(json->Mind2WebUtils.taskToDXpath(json, xpathsFromModel))
+                .collect(ArrayList::new, (list,o)->list.addAll(o), ArrayList::addAll);
+
+        Future.all(futures)
+                .onSuccess(
+                        compositeFuture -> {
+                            List<Set<DynamicXPath>> miningResults = compositeFuture.list();
+
+                            dynamicXPaths = miningResults.stream().collect(HashSet::new, (set,o)->set.addAll(o), HashSet::addAll);
+
+                        }
+                ).onComplete(done->{
+                    log.info("Extracted {} dynamic xpaths", dynamicXPaths.size());
+
+                    String nextFile = rc.get("currentFile");
+                    if(nextFile != null){
+                        rc.reroute(HttpMethod.POST, getFullMineDynamicXpathRoutePath());
+                    }else{
+                        log.info("Dynamic Xpath Mining complete");
+
+                        JsonArray results = dynamicXPaths.stream()
+                                .map(DynamicXPath::toJson)
+                                .collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+
+                        rc.response().putHeader("Content-Type", "application/json").setStatusCode(200).end(results.encodePrettily());
+                    }
+                });
+
+    }
+
     private String getFullModelConstructionRoutePath(){
         return _config.getString("apiPathPrefix").substring(0, _config.getString("apiPathPrefix").length()-2) + MODEL_CONSTRUCTION_PATH;
+    }
+
+    private String getFullMineDynamicXpathRoutePath(){
+        return _config.getString("apiPathPrefix").substring(0, _config.getString("apiPathPrefix").length()-2) + MINE_DYNAMIC_XPATHS_PATH;
     }
 }

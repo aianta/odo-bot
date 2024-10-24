@@ -268,20 +268,26 @@ public class SqliteServiceImpl implements SqliteService {
         return saveExemplar(TrainingExemplar.fromJson(json));
     }
 
-    @Override
+
     public Future<Void> saveDynamicXpath(JsonObject xpathData, String xpathId, String nodeId) {
+        return saveDynamicXpathForWebsite(xpathData, xpathId, nodeId, "-");
+    }
+
+    @Override
+    public Future<Void> saveDynamicXpathForWebsite(JsonObject xpathData, String xpathId, String nodeId, String website) {
         Promise<Void> promise = Promise.promise();
 
         pool.preparedQuery("""
             INSERT INTO dynamic_xpaths (
-                id, prefix, tag, suffix, source_node_id
-            ) VALUES (?,?,?,?,?);
+                id, prefix, tag, suffix, source_node_id,website
+            ) VALUES (?,?,?,?,?,?);
         """).execute(Tuple.of(
                 xpathId,
                 xpathData.getString("prefix"),
                 xpathData.getString("dynamicTag"),
                 xpathData.getString("suffix"),
-                nodeId
+                nodeId,
+                website
         )).onSuccess(done->promise.complete())
                 .onFailure(err->{
                     log.error(err.getMessage(), err);
@@ -466,11 +472,13 @@ public class SqliteServiceImpl implements SqliteService {
 
         pool.preparedQuery("""
             CREATE TABLE IF NOT EXISTS dynamic_xpaths(
-                id text primary key,
+                id text not null,
                 prefix text not null,
                 tag text not null,
                 suffix text not null,
-                source_node_id text not null
+                source_node_id text not null,
+                website not null,
+                primary key (prefix, tag, suffix, website)
             )
         """).execute(result->{
             if(result.succeeded()){

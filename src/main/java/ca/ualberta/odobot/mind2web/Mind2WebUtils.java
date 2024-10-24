@@ -1,6 +1,10 @@
 package ca.ualberta.odobot.mind2web;
 
 
+import ca.ualberta.odobot.semanticflow.navmodel.DynamicXPath;
+import ca.ualberta.odobot.semanticflow.navmodel.Neo4JUtils;
+import ca.ualberta.odobot.sqlite.SqliteService;
+import io.vertx.core.Future;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.jsoup.Jsoup;
@@ -15,6 +19,11 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.semanticflow.Utils.*;
 
@@ -22,6 +31,8 @@ import static ca.ualberta.odobot.semanticflow.Utils.*;
 public class Mind2WebUtils {
 
     private static final Logger log = LoggerFactory.getLogger(Mind2WebUtils.class);
+
+    public static Set<String> targetTags = new HashSet<>();
 
 
     private static class BuckeyeMismatch extends Exception{
@@ -33,7 +44,34 @@ public class Mind2WebUtils {
 
     }
 
-    public static Trace processTask(JsonObject task){
+    public static List<Future<Set<DynamicXPath>>> taskToDXpath(JsonObject task, List<String> xpathsFromModel){
+
+        //Get the actions from the task
+        JsonArray actions = task.getJsonArray("actions");
+        String taskId = task.getString("annotation_id");
+        String website = task.getString("website");
+
+         return actions.stream()
+                .map(o->(JsonObject)o)
+                 //TODO: comment
+                .map(json->new String [] {json.getString("raw_html"), taskId + "|" +json.getString("action_uid")})
+                .map(data->new String [] {HTMLCleaningTools.clean(data[0]), data[1]}) // Clean the HTML
+                .map(data->{
+                    //Parse it into a document
+                    Document doc = Jsoup.parse(data[0]); //Parse the cleaned HTML.
+
+                    //Create a new mining task to execute through a thread pool, which uses the document and xpaths to mine for dynamic xpaths.
+                    DynamicXpathMiningTask miningTask = new DynamicXpathMiningTask(data[1], website, doc, xpathsFromModel);
+                    DynamicXpathMiner.executorService.submit(miningTask);
+
+                    return miningTask.getFuture();
+
+                })
+                 .collect(Collectors.toList());
+
+    }
+
+    public static Trace taskToTrace(JsonObject task){
 
         Trace trace = new Trace();
         trace.setWebsite(task.getString("website"));
@@ -63,14 +101,18 @@ public class Mind2WebUtils {
 
         JsonObject opJson = action.getJsonObject("operation");
 
-        action.put("raw_html", action.getString("raw_html").replaceAll("iframe", "div"));//Replace all iframes with divs, certain target elements within iframes will not resolve otherwise.
+
 
         String targetElementXPath = null;
         try{
+            //resolveXPath(action.getString("raw_html").replaceAll("iframe", "div"), action.getString("action_uid"));
+            action.put("raw_html", HTMLCleaningTools.clean(action.getString("raw_html")));
+            //action.put("raw_html", action.getString("raw_html").replaceAll("iframe", "div"));
+
             targetElementXPath = resolveXPath(action.getString("raw_html"), action.getString("action_uid"));
         }catch (BuckeyeMismatch e){
             log.error("Buckeye Mismatch! Expected {}", e.expectedAttributeXpath);
-            log.error("Action: \n{}", action.put("raw_html", "<see state.html>").put("cleaned_html", "<removed>").encodePrettily());
+            //log.error("Action: \n{}", action.put("raw_html", "<see state.html>").put("cleaned_html", "<removed>").encodePrettily());
             System.exit(0);
         }catch (IOException ioe){
             log.error(ioe.getMessage(), ioe);
@@ -133,6 +175,8 @@ public class Mind2WebUtils {
         Element targetElement = null;
         try{
             targetElement = document.selectXpath(targetAttribute).get(0);
+            //log.info("Target Element was: {}", targetElement.tagName());
+            targetTags.add(targetElement.tagName());
         }catch (IndexOutOfBoundsException e){
             throw new BuckeyeMismatch(targetAttribute);
         }

@@ -45,7 +45,32 @@ public class HTMLCleaningTools {
             .addAttributes(":all", "title")
             .addAttributes(":all", "data_pw_testid_buckeye")
             .addAttributes(":all", "href")
-            .addTags("input", "footer", "fieldset", "section", "button", "btn", "label", "article", "form", "text", "html", "body");
+            .addTags("input", "footer", "fieldset", "textarea", "section", "button",
+                    "btn", "label", "article", "form", "text", "html", "body","select",
+                    "option", "svg", "circle", "rect", "line", "ellipse", "polygon", "polyline",
+                    "path", "use",
+                    "adc-button", //what even is this?,
+                    "small",
+                    "legend",
+                    "dt",
+                    "ngb-highlight",
+                    "hp-search-widget-tab",
+                    "hp-input-button",
+                    "abbr",
+                    "fsw-airport-item",
+                    "em",
+                    "dropdown-option",
+                    "select-label",
+                    "ry-spinner",
+                    "img",
+                    "strong",
+                    "mat-pseudo-checkbox",
+                    "summary",
+                    "address",
+                    "ins",
+                    "ppc-content"
+
+            );
 
 
     public static String stripScriptTags(String input){
@@ -111,8 +136,21 @@ public class HTMLCleaningTools {
         String result = null;
 
         result = input.replaceAll("\\\\n", ""); //get rid of any \n
-        result = result.replaceAll("iframe", "div"); //swap iframes with divs
+        result = result.replaceAll("iframe", "div"); //swap iframes with divs, otherwise we won't be able to comptue xpaths to element inside the iframe.
         result = result.replaceAll("\\\\\"", "\"");
+        //result = stripSVGPaths(result);
+
+        /**
+         * We're parsing the document at this stage, and extracting 'backend_node_id' and 'data_pw_testid_buckeye'
+         * attributes off the <html> tag if they exist because JSoup's clean mechanism only works from the body tag onwards...
+         */
+        Document preCleanDocument = Jsoup.parse(result);
+        Element htmlElement = preCleanDocument.root().firstElementChild();
+
+        assert htmlElement.tagName().toLowerCase().equals("html");
+
+        String htmlBackendNodeId = htmlElement.attr("backend_node_id");
+        String htmlBuckEye = htmlElement.attr("data_pw_testid_buckeye");
 
         result = Jsoup.clean(result,"", safelist, new Document.OutputSettings().charset("UTF-8"));
 
@@ -122,8 +160,21 @@ public class HTMLCleaningTools {
          *
          * So we have to rewrap everything in an <html></html>
          */
-        result = "<html>%s</html>".formatted(result);
+        result = "%s%s</html>".formatted(makeHTMLTagString(htmlBackendNodeId, htmlBuckEye), result);
 
         return result;
+    }
+
+    private static String makeHTMLTagString(String backendNodeId, String buckeye){
+        StringBuilder sb = new StringBuilder();
+        sb.append("<html ");
+        if(backendNodeId != null){
+            sb.append("backend_node_id=\"" + backendNodeId + "\" ");
+        }
+        if(buckeye != null){
+            sb.append("data_pw_testid_buckeye=\"" + buckeye + "\" ");
+        }
+        sb.append(">");
+        return sb.toString();
     }
 }
