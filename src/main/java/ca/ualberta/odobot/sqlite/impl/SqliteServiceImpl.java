@@ -268,6 +268,23 @@ public class SqliteServiceImpl implements SqliteService {
         return saveExemplar(TrainingExemplar.fromJson(json));
     }
 
+    public Future<Boolean> hasDynamicXpathEntry(String nodeId, String website){
+        Promise<Boolean> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            SELECT source_node_id, website from dynamic_xpaths WHERE source_node_id = ? and website = ?;
+        """).execute(Tuple.of(
+                nodeId,
+                website
+        )).onSuccess(done->{
+            if(done.size() > 0){
+                promise.complete(true);
+            }else{
+                promise.complete(false);
+            }
+        });
+        return promise.future();
+    }
 
     public Future<Void> saveDynamicXpath(JsonObject xpathData, String xpathId, String nodeId) {
         return saveDynamicXpathForWebsite(xpathData, xpathId, nodeId, "-");

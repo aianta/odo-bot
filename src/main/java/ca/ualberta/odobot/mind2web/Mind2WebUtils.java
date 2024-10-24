@@ -5,6 +5,7 @@ import ca.ualberta.odobot.semanticflow.navmodel.DynamicXPath;
 import ca.ualberta.odobot.semanticflow.navmodel.Neo4JUtils;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import io.vertx.core.Future;
+import io.vertx.core.Promise;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.jsoup.Jsoup;
@@ -44,29 +45,57 @@ public class Mind2WebUtils {
 
     }
 
+    private static class AlreadyDone{
+        Future<Set<DynamicXPath>> future;
+        String id;
+        String website;
+
+        String rawHtml;
+
+        boolean isDone;
+
+        public Future<Set<DynamicXPath>> getFuture(){
+            return future;
+        }
+    }
+
     public static List<Future<Set<DynamicXPath>>> taskToDXpath(JsonObject task, List<String> xpathsFromModel){
+
 
         //Get the actions from the task
         JsonArray actions = task.getJsonArray("actions");
         String taskId = task.getString("annotation_id");
         String website = task.getString("website");
 
+        //Go through all the actions in this task and check queue up requests to the database to check if they're already done.
          return actions.stream()
                 .map(o->(JsonObject)o)
                  //TODO: comment
                 .map(json->new String [] {json.getString("raw_html"), taskId + "|" +json.getString("action_uid")})
-                .map(data->new String [] {HTMLCleaningTools.clean(data[0]), data[1]}) // Clean the HTML
-                .map(data->{
-                    //Parse it into a document
-                    Document doc = Jsoup.parse(data[0]); //Parse the cleaned HTML.
+                 .map(data->{
+                     AlreadyDone alreadyDone = new AlreadyDone();
+                     alreadyDone.future = Mind2WebService.sqliteService.hasDynamicXpathEntry(data[1], website).compose(_isDone->{
+                         if(_isDone){
+                             log.info("{} is already done", alreadyDone.id);
+                             return Future.succeededFuture(Set.of());
+                         }else{
+                             String cleanHTML = HTMLCleaningTools.clean(alreadyDone.rawHtml);
+                             Document doc = Jsoup.parse(cleanHTML);
 
-                    //Create a new mining task to execute through a thread pool, which uses the document and xpaths to mine for dynamic xpaths.
-                    DynamicXpathMiningTask miningTask = new DynamicXpathMiningTask(data[1], website, doc, xpathsFromModel);
-                    DynamicXpathMiner.executorService.submit(miningTask);
+                             //Create a new mining task to execute through a thread pool, which uses the document and xpaths to mine for dynamic xpaths.
+                             DynamicXpathMiningTask miningTask = new DynamicXpathMiningTask(cleanHTML, alreadyDone.website, doc, xpathsFromModel);
+                             DynamicXpathMiner.executorService.submit(miningTask);
 
-                    return miningTask.getFuture();
+                             return miningTask.getFuture();
+                         }
+                     });
+                     alreadyDone.id = data[1];
+                     alreadyDone.website = website;
+                     alreadyDone.rawHtml = data[0];
 
-                })
+                     return alreadyDone;
+                 })
+                 .map(alreadyDone -> alreadyDone.getFuture())
                  .collect(Collectors.toList());
 
     }

@@ -17,7 +17,9 @@ public class DynamicXpathMiner {
 
     private static final Logger log = LoggerFactory.getLogger(DynamicXpathMiner.class);
 
-    public static ExecutorService executorService = Executors.newFixedThreadPool(8);
+    private static final int MAX_HEIGHT = 15;
+
+    public static ExecutorService executorService = Executors.newFixedThreadPool(6);
 
 
     public static Set<DynamicXPath> mine(Document document, List<String> xpaths){
@@ -66,7 +68,9 @@ public class DynamicXpathMiner {
          *
          *  Thus, we should search up the DOM tree for an element that could serve as a dynamic tag.
          */
-        while (target.parent() != null){
+        int height = 0;
+        while (target.parent() != null && height < MAX_HEIGHT){
+            height++;
             target = target.parent();
             xpath = xpath.substring(0, xpath.lastIndexOf("/")); //This should never return -1, since we only climb up the tree if the target element has another parent.
 

@@ -32,6 +32,8 @@ public interface SqliteService {
 
     Future<Void> saveTrainingExemplar(JsonObject json);
 
+    Future<Boolean> hasDynamicXpathEntry(String nodeId, String website);
+
     Future<Void> saveDynamicXpathForWebsite(JsonObject xpathData, String xpathId, String nodeId, String website);
 
     Future<Void> saveDynamicXpath(JsonObject xpathData, String xpathId, String nodeId);
