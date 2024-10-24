@@ -68,6 +68,7 @@ public class Mind2WebUtils {
         String website = task.getString("website");
 
         //Go through all the actions in this task and check queue up requests to the database to check if they're already done.
+        //TODO: this doesn't actually correspond with real progress because we will only have DB records if dynamic Xpaths were found. So we will re-check actions where none were found...
          return actions.stream()
                 .map(o->(JsonObject)o)
                  //TODO: comment
@@ -86,7 +87,7 @@ public class Mind2WebUtils {
                              DynamicXpathMiningTask miningTask = new DynamicXpathMiningTask(cleanHTML, alreadyDone.website, doc, xpathsFromModel);
                              DynamicXpathMiner.executorService.submit(miningTask);
 
-                             return miningTask.getFuture();
+                             return miningTask.getFuture().onSuccess(done->log.info("Finished {} found {} dynamic xpaths", alreadyDone.id, done.size()));
                          }
                      });
                      alreadyDone.id = data[1];

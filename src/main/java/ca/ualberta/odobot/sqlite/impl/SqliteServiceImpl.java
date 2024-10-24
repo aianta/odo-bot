@@ -307,7 +307,9 @@ public class SqliteServiceImpl implements SqliteService {
                 website
         )).onSuccess(done->promise.complete())
                 .onFailure(err->{
-                    log.error(err.getMessage(), err);
+                    if(!err.getMessage().contains("A PRIMARY KEY constraint failed")){
+                        log.error(err.getMessage(), err); //Primary key violations happen a lot.
+                    }
                     promise.fail(err);
                 });
 

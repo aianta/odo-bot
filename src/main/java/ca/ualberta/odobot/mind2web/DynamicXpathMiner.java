@@ -18,6 +18,7 @@ public class DynamicXpathMiner {
     private static final Logger log = LoggerFactory.getLogger(DynamicXpathMiner.class);
 
     private static final int MAX_HEIGHT = 15;
+    private static final int MAX_SIBLINGS_TO_CHECK = 10;
 
     public static ExecutorService executorService = Executors.newFixedThreadPool(6);
 
@@ -101,6 +102,7 @@ public class DynamicXpathMiner {
 
         //If the element has siblings, check to see if their tags match that of the target element.
         List<Element> siblingsToCheck = siblings.stream().filter(sibling->sibling.tagName().equals(target.tagName()))
+                .limit(MAX_SIBLINGS_TO_CHECK)
                 .filter(sibling->haveCommonSubTree(sibling, target)) //Check if the siblings that share the tag name with the target element have common subtrees with the element.
                 .collect(Collectors.toList());
 
@@ -110,7 +112,7 @@ public class DynamicXpathMiner {
             dynamicXPath.setDynamicTag(target.tagName());
             dynamicXPath.setPrefix(xpath.substring(0, xpath.lastIndexOf("/")));
 
-            log.info("Path 2 leaf: {}", pathToLeaf(target));
+            //log.info("Path 2 leaf: {}", pathToLeaf(target));
             dynamicXPath.setSuffix(pathToLeaf(target));
 
             // Should these have suffixes? Yes! And now they do using path-to-leaf.
