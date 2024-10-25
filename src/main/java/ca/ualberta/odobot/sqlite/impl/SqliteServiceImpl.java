@@ -5,6 +5,7 @@ import ca.ualberta.odobot.semanticflow.model.TrainingMaterials;
 import ca.ualberta.odobot.sqlite.LogParser;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import io.vertx.core.Future;
+import io.vertx.core.Handler;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonArray;
@@ -42,6 +43,7 @@ public class SqliteServiceImpl implements SqliteService {
         createStateSampleTable();
         createSnippetTable();
         createDynamicXPathTable();
+        createDynamicXpathProgressTable();
     }
 
 
@@ -76,13 +78,14 @@ public class SqliteServiceImpl implements SqliteService {
         return insertLogEntry(DbLogEntry.fromJson(json));
     }
 
-    private Future<Void> insertLogEntry(DbLogEntry entry){
-        Promise<Void> promise = Promise.promise();
 
-        pool.preparedQuery("""
+    private Future<Void> insertLogEntry(DbLogEntry entry){
+        String sql = """
             INSERT INTO logs (key_value, timestamp, timestamp_milli, type, command, object_type, object_name, statement, parameter) VALUES 
             (?,?,?,?,?,?,?,?,?);
-        """).execute(Tuple.of(
+        """;
+
+        Tuple params = Tuple.of(
                 entry.key(),
                 entry.timestamp().format(LogParser.timestampFormat),
                 entry.timestampMilli(),
@@ -92,20 +95,12 @@ public class SqliteServiceImpl implements SqliteService {
                 entry.objectName(),
                 entry.statement(),
                 entry.parameter()
-        )).onSuccess(done->{
-            promise.complete();
-        }).onFailure(err->{
-            if(err.getMessage().contains("A PRIMARY KEY constraint failed")){
-                log.debug("LogEntry {} already exists in database, ignoring.", entry.key());
-                promise.complete();
-                return;
-            }
-            log.error(err.getMessage(), err);
-            promise.fail(err);
-        });
+        );
 
-        return promise.future();
+        Promise<Void> promise = Promise.promise();
+        return executeParameterizedQuery(promise, sql, params, ignoreUniqueConstraintViolationErrorHandler(promise));
     }
+
 
 
     public Future<JsonArray> loadTrainingDataset(String datasetName){
@@ -157,10 +152,9 @@ public class SqliteServiceImpl implements SqliteService {
         log.info("Saving {}", json.encodePrettily());
         return saveTrainingMaterial(TrainingMaterials.fromJson(json));
     }
-    public Future<Void> saveTrainingMaterial(TrainingMaterials materials){
-        Promise<Void> promise = Promise.promise();
 
-        pool.preparedQuery("""
+    public Future<Void> saveTrainingMaterial(TrainingMaterials materials){
+        String sql = """
             INSERT INTO  training_materials(
                 exemplar_id, 
                 hashed_dom_tree, 
@@ -172,7 +166,9 @@ public class SqliteServiceImpl implements SqliteService {
                 dom_tree,
                 terms
             ) VALUES (?,?,?,?,?,?,?,?,?);
-        """).execute(Tuple.of(
+        """;
+
+        Tuple params = Tuple.of(
                 materials.getExemplarId().toString(),
                 Arrays.stream(materials.getHashedDOMTree()).collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode(),
                 Arrays.stream(materials.getHashedTerms()).collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode(),
@@ -182,18 +178,9 @@ public class SqliteServiceImpl implements SqliteService {
                 materials.getExtras().encode(),
                 materials.getDomTree().stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode(),
                 materials.getTerms().stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode()
-        ), result->{
-           if(result.succeeded()){
-               log.info("Training material saved!");
-               promise.complete();
-           }else{
-               log.error(result.cause().getMessage(), result.cause());
-               promise.fail(result.cause());
-           }
-        });
+        );
 
-
-        return promise.future();
+        return executeParameterizedQuery(sql, params);
     }
 
     public Future<Set<String>> getHarvestProgress(String dataset){
@@ -226,9 +213,7 @@ public class SqliteServiceImpl implements SqliteService {
 
 
     public Future<Void> saveStateSample(StateSample sample){
-        Promise<Void> promise = Promise.promise();
-
-        pool.preparedQuery("""
+        String sql = """
             INSERT INTO state_samples (
                 id,
                 base_uri,
@@ -242,7 +227,9 @@ public class SqliteServiceImpl implements SqliteService {
                 dom_html,
                 vector_size
             ) VALUES (?,?,?,?,?,?,?,?,?,?,?);
-        """).execute(Tuple.of(
+        """;
+
+        Tuple params = Tuple.of(
                 sample.id.toString(),
                 sample.baseURI,
                 sample.normalizedBaseUri(),
@@ -254,28 +241,35 @@ public class SqliteServiceImpl implements SqliteService {
                 Arrays.stream(sample.hashedDOMTree).collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode(),
                 sample.domHTML,
                 sample.domTree.size()
-        ), result->{
-            if(result.succeeded()){
-                promise.complete();
-            }else {
-                promise.fail(result.cause());
-            }
-        });
+        );
 
-        return promise.future();
+        return executeParameterizedQuery(sql, params);
     }
+
     public Future<Void> saveTrainingExemplar(JsonObject json){
         return saveExemplar(TrainingExemplar.fromJson(json));
     }
 
-    public Future<Boolean> hasDynamicXpathEntry(String nodeId, String website){
+
+    public Future<Void> saveDynamicXpathMiningProgress(String taskId, String actionId){
+        String sql = """
+                INSERT INTO dynamic_xpath_mining_progress (
+                    task_id, action_id) VALUES (?,?);
+                """;
+        Tuple params = Tuple.of(taskId, actionId);
+
+        return executeParameterizedQuery(sql, params);
+
+    }
+
+    public Future<Boolean> hasBeenMinedForDynamicXpaths(String taskId, String actionId){
         Promise<Boolean> promise = Promise.promise();
 
         pool.preparedQuery("""
-            SELECT source_node_id, website from dynamic_xpaths WHERE source_node_id = ? and website = ?;
+            SELECT * from dynamic_xpath_mining_progress WHERE task_id = ? and action_id = ?;
         """).execute(Tuple.of(
-                nodeId,
-                website
+                taskId,
+                actionId
         )).onSuccess(done->{
             if(done.size() > 0){
                 promise.complete(true);
@@ -292,35 +286,28 @@ public class SqliteServiceImpl implements SqliteService {
 
     @Override
     public Future<Void> saveDynamicXpathForWebsite(JsonObject xpathData, String xpathId, String nodeId, String website) {
-        Promise<Void> promise = Promise.promise();
-
-        pool.preparedQuery("""
+        String sql = """
             INSERT INTO dynamic_xpaths (
                 id, prefix, tag, suffix, source_node_id,website
             ) VALUES (?,?,?,?,?,?);
-        """).execute(Tuple.of(
+        """;
+
+        Tuple params = Tuple.of(
                 xpathId,
                 xpathData.getString("prefix"),
                 xpathData.getString("dynamicTag"),
                 xpathData.getString("suffix"),
                 nodeId,
                 website
-        )).onSuccess(done->promise.complete())
-                .onFailure(err->{
-                    if(!err.getMessage().contains("A PRIMARY KEY constraint failed")){
-                        log.error(err.getMessage(), err); //Primary key violations happen a lot.
-                    }
-                    promise.fail(err);
-                });
+        );
 
-        return promise.future();
+        Promise<Void> promise = Promise.promise();
+        return executeParameterizedQuery(promise, sql, params, mutePrivateKeyViolationError(promise));
     }
 
     @Override
-    public Future<Void> saveSnippet(String snippet, String xpathId, String type, String sourceHTML) {
-        Promise<Void> promise = Promise.promise();
-
-        pool.preparedQuery("""
+    public Future<Void> saveSnippet(String snippet, String xpathId, String type, String sourceHTML){
+        String sql = """
             INSERT INTO snippets (
                 id,
                 snippet, 
@@ -328,34 +315,30 @@ public class SqliteServiceImpl implements SqliteService {
                 snippet_type,
                 source_html
             ) VALUES (?,?,?,?,?)
-        """).execute(Tuple.of(
+        """;
+
+        Tuple params = Tuple.of(
                 UUID.randomUUID().toString(),
                 snippet,
                 xpathId,
                 type,
                 sourceHTML
-        )).onSuccess(done->promise.complete())
-                .onFailure(err->{
-                    //Uniqueness constraint errors are fine. We don't want duplicates of snippet/xpath/source.
-                    if(err.getMessage().contains("[SQLITE_CONSTRAINT_UNIQUE] A UNIQUE constraint failed")){
-                        promise.complete();
-                    }else{
-                        log.error(err.getMessage(),err);
-                        promise.fail(err);
-                    }
-                });
-        return promise.future();
+        );
+
+        Promise<Void> promise = Promise.promise();
+
+        return executeParameterizedQuery(promise, sql, params, ignoreUniqueConstraintViolationErrorHandler(promise));
     }
 
     private Future<Void> saveExemplar(TrainingExemplar exemplar){
 
-        Promise<Void> promise = Promise.promise();
+        String sql = """
+               INSERT INTO training_dataset (
+                   id, source, feature_vector, label, dataset_name, feature_vector_size, extras, human_feature_vector, dom_html
+               ) VALUES (?,?,?,?,?,?,?,?,?);
+           """;
 
-        pool.preparedQuery("""
-            INSERT INTO training_dataset (
-                id, source, feature_vector, label, dataset_name, feature_vector_size, extras, human_feature_vector, dom_html
-            ) VALUES (?,?,?,?,?,?,?,?,?);
-        """).execute(Tuple.of(
+        Tuple params = Tuple.of(
                 exemplar.id().toString(),
                 exemplar.source(),
                 Arrays.stream(exemplar.featureVector()).mapToObj(Double::toString).collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode(),
@@ -365,22 +348,15 @@ public class SqliteServiceImpl implements SqliteService {
                 exemplar.extras().encode(),
                 exemplar.humanFeatureVector().encode(),
                 exemplar.domHTML()
-        ),result->{
-            if(result.succeeded()){
-                promise.complete();
-            }else{
-                promise.fail(result.cause());
-            }
-        });
+        );
 
-        return promise.future();
-
+        return executeParameterizedQuery(sql, params);
     }
 
-    private Future<Void> createTrainingDatasetTable(){
-        Promise<Void> promise = Promise.promise();
 
-        pool.preparedQuery("""
+
+    private Future<Void> createTrainingDatasetTable(){
+        return createTable("""
             CREATE TABLE IF NOT EXISTS training_dataset (
                 id text PRIMARY KEY,
                 source text,
@@ -393,22 +369,12 @@ public class SqliteServiceImpl implements SqliteService {
                 dom_html text
             )
         
-        """).execute(result->{
-            if(result.succeeded()){
-                promise.complete();
-            }else{
-                promise.fail(result.cause());
-            }
-        });
-
-        return promise.future();
+        """);
 
     }
 
     private Future<Void> createStateSampleTable(){
-        Promise<Void> promise = Promise.promise();
-
-        pool.preparedQuery("""
+        return createTable("""
             CREATE TABLE IF NOT EXISTS state_samples (
                 id text PRIMARY KEY,
                 base_uri text NOT NULL,
@@ -422,21 +388,11 @@ public class SqliteServiceImpl implements SqliteService {
                 dom_html text NOT NULL,
                 vector_size numeric NOT NULL
             )
-        """).execute(result->{
-            if(result.succeeded()){
-                promise.complete();
-            }else {
-                promise.fail(result.cause());
-            }
-        });
-
-        return promise.future();
+        """);
     }
 
     private Future<Void> createTrainingMaterialsTable(){
-        Promise<Void> promise = Promise.promise();
-
-        pool.preparedQuery("""
+        return createTable("""
             CREATE TABLE IF NOT EXISTS training_materials(
                 hashed_dom_tree text NOT NULL,
                 dom_tree text NOT NULL,
@@ -448,21 +404,11 @@ public class SqliteServiceImpl implements SqliteService {
                 dataset_name NOT NULL,
                 extras text NOT NULL
             )
-        """).execute(result->{
-            if(result.succeeded()){
-                promise.complete();
-            }else{
-                promise.fail(result.cause());
-            }
-        });
-
-        return promise.future();
+        """);
     }
 
     private Future<Void> createLogTable(){
-        Promise<Void> promise = Promise.promise();
-
-        pool.preparedQuery("""
+        return createTable("""
             CREATE TABLE IF NOT EXISTS logs (
                 key_value text PRIMARY KEY,
                 timestamp text NOT NULL,
@@ -474,22 +420,11 @@ public class SqliteServiceImpl implements SqliteService {
                 statement TEXT NOT NULL,
                 parameter TEXT NOT NULL
             )
-        """).execute(result->{
-            if(result.succeeded()){
-                promise.complete();
-            }else{
-                promise.fail(result.cause());
-            }
-        });
-
-
-        return promise.future();
+        """);
     }
 
     private Future<Void> createDynamicXPathTable(){
-        Promise<Void> promise = Promise.promise();
-
-        pool.preparedQuery("""
+        return createTable("""
             CREATE TABLE IF NOT EXISTS dynamic_xpaths(
                 id text not null,
                 prefix text not null,
@@ -499,20 +434,11 @@ public class SqliteServiceImpl implements SqliteService {
                 website not null,
                 primary key (prefix, tag, suffix, website)
             )
-        """).execute(result->{
-            if(result.succeeded()){
-                promise.complete();
-            }else{
-                promise.fail(result.cause());
-            }
-        });
-
-        return promise.future();
+        """);
     }
 
     private Future<Void> createSnippetTable(){
-        Promise<Void> promise = Promise.promise();
-        pool.preparedQuery("""
+        return createTable("""
             CREATE TABLE IF NOT EXISTS snippets(
                 id text primary key,
                 snippet text not null,
@@ -521,19 +447,91 @@ public class SqliteServiceImpl implements SqliteService {
                 source_html text not null,
                 UNIQUE(snippet, dynamic_xpath, source_html)
             )
-        """).execute(result->{
+        """);
+    }
+
+    private Future<Void> createDynamicXpathProgressTable(){
+        log.info("Creating progress table");
+        return createTable("""
+            CREATE TABLE IF NOT EXISTS dynamic_xpath_mining_progress(
+                task_id text not null, 
+                action_id text not null,
+                primary key (task_id, action_id)
+            )
+            """);
+    }
+
+    private Future<Void> createTable(String sql){
+
+        Promise<Void> promise = Promise.promise();
+
+        pool.preparedQuery(sql).execute(result->{
             if(result.succeeded()){
                 promise.complete();
             }else{
+                log.error(result.cause().getMessage(), result.cause());
                 promise.fail(result.cause());
             }
         });
-
 
         return promise.future();
     }
 
 
+    private Future<Void> executeParameterizedQuery(String sql, Tuple parameters){
+        Promise<Void> promise = Promise.promise();
+        return executeParameterizedQuery(promise, sql, parameters, genericErrorHandler(promise));
+    }
 
+    /**
+     * Produces an error handler that ignores 'unique constraint failed' errors from sqlite.
+     * This means that the promise will return as complete even if such an error occurs and no error message will be
+     * shown in the log.
+     *
+     * @param promise
+     * @return
+     */
+    private Handler<Throwable> ignoreUniqueConstraintViolationErrorHandler(Promise promise){
+        return (err)->{
+            if(err.getMessage().contains("A UNIQUE constraint failed")){
+                promise.complete();
+            }else{
+                log.error(err.getMessage(), err);
+                promise.fail(err.getCause());
+            }
+        };
+    }
+
+    /**
+     * Produces an error handler that mutes 'primary key constraint failed' errors from sqlite.
+     * This means that the promise will still fail if the 'primary key constraint failed' error occurs, but the log message will be
+     * suppressed.
+     *
+     * @param promise
+     * @return
+     */
+    private Handler<Throwable> mutePrivateKeyViolationError(Promise promise){
+        return (err)->{
+            if(!err.getMessage().contains("A PRIMARY KEY constraint failed")){
+                log.error(err.getMessage(), err);
+            }
+            promise.fail(err.getCause());
+        };
+    }
+
+    private Handler<Throwable> genericErrorHandler(Promise promise){
+        return (err)->{
+            log.error(err.getMessage(),err);
+            promise.fail(err.getCause());
+        };
+    }
+
+    private Future<Void> executeParameterizedQuery(Promise promise, String sql, Tuple parameters, Handler<Throwable> errHandler){
+
+        pool.preparedQuery(sql).execute(parameters)
+                .onSuccess(done->promise.complete())
+                .onFailure(errHandler);
+        return promise.future();
+    }
 
 }

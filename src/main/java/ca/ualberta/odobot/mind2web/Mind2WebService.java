@@ -34,7 +34,7 @@ public class Mind2WebService extends HttpServiceVerticle {
 
     private static final Logger log = LoggerFactory.getLogger(Mind2WebService.class);
 
-    Neo4JUtils neo4j;
+    static Neo4JUtils neo4j;
 
     Route modelConstructionRoute;
 
@@ -492,7 +492,7 @@ public class Mind2WebService extends HttpServiceVerticle {
 
         List<Future<Set<DynamicXPath>>> futures = tasks.stream()
                 .map(o->(JsonObject)o)
-                .map(json->Mind2WebUtils.taskToDXpath(json, xpathsFromModel))
+                .map(json->Mind2WebUtils.taskToDXpath(json))
                 .collect(ArrayList::new, (list,o)->list.addAll(o), ArrayList::addAll);
 
         Future.all(futures)

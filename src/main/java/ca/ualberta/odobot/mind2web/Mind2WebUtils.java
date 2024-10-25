@@ -59,7 +59,7 @@ public class Mind2WebUtils {
         }
     }
 
-    public static List<Future<Set<DynamicXPath>>> taskToDXpath(JsonObject task, List<String> xpathsFromModel){
+    public static List<Future<Set<DynamicXPath>>> taskToDXpath(JsonObject task){
 
 
         //Get the actions from the task
@@ -67,27 +67,35 @@ public class Mind2WebUtils {
         String taskId = task.getString("annotation_id");
         String website = task.getString("website");
 
+        List<String> xpathsFromWhichToStartMining = Mind2WebService.neo4j.getXpathsForWebsite(website);
+
         //Go through all the actions in this task and check queue up requests to the database to check if they're already done.
-        //TODO: this doesn't actually correspond with real progress because we will only have DB records if dynamic Xpaths were found. So we will re-check actions where none were found...
          return actions.stream()
                 .map(o->(JsonObject)o)
-                 //TODO: comment
-                .map(json->new String [] {json.getString("raw_html"), taskId + "|" +json.getString("action_uid")})
-                 .map(data->{
+
+                 .map(json->{
+
+                     String [] data = new String [] {json.getString("raw_html"), taskId + "|" +json.getString("action_uid")};
+
                      AlreadyDone alreadyDone = new AlreadyDone();
-                     alreadyDone.future = Mind2WebService.sqliteService.hasDynamicXpathEntry(data[1], website).compose(_isDone->{
+                     alreadyDone.future = Mind2WebService.sqliteService.hasBeenMinedForDynamicXpaths(taskId, json.getString("action_uid")).compose(_isDone->{
                          if(_isDone){
                              log.info("{} is already done", alreadyDone.id);
                              return Future.succeededFuture(Set.of());
                          }else{
+                             //If this task-action hasn't already been mined for dynamic xpaths, lets mine them now.
                              String cleanHTML = HTMLCleaningTools.clean(alreadyDone.rawHtml);
                              Document doc = Jsoup.parse(cleanHTML);
 
                              //Create a new mining task to execute through a thread pool, which uses the document and xpaths to mine for dynamic xpaths.
-                             DynamicXpathMiningTask miningTask = new DynamicXpathMiningTask(cleanHTML, alreadyDone.website, doc, xpathsFromModel);
+                             DynamicXpathMiningTask miningTask = new DynamicXpathMiningTask(cleanHTML, alreadyDone.website, doc, xpathsFromWhichToStartMining);
                              DynamicXpathMiner.executorService.submit(miningTask);
 
-                             return miningTask.getFuture().onSuccess(done->log.info("Finished {} found {} dynamic xpaths", alreadyDone.id, done.size()));
+                             return miningTask.getFuture()
+                                     .onSuccess(done->{
+                                         log.info("Finished {} found {} dynamic xpaths in {}ms", alreadyDone.id, done.size(), miningTask.getElapsedTimeInMilli());
+                                         Mind2WebService.sqliteService.saveDynamicXpathMiningProgress(taskId, json.getString("action_uid"));
+                                     });
                          }
                      });
                      alreadyDone.id = data[1];
