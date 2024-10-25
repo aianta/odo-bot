@@ -88,7 +88,7 @@ public class Mind2WebUtils {
                              Document doc = Jsoup.parse(cleanHTML);
 
                              //Create a new mining task to execute through a thread pool, which uses the document and xpaths to mine for dynamic xpaths.
-                             DynamicXpathMiningTask miningTask = new DynamicXpathMiningTask(cleanHTML, alreadyDone.website, doc, xpathsFromWhichToStartMining);
+                             DynamicXpathMiningTask miningTask = new DynamicXpathMiningTask(data[1], alreadyDone.website, doc, xpathsFromWhichToStartMining);
                              DynamicXpathMiner.executorService.submit(miningTask);
 
                              return miningTask.getFuture()
