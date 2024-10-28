@@ -168,10 +168,10 @@ public class HTMLCleaningTools {
     private static String makeHTMLTagString(String backendNodeId, String buckeye){
         StringBuilder sb = new StringBuilder();
         sb.append("<html ");
-        if(backendNodeId != null){
+        if(backendNodeId != null && !backendNodeId.isEmpty() && !backendNodeId.isBlank()){
             sb.append("backend_node_id=\"" + backendNodeId + "\" ");
         }
-        if(buckeye != null){
+        if(buckeye != null && !buckeye.isEmpty() && !buckeye.isBlank()){
             sb.append("data_pw_testid_buckeye=\"" + buckeye + "\" ");
         }
         sb.append(">");

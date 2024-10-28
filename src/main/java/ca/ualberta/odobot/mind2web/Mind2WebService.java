@@ -18,6 +18,10 @@ import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.ext.web.Route;
 import io.vertx.rxjava3.ext.web.RoutingContext;
 import io.vertx.serviceproxy.ServiceBinder;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.nodes.NodeIterator;
 import org.neo4j.graphdb.Transaction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -143,6 +147,7 @@ public class Mind2WebService extends HttpServiceVerticle {
 
         String rawHTMLString = rc.body().asString();
 
+
         String cleanHTMLString = HTMLCleaningTools.clean(rawHTMLString);
 
         //Save raw and clean strings to the routing context
@@ -157,18 +162,103 @@ public class Mind2WebService extends HttpServiceVerticle {
 
         log.info("RawHTML size: {} - CleanHTML size: {} delta: {} compressionRatio: {}", rawHTMLString.length(), cleanHTMLString.length(), sizeDelta, compressionRatio);
 
+        //Save the length of the cleaned html, this helps compute stats about how much pruning the pruning step actually did later.
+        rc.put("cleanSize", cleanHTMLString.length());
+        rc.put("rawSize", rawHTMLString.length());
+
         rc.next();
     }
 
     private void identifyCandidates(RoutingContext rc){
 
+        String website = rc.queryParam("website").get(0);
+
+        //Retrieve xpaths from the navmodel for this website and save them to the routing context.
+        List<String> xpaths = neo4j.getXpathsForWebsite(website);
+        rc.put("xpaths", xpaths);
+
+        //Retrieve dynamic xpaths for this website and save them to the routing context.
+        sqliteService.loadDynamicXpaths(website).onSuccess(dxpaths->{
+
+            List<DynamicXPath> _dxpaths = dxpaths.stream()
+                    .map(o->(JsonObject)o)
+                    .map(DynamicXPath::fromJson)
+                    .collect(Collectors.toList());
+
+            rc.put("dxpaths",_dxpaths);
+
+
+            //Then we parse the cleaned HTML into a Jsoup Document, so we can taint candidates on the basis of the xpaths and dxpaths that have been retrieved.
+            Document document = Jsoup.parse((String)rc.get("cleanHTMLString"));
+
+            //Taint elements with the xpaths
+            DocumentTainter.taint(document, rc.get("xpaths"));
+
+            //Taint elements with the dynamic xpaths
+            DocumentTainter.taintWithDynamicXpaths(document, _dxpaths);
+
+            //Print some tainting stats.
+            int taintedElements = 0;
+            int untaintedElements = 0;
+            for(Element e: document.getAllElements()){
+                if(e.attributes().hasKey(DocumentTainter.TAINT)){
+                    taintedElements++;
+                }else{
+                    untaintedElements++;
+                }
+            }
+
+            log.info("{} xpaths and {} dynamic xpaths were used to taint. Cleaned Document has {} elements, of which {} are tainted. Taint ratio: {}", ((List<String>)rc.get("xpaths")).size(), _dxpaths.size(), taintedElements + untaintedElements, taintedElements, (double)taintedElements/(double)(taintedElements + untaintedElements));
+
+            //Save the document to the routing context and proceed to pruning step.
+            rc.put("document", document);
+            rc.next();
+        });
+
+
     }
 
     private void prune(RoutingContext rc){
 
+        /**
+         * At this stage the elements to keep have been tainted by the previous step.
+         * Our job is simply to iterate through all elements in the document and remove them if they are not tainted.
+         */
+        Document taintedDocument = rc.get("document");
+
+        NodeIterator<Element> it = new NodeIterator<>(taintedDocument.root(), Element.class);
+
+        while (it.hasNext()){
+            Element cursor = it.next();
+            //If the element isn't tainted, remove it.
+            if(!cursor.attributes().hasKey(DocumentTainter.TAINT)){
+                it.remove();
+            }
+        }
+
+        //Next do another pass through the document with what's left and remove the taint attributes.
+        it = new NodeIterator<>(taintedDocument.root(), Element.class);
+        while (it.hasNext()){
+            Element cursor = it.next();
+            cursor.attributes().remove(DocumentTainter.TAINT);
+        }
+
+        log.info("Pruned Tree:\n{}", taintedDocument.html());
+
+        rc.next();
+
     }
 
     private void annotate(RoutingContext rc){
+
+        //TODO: Annotation logic
+        Document document = rc.get("document");
+
+        String output = document.html();
+
+        log.info("\nOriginal Raw Document size: {}\nOriginal Cleaned Document Size: {}\nFinal Document Size: {}", (int)rc.get("rawSize"),(int)rc.get("cleanSize"), output.length());
+
+        rc.response().putHeader("Content-Type","text/html").setStatusCode(200).end(output);
 
     }
 
@@ -487,9 +577,7 @@ public class Mind2WebService extends HttpServiceVerticle {
         //Get the json traces from the routing context
         JsonArray tasks = rc.get("taskData");
 
-        //Get all the xpaths once
-        final List<String> xpathsFromModel = neo4j.getAllXpaths();
-
+        //Assemble a list of futures the return sets of Dynamic Xpaths mined from mind2web tasks.
         List<Future<Set<DynamicXPath>>> futures = tasks.stream()
                 .map(o->(JsonObject)o)
                 .map(json->Mind2WebUtils.taskToDXpath(json))
@@ -500,7 +588,7 @@ public class Mind2WebService extends HttpServiceVerticle {
                         compositeFuture -> {
                             List<Set<DynamicXPath>> miningResults = compositeFuture.list();
 
-                            dynamicXPaths = miningResults.stream().collect(HashSet::new, (set,o)->set.addAll(o), HashSet::addAll);
+                            dynamicXPaths.addAll(miningResults.stream().collect(HashSet::new, (set,o)->set.addAll(o), HashSet::addAll));
 
                         }
                 ).onComplete(done->{

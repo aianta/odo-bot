@@ -70,7 +70,7 @@ public class DynamicXpathMiner {
          *  Thus, we should search up the DOM tree for an element that could serve as a dynamic tag.
          */
         int height = 0;
-        while (target.parent() != null && height < MAX_HEIGHT){
+        while (target.parent() != null){
             height++;
             target = target.parent();
             xpath = xpath.substring(0, xpath.lastIndexOf("/")); //This should never return -1, since we only climb up the tree if the target element has another parent.
@@ -102,7 +102,7 @@ public class DynamicXpathMiner {
 
         //If the element has siblings, check to see if their tags match that of the target element.
         List<Element> siblingsToCheck = siblings.stream().filter(sibling->sibling.tagName().equals(target.tagName()))
-                .limit(MAX_SIBLINGS_TO_CHECK)
+//                .limit(MAX_SIBLINGS_TO_CHECK)
                 .filter(sibling->haveCommonSubTree(sibling, target)) //Check if the siblings that share the tag name with the target element have common subtrees with the element.
                 .collect(Collectors.toList());
 

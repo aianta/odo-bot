@@ -2,6 +2,7 @@ package ca.ualberta.odobot.sqlite.impl;
 
 import ca.ualberta.odobot.semanticflow.model.StateSample;
 import ca.ualberta.odobot.semanticflow.model.TrainingMaterials;
+import ca.ualberta.odobot.semanticflow.navmodel.DynamicXPath;
 import ca.ualberta.odobot.sqlite.LogParser;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import io.vertx.core.Future;
@@ -46,6 +47,30 @@ public class SqliteServiceImpl implements SqliteService {
         createDynamicXpathProgressTable();
     }
 
+
+    public Future<JsonArray> loadDynamicXpaths(String website){
+        Promise<JsonArray> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            SELECT * FROM dynamic_xpaths WHERE website = ?;
+        """).execute(Tuple.of(website))
+                .onSuccess(results->{
+                    JsonArray dynamicXpaths = new JsonArray();
+                    results.forEach(row->{
+                        DynamicXPath dxpath = DynamicXPath.fromRow(row);
+                        dynamicXpaths.add(dxpath.toJson());
+                    });
+
+                    promise.complete(dynamicXpaths);
+                })
+                .onFailure(err->{
+                    log.error(err.getMessage(),err);
+                    promise.fail(err.getCause());
+                })
+        ;
+
+        return promise.future();
+    }
 
 
     public Future<JsonArray> selectLogs(long timestampMilli, long range){

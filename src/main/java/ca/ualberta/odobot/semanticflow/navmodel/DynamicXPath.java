@@ -1,6 +1,7 @@
 package ca.ualberta.odobot.semanticflow.navmodel;
 
 import io.vertx.core.json.JsonObject;
+import io.vertx.sqlclient.Row;
 import org.apache.commons.lang3.builder.HashCodeBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -9,6 +10,17 @@ public class DynamicXPath {
 
     private static final Logger log = LoggerFactory.getLogger(DynamicXPath.class);
 
+    public static DynamicXPath fromRow(Row row){
+
+        DynamicXPath result = new DynamicXPath();
+
+        result.setSuffix(row.getString("suffix"));
+        result.setPrefix(row.getString("prefix"));
+        result.setDynamicTag(row.getString("tag"));
+
+        return result;
+
+    }
     public static DynamicXPath fromJson(JsonObject json){
         DynamicXPath result = new DynamicXPath();
 

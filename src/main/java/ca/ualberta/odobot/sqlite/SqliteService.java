@@ -30,6 +30,8 @@ public interface SqliteService {
 
     Future<Void> saveStateSample(JsonObject json);
 
+    Future<JsonArray> loadDynamicXpaths(String website);
+
     Future<Void> saveTrainingExemplar(JsonObject json);
 
     Future<Void> saveDynamicXpathMiningProgress(String taskId, String actionId);
