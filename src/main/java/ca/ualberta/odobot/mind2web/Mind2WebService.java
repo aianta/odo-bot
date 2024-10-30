@@ -44,6 +44,8 @@ public class Mind2WebService extends HttpServiceVerticle {
 
     Route stateAbstractionRoute;
 
+    Route stateAbstractionRouteV2;
+
     Route mineDynamicXpathsRoute;
 
     @Override
@@ -129,6 +131,11 @@ public class Mind2WebService extends HttpServiceVerticle {
         stateAbstractionRoute.handler(this::prune);
         stateAbstractionRoute.handler(this::annotate);
 
+        //Configure state abstraction route for re-rooting strategy
+        stateAbstractionRouteV2 = api.route().method(HttpMethod.POST).path("/state-abstraction-v2");
+        stateAbstractionRouteV2.handler(this::cleanHTML);
+        stateAbstractionRouteV2.handler(this::reroot);
+
 
         neo4j = new Neo4JUtils("bolt://localhost:7687", "neo4j", "odobotdb");
 
@@ -195,7 +202,7 @@ public class Mind2WebService extends HttpServiceVerticle {
             DocumentTainter.taint(document, rc.get("xpaths"));
 
             //Taint elements with the dynamic xpaths
-            DocumentTainter.taintWithDynamicXpaths(document, _dxpaths);
+            //DocumentTainter.taintWithDynamicXpaths(document, _dxpaths);
 
             //Print some tainting stats.
             int taintedElements = 0;
@@ -264,6 +271,45 @@ public class Mind2WebService extends HttpServiceVerticle {
             //If the output does not contain the target element, return a 404 error.
             rc.response().setStatusCode(404).end();
         }
+
+    }
+
+    private void reroot(RoutingContext rc){
+
+        String website = rc.queryParam("website").get(0);
+
+        List<String> xpaths = neo4j.getXpathsForWebsite(website);
+
+        rc.put("xpaths", xpaths);
+
+        sqliteService.loadDynamicXpaths(website).onSuccess(dxpaths->{
+            List<DynamicXPath> _dxpaths = dxpaths.stream()
+                    .map(o->(JsonObject)o)
+                    .map(DynamicXPath::fromJson)
+                    .collect(Collectors.toList());
+
+
+            rc.put("dxpaths", _dxpaths);
+
+            Document document = Jsoup.parse((String)rc.get("cleanHTMLString"));
+
+            List<Element> targetElements = ElementHarvester.getElementsByXpaths(document, xpaths);
+            targetElements.addAll(ElementHarvester.getElementsByDynamicXpaths(document, _dxpaths));
+
+            List<String> elementStrings = targetElements.stream().map(Element::html).collect(Collectors.toList());
+
+            document.body().html(""); //Clear the body of the cleaned document.
+
+            elementStrings.forEach(el->document.body().prepend(el));
+
+            String output = document.html();
+            if(output.contains("data_pw_testid_buckeye")){
+                rc.response().putHeader("Content-Type", "text/html").setStatusCode(200).end(output);
+            }else{
+                rc.response().setStatusCode(404).end();
+            }
+
+        });
 
     }
 
