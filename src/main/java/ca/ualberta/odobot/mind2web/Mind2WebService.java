@@ -258,7 +258,12 @@ public class Mind2WebService extends HttpServiceVerticle {
 
         log.info("\nOriginal Raw Document size: {}\nOriginal Cleaned Document Size: {}\nFinal Document Size: {}", (int)rc.get("rawSize"),(int)rc.get("cleanSize"), output.length());
 
-        rc.response().putHeader("Content-Type","text/html").setStatusCode(200).end(output);
+        if(output.contains("data_pw_testid_buckeye")){
+            rc.response().putHeader("Content-Type","text/html").setStatusCode(200).end(output);
+        }else{
+            //If the output does not contain the target element, return a 404 error.
+            rc.response().setStatusCode(404).end();
+        }
 
     }
 

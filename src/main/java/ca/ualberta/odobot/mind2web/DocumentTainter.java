@@ -33,39 +33,48 @@ public class DocumentTainter {
          *  3) taint descendants
           */
 
-        Elements elements = document.selectXpath(dxpath.getPrefix());
+        Elements prefixElements = document.selectXpath(dxpath.getPrefix());
 
-        if(elements.size() == 1){
-            Element element = elements.get(0);
-            taint(element); //Taint the prefix element.
+        /**
+         * There are situations in which the xpath corresponding to the dxpath prefix will return multiple elements.
+         * See notes under thoughts 2024 -> 'October 30th - State Abstraction v1 Showtime' -> 'One Xpath multiple results investigation'
+         */
+        if (prefixElements.size() >= 1) {
 
-            //Then taint the whole prefix leading to the root.
-            Element cursor = element;
-            while (cursor.parent() != null){
-                cursor = cursor.parent();
-                taint(element);
+            for(Element e: prefixElements){
+                taint(e); //Taint prefix element
+
+                //Then taint the whole prefix leading to the root.
+                Element cursor = e;
+                while (cursor.parent() != null){
+                    cursor = cursor.parent();
+                    taint(cursor);
+                }
+
+                //Next taint the dynamic tags.
+                //Do this by filtering through the prefixed element's children for all children whose tag matches the dynamic tag.
+                List<Element> dynamicTags = e.children().stream()
+                        .filter(el->el.tagName().equals(dxpath.getDynamicTag()))
+                        .collect(Collectors.toList());
+
+                //Taint all of these elements
+                dynamicTags.forEach(DocumentTainter::taint);
+
+                //Finally we need to taint all descendants of all the dynamic tags as well.
+                dynamicTags.forEach(el->{
+                    NodeIterator<Element> descendants = new NodeIterator(el, Element.class);
+                    while (descendants.hasNext()){
+                        Element descendant = descendants.next();
+                        taint(descendant);
+                    }
+                });
+
             }
 
-            //Next taint the dynamic tags.
-            //Do this by filtering through the prefixed element's children for all children whose tag matches the dynamic tag.
-            List<Element> dynamicTags = element.children().stream()
-                    .filter(e->e.tagName().equals(dxpath.getDynamicTag()))
-                    .collect(Collectors.toList());
 
-            //Taint all of these elements
-            dynamicTags.forEach(DocumentTainter::taint);
 
-            //Finally we need to taint all descendants of all the dynamic tags as well.
-            dynamicTags.forEach(e->{
-                NodeIterator<Element> descendants = new NodeIterator(e, Element.class);
-                while (descendants.hasNext()){
-                    Element descendant = descendants.next();
-                    taint(descendant);
-                }
-            });
-
-        }else{
-            log.warn("[Taint Warning] Cannot taint, {} elements found for dynamic xpath prefix: {}", elements.size(), dxpath.getPrefix());
+        } else{
+            log.warn("[Taint Warning] Cannot taint, {} elements found for dynamic xpath prefix: {}", prefixElements.size(), dxpath.getPrefix());
         }
 
         return document;
