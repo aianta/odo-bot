@@ -35,6 +35,38 @@ public class Mind2WebUtils {
 
     public static Set<String> targetTags = new HashSet<>();
 
+    public static String toAbsoluteXpath(String xpath){
+        String _xpath = "";
+        if(xpath.startsWith("//")){
+            _xpath = xpath.substring(2);
+        }
+
+        String [] segments = _xpath.split("/");
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("//");
+
+        for (int i = 0; i < segments.length; i++){
+            String segment = segments[i];
+
+            if(!segment.contains("[")){
+                segment += "[1]";
+                segments[i] = segment;
+            }
+
+            sb.append(segment);
+            if(i < segments.length-1){
+                sb.append("/");
+            }
+        }
+
+        if(xpath.endsWith("/")){
+            sb.append("/");
+        }
+
+        return sb.toString();
+
+    }
 
     private static class BuckeyeMismatch extends Exception{
         public String expectedAttributeXpath;
@@ -58,6 +90,8 @@ public class Mind2WebUtils {
             return future;
         }
     }
+
+
 
     public static List<Future<Set<DynamicXPath>>> taskToDXpath(JsonObject task){
 

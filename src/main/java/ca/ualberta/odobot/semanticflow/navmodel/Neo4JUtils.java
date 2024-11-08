@@ -1168,6 +1168,39 @@ public class Neo4JUtils {
     }
 
 
+    /**
+     * Get the xpaths associated with the actions of a trajectory/mind2web task.
+     *
+     * @param actionIds a list of mind2web action_uids corresponding to a Synapse trajectory/mind2web task (identified by annotation_id).
+     * @return A list of the xpaths belonging to nodes containing one or more the provided action_uids in their instances property.
+     */
+    public List<String> getXpathsForTrajectory(List<String> actionIds){
+        String sQuery = """
+                match (n) with 
+                    n.instances as instances,
+                    n
+                    where any(action in $action_ids where action in instances) 
+                    return n.xpath;
+                """;
+
+        Query query = new Query(sQuery, parameters("action_ids", actionIds));
+
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+            List<Record> results = session.executeRead(tx->{
+                var result = tx.run(query);
+                return result.list();
+            });
+
+            List<String> xpaths = new ArrayList<>();
+            for(Record r: results){
+                xpaths.add(r.get(0).asString());
+            }
+
+            return xpaths;
+        }
+
+    }
+
     public List<String> getAllXpaths(){
         String sQuery = """
                     match (n) where n.xpath is not null return n.xpath;

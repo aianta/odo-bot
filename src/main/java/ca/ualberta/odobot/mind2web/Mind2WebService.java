@@ -10,7 +10,6 @@ import ca.ualberta.odobot.semanticflow.navmodel.nodes.NavNode;
 import ca.ualberta.odobot.semanticflow.navmodel.nodes.StartNode;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import io.reactivex.rxjava3.core.Completable;
-import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.JsonArray;
@@ -46,6 +45,7 @@ public class Mind2WebService extends HttpServiceVerticle {
 
     Route stateAbstractionRouteV2;
 
+    Route stateAbstractionRouteV3;
     Route mineDynamicXpathsRoute;
 
     @Override
@@ -129,17 +129,42 @@ public class Mind2WebService extends HttpServiceVerticle {
         stateAbstractionRoute.handler(this::cleanHTML);
         stateAbstractionRoute.handler(this::identifyCandidates);
         stateAbstractionRoute.handler(this::prune);
-        stateAbstractionRoute.handler(this::annotate);
 
         //Configure state abstraction route for re-rooting strategy
         stateAbstractionRouteV2 = api.route().method(HttpMethod.POST).path("/state-abstraction-v2");
         stateAbstractionRouteV2.handler(this::cleanHTML);
         stateAbstractionRouteV2.handler(this::reroot);
 
+        //Configure state abstraction route for annotated strategy
+        stateAbstractionRouteV3 = api.route().method(HttpMethod.POST).path("/state-abstraction-v3");
+        stateAbstractionRouteV3.handler(this::processAnnotatedStateAbstractionRequest);
+        stateAbstractionRouteV3.handler(this::cleanHTML);
+        stateAbstractionRouteV3.handler(this::annotate);
+        //stateAbstractionRouteV3.handler(this::identifyCandidates);
+        stateAbstractionRouteV3.handler(this::prune);
+
+
+
 
         neo4j = new Neo4JUtils("bolt://localhost:7687", "neo4j", "odobotdb");
 
         return Completable.complete();
+    }
+
+
+    private void processAnnotatedStateAbstractionRequest(RoutingContext rc){
+
+        JsonObject requestData =  rc.body().asJsonObject();
+
+        String website = requestData.getString("website");
+        String rawHtml = requestData.getString("raw_html");
+        JsonObject trajectoryInfo = requestData.getJsonObject("trajectory_info");
+
+        rc.put("website", website);
+        rc.put("rawHTMLString", rawHtml);
+        rc.put("trajectoryInfo", trajectoryInfo);
+
+        rc.next();
     }
 
     /**
@@ -152,7 +177,12 @@ public class Mind2WebService extends HttpServiceVerticle {
      */
     private void cleanHTML(RoutingContext rc){
 
-        String rawHTMLString = rc.body().asString();
+        String rawHTMLString;
+        if(rc.get("rawHTMLString") == null){
+            rawHTMLString = rc.body().asString();
+        }else{
+            rawHTMLString = rc.get("rawHTMLString");
+        }
 
 
         String cleanHTMLString = HTMLCleaningTools.clean(rawHTMLString);
@@ -161,7 +191,7 @@ public class Mind2WebService extends HttpServiceVerticle {
         rc.put("rawHTMLString", rawHTMLString);
         rc.put("cleanHTMLString", cleanHTMLString);
 
-        log.info("cleanedHTMLString: \n{}", cleanHTMLString);
+        //log.info("cleanedHTMLString: \n{}", cleanHTMLString);
 
         //Compute some cleaning metrics
         double sizeDelta = rawHTMLString.length() - cleanHTMLString.length();
@@ -177,8 +207,12 @@ public class Mind2WebService extends HttpServiceVerticle {
     }
 
     private void identifyCandidates(RoutingContext rc){
-
-        String website = rc.queryParam("website").get(0);
+        String website;
+        if(rc.get("website") != null){
+            website = rc.get("website");
+        }else{
+            website = rc.queryParam("website").get(0);
+        }
 
         //Retrieve xpaths from the navmodel for this website and save them to the routing context.
         List<String> xpaths = neo4j.getXpathsForWebsite(website);
@@ -194,9 +228,16 @@ public class Mind2WebService extends HttpServiceVerticle {
 
             rc.put("dxpaths",_dxpaths);
 
+            Document document;
+            if (rc.get("document") != null){
+                //If we're given an annotated document work with that.
+                document = rc.get("document");
+            }else{
+                //If not, then we parse the cleaned HTML into a Jsoup Document, so we can taint candidates on the basis of the xpaths and dxpaths that have been retrieved.
+                document = Jsoup.parse((String)rc.get("cleanHTMLString"));
+            }
 
-            //Then we parse the cleaned HTML into a Jsoup Document, so we can taint candidates on the basis of the xpaths and dxpaths that have been retrieved.
-            Document document = Jsoup.parse((String)rc.get("cleanHTMLString"));
+
 
             //Taint elements with the xpaths
             DocumentTainter.taint(document, rc.get("xpaths"));
@@ -233,6 +274,7 @@ public class Mind2WebService extends HttpServiceVerticle {
          */
         Document taintedDocument = rc.get("document");
 
+
         NodeIterator<Element> it = new NodeIterator<>(taintedDocument.root(), Element.class);
 
         while (it.hasNext()){
@@ -248,35 +290,83 @@ public class Mind2WebService extends HttpServiceVerticle {
         while (it.hasNext()){
             Element cursor = it.next();
             cursor.attributes().remove(DocumentTainter.TAINT);
+
+            if(cursor.attributes().hasKey("backend_node_id")){
+                //Replace backend_node_id with id.
+                String idValue = cursor.attributes().get("backend_node_id");
+                cursor.attributes().remove("backend_node_id");
+
+                //If the element has a website defined id, add it as an attribute, and let id be the backend node id
+                if(cursor.attributes().hasKey("id")){
+                    String nonBackendNodeIdValue = cursor.attributes().get("id");
+                    cursor.attributes().remove("id");
+                    cursor.attributes().add(nonBackendNodeIdValue, null);
+                }
+
+                cursor.attributes().add("id", idValue);
+            }
+
+            //Clear the buckeye
+            if(cursor.attributes().hasKey("data_pw_testid_buckeye")){
+                cursor.attributes().remove("data_pw_testid_buckeye");
+            }
+
+            //If the type attribute of an element has a value that is just its tagname, remove it.
+            if(cursor.attributes().hasKey("type") && cursor.attributes().get("type").toLowerCase().equals(cursor.tagName().toLowerCase())){
+                cursor.attributes().remove("type");
+            }
+
         }
 
-        log.info("Pruned Tree:\n{}", taintedDocument.html());
-
-        rc.next();
-
-    }
-
-    private void annotate(RoutingContext rc){
+        //log.info("Pruned Tree:\n{}", taintedDocument.html());
 
         //TODO: Annotation logic
         Document document = rc.get("document");
 
         String output = document.html();
+        output = output.replaceAll("\n", "");
 
         log.info("\nOriginal Raw Document size: {}\nOriginal Cleaned Document Size: {}\nFinal Document Size: {}", (int)rc.get("rawSize"),(int)rc.get("cleanSize"), output.length());
 
-        if(output.contains("data_pw_testid_buckeye")){
-            rc.response().putHeader("Content-Type","text/html").setStatusCode(200).end(output);
-        }else{
-            //If the output does not contain the target element, return a 404 error.
-            rc.response().setStatusCode(404).end();
-        }
+        rc.response().putHeader("Content-Type","text/html").setStatusCode(200).end(output);
 
+    }
+
+    private void annotate(RoutingContext rc){
+
+        Document document = Jsoup.parse((String)rc.get("cleanHTMLString"));
+
+        JsonObject trajectoryInfo = rc.get("trajectoryInfo");
+        JsonObject symbolMapping = trajectoryInfo.getJsonObject("symbolMapping");
+        JsonObject trajectories = trajectoryInfo.getJsonObject("trajectories");
+
+        trajectories.forEach(entry->{
+            String annotationId = entry.getKey();
+            List<String> actionIds = ((JsonArray)entry.getValue()).stream().map(s->(String)s).collect(Collectors.toList());
+
+            List<String> xpaths = neo4j.getXpathsForTrajectory(actionIds);
+
+            String annotation = symbolMapping.getString(annotationId);
+
+            DocumentAnnotator.annotate(document, xpaths, annotation);
+
+        });
+
+        //For debugging
+        //log.info("annotatedDocument:\n{}", document.html());
+
+        rc.put("document", document);
+        rc.next();
     }
 
     private void reroot(RoutingContext rc){
 
-        String website = rc.queryParam("website").get(0);
+        String website;
+        if(rc.get("website") != null){
+            website = rc.get("website");
+        }else{
+            website = rc.queryParam("website").get(0);
+        }
 
         List<String> xpaths = neo4j.getXpathsForWebsite(website);
 
@@ -294,7 +384,10 @@ public class Mind2WebService extends HttpServiceVerticle {
             Document document = Jsoup.parse((String)rc.get("cleanHTMLString"));
 
             List<Element> targetElements = ElementHarvester.getElementsByXpaths(document, xpaths);
-            targetElements.addAll(ElementHarvester.getElementsByDynamicXpaths(document, _dxpaths));
+
+            if(rc.queryParam("includeDXpaths").size() > 0){
+                targetElements.addAll(ElementHarvester.getElementsByDynamicXpaths(document, _dxpaths));
+            }
 
             List<String> elementStrings = targetElements.stream().map(Element::html).collect(Collectors.toList());
 
@@ -302,12 +395,45 @@ public class Mind2WebService extends HttpServiceVerticle {
 
             elementStrings.forEach(el->document.body().prepend(el));
 
-            String output = document.html();
-            if(output.contains("data_pw_testid_buckeye")){
-                rc.response().putHeader("Content-Type", "text/html").setStatusCode(200).end(output);
-            }else{
-                rc.response().setStatusCode(404).end();
+            NodeIterator<Element> it = new NodeIterator<>(document.root(), Element.class);
+            while (it.hasNext()){
+                Element cursor = it.next();
+
+                if(cursor.attributes().hasKey("backend_node_id")){
+                    //Replace backend_node_id with id.
+                    String idValue = cursor.attributes().get("backend_node_id");
+                    cursor.attributes().remove("backend_node_id");
+
+                    //If the element has a website defined id, add it as an attribute, and let id be the backend node id
+                    if(cursor.attributes().hasKey("id")){
+                        String nonBackendNodeIdValue = cursor.attributes().get("id");
+                        cursor.attributes().remove("id");
+                        cursor.attributes().add(nonBackendNodeIdValue, null);
+                    }
+
+                    cursor.attributes().add("id", idValue);
+                }
+
+                //Clear the buckeye
+                if(cursor.attributes().hasKey("data_pw_testid_buckeye")){
+                    cursor.attributes().remove("data_pw_testid_buckeye");
+                }
+
+                //If the type attribute of an element has a value that is just its tagname, remove it.
+                if(cursor.attributes().hasKey("type") && cursor.attributes().get("type").toLowerCase().equals(cursor.tagName().toLowerCase())){
+                    cursor.attributes().remove("type");
+                }
             }
+
+            String output = document.html();
+            log.info("final result: {}", output);
+
+            output = output.replaceAll("\n", "");
+
+            rc.response().putHeader("Content-Type", "text/html").setStatusCode(200).end(output);
+            log.info("\nOriginal Raw Document size: {}\nOriginal Cleaned Document Size: {}\nFinal Document Size: {}", (int)rc.get("rawSize"),(int)rc.get("cleanSize"), output.length());
+
+
 
         });
 
@@ -668,4 +794,5 @@ public class Mind2WebService extends HttpServiceVerticle {
     private String getFullMineDynamicXpathRoutePath(){
         return _config.getString("apiPathPrefix").substring(0, _config.getString("apiPathPrefix").length()-2) + MINE_DYNAMIC_XPATHS_PATH;
     }
+
 }
