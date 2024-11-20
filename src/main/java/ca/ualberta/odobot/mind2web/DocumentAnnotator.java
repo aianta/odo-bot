@@ -17,7 +17,7 @@ public class DocumentAnnotator {
 
         int annotationCount = 0;
         for(String xpath:xpaths){
-            if(annotate(document, xpath, annotation)){
+            if(annotate(document, xpath, annotation) != null){
                 log.info("Annotated element at: {}", xpath);
                 annotationCount++;
             };
@@ -33,9 +33,9 @@ public class DocumentAnnotator {
      * @param document
      * @param xpath
      * @param annotation
-     * @return true if an annotation was made.
+     * @return the backend_node_id of the element that was annotated. -1 if no element was annotated.
      */
-    private static boolean annotate(Document document, String xpath, String annotation){
+    public static String annotate(Document document, String xpath, String annotation){
 
         String absoluteXpath = Mind2WebUtils.toAbsoluteXpath(xpath);
         log.info("Original Xpath: {}", xpath);
@@ -46,7 +46,7 @@ public class DocumentAnnotator {
 
         //If the xpath doesn't resolve to any elements there's nothing to annotate.
         if(targetElements.isEmpty()){
-            return false;
+            return null;
         }
 
         Element targetElement = targetElements.get(0);
@@ -64,6 +64,7 @@ public class DocumentAnnotator {
         //Taint the element and all it's parents leading up to the root to ensure they do not get pruned.
         Element curr = targetElement;
         DocumentTainter.taint(curr);
+        DocumentTainter.taintKeepId(curr);
 
 
         while (curr.parent() != null){
@@ -73,7 +74,7 @@ public class DocumentAnnotator {
 
 
 
-        return true;
+        return targetElement.attributes().get("backend_node_id");
     }
     
 }

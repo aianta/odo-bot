@@ -32,6 +32,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.SQLITE_SERVICE_ADDRESS;
+import static ca.ualberta.odobot.mind2web.DocumentTainter.KEEP_ID_TAINT;
 
 public class Mind2WebService extends HttpServiceVerticle {
 
@@ -46,6 +47,11 @@ public class Mind2WebService extends HttpServiceVerticle {
     Route stateAbstractionRouteV2;
 
     Route stateAbstractionRouteV3;
+
+    Route stateAbstractionRouteV4;
+
+    Route stateAbstractionRouteV4Update;
+
     Route mineDynamicXpathsRoute;
 
     @Override
@@ -69,6 +75,12 @@ public class Mind2WebService extends HttpServiceVerticle {
     private static final String MODEL_CONSTRUCTION_PATH = "/model";
 
     private static final String MINE_DYNAMIC_XPATHS_PATH = "/mineDXpaths";
+
+    Map<UUID, List<Trajectory>> requestTrajectories = new HashMap<>();
+
+    Map<UUID, Map<String, String>> requestTrajectoryXpaths = new HashMap<>();
+
+    Map<UUID, Map<String,String>> requestAnnotatedBackendIds = new HashMap<>();
 
     /**
      * Stores <guidanceId, current step>
@@ -126,6 +138,7 @@ public class Mind2WebService extends HttpServiceVerticle {
 
         //Configure state abstraction route
         stateAbstractionRoute = api.route().method(HttpMethod.POST).path("/state-abstraction");
+        stateAbstractionRoute.handler(this::processMind2WebCandidates);
         stateAbstractionRoute.handler(this::cleanHTML);
         stateAbstractionRoute.handler(this::identifyCandidates);
         stateAbstractionRoute.handler(this::prune);
@@ -140,10 +153,24 @@ public class Mind2WebService extends HttpServiceVerticle {
         stateAbstractionRouteV3.handler(this::processAnnotatedStateAbstractionRequest);
         stateAbstractionRouteV3.handler(this::cleanHTML);
         stateAbstractionRouteV3.handler(this::annotate);
-        //stateAbstractionRouteV3.handler(this::identifyCandidates);
+        stateAbstractionRouteV3.handler(this::identifyCandidates);
         stateAbstractionRouteV3.handler(this::prune);
 
+        //Configure state abstraction route for annotated strategy w/ guidance characteristcs
+        stateAbstractionRouteV4 = api.route().method(HttpMethod.POST).path("/state-abstraction-v4");
+        stateAbstractionRouteV4.handler(this::processGuidedStateAbstractionRequest);
+        stateAbstractionRouteV4.handler(this::processAnnotatedStateAbstractionRequest);
+        stateAbstractionRouteV4.handler(this::cleanHTML);
+        stateAbstractionRouteV4.handler(this::annotate);
+        stateAbstractionRouteV4.handler(this::identifyCandidates);
+        stateAbstractionRouteV4.handler(this::prune);
 
+
+        /** Configure guided state abstraction update route, this is used to prune trajectories that are no longer relevant.
+         *
+         */
+        stateAbstractionRouteV4Update = api.route().method(HttpMethod.POST).path("/update-trajectories");
+        stateAbstractionRouteV4Update.handler(this::processTrajectoryUpdate);
 
 
         neo4j = new Neo4JUtils("bolt://localhost:7687", "neo4j", "odobotdb");
@@ -151,6 +178,197 @@ public class Mind2WebService extends HttpServiceVerticle {
         return Completable.complete();
     }
 
+    private void processMind2WebCandidates(RoutingContext rc){
+        if(rc.queryParam("candidates") != null && rc.queryParam("candidates").size() > 0){
+            JsonArray candidates = new JsonArray(rc.queryParam("candidates").get(0));
+            rc.put("candidates", candidates);
+        }
+
+        rc.next();
+    }
+
+    private void processTrajectoryUpdate(RoutingContext rc){
+        JsonObject updateInfo = rc.body().asJsonObject();
+
+        //Get the backend node id of the element that was selected.
+        String backendNodeId = updateInfo.getString("backend_node_id");
+        UUID guidanceId = UUID.fromString(updateInfo.getString("guidance_id"));
+
+        log.info("previous action element was: {}", backendNodeId);
+
+        //Find the trajectory list associated with this request.
+        List<Trajectory> trajectories = requestTrajectories.get(guidanceId);
+
+        if(trajectories != null){
+
+            //Get the backend node ids that we annotated last time we created an abstracted state for this request.
+            Map<String,String> annotatedBackendIds = requestAnnotatedBackendIds.get(guidanceId);
+
+            /**Find the names of the trajectories associated with the selected backend node id.
+             *
+             * So basically, say that 'trajectory-1' and 'trajectory-2' annotated the element with backend_node_id: 8.
+             * Then 'trajectory-3' annotated the element with backend_node_id: 10.
+             *
+             * If the selected backend node id was '8' then we would prune trajectory-3 and keep trajectory-1 & 2.
+             *
+             */
+            Set<String> matchedTrajectoryNames = annotatedBackendIds.entrySet().stream()
+                    .filter(entry->entry.getValue().equals(backendNodeId))
+                    .map(entry->entry.getKey())
+                    .collect(Collectors.toSet());
+
+            if(matchedTrajectoryNames.size() > 0){
+                log.info("The following trajectories matched the previous action! {}", matchedTrajectoryNames);
+            }
+            /**
+             * Go through the trajectories associated with this request and prune the ones
+             * whose annotations were not chosen.
+             */
+            Iterator<Trajectory> trajectoryIterator = trajectories.iterator();
+            while (trajectoryIterator.hasNext()){
+                Trajectory trajectory = trajectoryIterator.next();
+                if(!matchedTrajectoryNames.contains(trajectory.getName())){
+                    trajectoryIterator.remove();
+                }
+            }
+
+            requestTrajectories.put(guidanceId, trajectories);
+
+        }
+
+        rc.response().setStatusCode(200).end();
+
+    }
+
+    private void processGuidedStateAbstractionRequest(RoutingContext rc){
+
+        JsonObject request = rc.body().asJsonObject();
+
+        rc.put("guidance", true);
+
+        /**
+         * This methods looks for a request id, if one exists, this request
+         * is a follow-up request. Similar to handling guidance.
+         *
+         * If one does not exist, this method should use the trajectory info
+         * to construct a set of navpaths for this request.
+         *
+         * Then xpaths should be harvested from those navpaths, and put into the routing context
+         * from where the annotation method should source its annotations.
+         *
+         */
+
+        if(request.containsKey("id")){
+
+            UUID guidanceId = UUID.fromString(request.getString("id"));
+            log.info("Request had guidance id: {}", guidanceId.toString());
+            rc.put("guidanceId", guidanceId);
+
+            if(guidanceRequests.get(guidanceId) == null){
+                requestTrajectories.remove(guidanceId);
+                requestTrajectoryXpaths.remove(guidanceId);
+                requestAnnotatedBackendIds.remove(guidanceId);
+
+                rc.put("trajectoryXpaths", new HashMap<>());
+                rc.next();
+                return;
+            }
+
+            //Fetch the trajectories associated with this request
+            List<Trajectory> trajectories = requestTrajectories.get(guidanceId);
+
+            //Resolve the trajectory action uids to xpaths
+            Map<String,String> trajectoryXpaths = new HashMap<>();
+
+            //Use an iterator here so that we can remove trajectories that are out of actions.
+            Iterator<Trajectory> trajectoryIterator = trajectories.iterator();
+            while(trajectoryIterator.hasNext()){
+                Trajectory trajectory = trajectoryIterator.next();
+
+                String actionId = trajectory.nextActionId();
+                if(actionId != null){
+                    String xpath = neo4j.getXpathFromActionId(trajectory.nextActionId());
+                    trajectoryXpaths.put(trajectory.getName(), xpath);
+                }else{
+                    trajectoryIterator.remove();
+                }
+            }
+
+            requestTrajectories.put(guidanceId, trajectories);
+
+            //If there aren't any valid trajectories left, no need to bother with this logic again.
+            if(trajectories.size() == 0){
+                guidanceRequests.remove(guidanceId);
+
+            }
+
+            log.info("Trajectory Xpaths:");
+            trajectoryXpaths.forEach((name, xpath)->log.info("{} -> {}", name, xpath));
+
+            requestTrajectoryXpaths.put(guidanceId, trajectoryXpaths);
+
+            rc.put("trajectoryXpaths", trajectoryXpaths);
+
+        }else{
+
+            //Create a guidance id for this request.
+            UUID guidanceId = UUID.randomUUID();
+            rc.put("guidanceId", guidanceId);
+            log.info("Created new guidance id: {}", guidanceId.toString());
+
+            JsonObject trajectoryInfo = request.getJsonObject("trajectory_info");
+
+            JsonObject symbolMapping = trajectoryInfo.getJsonObject("symbolMapping");
+
+            List<Trajectory> trajectories = new ArrayList<>();
+            Map<String,Trajectory> trajectoryMap = new HashMap<>();
+
+            //Create trajectory objects for all trajectories submitted with the request.
+            symbolMapping.forEach(entry->{
+                Trajectory trajectory = new Trajectory();
+                trajectory.setName((String)entry.getValue());
+                trajectory.setAnnotationId(entry.getKey());
+
+                trajectories.add(trajectory);
+                trajectoryMap.put(trajectory.getAnnotationId(), trajectory);
+            });
+
+            JsonObject _trajectories = trajectoryInfo.getJsonObject("trajectories");
+
+            //Populate trajectory objects with provided lists of action_uids
+            _trajectories.forEach(entry->{
+
+                Trajectory correspondingTrajectory = trajectoryMap.get(entry.getKey());
+
+                correspondingTrajectory.setActions(((JsonArray)entry.getValue()).stream().map(o->(String)o).collect(Collectors.toList()));
+
+            });
+
+            //Resolve the trajectory action uids to xpaths
+            Map<String, String> trajectoryXpaths = new HashMap<>();
+
+            trajectories.forEach(trajectory -> {
+                String actionId = trajectory.nextActionId();
+                if(actionId != null){
+                    String xpath = neo4j.getXpathFromActionId(trajectory.nextActionId());
+
+                    trajectoryXpaths.put(trajectory.getName(), xpath);
+                }
+
+            });
+
+            log.info("Trajectory Xpaths:");
+            trajectoryXpaths.forEach((name, xpath)->log.info("{} -> {}", name, xpath));
+
+            requestTrajectories.put(guidanceId, trajectories);
+            requestTrajectoryXpaths.put(guidanceId, trajectoryXpaths);
+
+            rc.put("trajectoryXpaths", trajectoryXpaths);
+
+        }
+
+        rc.next();
+    }
 
     private void processAnnotatedStateAbstractionRequest(RoutingContext rc){
 
@@ -158,11 +376,22 @@ public class Mind2WebService extends HttpServiceVerticle {
 
         String website = requestData.getString("website");
         String rawHtml = requestData.getString("raw_html");
-        JsonObject trajectoryInfo = requestData.getJsonObject("trajectory_info");
+
+
 
         rc.put("website", website);
         rc.put("rawHTMLString", rawHtml);
-        rc.put("trajectoryInfo", trajectoryInfo);
+
+        if(requestData.containsKey("candidates")){
+            JsonArray candidates = requestData.getJsonArray("candidates");
+            rc.put("candidates", candidates);
+        }
+
+
+        if(rc.get("trajectoryInfo") == null){
+            JsonObject trajectoryInfo = requestData.getJsonObject("trajectory_info");
+            rc.put("trajectoryInfo", trajectoryInfo);
+        }
 
         rc.next();
     }
@@ -218,50 +447,62 @@ public class Mind2WebService extends HttpServiceVerticle {
         List<String> xpaths = neo4j.getXpathsForWebsite(website);
         rc.put("xpaths", xpaths);
 
-        //Retrieve dynamic xpaths for this website and save them to the routing context.
-        sqliteService.loadDynamicXpaths(website).onSuccess(dxpaths->{
+        Document document;
+        if (rc.get("document") != null){
+            //If we're given an annotated document work with that.
+            document = rc.get("document");
+        }else{
+            //If not, then we parse the cleaned HTML into a Jsoup Document, so we can taint candidates on the basis of the xpaths and dxpaths that have been retrieved.
+            document = Jsoup.parse((String)rc.get("cleanHTMLString"));
+        }
 
-            List<DynamicXPath> _dxpaths = dxpaths.stream()
-                    .map(o->(JsonObject)o)
-                    .map(DynamicXPath::fromJson)
-                    .collect(Collectors.toList());
 
-            rc.put("dxpaths",_dxpaths);
 
-            Document document;
-            if (rc.get("document") != null){
-                //If we're given an annotated document work with that.
-                document = rc.get("document");
+        //Taint elements with the xpaths
+        if((rc.get("candidates") != null && ((JsonArray)rc.get("candidates")).size() == 0) || rc.get("candidates") == null){
+            //Only use xpaths if candidates size is zero, or candidates are undefined
+            DocumentTainter.taint(document, (List<String>)rc.get("xpaths"));
+        }
+
+
+        //Taint candidate elements if they've been provided.
+        if(rc.get("candidates") != null && ((JsonArray)rc.get("candidates")).size() > 0){
+            DocumentTainter.taint(document, (JsonArray) rc.get("candidates"));
+        }
+
+
+        //Taint elements with the dynamic xpaths
+        //DocumentTainter.taintWithDynamicXpaths(document, _dxpaths);
+
+        //Print some tainting stats.
+        int taintedElements = 0;
+        int untaintedElements = 0;
+        for(Element e: document.getAllElements()){
+            if(e.attributes().hasKey(DocumentTainter.TAINT)){
+                taintedElements++;
             }else{
-                //If not, then we parse the cleaned HTML into a Jsoup Document, so we can taint candidates on the basis of the xpaths and dxpaths that have been retrieved.
-                document = Jsoup.parse((String)rc.get("cleanHTMLString"));
+                untaintedElements++;
             }
+        }
 
+        log.info("{} xpaths and {} dynamic xpaths were used to taint. Cleaned Document has {} elements, of which {} are tainted. Taint ratio: {}", ((List<String>)rc.get("xpaths")).size(), 0, taintedElements + untaintedElements, taintedElements, (double)taintedElements/(double)(taintedElements + untaintedElements));
 
+        //Save the document to the routing context and proceed to pruning step.
+        rc.put("document", document);
+        rc.next();
 
-            //Taint elements with the xpaths
-            DocumentTainter.taint(document, rc.get("xpaths"));
-
-            //Taint elements with the dynamic xpaths
-            //DocumentTainter.taintWithDynamicXpaths(document, _dxpaths);
-
-            //Print some tainting stats.
-            int taintedElements = 0;
-            int untaintedElements = 0;
-            for(Element e: document.getAllElements()){
-                if(e.attributes().hasKey(DocumentTainter.TAINT)){
-                    taintedElements++;
-                }else{
-                    untaintedElements++;
-                }
-            }
-
-            log.info("{} xpaths and {} dynamic xpaths were used to taint. Cleaned Document has {} elements, of which {} are tainted. Taint ratio: {}", ((List<String>)rc.get("xpaths")).size(), _dxpaths.size(), taintedElements + untaintedElements, taintedElements, (double)taintedElements/(double)(taintedElements + untaintedElements));
-
-            //Save the document to the routing context and proceed to pruning step.
-            rc.put("document", document);
-            rc.next();
-        });
+        //Retrieve dynamic xpaths for this website and save them to the routing context.
+//        sqliteService.loadDynamicXpaths(website).onSuccess(dxpaths->{
+//
+//            List<DynamicXPath> _dxpaths = dxpaths.stream()
+//                    .map(o->(JsonObject)o)
+//                    .map(DynamicXPath::fromJson)
+//                    .collect(Collectors.toList());
+//
+//            rc.put("dxpaths",_dxpaths);
+//
+//
+//        });
 
 
     }
@@ -292,18 +533,27 @@ public class Mind2WebService extends HttpServiceVerticle {
             cursor.attributes().remove(DocumentTainter.TAINT);
 
             if(cursor.attributes().hasKey("backend_node_id")){
-                //Replace backend_node_id with id.
-                String idValue = cursor.attributes().get("backend_node_id");
-                cursor.attributes().remove("backend_node_id");
 
-                //If the element has a website defined id, add it as an attribute, and let id be the backend node id
-                if(cursor.attributes().hasKey("id")){
-                    String nonBackendNodeIdValue = cursor.attributes().get("id");
-                    cursor.attributes().remove("id");
-                    cursor.attributes().add(nonBackendNodeIdValue, null);
+                //Only keep the backend node id if it has been marked by a special taint.
+                if(cursor.attributes().hasKey(KEEP_ID_TAINT)){
+                    //Replace backend_node_id with id.
+                    String idValue = cursor.attributes().get("backend_node_id");
+                    cursor.attributes().remove("backend_node_id");
+
+                    //If the element has a website defined id, add it as an attribute, and let id be the backend node id
+                    if(cursor.attributes().hasKey("id")){
+                        String nonBackendNodeIdValue = cursor.attributes().get("id");
+                        cursor.attributes().remove("id");
+                        cursor.attributes().add(nonBackendNodeIdValue, null);
+                    }
+
+                    cursor.attributes().add("id", idValue);
+
+                    //Remove the keep id taint
+                    cursor.attributes().remove(KEEP_ID_TAINT);
+                }else{
+                    cursor.attributes().remove("backend_node_id");
                 }
-
-                cursor.attributes().add("id", idValue);
             }
 
             //Clear the buckeye
@@ -325,8 +575,13 @@ public class Mind2WebService extends HttpServiceVerticle {
 
         String output = document.html();
         output = output.replaceAll("\n", "");
+        output = output.replaceAll("(?<=>) +(?=<)", ""); //Get rid of extra spaces between tags.
 
         log.info("\nOriginal Raw Document size: {}\nOriginal Cleaned Document Size: {}\nFinal Document Size: {}", (int)rc.get("rawSize"),(int)rc.get("cleanSize"), output.length());
+
+        if(rc.get("guidanceId") != null){
+            rc.response().putHeader("guidance_id", ((UUID)rc.get("guidanceId")).toString());
+        }
 
         rc.response().putHeader("Content-Type","text/html").setStatusCode(200).end(output);
 
@@ -336,21 +591,48 @@ public class Mind2WebService extends HttpServiceVerticle {
 
         Document document = Jsoup.parse((String)rc.get("cleanHTMLString"));
 
-        JsonObject trajectoryInfo = rc.get("trajectoryInfo");
-        JsonObject symbolMapping = trajectoryInfo.getJsonObject("symbolMapping");
-        JsonObject trajectories = trajectoryInfo.getJsonObject("trajectories");
+        //TrajectoryXpaths will be null if this is an unguided request.
+        //TODO: this is going to break
+        if(rc.get("trajectoryXpaths") == null && (boolean)rc.get("guidance") == false){
+            JsonObject trajectoryInfo = rc.get("trajectoryInfo");
+            JsonObject symbolMapping = trajectoryInfo.getJsonObject("symbolMapping");
+            JsonObject trajectories = trajectoryInfo.getJsonObject("trajectories");
 
-        trajectories.forEach(entry->{
-            String annotationId = entry.getKey();
-            List<String> actionIds = ((JsonArray)entry.getValue()).stream().map(s->(String)s).collect(Collectors.toList());
+            trajectories.forEach(entry->{
+                String annotationId = entry.getKey();
+                List<String> actionIds = ((JsonArray)entry.getValue()).stream().map(s->(String)s).collect(Collectors.toList());
 
-            List<String> xpaths = neo4j.getXpathsForTrajectory(actionIds);
+                List<String> xpaths = neo4j.getXpathsForTrajectory(actionIds);
 
-            String annotation = symbolMapping.getString(annotationId);
+                String annotation = symbolMapping.getString(annotationId);
 
-            DocumentAnnotator.annotate(document, xpaths, annotation);
+                DocumentAnnotator.annotate(document, xpaths, annotation);
 
-        });
+            });
+        }else{
+            /** If this is a guided request, then 'trajectoryXpaths' will contain a map <symbol, xpath>
+             *  which we should use to annotate the document.
+             */
+
+            UUID guidanceId = rc.get("guidanceId");
+            Map<String,String> trajectoryXpaths = rc.get("trajectoryXpaths");
+            Map<String, String> annotatedIds = new HashMap<>();
+
+            trajectoryXpaths.forEach((annotation, xpath)->{
+                String backendId = DocumentAnnotator.annotate(document, xpath, annotation);
+                if(backendId != null){
+                    annotatedIds.put(annotation, backendId);
+                }
+
+            });
+
+            log.info("Annotated Ids:");
+            annotatedIds.forEach((name, xpath)->log.info("{} -> {}", name, xpath));
+
+            requestAnnotatedBackendIds.put(guidanceId, annotatedIds);
+        }
+
+
 
         //For debugging
         //log.info("annotatedDocument:\n{}", document.html());

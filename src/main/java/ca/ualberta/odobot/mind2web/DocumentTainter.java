@@ -1,6 +1,7 @@
 package ca.ualberta.odobot.mind2web;
 
 import ca.ualberta.odobot.semanticflow.navmodel.DynamicXPath;
+import io.vertx.core.json.JsonArray;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.nodes.Node;
@@ -17,6 +18,8 @@ public class DocumentTainter {
     private static final Logger log = LoggerFactory.getLogger(DocumentTainter.class);
 
     public static final String TAINT = "odo-bot-taint";
+
+    public static final String KEEP_ID_TAINT = "odo-bot-keep-id";
 
 
     public static Document taintWithDynamicXpaths(Document document, List<DynamicXPath> dxpaths){
@@ -61,6 +64,7 @@ public class DocumentTainter {
 
                 //Taint all of these elements
                 dynamicTags.forEach(DocumentTainter::taint);
+                dynamicTags.forEach(DocumentTainter::taintKeepId);
 
                 //Finally we need to taint all descendants of all the dynamic tags as well.
                 dynamicTags.forEach(DocumentTainter::taintDescendants);
@@ -77,6 +81,38 @@ public class DocumentTainter {
 
     }
 
+    public static Document taint(Document document, JsonArray backendNodeIds){
+
+
+        backendNodeIds.stream().map(o->(String)o).forEach(id->taintBackendNodeId(document, id));
+
+        return document;
+    }
+
+    public static Document taintBackendNodeId(Document document, String backendNodeId){
+        Elements candidates = document.selectXpath("//*[@backend_node_id='%s']".formatted(backendNodeId));
+
+        assert candidates.size() == 0 || candidates.size() == 1;
+
+        if(candidates.size() == 1){
+            //Taint the element itself,
+            Element element = candidates.get(0);
+            taint(element);
+            taintKeepId(element); //Keep the id of the candidate element
+
+            //Taint descendants of the target element
+            taintDescendants(element);
+
+            //then walk up it's parents all the way to the root node and taint everything along the way.
+            while (element.parent() != null){
+                element = element.parent();
+                taint(element);
+            }
+        }
+
+        return document;
+    }
+
     public static Document taint(Document document, List<String> xpaths){
 
         xpaths.forEach(xpath->taintXpath(document, xpath));
@@ -88,10 +124,11 @@ public class DocumentTainter {
 
         Elements elements = document.selectXpath(xpath);
 
-        if(elements.size() == 1){
+        if(elements.size() >= 1){
             //Taint the element itself,
             Element element = elements.get(0);
             taint(element);
+            taintKeepId(element); //Keep the id of the target element
 
             //Taint descendants of the target element
             taintDescendants(element);
@@ -116,11 +153,23 @@ public class DocumentTainter {
         element.attributes().add(TAINT, null);
     }
 
+    public static void taintKeepId(Node element){
+        if(element.attributes().hasKey(KEEP_ID_TAINT)){
+            return;
+        }
+        element.attributes().add(KEEP_ID_TAINT, null);
+    }
+
     public static void taintDescendants(Node element){
+        taintDescendants(element, 5);
+    }
+    public static void taintDescendants(Node element, int max){
         NodeIterator<Element> descendants = new NodeIterator<>(element, Element.class);
-        while (descendants.hasNext()){
+        int count = 0;
+        while (descendants.hasNext() && count < max){
             Element descendant = descendants.next();
             taint(descendant);
+            count++;
         }
     }
 }

@@ -75,6 +75,22 @@ public class    NavPath {
         return List.of();
     }
 
+    public String getXPath(){
+        while (iterator.hasNext()){
+            Node node = iterator.next();
+
+            //Instances associated with start and end nodes are annotation ids not action ids, and also don't have xpaths
+            if(node.hasLabel(Label.label("StartNode")) || node.hasLabel(Label.label("EndNode"))){
+                continue;
+            }
+
+            return (String)node.getProperty("xpath");
+        }
+
+        log.warn("No xpaths left for this path");
+        return null;
+    }
+
     public Instruction getInstruction(){
 
 

@@ -1131,6 +1131,25 @@ public class Neo4JUtils {
         }
     }
 
+    public String getXpathFromActionId(String actionId){
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+            String xpath = session.executeRead(tx->{
+
+                var _query = """
+                        MATCH (n) where $actionId in n.instances return n.xpath
+                        """;
+
+                Query query = new Query(_query, parameters("actionId", actionId));
+
+                var result = tx.run(query);
+
+                return result.single().get(0).asString();
+            });
+
+            return xpath;
+        }
+    }
+
     public void createNodeLabelsUsingWebsiteProperty(){
 
         try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
