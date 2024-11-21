@@ -291,6 +291,24 @@ public class SqliteServiceImpl implements SqliteService {
 
     }
 
+    public Future<List<String>> getUniqueDynamicXpathsFromSnippets(){
+        Promise<List<String>> promise = Promise.promise();
+        pool.preparedQuery("""
+            SELECT DISTINCT dynamic_xpath from snippets;
+        """).execute()
+                .onSuccess(results->{
+                    List<String> dynamicXpaths = new ArrayList<>();
+                    Iterator<Row> it = results.iterator();
+                    while (it.hasNext()){
+                        dynamicXpaths.add(it.next().getString("dynamic_xpath"));
+                    }
+                    promise.complete(dynamicXpaths);
+                })
+                .onFailure(promise::fail);
+
+        return promise.future();
+    }
+
     public Future<Boolean> hasBeenMinedForDynamicXpaths(String taskId, String actionId){
         Promise<Boolean> promise = Promise.promise();
 
@@ -350,6 +368,28 @@ public class SqliteServiceImpl implements SqliteService {
         );
 
         return executeParameterizedQuery(sql, params);
+    }
+
+    public Future<List<Snippet>> sampleSnippetsForDynamicXpath(int numSamples, String dynamicXpath){
+        Promise<List<Snippet>> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            SELECT * FROM snippets WHERE dynamic_xpath = ? limit ?;
+        """).execute(Tuple.of(dynamicXpath, numSamples))
+                .onSuccess(results->{
+
+                    List<Snippet> snippets = new ArrayList<>();
+                    Iterator<Row> it = results.iterator();
+                    while (it.hasNext()){
+                        snippets.add(Snippet.fromRow(it.next()));
+                    }
+
+                    promise.complete(snippets);
+
+                })
+                .onFailure(promise::fail);
+
+        return promise.future();
     }
 
     @Override

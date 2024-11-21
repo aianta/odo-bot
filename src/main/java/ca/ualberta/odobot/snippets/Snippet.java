@@ -22,7 +22,7 @@ public class Snippet {
         Snippet result = new Snippet();
         result.setId(row.getUUID("id"));
         result.setSnippet(row.getString("snippet"));
-        result.setType(Type.valueOf(row.getString("type").toUpperCase()));
+        result.setType(Type.valueOf(row.getString("snippet_type").toUpperCase()));
 
         return result;
     }

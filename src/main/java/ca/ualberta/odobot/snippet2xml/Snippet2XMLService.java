@@ -12,7 +12,7 @@ import java.util.List;
 @ProxyGen
 public interface Snippet2XMLService {
 
-    static Snippet2XMLService create(JsonObject config, Strategy strategy){return  new Snippet2XMLServiceImpl(config, strategy);}
+    static Snippet2XMLService create(Vertx vertx, JsonObject config, Strategy strategy){return  new Snippet2XMLServiceImpl(vertx, config, strategy);}
 
     static Snippet2XMLService createProxy(Vertx vertx, String address){
         return new Snippet2XMLServiceVertxEBProxy(vertx, address);

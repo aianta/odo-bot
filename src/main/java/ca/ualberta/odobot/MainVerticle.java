@@ -6,6 +6,7 @@ import ca.ualberta.odobot.explorer.ExplorerVerticle;
 import ca.ualberta.odobot.guidance.GuidanceVerticle;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import ca.ualberta.odobot.mind2web.Mind2WebService;
+import ca.ualberta.odobot.snippet2xml.Snippet2XMLVerticle;
 import ca.ualberta.odobot.snippets.Extractor;
 import ca.ualberta.odobot.tpg.TPGVerticle;
 import ca.ualberta.odobot.web.OdoSightSupport;
@@ -80,6 +81,11 @@ public class MainVerticle extends ConfigurableVerticle {
                     .setMaxWorkerExecuteTime(1)
                     .setMaxWorkerExecuteTimeUnit(TimeUnit.HOURS) //TODO: make this configrable?
             );
+        }
+
+        if(_config.getBoolean("Snippet2XML")){
+            Snippet2XMLVerticle snippet2XMLVerticle = new Snippet2XMLVerticle();
+            vertx.deployVerticle(snippet2XMLVerticle);
         }
 
 

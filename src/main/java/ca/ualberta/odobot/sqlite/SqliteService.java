@@ -46,6 +46,10 @@ public interface SqliteService {
 
     Future<Void> saveSemanticSchema(SemanticSchema schema);
 
+    Future<List<String>> getUniqueDynamicXpathsFromSnippets();
+
+    Future<List<Snippet>> sampleSnippetsForDynamicXpath(int numSamples, String dynamicXpath);
+
     /**
      *
      * @param objectData the xml of the object

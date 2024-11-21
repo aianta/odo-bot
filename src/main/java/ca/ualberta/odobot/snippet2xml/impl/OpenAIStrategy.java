@@ -23,10 +23,14 @@ import java.io.StringReader;
 import java.util.*;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class OpenAIStrategy implements AIStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIStrategy.class);
+
+    private Pattern xmlResponsePattern = Pattern.compile("(?<=```xml).+(?=```)", Pattern.DOTALL);
 
     private OpenAIClient client;
     private JsonObject config;
@@ -46,6 +50,8 @@ public class OpenAIStrategy implements AIStrategy {
 
     @Override
     public Future<JsonObject> makeSchema(List<Snippet> snippets) {
+
+        Collections.shuffle(snippets);
 
         int samples = config.getJsonObject("makeSchema").getInteger("samples");
 
@@ -83,6 +89,25 @@ public class OpenAIStrategy implements AIStrategy {
             log.error("Failed to generate a schema using example xml objects.");
             return Future.failedFuture("Failed to generate a schema using example xml objects.");
         }
+    }
+
+    /**
+     * It is possible that the response from the agent will be wrapped in a markdown xml code block. This method uses a regex to extract the XML inside.
+     * @param input
+     * @return
+     */
+    private String extractXMLFromResponse(String input){
+
+        //Only try to extract xml if it appears that xml is included inside a code block.
+        if(input.contains("```xml")){
+
+            Matcher matcher = xmlResponsePattern.matcher(input);
+            if(matcher.find()){
+                return matcher.group(0);
+            }
+        }
+
+        return input;
     }
 
     private JsonObject makeSchemaResponse(String schema, Map<UUID, String> xmlObjects){
@@ -143,7 +168,7 @@ public class OpenAIStrategy implements AIStrategy {
      * @return An Optional containing a valid generated string output if one was generated, otherwise an empty optional
      */
     private Optional<String> generateWithValidation(Supplier<String> outputGenerator, List<Predicate<String>> validators, int maxAttempts){
-        String output = outputGenerator.get();
+        String output = extractXMLFromResponse(outputGenerator.get());
         int attempt = 1;
 
         boolean isValid = validators.stream().allMatch(validator->validator.test(output));
@@ -152,7 +177,7 @@ public class OpenAIStrategy implements AIStrategy {
         //Where there are validators which are unsatisfied with the output and the maximum number of attempts hasn't been reached.
         while(!isValid && attempt < maxAttempts){
             log.info("Attempt {} output was not valid, trying again...", attempt);
-            String nextOutput = outputGenerator.get();
+            String nextOutput = extractXMLFromResponse(outputGenerator.get());
             isValid = validators.stream().allMatch(validator->validator.test(nextOutput));
             _output = nextOutput;
             attempt++;
