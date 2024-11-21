@@ -3,6 +3,8 @@ package ca.ualberta.odobot.sqlite.impl;
 import ca.ualberta.odobot.semanticflow.model.StateSample;
 import ca.ualberta.odobot.semanticflow.model.TrainingMaterials;
 import ca.ualberta.odobot.semanticflow.navmodel.DynamicXPath;
+import ca.ualberta.odobot.snippet2xml.SemanticSchema;
+import ca.ualberta.odobot.snippets.Snippet;
 import ca.ualberta.odobot.sqlite.LogParser;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import io.vertx.core.Future;
@@ -45,6 +47,8 @@ public class SqliteServiceImpl implements SqliteService {
         createSnippetTable();
         createDynamicXPathTable();
         createDynamicXpathProgressTable();
+        createSemanticObjectTable();
+        createSemanticSchemaTable();
     }
 
 
@@ -310,6 +314,45 @@ public class SqliteServiceImpl implements SqliteService {
     }
 
     @Override
+    public Future<Void> saveSemanticSchema(SemanticSchema schema) {
+        String sql = """
+                INSERT INTO semantic_schemas(
+                    id, name, schema
+                ) VALUES (?,?,?);
+                """;
+
+        Tuple params = Tuple.of(
+                schema.getId().toString(),
+                schema.getName(),
+                schema.getSchema()
+        );
+
+        return executeParameterizedQuery( sql, params);
+    }
+
+    @Override
+    public Future<Void> saveSemanticObject(String objectData, String objectId, String schemaId, String snippetId) {
+
+        String sql = """
+                INSERT INTO semantic_objects(
+                    id,
+                    schema_id,
+                    snippet_id,
+                    object
+                ) VALUES (?,?,?,?)
+                """;
+
+        Tuple params = Tuple.of(
+                objectId,
+                schemaId,
+                snippetId,
+                objectData
+        );
+
+        return executeParameterizedQuery(sql, params);
+    }
+
+    @Override
     public Future<Void> saveDynamicXpathForWebsite(JsonObject xpathData, String xpathId, String nodeId, String website) {
         String sql = """
             INSERT INTO dynamic_xpaths (
@@ -353,6 +396,32 @@ public class SqliteServiceImpl implements SqliteService {
         Promise<Void> promise = Promise.promise();
 
         return executeParameterizedQuery(promise, sql, params, ignoreUniqueConstraintViolationErrorHandler(promise));
+    }
+
+    @Override
+    public Future<Snippet> getSnippetById(String id) {
+
+        Promise<Snippet> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            SELECT * FROM snippets WHERE id = ?;
+        """).execute(
+                Tuple.of(id)
+        ).onSuccess(result->{
+
+            if(result.iterator().hasNext()){
+                Snippet snippet = Snippet.fromRow(result.iterator().next());
+
+                promise.complete(snippet);
+            }else {
+                promise.fail("Could not find snippet with id: " + id);
+            }
+
+
+        }).onFailure(promise::fail);
+
+
+        return promise.future();
     }
 
     private Future<Void> saveExemplar(TrainingExemplar exemplar){
@@ -460,6 +529,28 @@ public class SqliteServiceImpl implements SqliteService {
                 primary key (prefix, tag, suffix, website)
             )
         """);
+    }
+
+    private Future<Void> createSemanticSchemaTable(){
+        return createTable("""
+                CREATE TABLE IF NOT EXISTS semantic_schemas(
+                    id text not null primary key, 
+                    name text not null,
+                    schema text not null,
+                    dynamic_xpath_id not null,
+                )
+                """);
+    }
+
+    private Future<Void> createSemanticObjectTable(){
+        return createTable("""
+                CREATE TABLE IF NOT EXISTS semantic_objects(
+                    id text not null primary key,
+                    schema_id text not null,
+                    snippet_id text not null,
+                    object text not null
+                    )
+                """);
     }
 
     private Future<Void> createSnippetTable(){

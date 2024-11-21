@@ -28,3 +28,4 @@ neo4j-plugins/*
 !neo4j-logs/.gitkeep
 test_task
 test_task_results
+config/snippet2xml.yaml
