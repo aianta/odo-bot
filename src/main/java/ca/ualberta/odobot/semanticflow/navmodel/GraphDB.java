@@ -64,7 +64,7 @@ public class GraphDB {
             managementService = new DatabaseManagementServiceBuilder(this.databaseDirectory)
                     //Set up bolt connector to allow use of Neo4J Browser.
                     .setConfig(BoltConnector.enabled, true)
-                    .setConfig(GraphDatabaseSettings.data_directory,  Path.of("mind2web-full"))
+                    .setConfig(GraphDatabaseSettings.data_directory,  Path.of("data"))
                     .setConfig(GraphDatabaseSettings.auth_enabled, false)
                     .setConfig(GraphDatabaseSettings.debug_log_enabled, true)
                     .setConfig(GraphDatabaseSettings.logs_directory, Path.of("neo4j-logs").toAbsolutePath())

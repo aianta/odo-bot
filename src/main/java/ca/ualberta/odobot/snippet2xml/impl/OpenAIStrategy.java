@@ -1,6 +1,8 @@
 package ca.ualberta.odobot.snippet2xml.impl;
 
 import ca.ualberta.odobot.snippet2xml.AIStrategy;
+import ca.ualberta.odobot.snippet2xml.impl.validators.IsValidXML;
+import ca.ualberta.odobot.snippet2xml.impl.validators.SchemaValidatesXMLObjects;
 import ca.ualberta.odobot.snippets.Snippet;
 import com.azure.ai.openai.OpenAIClient;
 import com.azure.ai.openai.OpenAIClientBuilder;
@@ -12,12 +14,20 @@ import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.w3c.dom.Document;
+import org.xml.sax.ErrorHandler;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXException;
+import org.xml.sax.SAXParseException;
 
+import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.transform.Source;
+import javax.xml.transform.stream.StreamSource;
+import javax.xml.validation.Schema;
+import javax.xml.validation.SchemaFactory;
+import javax.xml.validation.Validator;
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.*;
@@ -60,7 +70,10 @@ public class OpenAIStrategy implements AIStrategy {
 
         //First try and make some XML objects out of the given snippets.
         for(Snippet snippet: snippets){
-            Optional<String> xmlObject = generateXMLObjectWithoutSchema(snippet, validators);
+            /**
+             * Feed successful outputs to subsequent chat completion requests in order to normalize/make more consistent objects.
+             */
+            Optional<String> xmlObject = xmlObjects.size() == 0? generateXMLObjectWithoutSchema(snippet, validators) : generateXMLObjectWithoutSchema(snippet, xmlObjects.values(), validators);
             if(xmlObject.isPresent()){
                 xmlObjects.put(snippet.getId(), xmlObject.get());
             }
@@ -81,7 +94,7 @@ public class OpenAIStrategy implements AIStrategy {
         xmlObjects.values().stream().forEach(log::info);
 
         //TODO -> need to validate that the generated schema does in fact validate all example objects.
-        Optional<String> schemaOptional = generateXMLSchema(xmlObjects.values(), List.of(new IsValidXML()));
+        Optional<String> schemaOptional = generateXMLSchema(xmlObjects.values(), List.of(new IsValidXML(), new SchemaValidatesXMLObjects(xmlObjects.values())));
 
         if(schemaOptional.isPresent()){
             return Future.succeededFuture(makeSchemaResponse(schemaOptional.get(), xmlObjects));
@@ -118,43 +131,9 @@ public class OpenAIStrategy implements AIStrategy {
         return response;
     }
 
-    /**
-     * A predicate that tests if a string is valid XML.
-     */
-    private class IsValidXML implements Predicate<String> {
 
-        private DocumentBuilder builder;
 
-        IsValidXML(){
-            try{
-                DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-                builder = factory.newDocumentBuilder();
 
-            } catch (ParserConfigurationException e) {
-                log.error("Error initializing DocumentBuilder");
-                log.error(e.getMessage(), e);
-                throw new RuntimeException(e);
-            }
-
-        }
-
-        @Override
-        public boolean test(String string) {
-
-            try{
-                StringReader sr = new StringReader(string);
-                InputSource is = new InputSource(sr);
-                Document document = builder.parse(is);
-                return true;
-            }catch (SAXException parseError){
-                return false;
-            } catch (IOException e) {
-                log.error("IO error while attempting to parse XML...");
-                throw new RuntimeException(e);
-            }
-
-        }
-    }
 
     private Optional<String> generateXMLSchema(Collection<String> xmlObjects, List<Predicate<String>> validators){
         return generateWithValidation(()->generateXMLSchema(xmlObjects), validators, config.getJsonObject("generateXMLSchema").getInteger("maxAttempts"));
@@ -186,6 +165,7 @@ public class OpenAIStrategy implements AIStrategy {
         //If the output is valid wrap it in an optional and return it.
         return isValid? Optional.of(_output): Optional.empty();
     }
+
 
     private String generateXMLSchema(Collection<String> xmlObjects){
 
@@ -259,9 +239,14 @@ public class OpenAIStrategy implements AIStrategy {
         return sb.toString();
     }
 
-    private Optional<String> generateXMLObjectWithoutSchema(Snippet snippet,  List<Predicate<String>> validators){
-        return generateWithValidation(()->generateXMLObjectWithoutSchema(snippet), validators, config.getJsonObject("generateXMLObjectWithoutSchema").getInteger("maxAttempts"));
+    private Optional<String> generateXMLObjectWithoutSchema(Snippet snippet, Collection<String> seedObjects, List<Predicate<String>> validators){
+        return generateWithValidation(()->generateXMLObjectWithoutSchema(snippet, seedObjects), validators, config.getJsonObject("generateXMLObjectWithoutSchema").getInteger("maxAttempts"));
     }
+
+    private Optional<String> generateXMLObjectWithoutSchema(Snippet snippet,  List<Predicate<String>> validators){
+        return generateWithValidation(()->generateXMLObjectWithoutSchema(snippet, (List<String>)null), validators, config.getJsonObject("generateXMLObjectWithoutSchema").getInteger("maxAttempts"));
+    }
+
 
     /**
      *
@@ -270,12 +255,27 @@ public class OpenAIStrategy implements AIStrategy {
      * @param snippet
      * @return
      */
-    private String generateXMLObjectWithoutSchema(Snippet snippet){
+    private String generateXMLObjectWithoutSchema(Snippet snippet, Collection<String> seedObjects){
 
         List<ChatRequestMessage> chatMessages = new ArrayList<>();
         chatMessages.add(new ChatRequestSystemMessage(config.getJsonObject("generateXMLObjectWithoutSchema").getString("systemPrompt")));
-        chatMessages.add(new ChatRequestUserMessage(snippet.getSnippet()));
+
+        if(seedObjects == null || seedObjects.size() == 0){
+            //If no seed objects are provided, simply pass the HTML snippet as the user message and execute the chat completion request.
+            chatMessages.add(new ChatRequestUserMessage(snippet.getSnippet()));
+
+        }else{
+            //If seed XML objects are provided we constructed a prompt with them included first and then the HTML snippet.
+            StringBuilder sb = new StringBuilder();
+            sb.append("XML Examples:\n");
+            sb.append(buildXMLExamplesMessageForMakeSchema(seedObjects));
+            sb.append("HTML Snippet:\n");
+            sb.append(snippet.getSnippet());
+
+            chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+        }
 
         return executeChatCompletion(chatMessages);
+
     }
 }
