@@ -3,6 +3,7 @@ package ca.ualberta.odobot.sqlite.impl;
 import ca.ualberta.odobot.semanticflow.model.StateSample;
 import ca.ualberta.odobot.semanticflow.model.TrainingMaterials;
 import ca.ualberta.odobot.semanticflow.navmodel.DynamicXPath;
+import ca.ualberta.odobot.snippet2xml.SemanticObject;
 import ca.ualberta.odobot.snippet2xml.SemanticSchema;
 import ca.ualberta.odobot.snippets.Snippet;
 import ca.ualberta.odobot.sqlite.LogParser;
@@ -335,21 +336,26 @@ public class SqliteServiceImpl implements SqliteService {
     public Future<Void> saveSemanticSchema(SemanticSchema schema) {
         String sql = """
                 INSERT INTO semantic_schemas(
-                    id, name, schema
-                ) VALUES (?,?,?);
+                    id, name, schema, dynamic_xpath_id
+                ) VALUES (?,?,?,?);
                 """;
 
         Tuple params = Tuple.of(
                 schema.getId().toString(),
-                schema.getName(),
-                schema.getSchema()
+                schema.getName() == null?"null":schema.getName(),
+                schema.getSchema(),
+                schema.getDynamicXpathId()
         );
 
         return executeParameterizedQuery( sql, params);
     }
 
-    @Override
-    public Future<Void> saveSemanticObject(String objectData, String objectId, String schemaId, String snippetId) {
+    public Future<Void> saveSemanticObject(SemanticObject object){
+        return saveSemanticObjectData(object.getObject(), object.getId().toString(), object.getSchemaId().toString(), object.getSnippetId().toString());
+    }
+
+
+    private Future<Void> saveSemanticObjectData(String objectData, String objectId, String schemaId, String snippetId) {
 
         String sql = """
                 INSERT INTO semantic_objects(
@@ -370,11 +376,56 @@ public class SqliteServiceImpl implements SqliteService {
         return executeParameterizedQuery(sql, params);
     }
 
+    @Override
+    public Future<List<Snippet>> getSnippets(){
+        Promise<List<Snippet>> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            SELECT id, snippet, dynamic_xpath, snippet_type FROM snippets;
+        """).execute()
+                .onSuccess(results->{
+
+                    List<Snippet> snippets = new ArrayList<>();
+                    Iterator<Row> it = results.iterator();
+                    while (it.hasNext()){
+                        snippets.add(Snippet.fromRow(it.next()));
+                    }
+
+                    promise.complete(snippets);
+
+                })
+                .onFailure(promise::fail);
+
+        return promise.future();
+    }
+
+    public Future<List<Snippet>> getSnippetsByDynamicXpath(String dynamicXpath){
+        Promise<List<Snippet>> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            SELECT id, snippet, dynamic_xpath, snippet_type FROM snippets WHERE dynamic_xpath = ?;
+        """).execute(Tuple.of(dynamicXpath))
+                .onSuccess(results->{
+
+                    List<Snippet> snippets = new ArrayList<>();
+                    Iterator<Row> it = results.iterator();
+                    while (it.hasNext()){
+                        snippets.add(Snippet.fromRow(it.next()));
+                    }
+
+                    promise.complete(snippets);
+
+                })
+                .onFailure(promise::fail);
+
+        return promise.future();
+    }
+
     public Future<List<Snippet>> sampleSnippetsForDynamicXpath(int numSamples, String dynamicXpath){
         Promise<List<Snippet>> promise = Promise.promise();
 
         pool.preparedQuery("""
-            SELECT * FROM snippets WHERE dynamic_xpath = ? limit ?;
+            SELECT id, snippet, dynamic_xpath, snippet_type FROM snippets WHERE dynamic_xpath = ? limit ?;
         """).execute(Tuple.of(dynamicXpath, numSamples))
                 .onSuccess(results->{
 
@@ -577,7 +628,7 @@ public class SqliteServiceImpl implements SqliteService {
                     id text not null primary key, 
                     name text not null,
                     schema text not null,
-                    dynamic_xpath_id not null,
+                    dynamic_xpath_id not null
                 )
                 """);
     }

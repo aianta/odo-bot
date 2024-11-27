@@ -42,6 +42,7 @@ public class IsValidXML implements Predicate<String> {
             StringReader sr = new StringReader(string);
             InputSource is = new InputSource(sr);
             Document document = builder.parse(is);
+
             return true;
         }catch (SAXException parseError){
             return false;

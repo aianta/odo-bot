@@ -15,11 +15,23 @@ public class SemanticSchema {
 
     private String schema;
 
+    private String dynamicXpathId;
+
+    public String getDynamicXpathId() {
+        return dynamicXpathId;
+    }
+
+    public SemanticSchema setDynamicXpathId(String dynamicXpathId) {
+        this.dynamicXpathId = dynamicXpathId;
+        return this;
+    }
+
     public static SemanticSchema fromRow(Row row){
         SemanticSchema result = new SemanticSchema();
         result.setSchema(row.getString("schema"));
         result.setId(row.getUUID("id"));
         result.setName(row.getString("name"));
+        result.setDynamicXpathId(row.getString("dynamic_xpath_id"));
         return result;
     }
 
@@ -28,6 +40,7 @@ public class SemanticSchema {
         setId(UUID.fromString(data.getString("id")));
         setName(data.getString("name"));
         setSchema(data.getString("schema"));
+        setDynamicXpathId(data.getString("dynmaicXpathId"));
     }
 
     public UUID getId() {
@@ -61,7 +74,9 @@ public class SemanticSchema {
         JsonObject result = new JsonObject();
         result.put("id", getId().toString())
                 .put("schema", getSchema())
-                .put("name", getName());
+                .put("name", getName())
+                .put("dynmaicXpathId", getDynamicXpathId())
+        ;
         return result;
     }
 }

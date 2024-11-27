@@ -1,7 +1,10 @@
 package ca.ualberta.odobot.snippet2xml.impl;
 
 import ca.ualberta.odobot.snippet2xml.AIStrategy;
+import ca.ualberta.odobot.snippet2xml.SemanticObject;
+import ca.ualberta.odobot.snippet2xml.SemanticSchema;
 import ca.ualberta.odobot.snippet2xml.impl.validators.IsValidXML;
+import ca.ualberta.odobot.snippet2xml.impl.validators.PassesSchemaValidation;
 import ca.ualberta.odobot.snippet2xml.impl.validators.SchemaValidatesXMLObjects;
 import ca.ualberta.odobot.snippets.Snippet;
 import com.azure.ai.openai.OpenAIClient;
@@ -13,28 +16,13 @@ import io.vertx.core.json.JsonObject;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.w3c.dom.Document;
-import org.xml.sax.ErrorHandler;
-import org.xml.sax.InputSource;
-import org.xml.sax.SAXException;
-import org.xml.sax.SAXParseException;
 
-import javax.xml.XMLConstants;
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.parsers.ParserConfigurationException;
-import javax.xml.transform.Source;
-import javax.xml.transform.stream.StreamSource;
-import javax.xml.validation.Schema;
-import javax.xml.validation.SchemaFactory;
-import javax.xml.validation.Validator;
-import java.io.IOException;
-import java.io.StringReader;
 import java.util.*;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 public class OpenAIStrategy implements AIStrategy {
 
@@ -78,9 +66,9 @@ public class OpenAIStrategy implements AIStrategy {
                 xmlObjects.put(snippet.getId(), xmlObject.get());
             }
 
-            if(xmlObjects.size() >= samples){
-                break;
-            }
+//            if(xmlObjects.size() >= samples){
+//                break;
+//            }
         }
 
         //Handle case where the LLM simply fails to generate sufficient xml objects to generate an XML schema.
@@ -89,19 +77,64 @@ public class OpenAIStrategy implements AIStrategy {
             return Future.failedFuture("Failed to generate sufficient example xml objects for schema generation");
         }
 
-        //At this point we have sufficient sample objects to try and generate an XML schema.
-        log.info("Attempting to generate XML schema with the following {} XML objects:", xmlObjects.size());
-        xmlObjects.values().stream().forEach(log::info);
+        /**
+         * We got more snippets than required, so if we fail to generate a schema, we can try again with another batch.
+         * Basically, we keep trying to generate schemas with different samples if we fail off any single batch.
+         */
+        Set<Map.Entry<UUID,String>> roster = xmlObjects.entrySet();
+        Iterator<Map.Entry<UUID,String>> it = roster.iterator();
+        Map<UUID,String> batch = new HashMap<>();
+        Optional<String> schemaOptional = null;
+        while (it.hasNext()){
+            Map.Entry<UUID,String> entry = it.next();
+            batch.put(entry.getKey(), entry.getValue());
 
-        //TODO -> need to validate that the generated schema does in fact validate all example objects.
-        Optional<String> schemaOptional = generateXMLSchema(xmlObjects.values(), List.of(new IsValidXML(), new SchemaValidatesXMLObjects(xmlObjects.values())));
+            if(batch.size() >= samples || (!it.hasNext() && batch.size() != 0)){ //Try and generate a schema if the batch size has reached the target number of samples or if there are no xmlobjects left and there is an untried batch left.
 
-        if(schemaOptional.isPresent()){
-            return Future.succeededFuture(makeSchemaResponse(schemaOptional.get(), xmlObjects));
+                //At this point we have sufficient sample objects to try and generate an XML schema.
+                log.info("Attempting to generate XML schema with the following {} XML objects:", batch.size());
+                batch.values().stream().forEach(log::info);
+
+                schemaOptional = generateXMLSchema(batch.values(), List.of(new IsValidXML(), new SchemaValidatesXMLObjects(batch.values())));
+
+                if(schemaOptional.isPresent()){
+                    //If  a valid schema was generated, break out of the batching loop.
+                    break;
+                }
+
+                batch.clear();//Reset the batch
+            }
+        }
+
+
+
+
+        if(schemaOptional != null && schemaOptional.isPresent()){
+            return Future.succeededFuture(makeSchemaResponse(schemaOptional.get(), batch));
         }else{
             log.error("Failed to generate a schema using example xml objects.");
             return Future.failedFuture("Failed to generate a schema using example xml objects.");
         }
+    }
+
+    @Override
+    public Future<SemanticObject> makeObject(Snippet snippet, SemanticSchema schema) {
+
+        List<Predicate<String>> validators = List.of(new PassesSchemaValidation(schema.getSchema()));
+
+        Optional<String> xmlObject = generateXMLObject(snippet, schema, validators);
+        if(xmlObject.isPresent()){
+            SemanticObject result = new SemanticObject();
+            result.setObject(xmlObject.get());
+            result.setSchemaId(schema.getId());
+            result.setSnippetId(snippet.getId());
+            result.setId(UUID.randomUUID());
+
+            return Future.succeededFuture(result);
+        }
+
+
+        return Future.failedFuture("Failed to generate semantic object for snippet: %s and schema: %s".formatted(snippet.getId().toString(), schema.getId().toString()));
     }
 
     /**
@@ -247,6 +280,26 @@ public class OpenAIStrategy implements AIStrategy {
         return generateWithValidation(()->generateXMLObjectWithoutSchema(snippet, (List<String>)null), validators, config.getJsonObject("generateXMLObjectWithoutSchema").getInteger("maxAttempts"));
     }
 
+    private Optional<String> generateXMLObject(Snippet snippet, SemanticSchema schema, List<Predicate<String>> validators){
+        return generateWithValidation(()->generateXMLObject(snippet.getSnippet(), schema.getSchema()), validators, config.getJsonObject("generateXMLObject").getInteger("maxAttempts"));
+    }
+
+    private String generateXMLObject(String snippet, String schema){
+
+        List<ChatRequestMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(new ChatRequestSystemMessage(config.getJsonObject("generateXMLObject").getString("systemPrompt")));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("Schema:\n");
+        sb.append(schema + "\n");
+        sb.append("HTML Snippet:\n");
+        sb.append(snippet);
+
+        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+
+        return executeChatCompletion(chatMessages);
+
+    }
 
     /**
      *

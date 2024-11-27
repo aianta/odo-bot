@@ -1,6 +1,6 @@
 package ca.ualberta.odobot.sqlite;
 
-import ca.ualberta.odobot.semanticflow.model.TrainingMaterials;
+import ca.ualberta.odobot.snippet2xml.SemanticObject;
 import ca.ualberta.odobot.snippet2xml.SemanticSchema;
 import ca.ualberta.odobot.snippets.Snippet;
 import ca.ualberta.odobot.sqlite.impl.SqliteServiceImpl;
@@ -48,16 +48,14 @@ public interface SqliteService {
 
     Future<List<String>> getUniqueDynamicXpathsFromSnippets();
 
+    Future<List<Snippet>> getSnippets();
+
+    Future<List<Snippet>> getSnippetsByDynamicXpath(String dynamicXpath);
+
     Future<List<Snippet>> sampleSnippetsForDynamicXpath(int numSamples, String dynamicXpath);
 
-    /**
-     *
-     * @param objectData the xml of the object
-     * @param objectId the UUID of the object.
-     * @param schemaId the UUID of the schema validating this object
-     * @param snippetId the UUID of the snippet from which this object was derived.
-     */
-    Future<Void> saveSemanticObject(String objectData, String objectId, String schemaId, String snippetId);
+    Future<Void> saveSemanticObject(SemanticObject object);
+
 
     Future<Void> saveSnippet(String snippet, String xpathId, String type, String sourceHTML);
 

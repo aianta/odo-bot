@@ -20,35 +20,6 @@ public class SchemaValidatesXMLObjects implements Predicate<String> {
 
     private static final Logger log = LoggerFactory.getLogger(SchemaValidatesXMLObjects.class);
 
-    /**
-     * A simple Error handler implementation that simply counts schema validation errors and
-     * provides a convenience method to determine if errors have occurred.
-     */
-    private class ErrorHandler implements org.xml.sax.ErrorHandler{
-
-        public int warnings = 0;
-        public int errors = 0;
-        public int fatalErrors = 0;
-
-        @Override
-        public void warning(SAXParseException exception) throws SAXException {
-            warnings++;
-        }
-
-        @Override
-        public void error(SAXParseException exception) throws SAXException {
-            errors++;
-        }
-
-        @Override
-        public void fatalError(SAXParseException exception) throws SAXException {
-            fatalErrors++;
-        }
-
-        public boolean hasErrors(){
-            return (fatalErrors + errors) > 0;
-        }
-    }
 
     Collection<String> xmlObjects;
 
@@ -73,7 +44,7 @@ public class SchemaValidatesXMLObjects implements Predicate<String> {
             Validator validator = schema.newValidator();
 
             //Need to init and set an ErrorHandler otherwise schema validation errors will not be reported when validatator.validate() is called.
-            ErrorHandler errorHandler = new ErrorHandler();
+            XSDErrorHandler errorHandler = new XSDErrorHandler();
             validator.setErrorHandler(errorHandler);
 
             for(String xmlObject:xmlObjects){
