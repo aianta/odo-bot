@@ -11,6 +11,7 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @ProxyGen
@@ -45,6 +46,12 @@ public interface SqliteService {
     Future<Void> saveDynamicXpath(JsonObject xpathData, String xpathId, String nodeId);
 
     Future<Void> saveSemanticSchema(SemanticSchema schema);
+
+    Future<List<SemanticSchema>> getSemanticSchemas();
+
+    Future<String> getSchemaSourceNodeId(SemanticSchema schema);
+
+    Future<List<JsonObject>> getSemanticSchemasWithSourceNodeIds();
 
     Future<List<String>> getUniqueDynamicXpathsFromSnippets();
 

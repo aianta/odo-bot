@@ -332,6 +332,89 @@ public class SqliteServiceImpl implements SqliteService {
         return saveDynamicXpathForWebsite(xpathData, xpathId, nodeId, "-");
     }
 
+    public Future<List<JsonObject>> getSemanticSchemasWithSourceNodeIds(){
+
+        Promise promise = Promise.promise();
+
+        String sql = """
+                with
+                schemas as (select * from semantic_schemas a),
+                dxpaths as (select id as dxpath_id, source_node_id from dynamic_xpaths b)
+                select id, name, schema, dynamic_xpath_id, source_node_id from schemas a left join dxpaths b on b.dxpath_id = a.dynamic_xpath_id
+                """;
+
+        pool.preparedQuery(sql)
+                .execute()
+                .onSuccess(rows->{
+
+                    List<JsonObject> results = new ArrayList<>();
+
+                    for (Row row: rows){
+                        SemanticSchema schema = SemanticSchema.fromRow(row);
+                        String sourceNodeId = row.getString("source_node_id");
+
+                        /**
+                         * Need to wrap both of these values into a JsonObject, because vertx service proxies
+                         * do not allow Map<SemanticSchema, String> types as responses.
+                         */
+
+                        JsonObject resultObject = schema.toJson();
+                        resultObject.put("sourceNodeId", sourceNodeId);
+                        results.add(resultObject);
+                    }
+
+                    promise.complete(results);
+                })
+                .onFailure(promise::fail);
+
+        return promise.future();
+
+    }
+
+    public Future<String> getSchemaSourceNodeId(SemanticSchema schema){
+
+        Promise promise = Promise.promise();
+
+        String sql = """
+                select source_node_id from dynamic_xpaths where id = ?;
+                """;
+
+        pool.preparedQuery(sql)
+                .execute(Tuple.of(schema.getDynamicXpathId()))
+                .onSuccess(rows->{
+
+                    assert rows.size() == 1; //There should only ever be one matching dynamic xpath for a given schema, otherwise something is deeply wrong.
+
+                    promise.complete(rows.iterator().next().getString("source_node_id"));
+
+                })
+                .onFailure(promise::fail);
+
+        return promise.future();
+
+    }
+
+    public Future<List<SemanticSchema>> getSemanticSchemas(){
+        Promise<List<SemanticSchema>> promise = Promise.promise();
+        String sql = """
+                Select * from semantic_schemas;
+                """;
+        pool.preparedQuery(sql)
+                .execute()
+                .onSuccess(rows->{
+
+                    List<SemanticSchema> result = new ArrayList<>();
+                    for(Row row: rows){
+                        result.add(SemanticSchema.fromRow(row));
+                    }
+
+                })
+                .onFailure(promise::fail)
+        ;
+
+        return promise.future();
+    }
+
     @Override
     public Future<Void> saveSemanticSchema(SemanticSchema schema) {
         String sql = """

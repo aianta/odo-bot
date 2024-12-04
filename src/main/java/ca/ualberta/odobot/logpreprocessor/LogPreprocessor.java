@@ -10,6 +10,7 @@ import ca.ualberta.odobot.semanticflow.model.Timeline;
 import ca.ualberta.odobot.semanticflow.model.TrainingMaterials;
 import ca.ualberta.odobot.semanticflow.model.semantictrace.SemanticTrace;
 import ca.ualberta.odobot.semanticflow.navmodel.*;
+import ca.ualberta.odobot.snippet2xml.SemanticSchema;
 import ca.ualberta.odobot.snippets.SnippetExtractorService;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import ca.ualberta.odobot.sqlite.impl.TrainingExemplar;
@@ -65,6 +66,8 @@ public class LogPreprocessor extends AbstractVerticle {
 
     public static GraphDB graphDB;
 
+    public static Neo4JUtils neo4j;
+
     public static Localizer localizer;
 
     public static NavPathsConstructor pathsConstructor;
@@ -76,6 +79,9 @@ public class LogPreprocessor extends AbstractVerticle {
             //Init embedded Neo4J
             //TODO -> this should probably be its own service
             graphDB = new GraphDB("/graphdb/", "embedded");
+
+            //TODO -> refactor this, probably...
+            neo4j = new Neo4JUtils("bolt://localhost:7687", "neo4j", "odobotdb");
 
             //TODO -> refactor this, probably...
             localizer = new Localizer(graphDB);
@@ -251,6 +257,7 @@ public class LogPreprocessor extends AbstractVerticle {
             api.route().method(HttpMethod.POST).path("/html2xpath").handler(this::html2xpath);
             api.route().method(HttpMethod.GET).path("/collapseTest").handler(this::testingCollapse);
             api.route().method(HttpMethod.GET).path("/postLocationMergerTest").handler(this::testingPostLocationEffectMerger);
+            api.route().method(HttpMethod.GET).path("/schemaAnnotation").handler(this::schemaAnnotation);
 
 
             //Mount handlers to main router
@@ -607,6 +614,48 @@ public class LogPreprocessor extends AbstractVerticle {
 
 
         rc.response().setStatusCode(200).end();
+
+
+    }
+
+    private void schemaAnnotation(RoutingContext rc){
+
+        /**
+         * 1. Query sqlite to retrieve all schemas, and their corresponding source node ids.
+         * 2. Find the nodes in the nav model and add parameter nodes and relationships as appropriate.
+         */
+
+        sqliteService.getSemanticSchemasWithSourceNodeIds()
+                .onSuccess(schemasAndSourceNodeIds->{
+
+                    //Unwrap the json objects returned from the sqlite service into a nice map of schemas and source node ids.
+
+                    Map<SemanticSchema, String> inputMap = new HashMap<>();
+                    schemasAndSourceNodeIds.forEach(json->{
+                        SemanticSchema schema = new SemanticSchema(json);
+                        String sourceNodeId = json.getString("sourceNodeId");
+                        inputMap.put(schema, sourceNodeId);
+                    });
+
+
+                    log.info("Retrieved {} schemas with corresponding source node ids", schemasAndSourceNodeIds.size());
+
+                    List<UUID> parameterNodes = new ArrayList<>();
+
+                    inputMap.forEach((schema, sourceNodeId)->{
+                        UUID parameterNodeId = neo4j.addSchemaParameter(schema, sourceNodeId);
+                        parameterNodes.add(parameterNodeId);
+                    });
+
+                    log.info("Created {} parameter nodes", parameterNodes.size());
+
+                    rc.response().setStatusCode(200).putHeader("Content-Type", "application/json")
+                            .end(
+                                    parameterNodes.stream().map(UUID::toString).collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encodePrettily()
+                            );
+
+                });
+
 
 
     }

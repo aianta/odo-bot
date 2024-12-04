@@ -5,6 +5,7 @@ import ca.ualberta.odobot.mind2web.*;
 import ca.ualberta.odobot.semanticflow.model.*;
 
 import ca.ualberta.odobot.semanticflow.navmodel.nodes.*;
+import ca.ualberta.odobot.snippet2xml.SemanticSchema;
 import org.neo4j.driver.*;
 import org.neo4j.driver.Record;
 import org.neo4j.driver.exceptions.NoSuchRecordException;
@@ -1257,5 +1258,40 @@ public class Neo4JUtils {
             return xpaths;
 
         }
+    }
+
+    public UUID addSchemaParameter(SemanticSchema schema, String nodeId){
+
+        UUID parameterNodeId = UUID.randomUUID();
+
+        HashMap<String, Object> props = new HashMap<>();
+        props.put("id", parameterNodeId.toString());
+        props.put("schemaId", schema.getId().toString());
+        props.put("dynamicXpathId", schema.getDynamicXpathId());
+        props.put("name", schema.getName());
+        props.put("xml", schema.getSchema());
+
+        var createParameterNodeStmt = "MERGE (n:SchemaParameter {schemaId:$schemaId}) ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
+
+        Query createParameterNodeQuery = new Query(createParameterNodeStmt, parameters("schemaId", schema.getId().toString(), "props", props));
+
+        var createRelationshipStmt = """
+                MATCH (sourceNode {id:$sourceNodeId}), (parameterNode:SchemaParameter {id:$parameterNodeId}) 
+                CREATE (sourceNode)-[:PARAM]->(parameterNode);
+            """;
+
+        Query createRelationshipQuery = new Query(createRelationshipStmt, parameters("sourceNodeId", nodeId, "parameterNodeId", parameterNodeId.toString()));
+
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+
+            session.executeWrite(tx->{
+               tx.run(createParameterNodeQuery);
+               tx.run(createRelationshipQuery);
+               return 0;
+            });
+        }
+
+        return parameterNodeId;
+
     }
 }
