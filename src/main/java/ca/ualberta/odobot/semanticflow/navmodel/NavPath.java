@@ -16,7 +16,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.IntStream;
 
-public class    NavPath {
+public class NavPath {
 
     private static final Logger log = LoggerFactory.getLogger(NavPath.class);
 
@@ -31,6 +31,8 @@ public class    NavPath {
     private Predicate<Node> instructionNodePredicate = (node)->node.hasLabel(Label.label("ClickNode")) || node.hasLabel(Label.label("DataEntryNode"));
 
     private Instruction lastInstruction;
+
+    private List<JsonObject> parameters;
 
     public NavPath(){
     }
@@ -57,6 +59,11 @@ public class    NavPath {
     }
 
 
+    /**
+     * For Synapse mind2web guidance. Returns mind2web action ids along this nav path.
+     * @param validActionIds
+     * @return
+     */
     public List<String> getActionIds(Collection<String> validActionIds){
         while (iterator.hasNext()){
             Node node = iterator.next();
@@ -335,5 +342,12 @@ public class    NavPath {
                 });
     }
 
+    public List<JsonObject> getParameters() {
+        return parameters;
+    }
 
+    public NavPath setParameters(List<JsonObject> parameters) {
+        this.parameters = parameters;
+        return this;
+    }
 }

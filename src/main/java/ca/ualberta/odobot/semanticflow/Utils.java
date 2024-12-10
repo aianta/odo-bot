@@ -1,5 +1,7 @@
 package ca.ualberta.odobot.semanticflow;
 
+import ca.ualberta.odobot.snippet2xml.SemanticSchema;
+import ca.ualberta.odobot.sqlite.SqliteService;
 import io.vertx.core.json.JsonObject;
 import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
@@ -7,14 +9,36 @@ import org.slf4j.LoggerFactory;
 
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
+import java.util.*;
 import java.util.function.Predicate;
 
 public class Utils {
 
     private static final Logger log = LoggerFactory.getLogger(Utils.class);
+
+    /**
+     * Utility method that converts output from {@link SqliteService#getSemanticSchemasWithSourceNodeIds()} into a Map.
+     * @param input
+     * @return
+     */
+    public static Map<SemanticSchema, String> schemaParametersToMap(List<JsonObject> input){
+        Map<SemanticSchema, String> output = new HashMap<>();
+        input.forEach(json->{
+            SemanticSchema schema = new SemanticSchema(json);
+            String sourceNodeId = json.getString("sourceNodeId");
+            output.put(schema, sourceNodeId);
+        });
+        return output;
+    }
+
+    public static SemanticSchema getSchemaBySourceNodeId(Map<SemanticSchema, String> map, String sourceNodeId){
+        Map.Entry<SemanticSchema, String> targetEntry = map.entrySet().stream().filter(entry->entry.getValue().equals(sourceNodeId)).findFirst().get();
+        if(targetEntry != null){
+            return targetEntry.getKey();
+        }
+        //log.warn("Did not find a schema associated with source node id: {}", sourceNodeId);
+        return null;
+    }
 
     public static String getNormalizedPath(String url){
         try{

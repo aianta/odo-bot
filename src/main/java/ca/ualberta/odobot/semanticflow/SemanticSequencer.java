@@ -21,10 +21,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
-import java.util.Iterator;
-import java.util.List;
-import java.util.ListIterator;
-import java.util.UUID;
+import java.util.*;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -42,6 +39,8 @@ public class SemanticSequencer {
     //Either way, we need the zone to be set in order to parse the timestamps.
     public static DateTimeFormatter timeFormatter = DateTimeFormatter.ISO_INSTANT.withZone(ZoneId.systemDefault());
 
+    //Interaction types to process from the timeline.
+    public Set<InteractionType> include = Set.of(InteractionType.CLICK, InteractionType.INPUT, InteractionType.NETWORK_EVENT, InteractionType.DOM_EFFECT);
 
     private DomEffectMapper domEffectMapper = new DomEffectMapper();
     private ClickEventMapper clickEventMapper = new ClickEventMapper();
@@ -73,6 +72,11 @@ public class SemanticSequencer {
      */
     public void setNetworkEventFilter(Predicate<NetworkEvent> networkEventFilter) {
         this.networkEventFilter = networkEventFilter;
+    }
+
+    public SemanticSequencer updateIncludeFilter(Set<InteractionType> include){
+        this.include = include;
+        return this;
     }
 
     public Timeline parse(List<JsonObject> events){
@@ -129,6 +133,12 @@ public class SemanticSequencer {
     }
 
     private void parse(JsonObject event)  {
+
+        //If the interaction type of the event is not in our include set, ignore this event.
+        if(event.containsKey("eventDetails_name") && !include.contains(InteractionType.getType(event.getString("eventDetails_name")))){
+            return;
+        }
+
 
         log.info("eventType: {}", event.getString("eventType"));
         log.info("eventDetails_name: {}", event.getString("eventDetails_name"));

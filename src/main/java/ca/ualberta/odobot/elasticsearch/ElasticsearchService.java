@@ -60,6 +60,8 @@ public interface ElasticsearchService {
     Future<List<JsonObject>> fetchAndSortAll(String index, JsonArray sortOptions);
 
     /**
+     * Deprecated: Vertx does not like returning maps over service proxies. Would have to debug this before it can be used again properly.
+     *
      * Like {@link #fetchFlightEvents(String, String, String, JsonArray)} only accepts a list of flight identifiers. So it can retrieve multiple timelines sequentially
      * to avoid out of memory exceptions.
      *
@@ -69,6 +71,7 @@ public interface ElasticsearchService {
      * @param sortOptions Options regarding the order of the retrieved documents. Right now, this is treated as a boolean, any non-null value will return documents oldest to newest, while any null value will return documents using the default elasticsearch _score value.
      * @return a map of flightIds and associated events as a list of json objects.
      */
+    @Deprecated
     Future<Map<String,List<JsonObject>>> fetchMultipleFlightEvents(String index, List<String> flightIdentifiers, String flightIdentifierField, JsonArray sortOptions);
 
 

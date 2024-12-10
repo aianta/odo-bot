@@ -215,7 +215,7 @@ public class FetchAllTask implements Runnable{
         }
     }
 
-    private SearchRequest fetchAllRequestV2(String pitId, Time keepAliveValue, SortOptions sortOptions, List<FieldValue> sortInfo, String flightIdentifier, String flightIdentifierField){
+    protected SearchRequest fetchAllRequestV2(String pitId, Time keepAliveValue, SortOptions sortOptions, List<FieldValue> sortInfo, String flightIdentifier, String flightIdentifierField){
 
         /**
          * Using the Filter Context strategy from the link below:
@@ -235,7 +235,7 @@ public class FetchAllTask implements Runnable{
      * Construct a search request builder object with common settings.
      * @return
      */
-    private SearchRequest.Builder commonRequestBuilder(String pitId, Time keepAliveValue){
+    protected SearchRequest.Builder commonRequestBuilder(String pitId, Time keepAliveValue){
         SearchRequest.Builder requestBuilder = new SearchRequest.Builder()
                 .size(100)
                 .pit(pit->pit.id(pitId).keepAlive(keepAliveValue))
@@ -246,7 +246,7 @@ public class FetchAllTask implements Runnable{
 
     }
 
-    private SearchRequest handleSorting(SearchRequest.Builder requestBuilder, SortOptions sortOptions, List<FieldValue> sortInfo){
+    protected SearchRequest handleSorting(SearchRequest.Builder requestBuilder, SortOptions sortOptions, List<FieldValue> sortInfo){
         //If we were given sort options, add them to the request now
         if(sortOptions != null){
             requestBuilder.sort(sortOptions);

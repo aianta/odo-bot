@@ -1,5 +1,8 @@
 package ca.ualberta.odobot.semanticflow.navmodel;
 
+import ca.ualberta.odobot.semanticflow.Utils;
+import ca.ualberta.odobot.snippet2xml.SemanticSchema;
+import ca.ualberta.odobot.sqlite.SqliteService;
 import org.neo4j.graphdb.*;
 import org.neo4j.graphdb.traversal.*;
 import org.slf4j.Logger;
@@ -14,8 +17,20 @@ public class NavPathsConstructor {
     private static final Logger log = LoggerFactory.getLogger(NavPathsConstructor.class);
     private final GraphDatabaseService db;
 
-    public NavPathsConstructor(GraphDB graphDB){
+    private Map<SemanticSchema, String> globalSchemaParameters;
+
+    private SqliteService sqliteService;
+
+    public NavPathsConstructor(GraphDB graphDB, SqliteService sqliteService){
         this.db = graphDB.db;
+        this.sqliteService = sqliteService;
+
+        //Populate the global schema parameter map.
+        sqliteService.getSemanticSchemasWithSourceNodeIds()
+                .onSuccess(result->{
+                    this.globalSchemaParameters = Utils.schemaParametersToMap(result);
+                });
+
     }
 
     private Node fetchNodeById(Transaction tx, String id){
@@ -33,43 +48,45 @@ public class NavPathsConstructor {
 
     public List<NavPath> construct(Transaction tx, UUID src, UUID tgt){
 
-            Node srcNode = fetchNodeById(tx, src.toString());
-            Node tgtNode = fetchNodeById(tx, tgt.toString());
+        Node srcNode = fetchNodeById(tx, src.toString());
+        Node tgtNode = fetchNodeById(tx, tgt.toString());
 
-            NavPathsEvaluator evaluator = new NavPathsEvaluator(tgtNode);
+        NavPathsEvaluator evaluator = new NavPathsEvaluator(tgtNode);
 
-            TraversalDescription traversal = tx.traversalDescription()
-                    .breadthFirst()
-                    .uniqueness(Uniqueness.NODE_PATH)
-                    .relationships(RelationshipType.withName("NEXT"), Direction.OUTGOING)
-                    .evaluator(evaluator);
+        TraversalDescription traversal = tx.traversalDescription()
+                .breadthFirst()
+                .uniqueness(Uniqueness.NODE_PATH)
+                .relationships(RelationshipType.withName("NEXT"), Direction.OUTGOING)
+                .evaluator(evaluator);
 
-            Traverser traverser = traversal.traverse(srcNode);
+        Traverser traverser = traversal.traverse(srcNode);
 
-            Iterator<Path> it = traverser.iterator();
+        Iterator<Path> it = traverser.iterator();
 
 
-            List<NavPath> paths = new ArrayList<>();
+        List<NavPath> paths = new ArrayList<>();
 
-            while (it.hasNext()){
-              it.next();
-            }
+        while (it.hasNext()){
+          it.next();
+        }
 
-            it = evaluator._paths.iterator();
-            while (it.hasNext()){
-                NavPath navPath = new NavPath();
-                navPath.setPath(it.next());
-                paths.add(navPath);
-            }
+        it = evaluator._paths.iterator();
+        while (it.hasNext()){
+            NavPath navPath = new NavPath();
+            navPath.setPath(it.next());
+            paths.add(navPath);
 
-            paths.sort(Comparator.comparingInt(navPath -> navPath.getPath().length()));
 
-            NavPath.printNavPaths(paths, 3);
+        }
 
-            List<NavPath> shortestPath = new ArrayList<>();
-            shortestPath.add(paths.get(0));
+        paths.sort(Comparator.comparingInt(navPath -> navPath.getPath().length()));
 
-            return shortestPath;
+        NavPath.printNavPaths(paths, 3);
+
+        List<NavPath> shortestPath = new ArrayList<>();
+        shortestPath.add(paths.get(0));
+
+        return shortestPath;
 
     }
 

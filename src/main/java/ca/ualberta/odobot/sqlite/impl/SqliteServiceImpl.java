@@ -50,6 +50,8 @@ public class SqliteServiceImpl implements SqliteService {
         createDynamicXpathProgressTable();
         createSemanticObjectTable();
         createSemanticSchemaTable();
+        createDataEntriesTable();
+        createDataEntryAnnotationTable();
     }
 
 
@@ -77,6 +79,55 @@ public class SqliteServiceImpl implements SqliteService {
         return promise.future();
     }
 
+    public Future<List<JsonObject>> getAllDataEntryAnnotations(){
+        Promise<List<JsonObject>> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            SELECT * FROM data_entry_annotations;
+        """).execute()
+                .onSuccess(rows->{
+                    List<JsonObject> results = new ArrayList<>();
+                    for(Row row: rows){
+                        JsonObject result = new JsonObject();
+                        result.put("xpath", row.getString("xpath"))
+                                .put("label", row.getString("label"))
+                                .put("description", row.getString("description"));
+
+                        results.add(result);
+                    }
+
+                    promise.complete(results);
+                })
+                .onFailure(promise::fail);
+
+        return promise.future();
+    }
+
+    public Future<List<JsonObject>> getAllDataEntryInfo(){
+        Promise<List<JsonObject>> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            SELECT * FROM data_entries;
+        """).execute()
+                .onSuccess(rows->{
+                    List<JsonObject> results = new ArrayList<>();
+                    for(Row row: rows){
+                        JsonObject result = new JsonObject();
+                        result.put("xpath", row.getString("xpath"))
+                                .put("inputElement", row.getString("input_element"))
+                                .put("htmlContext", row.getString("html_context"))
+                                .put("enteredData", new JsonArray(row.getString("entered_data")));
+
+                        results.add(result);
+                    }
+
+                    promise.complete(results);
+                })
+                .onFailure(promise::fail);
+
+        return promise.future();
+
+    }
 
     public Future<JsonArray> selectLogs(long timestampMilli, long range){
         Promise promise = Promise.promise();
@@ -129,6 +180,22 @@ public class SqliteServiceImpl implements SqliteService {
 
         Promise<Void> promise = Promise.promise();
         return executeParameterizedQuery(promise, sql, params, ignoreUniqueConstraintViolationErrorHandler(promise));
+    }
+
+    public Future<Void> saveDataEntryAnnotation(JsonObject info){
+
+        String sql = """
+                INSERT INTO data_entry_annotations (xpath, label, description) VALUES (?,?,?);
+                """;
+
+        Tuple params = Tuple.of(
+                info.getString("xpath"),
+                info.getString("label"),
+                info.getString("description")
+        );
+
+        return executeParameterizedQuery(sql, params);
+
     }
 
 
@@ -621,7 +688,58 @@ public class SqliteServiceImpl implements SqliteService {
         return executeParameterizedQuery(sql, params);
     }
 
+    public Future<Void> saveDataEntryInfo(JsonObject info){
+        /**
+         *
+         * Basically inserting a new record if we've never seen info for this xpath before, otherwise we just update
+         * the entered data json array with the new entered data value.
+         *
+         * Getting fancy with UPSERT Sqlite functionality.
+         * https://stackoverflow.com/questions/418898/upsert-not-insert-or-replace
+         *
+         * Getting fancy with SQLite Json support
+         * https://stackoverflow.com/questions/49451777/sqlite-append-a-new-element-to-an-existing-array
+         *
+         */
+        String sql = """
+                INSERT INTO data_entries(xpath, input_element, html_context, entered_data) VALUES (?,?,?,?)
+                ON CONFLICT(xpath) DO UPDATE SET entered_data = json_insert(entered_data, '$[#]', ?) WHERE NOT INSTR(entered_data, ?);
+                """;
 
+        Tuple params = Tuple.of(
+                info.getString("xpath"),
+                info.getString("input_element"),
+                info.getString("html_context"),
+                new JsonArray().add(info.getString("entered_data")).encode(),
+                info.getString("entered_data"),
+                info.getString("entered_data")
+        );
+
+        return executeParameterizedQuery(sql, params);
+
+    }
+
+
+    private Future<Void> createDataEntryAnnotationTable(){
+        return createTable("""
+                CREATE TABLE IF NOT EXISTS data_entry_annotations(
+                    xpath text PRIMARY KEY,
+                    label text NOT NULL,
+                    description text NOT NULL
+                ) 
+                """);
+    }
+
+    private Future<Void> createDataEntriesTable(){
+        return createTable("""
+                CREATE TABLE IF NOT EXISTS data_entries(
+                    xpath text PRIMARY KEY,
+                    input_element text NOT NULL,
+                    html_context text NOT NULL,
+                    entered_data text NOT NULL
+                );
+                """);
+    }
 
     private Future<Void> createTrainingDatasetTable(){
         return createTable("""

@@ -63,6 +63,14 @@ public interface SqliteService {
 
     Future<Void> saveSemanticObject(SemanticObject object);
 
+    Future<Void> saveDataEntryInfo(JsonObject info);
+
+    Future<List<JsonObject>> getAllDataEntryInfo();
+
+    Future<List<JsonObject>> getAllDataEntryAnnotations();
+
+    Future<Void> saveDataEntryAnnotation(JsonObject info);
+
 
     Future<Void> saveSnippet(String snippet, String xpathId, String type, String sourceHTML);
 

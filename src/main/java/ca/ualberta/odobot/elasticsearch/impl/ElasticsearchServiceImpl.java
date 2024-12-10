@@ -214,7 +214,7 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
 
                 f = promise.future();
             }else{
-                f.compose(previousResult->{
+                f = f.compose(previousResult->{
                     Promise<List<JsonObject>> promise = Promise.promise();
                     promise.future()
                             .onSuccess(data->result.put(flightIdentifier, data))
@@ -230,7 +230,7 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
             }
         }
 
-        return Future.succeededFuture(result);
+        return f.compose(done->Future.succeededFuture(result));
 
     }
 

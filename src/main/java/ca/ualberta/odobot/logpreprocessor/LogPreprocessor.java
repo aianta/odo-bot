@@ -5,6 +5,7 @@ import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 import ca.ualberta.odobot.logpreprocessor.executions.impl.AbstractPreprocessingPipelineExecutionStatus;
 import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
 import ca.ualberta.odobot.logpreprocessor.impl.*;
+import ca.ualberta.odobot.semanticflow.Utils;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 
 import ca.ualberta.odobot.semanticflow.model.TrainingMaterials;
@@ -86,9 +87,6 @@ public class LogPreprocessor extends AbstractVerticle {
             //TODO -> refactor this, probably...
             localizer = new Localizer(graphDB);
 
-            //TODO -> refactor this, probably...
-            pathsConstructor = new NavPathsConstructor(graphDB);
-
             //Init Http Server
             HttpServerOptions options = new HttpServerOptions()
                     .setHost(HOST)
@@ -104,6 +102,9 @@ public class LogPreprocessor extends AbstractVerticle {
             new ServiceBinder(vertx.getDelegate())
                     .setAddress(SQLITE_SERVICE_ADDRESS)
                     .register(SqliteService.class, sqliteService);
+
+            //TODO -> refactor this, probably...
+            pathsConstructor = new NavPathsConstructor(graphDB, sqliteService);
 
 
             //Init DOMSequencing Service
@@ -630,12 +631,7 @@ public class LogPreprocessor extends AbstractVerticle {
 
                     //Unwrap the json objects returned from the sqlite service into a nice map of schemas and source node ids.
 
-                    Map<SemanticSchema, String> inputMap = new HashMap<>();
-                    schemasAndSourceNodeIds.forEach(json->{
-                        SemanticSchema schema = new SemanticSchema(json);
-                        String sourceNodeId = json.getString("sourceNodeId");
-                        inputMap.put(schema, sourceNodeId);
-                    });
+                    Map<SemanticSchema, String> inputMap = Utils.schemaParametersToMap(schemasAndSourceNodeIds);
 
 
                     log.info("Retrieved {} schemas with corresponding source node ids", schemasAndSourceNodeIds.size());

@@ -29,3 +29,4 @@ neo4j-plugins/*
 test_task
 test_task_results
 config/snippet2xml.yaml
+config/dataentry2label.yaml

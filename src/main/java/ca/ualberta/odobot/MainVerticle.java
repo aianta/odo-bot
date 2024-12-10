@@ -2,6 +2,7 @@ package ca.ualberta.odobot;
 
 
 import ca.ualberta.odobot.common.ConfigurableVerticle;
+import ca.ualberta.odobot.dataentry2label.DataEntry2LabelVerticle;
 import ca.ualberta.odobot.explorer.ExplorerVerticle;
 import ca.ualberta.odobot.guidance.GuidanceVerticle;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
@@ -86,6 +87,11 @@ public class MainVerticle extends ConfigurableVerticle {
         if(_config.getBoolean("Snippet2XML")){
             Snippet2XMLVerticle snippet2XMLVerticle = new Snippet2XMLVerticle();
             vertx.deployVerticle(snippet2XMLVerticle);
+        }
+
+        if(_config.getBoolean("DataEntry2Label")){
+            DataEntry2LabelVerticle dataEntry2LabelVerticle = new DataEntry2LabelVerticle();
+            vertx.deployVerticle(dataEntry2LabelVerticle);
         }
 
 

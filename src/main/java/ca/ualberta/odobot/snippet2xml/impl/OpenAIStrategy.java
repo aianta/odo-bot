@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.snippet2xml.impl;
 
+import ca.ualberta.odobot.common.AbstractOpenAIStrategy;
 import ca.ualberta.odobot.snippet2xml.AIStrategy;
 import ca.ualberta.odobot.snippet2xml.SemanticObject;
 import ca.ualberta.odobot.snippet2xml.SemanticSchema;
@@ -24,27 +25,16 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-public class OpenAIStrategy implements AIStrategy {
+public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIStrategy.class);
 
     private Pattern xmlResponsePattern = Pattern.compile("(?<=```xml).+(?=```)", Pattern.DOTALL);
 
-    private OpenAIClient client;
-    private JsonObject config;
-
-    private String model; //The openAI model to use for chat completions
-
-
-    public OpenAIStrategy(JsonObject config){
-        this.config = config.getJsonObject("openAI");
-        this.model = this.config.getString("model");
-
-        client = new OpenAIClientBuilder()
-                .credential(new KeyCredential(config.getJsonObject("openAI").getString("secretKey")))
-                .buildClient();
-
+    public OpenAIStrategy(JsonObject config) {
+        super(config);
     }
+
 
     @Override
     public Future<JsonObject> makeSchema(List<Snippet> snippets) {
@@ -179,7 +169,7 @@ public class OpenAIStrategy implements AIStrategy {
      * @param maxAttempts
      * @return An Optional containing a valid generated string output if one was generated, otherwise an empty optional
      */
-    private Optional<String> generateWithValidation(Supplier<String> outputGenerator, List<Predicate<String>> validators, int maxAttempts){
+    protected Optional<String> generateWithValidation(Supplier<String> outputGenerator, List<Predicate<String>> validators, int maxAttempts){
         String output = extractXMLFromResponse(outputGenerator.get());
         int attempt = 1;
 
@@ -218,22 +208,6 @@ public class OpenAIStrategy implements AIStrategy {
         return executeChatCompletion(chatMessages);
     }
 
-    private String executeChatCompletion(List<ChatRequestMessage> chatMessages){
-        ChatCompletionsOptions options = new ChatCompletionsOptions(chatMessages);
-        options.setN(1); //Only generate one choice
-        options.setTemperature(config.getDouble("temperature"));
-        options.setTopP(config.getDouble("topP"));
-        options.setMaxTokens(config.getInteger("maxTokens"));
-
-        ChatCompletions chatCompletions = client.getChatCompletions(model, options);
-
-        log.info("Got chat completion ({})@{}", chatCompletions.getId(), chatCompletions.getCreatedAt());
-        ChatResponseMessage message = chatCompletions.getChoices().get(0).getMessage();
-        String content = message.getContent();
-        log.info("{}", content);
-
-        return content;
-    }
 
     /**
      * Returns a string formatted as follows:

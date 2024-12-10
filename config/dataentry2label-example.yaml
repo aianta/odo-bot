@@ -1,0 +1,17 @@
+host: 0.0.0.0
+port: 8053
+apiPathPrefix: "/api/*"
+openAI:
+  secretKey: "<open ai secret key>"
+  model: "gpt-4o-mini"
+  temperature: null
+  topP: 0.01
+  maxTokens: null
+  generateLabelAndDescription:
+    maxAttempts: 5
+    systemPrompt: |
+      You are a web data entry analyzer. You are provided with: an HTML element into which data has been entered, this is the input element. A corresponding HTML snippet that contains HTML elements near the input element. As well as one or more examples of the kind of data that was entered. Your task is to produce a label that describes the semantic role of the entered data in the context of the web application. Additionally produce one sentence describing what the entered data is used for, this will be the description. Your output should be of the form: 
+      Label:
+      `<label output>` 
+      Description: 
+      `<description output>`

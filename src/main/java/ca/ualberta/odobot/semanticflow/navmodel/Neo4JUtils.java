@@ -1030,6 +1030,26 @@ public class Neo4JUtils {
         return result;
     }
 
+    public List<DataEntryNode> getDataEntryNodes(){
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+            String sQuery = """
+                    match (n:DataEntryNode) return n;
+                    """;
+            Query query = new Query(sQuery);
+
+            List<Record> results = session.executeRead(tx->{
+                var result = tx.run(query);
+                return result.list();
+            });
+
+            List<DataEntryNode> dataEntryNodes = results.stream()
+                    .map(DataEntryNode::fromRecord)
+                    .collect(Collectors.toList());
+
+            return dataEntryNodes;
+        }
+    }
+
     /**
      * For a collection of annotation_ids (in the mind2web dataset), returns all corresponding start nodes.
      * @param ids

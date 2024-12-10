@@ -89,9 +89,11 @@ public class DataEntry extends ArrayList<InputChange> implements TimelineEntity 
         return get(size()-1).getValue();
     }
 
+
     public JsonObject toJson(){
         JsonObject result = new JsonObject();
         result.put("enteredData", getEnteredData());
+        result.put("inputElement", inputElement().outerHtml());
         return result;
     }
 
