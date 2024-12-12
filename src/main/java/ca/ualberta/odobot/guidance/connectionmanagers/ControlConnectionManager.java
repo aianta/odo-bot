@@ -3,12 +3,16 @@ package ca.ualberta.odobot.guidance.connectionmanagers;
 import ca.ualberta.odobot.guidance.OdoClient;
 import ca.ualberta.odobot.guidance.Request;
 import ca.ualberta.odobot.guidance.WebSocketConnection;
+import ca.ualberta.odobot.guidance.execution.ExecutionParameter;
+import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.UUID;
 import java.util.function.BiConsumer;
+import java.util.stream.Collectors;
 
 public class ControlConnectionManager extends AbstractConnectionManager implements ConnectionManager{
 
@@ -32,6 +36,22 @@ public class ControlConnectionManager extends AbstractConnectionManager implemen
                 request.setUserLocation(message.getString("userLocation"));
 
                 client.getRequestManager().addNewRequest(request);
+
+
+                break;
+            case "EXECUTION_REQUEST":
+
+                //Read execution request data and initialize an execution request object.
+                ExecutionRequest executionRequest = new ExecutionRequest();
+                executionRequest.setId(UUID.fromString(message.getString("id")));
+                executionRequest.setTarget(UUID.fromString(message.getString("target")));
+                executionRequest.setUserLocation(message.getString("userLocation"));
+
+                JsonArray parameters = message.getJsonArray("parameters");
+                executionRequest.setParameters(parameters.stream()
+                        .map(o->(JsonObject)o) //Type cast everything to json objects
+                        .map(ExecutionParameter::fromJson)
+                        .collect(Collectors.toList()));
 
 
                 break;

@@ -1,8 +1,8 @@
 package ca.ualberta.odobot.guidance;
 
-import ca.ualberta.odobot.guidance.instructions.DynamicXPathInstruction;
-import ca.ualberta.odobot.guidance.instructions.Instruction;
-import ca.ualberta.odobot.guidance.instructions.XPathInstruction;
+import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
+import ca.ualberta.odobot.guidance.execution.InputParameter;
+import ca.ualberta.odobot.guidance.instructions.*;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import ca.ualberta.odobot.semanticflow.model.ClickEvent;
 import ca.ualberta.odobot.semanticflow.model.DataEntry;
@@ -28,6 +28,8 @@ public class RequestManager {
 
     private OdoClient client = null;
 
+    private ExecutionRequest activeExecutionRequest = null;
+
     private Request activeRequest = null;
 
     private List<NavPath> navPaths = null;
@@ -50,6 +52,24 @@ public class RequestManager {
         this.activeRequest = activeRequest;
     }
 
+    public ExecutionRequest getActiveExecutionRequest() {
+        return activeExecutionRequest;
+    }
+
+    public RequestManager setActiveExecutionRequest(ExecutionRequest activeExecutionRequest) {
+        this.activeExecutionRequest = activeExecutionRequest;
+        return this;
+    }
+
+    public void addNewRequest(ExecutionRequest request){
+        setActiveExecutionRequest(request);
+        client.getEventConnectionManager().startTransmitting()//Turn on event transmissions //TODO -> if something behaves oddly, this is a likely area where things might go wrong. Not sure when transmission should start.
+                .compose(done->client.getEventConnectionManager().getLocalContext())
+                .compose(localContext->getExecutionPath(request, localContext))
+                .compose(executionInstruction->client.getGuidanceConnectionManager().sendExecutionInstruction(executionInstruction))
+                .onSuccess(done->log.info("First instruction executed!"));
+    }
+
     public void addNewRequest(Request request){
         setActiveRequest(request);
         client.getEventConnectionManager().getLocalContext()
@@ -57,6 +77,52 @@ public class RequestManager {
                 .compose(navigationOptions->client.getGuidanceConnectionManager().showNavigationOptions(navigationOptions))
                 .onSuccess(navigationOptionsShown->client.getEventConnectionManager().startTransmitting());
         ;
+    }
+
+    public Future<JsonObject> getExecutionPath(ExecutionRequest request, JsonArray localContext){
+
+        log.info("Processing localContext[size:{}] into ExecutionPathsRequestInput", localContext.size());
+
+        eventProcessor.setOnEntity(this::buildPathsRequestInput, (entity)-> entity instanceof DataEntry || entity instanceof ClickEvent);
+        eventProcessor.process(localContext);
+
+        log.info("Done processing local context!");
+        try{
+            if(_input == null){
+                //This happens when there is no meaningful local context. IE: local context that doesn't include a data entry or click event
+                _input = new PathsRequestInput();
+            }
+
+            _input.setUserLocation(request.getUserLocation());
+            _input.setTargetNode(request.getTarget().toString());
+            _input.setPathRequestId(request.getId().toString());
+
+            log.info("LastEntity: {}", _input.getLastEntity() != null?_input.lastEntity.symbol(): "N/A");
+            log.info("URL: {}", _input.getUrl() != null? _input.getUrl(): "N/A");
+            log.info("DOM: {}", _input.getDom() != null? _input.dom.toString().substring(0, Math.min(_input.dom.toString().length(), 150)): "N/A");
+            log.info("TargetNode: {}", _input.targetNode);
+
+            Optional<UUID> startingNode = LogPreprocessor.localizer.resolveStartingNode(_input);
+            log.info("Found starting node? {}", startingNode.isPresent());
+
+            UUID src = startingNode.get();
+            UUID tgt = request.getTarget();
+
+            log.info("Resolving execution path from {} to {}", src.toString(), tgt.toString());
+
+            tx = LogPreprocessor.graphDB.db.beginTx();
+
+            navPaths = LogPreprocessor.pathsConstructor.construct(tx, src,tgt, request.getParameters());
+
+            log.info("Found {} execution paths", navPaths.size());
+
+            JsonObject executionInstruction = buildExecutionInstruction(navPaths);
+
+            return Future.succeededFuture(executionInstruction);
+        }catch (Exception e){
+            log.error(e.getMessage(), e);
+            return Future.failedFuture(e);
+        }
     }
 
     public Future<JsonObject> getPaths(Request request,  JsonArray localContext){
@@ -70,7 +136,7 @@ public class RequestManager {
         log.info("Done processing local context!");
         try{
             if(_input == null){
-                //This happens when there is no meaningful local context. IE: local context that includes a data entry or click event
+                //This happens when there is no meaningful local context. IE: local context that doesn't include a data entry or click event
                 _input = new PathsRequestInput();
             }
 
@@ -128,6 +194,54 @@ public class RequestManager {
         _input = result;
     }
 
+    private JsonObject buildExecutionInstruction(List<NavPath> paths){
+
+        /**
+         * We want to get distinct execution instructions from our set of possible paths. In fact, we have to reduce things to a single possible instruction.
+         */
+        List<JsonObject> possibleExecutionInstructions = paths.stream()
+                .map(NavPath::getExecutionInstruction)
+                .distinct()
+                .peek(instruction -> log.info("{}", instruction.getClass().getName()))
+                .map(instruction -> {
+                    if(instruction instanceof DoClick){
+                        DoClick doClick = (DoClick)instruction;
+                        return new JsonObject()
+                                .put("type", "click")
+                                .put("xpath", doClick.xpath);
+                    }
+
+                    if(instruction instanceof EnterData){
+                        EnterData enterData = (EnterData) instruction;
+                        return new JsonObject()
+                                .put("type", "input")
+                                .put("xpath", enterData.xpath)
+                                .put("data", ((InputParameter)activeExecutionRequest.getParameter(enterData.parameterId)).getValue())
+                                ;
+                    }
+
+                    if(instruction instanceof QueryDom){
+                        QueryDom queryDom = (QueryDom) instruction;
+                        return new JsonObject()
+                                .put("type", "queryDom")
+                                .put("xpath", queryDom.dynamicXPath.toJson())
+                                .put("parameterId", queryDom.parameterId);
+                    }
+
+                    return null;
+                })
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList())
+        ;
+
+        log.info("Computed {} possible execution instructions, sending the first one!", possibleExecutionInstructions.size());
+
+        JsonObject executionInstruction = possibleExecutionInstructions.get(0);
+        log.info("{}", executionInstruction.encodePrettily());
+
+        return executionInstruction;
+    }
+
     private JsonArray buildNavigationOptions(List<NavPath> paths){
 
 
@@ -149,12 +263,12 @@ public class RequestManager {
                 .map(instruction -> {
                     if(instruction instanceof XPathInstruction){
                         XPathInstruction xPathInstruction = (XPathInstruction) instruction;
-                        return new JsonObject().put("xpath", xPathInstruction.xpath);
+                        return new JsonObject().put("type", "guidance").put("xpath", xPathInstruction.xpath);
                     }
 
                     if(instruction instanceof DynamicXPathInstruction){
                         DynamicXPathInstruction dynamicXPathInstruction = (DynamicXPathInstruction) instruction;
-                        return new JsonObject().put("xpath", dynamicXPathInstruction.dynamicXPath.toJson());
+                        return new JsonObject().put("type", "guidance").put("xpath", dynamicXPathInstruction.dynamicXPath.toJson());
                     }
 
                     return null;

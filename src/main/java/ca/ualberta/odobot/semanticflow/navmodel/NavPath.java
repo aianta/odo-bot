@@ -1,8 +1,6 @@
 package ca.ualberta.odobot.semanticflow.navmodel;
 
-import ca.ualberta.odobot.guidance.instructions.DynamicXPathInstruction;
-import ca.ualberta.odobot.guidance.instructions.Instruction;
-import ca.ualberta.odobot.guidance.instructions.XPathInstruction;
+import ca.ualberta.odobot.guidance.instructions.*;
 import io.vertx.core.json.JsonObject;
 import org.neo4j.graphdb.Label;
 import org.neo4j.graphdb.Node;
@@ -22,6 +20,8 @@ public class NavPath {
 
     public  static  Pattern pattern = Pattern.compile("[a-zA-Z]+");
 
+    private static Map<String,String> globalParameterMap;
+
     private Path path = null;
 
     private UUID id = UUID.randomUUID();
@@ -32,7 +32,7 @@ public class NavPath {
 
     private Instruction lastInstruction;
 
-    private List<JsonObject> parameters;
+    private Set<String> parameters;
 
     public NavPath(){
     }
@@ -53,6 +53,31 @@ public class NavPath {
         this.path = path;
         iterator = path.nodes().iterator();
     }
+
+    /**
+     * Compute which parameters appear in this nav path
+     * @param parameterMap
+     */
+    public Set<String> computeParameters(Map<String,String> parameterMap){
+        globalParameterMap = parameterMap; //TODO - should probably refactor this...
+        this.parameters = new HashSet<>();
+
+        //Go through all the nodes in this path
+        path.nodes().forEach(node->{
+            //If the node has an entry in the parameter map, add the id of the parameter node to this nav path's list of parameters.
+            String parameterId = parameterMap.get(node.getProperty("id"));
+            if(parameterId != null){
+                parameters.add(parameterId);
+            }
+        });
+
+        return this.parameters;
+    }
+
+    public Set<String> getParameters(){
+        return parameters;
+    }
+
 
     public void resetPath(){
         iterator = path.nodes().iterator();
@@ -95,6 +120,51 @@ public class NavPath {
         }
 
         log.warn("No xpaths left for this path");
+        return null;
+    }
+
+    public Instruction getExecutionInstruction(){
+        while (iterator.hasNext()){
+            Node node = iterator.next();
+
+            if(instructionNodePredicate.test(node)){
+                Instruction instruction = null;
+
+                if(node.hasLabel(Label.label("CollapsedClickNode")) ||
+                        node.hasLabel(Label.label("CollapsedDataEntryNode"))
+                ){
+                    QueryDom _instruction = new QueryDom();
+                    _instruction.dynamicXPath = nodeToDynamicXPath(node);
+                    _instruction.parameterId = globalParameterMap.get(node.getProperty("id")); //This is going to cause problems for any collapsed click node or data entry node that doesn't have a schema parameter...
+                    instruction = _instruction;
+                }else{
+
+                    if(node.hasLabel(Label.label("DataEntryNode"))){
+
+                        EnterData _instruction = new EnterData();
+                        _instruction.xpath = nodeToXPath(node);
+                        _instruction.parameterId = globalParameterMap.get(node.getProperty("id"));//This is going to cause problems for any data entry node that doesn't have an input parameter...
+                        instruction = _instruction;
+                    }
+
+                    if(node.hasLabel(Label.label("ClickNode"))){
+                        DoClick _instruction = new DoClick();
+                        _instruction.xpath = nodeToXPath(node);
+                        instruction = _instruction;
+                    }
+
+                }
+
+                lastInstruction = instruction;
+                return instruction;
+
+            }
+
+
+        }
+
+        log.warn("No valid instruction nodes left in path {}!", id.toString());
+        lastInstruction = null;
         return null;
     }
 
@@ -342,12 +412,5 @@ public class NavPath {
                 });
     }
 
-    public List<JsonObject> getParameters() {
-        return parameters;
-    }
 
-    public NavPath setParameters(List<JsonObject> parameters) {
-        this.parameters = parameters;
-        return this;
-    }
 }

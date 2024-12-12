@@ -79,4 +79,23 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
 
         return promise.future();
     }
+
+    public Future<JsonObject> sendExecutionInstruction(JsonObject instruction){
+        JsonObject executionRequest = new JsonObject()
+                .put("TYPE", "EXECUTE")
+                .put("source", SOURCE)
+                .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString())
+                .mergeIn(instruction);
+
+        Promise<JsonObject> promise = Promise.promise();
+        activePromises.put("EXECUTION_RESULT", promise);
+        try{
+            Thread.sleep(1000);
+        }catch (InterruptedException e){
+            throw new RuntimeException(e);
+        }
+        send(executionRequest);
+
+        return promise.future();
+    }
 }

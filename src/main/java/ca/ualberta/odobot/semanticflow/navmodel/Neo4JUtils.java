@@ -1347,4 +1347,56 @@ public class Neo4JUtils {
 
         return parameterNodeId;
     }
+
+    /**
+     * Returns a map of [NodeId][ParameterNodeId] pairs.
+     * @return
+     */
+    public Map<String,String> getGlobalParameterMap(){
+
+        var schemaParameterQuery = """
+                MATCH (n:SchemaParameter)<-[:PARAM]-(m) return n.id as schemaParamId, m.id as nodeId; 
+                """;
+
+        Query _schemaParameterQuery = new Query(schemaParameterQuery);
+
+
+        var inputParameterQuery = """
+                MATCH (n:InputParameter)<-[:PARAM]-(m) return n.id as schemaParamId, m.id as nodeId; 
+                """;
+
+        Query _inputParameterQuery = new Query(inputParameterQuery);
+
+        Map<String, String> result = new HashMap<>();
+
+        result.putAll(executeParameterMapQuery(_schemaParameterQuery));
+        result.putAll(executeParameterMapQuery(_inputParameterQuery));
+
+        return result;
+    }
+
+    private Map<String,String> executeParameterMapQuery(Query query){
+
+
+        Map<String,String> map = new HashMap<>();
+
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+            session.executeRead(tx->{
+                Result result = tx.run(query);
+
+                while (result.hasNext()){
+                    Record record = result.next();
+
+                    map.put(
+                            record.get("nodeId").asString(),
+                            record.get("schemaParamId").asString()
+                    );
+                }
+
+                return 0;
+            });
+        }
+
+        return map;
+    }
 }
