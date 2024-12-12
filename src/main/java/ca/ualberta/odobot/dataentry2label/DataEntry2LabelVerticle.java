@@ -7,6 +7,7 @@ import ca.ualberta.odobot.semanticflow.model.*;
 import ca.ualberta.odobot.semanticflow.navmodel.Neo4JUtils;
 import ca.ualberta.odobot.semanticflow.navmodel.nodes.DataEntryNode;
 import ca.ualberta.odobot.sqlite.SqliteService;
+import com.google.api.Http;
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.Future;
 import io.vertx.core.http.HttpMethod;
@@ -77,8 +78,39 @@ public class DataEntry2LabelVerticle extends HttpServiceVerticle {
         api.route().method(HttpMethod.GET).path("/generateLabels")
                 .handler(this::generateDataEntryLabels);
 
+        api.route().method(HttpMethod.GET).path("/annotateModel")
+                .handler(this::annotateModel);
 
         return Completable.complete();
+    }
+
+    private void annotateModel(RoutingContext rc){
+
+        List<DataEntryNode> dataEntryNodes = neo4j.getDataEntryNodes();
+
+        sqliteService.getAllDataEntryAnnotations()
+                .onSuccess(annotations->{
+
+                    dataEntryNodes.stream()
+                            .forEach(node->{
+
+                                Optional<JsonObject> parameterAnnotation = annotations.stream().filter(annotation->annotation.getString("xpath").equals(node.getXpath())).findFirst();
+
+                                if(parameterAnnotation.isPresent()){
+                                    UUID parameterNodeId = neo4j.addInputParameter(parameterAnnotation.get(), node.getId().toString());
+                                    log.info("Created input parameter node {}", parameterNodeId.toString());
+                                }
+
+                            });
+
+                })
+                .onFailure(err->{
+                    log.error(err.getMessage(), err);
+                    rc.response().setStatusCode(500).end(err.getMessage());
+                })
+        ;
+
+
     }
 
     private void generateDataEntryLabels(RoutingContext rc){

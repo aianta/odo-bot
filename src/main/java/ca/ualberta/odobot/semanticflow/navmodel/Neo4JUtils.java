@@ -6,6 +6,7 @@ import ca.ualberta.odobot.semanticflow.model.*;
 
 import ca.ualberta.odobot.semanticflow.navmodel.nodes.*;
 import ca.ualberta.odobot.snippet2xml.SemanticSchema;
+import io.vertx.core.json.JsonObject;
 import org.neo4j.driver.*;
 import org.neo4j.driver.Record;
 import org.neo4j.driver.exceptions.NoSuchRecordException;
@@ -1313,5 +1314,37 @@ public class Neo4JUtils {
 
         return parameterNodeId;
 
+    }
+
+    public UUID addInputParameter(JsonObject parameter, String nodeId){
+
+        UUID parameterNodeId = UUID.randomUUID();
+
+        HashMap<String, Object> props = new HashMap<>();
+        props.put("id", parameterNodeId.toString());
+        props.put("label", parameter.getString("label"));
+        props.put("description", parameter.getString("description"));
+        props.put("xpath", parameter.getString("xpath"));
+
+        var createParameterNodeStmt = "MERGE (n:InputParameter {xpath:$xpath}) ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
+
+        Query createParameterNodeQuery = new Query(createParameterNodeStmt, parameters("xpath", parameter.getString("xpath"), "props", props));
+
+        var createRelantionshipStmt = """
+                MATCH (sourceNode {id:$sourceNodeId}), (parameterNode:InputParameter {id:$parameterNodeId})
+                CREATE (sourceNode)-[:PARAM]->(parameterNode);
+                """;
+
+        Query createRelationshipQuery = new Query(createRelantionshipStmt, parameters("sourceNodeId", nodeId, "parameterNodeId", parameterNodeId.toString()));
+
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+            session.executeWrite(tx->{
+                tx.run(createParameterNodeQuery);
+                tx.run(createRelationshipQuery);
+                return  0;
+            });
+        }
+
+        return parameterNodeId;
     }
 }
