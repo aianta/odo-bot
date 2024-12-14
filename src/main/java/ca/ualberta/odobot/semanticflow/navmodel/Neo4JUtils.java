@@ -1375,6 +1375,24 @@ public class Neo4JUtils {
         return result;
     }
 
+    public String getSchemaId(String parameterNodeId){
+        var _query = """
+                MATCH (n:SchemaParameter) WHERE n.id = $nodeId RETURN n.schemaId as schemaId;
+                """;
+        Query query = new Query(_query, parameters("nodeId", parameterNodeId));
+
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+            String schemaId = session.executeRead(tx->{
+                Result result = tx.run(query);
+                return result.single().get("schemaId").asString();
+
+            });
+
+            return schemaId;
+        }
+
+    }
+
     private Map<String,String> executeParameterMapQuery(Query query){
 
 

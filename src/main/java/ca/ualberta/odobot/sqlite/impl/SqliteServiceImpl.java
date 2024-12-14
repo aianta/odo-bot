@@ -199,6 +199,28 @@ public class SqliteServiceImpl implements SqliteService {
     }
 
 
+    public Future<SemanticSchema> getSemanticSchemaById(String id){
+        Promise<SemanticSchema> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            SELECT * FROM semantic_schemas WHERE id = ?;
+        """)
+                .execute(Tuple.of(id))
+                .onSuccess(rows->{
+
+                    if(rows.size() == 0){
+                        promise.fail("Could not find schema with id: " + id);
+                    }
+
+                    assert rows.size() <= 1;
+
+                    SemanticSchema schema = SemanticSchema.fromRow(rows.iterator().next());
+                    promise.complete(schema);
+                });
+
+        return promise.future();
+    }
+
 
     public Future<JsonArray> loadTrainingDataset(String datasetName){
         Promise<JsonArray> promise = Promise.promise();

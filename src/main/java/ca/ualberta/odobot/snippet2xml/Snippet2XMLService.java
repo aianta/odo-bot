@@ -111,6 +111,8 @@ public interface Snippet2XMLService {
 
     Future<SemanticObject> getObjectFromSnippet(Snippet snippet, SemanticSchema schema);
 
+    Future<SemanticObject> getObjectFromHTML(String html, SemanticSchema schema);
+
     /**
      * Provide a set of snippets from which to generate an XML schema
      * @param snippets
@@ -118,5 +120,6 @@ public interface Snippet2XMLService {
      */
     Future<JsonObject> makeSchema(List<Snippet> snippets);
 
+    Future<SemanticObject> pickParameterValue(List<SemanticObject> options, String query);
 
 }

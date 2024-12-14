@@ -5,7 +5,7 @@ OdoSightSupport: true
 TPG: false
 Explorer: false
 SnippetExtractor: true
-Guidance: false
+Guidance: true
 Mind2Web: true
 Snippet2XML: true
 DataEntry2Label: true

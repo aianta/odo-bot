@@ -31,7 +31,7 @@ public class SemanticObject {
     public SemanticObject(JsonObject data){
         setId(UUID.fromString(data.getString("id")));
         setSchemaId(UUID.fromString(data.getString("schemaId")));
-        setSnippetId(UUID.fromString(data.getString("snippetId")));
+        setSnippetId(data.getString("snippetId") == null?null:UUID.fromString(data.getString("snippetId"))); //Snippet ids will be null for semantic objects produced during execution tasks or guidance. Basically if they're being soruced from the live/online semantic sequences.
         setObject(data.getString("object"));
     }
 
@@ -39,7 +39,7 @@ public class SemanticObject {
         JsonObject result = new JsonObject();
         result.put("id", getId().toString())
                 .put("schemaId", getSchemaId().toString())
-                .put("snippetId", getSnippetId().toString())
+                .put("snippetId", getSnippetId() == null?null:getSnippetId().toString()) //Snippet ids will be null for semantic objects produced during execution tasks or guidance. Basically if they're being soruced from the live/online semantic sequences.
                 .put("object", getObject());
 
         return result;

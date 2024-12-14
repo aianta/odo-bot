@@ -36,6 +36,7 @@ public class EventConnectionManager extends AbstractConnectionManager implements
 
 
     public void onMessage(JsonObject message){
+        log.info("EventConnectionManager got {}", message.getString("type"));
         switch (message.getString("type")){
             case "LOCAL_CONTEXT":
                 Promise promise = activePromises.get("LOCAL_CONTEXT");
@@ -87,8 +88,15 @@ public class EventConnectionManager extends AbstractConnectionManager implements
 
         JsonObject localContextRequest = new JsonObject()
                 .put("type", "GET_LOCAL_CONTEXT")
-                .put("source", "EventConnectionManager")
-                .put("pathsRequestId", client.getRequestManager().getActiveRequest().id().toString());
+                .put("source", "EventConnectionManager");
+
+        if(client.getRequestManager().getActiveRequest() != null){
+            localContextRequest.put("pathsRequestId", client.getRequestManager().getActiveRequest().id().toString());
+        }
+
+        if(client.getRequestManager().getActiveExecutionRequest() != null){
+            localContextRequest.put("pathsRequestId", client.getRequestManager().getActiveExecutionRequest().getId().toString());
+        }
 
         Promise<JsonObject> promise = Promise.promise();
         activePromises.put("LOCAL_CONTEXT", promise);
@@ -104,8 +112,16 @@ public class EventConnectionManager extends AbstractConnectionManager implements
 
         JsonObject startTransmissionRequest = new JsonObject()
                 .put("type", "START_TRANSMISSION")
-                .put("source", "EventConnectionManager")
-                .put("pathsRequestId", client.getRequestManager().getActiveRequest().id().toString());
+                .put("source", "EventConnectionManager");
+
+        if(client.getRequestManager().getActiveRequest() != null){
+            startTransmissionRequest.put("pathsRequestId", client.getRequestManager().getActiveRequest().id().toString());
+        }
+
+        if(client.getRequestManager().getActiveExecutionRequest() != null){
+            startTransmissionRequest.put("pathsRequestId", client.getRequestManager().getActiveExecutionRequest().getId().toString());
+        }
+
 
         Promise<JsonObject> promise = Promise.promise();
         activePromises.put("TRANSMISSION_STARTED", promise);
@@ -114,7 +130,10 @@ public class EventConnectionManager extends AbstractConnectionManager implements
 
         send(startTransmissionRequest);
 
-        return promise.future().compose(response->Future.succeededFuture());
+        return promise.future().compose(response->{
+            log.info("Confirmed transmission started!");
+            return Future.succeededFuture();
+        });
     }
 
     public Future<Void> stopTransmitting(){

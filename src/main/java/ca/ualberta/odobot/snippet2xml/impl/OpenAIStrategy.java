@@ -107,6 +107,35 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         }
     }
 
+    public Future<SemanticObject> pickParameterValue(List<SemanticObject> options, String query){
+
+        //Only validator we need is one that makes sure that the output is a valid integer.
+        List<Predicate<String>> validators = List.of((input)->{
+            log.info("Validating input: {}", input);
+            try{
+                Integer.parseInt(input);
+                log.info("Input is fine");
+                return true;
+            }catch (NumberFormatException e){
+                log.info("Input is not fine");
+                return false;
+            }
+        });
+
+        Optional<String> pickedValue = pickParameter(options, query, validators);
+        if(pickedValue.isPresent()){
+            Integer index = Integer.parseInt(pickedValue.get());
+            //Subtract 1 from the picked option to get the correct index into the options array.
+            return Future.succeededFuture(options.get(index - 1 ));
+        }
+
+        return Future.failedFuture("Failed to pick a parameter value option from the list!");
+    }
+
+    public Optional<String> pickParameter(List<SemanticObject> options, String query, List<Predicate<String>> validators){
+        return generateWithValidation(()->pickParameter(options, query), validators, config.getJsonObject("pickParameterValue").getInteger("maxAttempts"));
+    }
+
     @Override
     public Future<SemanticObject> makeObject(Snippet snippet, SemanticSchema schema) {
 
@@ -125,6 +154,24 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
 
         return Future.failedFuture("Failed to generate semantic object for snippet: %s and schema: %s".formatted(snippet.getId().toString(), schema.getId().toString()));
+    }
+
+    @Override
+    public Future<SemanticObject> makeObject(String html, SemanticSchema schema) {
+        List<Predicate<String>> validators = List.of(new PassesSchemaValidation(schema.getSchema()));
+
+        Optional<String> xmlObject = generateXMLObject(html, schema, validators);
+        if(xmlObject.isPresent()){
+            SemanticObject result = new SemanticObject();
+            result.setObject(xmlObject.get());
+            result.setSchemaId(schema.getId());
+            result.setSnippetId(null); //TODO -> we should probably be saving these snippets, they would likely make decent examples to continue enhancing the nav model.
+            result.setId(UUID.randomUUID());
+
+            return Future.succeededFuture(result);
+        }
+
+        return Future.failedFuture("Failed to generate semantic object for HTML!");
     }
 
     /**
@@ -254,8 +301,30 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         return generateWithValidation(()->generateXMLObjectWithoutSchema(snippet, (List<String>)null), validators, config.getJsonObject("generateXMLObjectWithoutSchema").getInteger("maxAttempts"));
     }
 
+    private Optional<String> generateXMLObject(String snippet, SemanticSchema schema, List<Predicate<String>> validators){
+        return generateWithValidation(()->generateXMLObject(snippet, schema.getSchema()),validators, config.getJsonObject("generateXMLObject").getInteger("maxAttempts"));
+    }
     private Optional<String> generateXMLObject(Snippet snippet, SemanticSchema schema, List<Predicate<String>> validators){
         return generateWithValidation(()->generateXMLObject(snippet.getSnippet(), schema.getSchema()), validators, config.getJsonObject("generateXMLObject").getInteger("maxAttempts"));
+    }
+
+    private String pickParameter(List<SemanticObject> options, String query){
+
+        List<ChatRequestMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(new ChatRequestSystemMessage(config.getJsonObject("pickParameterValue").getString("systemPrompt")));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("Query:\n");
+        sb.append(query + "\n");
+        sb.append("Options:\n");
+
+        List<String> optionStrings = options.stream().map(SemanticObject::getObject).collect(Collectors.toList());
+        sb.append(buildXMLExamplesMessageForMakeSchema(optionStrings));
+
+        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+
+        return executeChatCompletion(chatMessages);
+
     }
 
     private String generateXMLObject(String snippet, String schema){

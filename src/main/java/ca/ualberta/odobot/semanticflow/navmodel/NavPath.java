@@ -1,5 +1,7 @@
 package ca.ualberta.odobot.semanticflow.navmodel;
 
+import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
+import ca.ualberta.odobot.guidance.execution.InputParameter;
 import ca.ualberta.odobot.guidance.instructions.*;
 import io.vertx.core.json.JsonObject;
 import org.neo4j.graphdb.Label;
@@ -123,7 +125,7 @@ public class NavPath {
         return null;
     }
 
-    public Instruction getExecutionInstruction(){
+    public Instruction getExecutionInstruction(ExecutionRequest request){
         while (iterator.hasNext()){
             Node node = iterator.next();
 
@@ -144,6 +146,7 @@ public class NavPath {
                         EnterData _instruction = new EnterData();
                         _instruction.xpath = nodeToXPath(node);
                         _instruction.parameterId = globalParameterMap.get(node.getProperty("id"));//This is going to cause problems for any data entry node that doesn't have an input parameter...
+                        _instruction.data = ((InputParameter)request.getParameter(_instruction.parameterId)).getValue();
                         instruction = _instruction;
                     }
 

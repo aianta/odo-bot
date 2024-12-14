@@ -67,7 +67,12 @@ public class RequestManager {
                 .compose(done->client.getEventConnectionManager().getLocalContext())
                 .compose(localContext->getExecutionPath(request, localContext))
                 .compose(executionInstruction->client.getGuidanceConnectionManager().sendExecutionInstruction(executionInstruction))
-                .onSuccess(done->log.info("First instruction executed!"));
+                .onSuccess(done->log.info("First instruction sent for execution!!"))
+                .onFailure(err->{
+                    log.error("Error occurred while processing execution request");
+                    log.error(err.getMessage(), err);
+                })
+        ;
     }
 
     public void addNewRequest(Request request){
@@ -75,7 +80,11 @@ public class RequestManager {
         client.getEventConnectionManager().getLocalContext()
                 .compose(localContext->getPaths(request, localContext))
                 .compose(navigationOptions->client.getGuidanceConnectionManager().showNavigationOptions(navigationOptions))
-                .onSuccess(navigationOptionsShown->client.getEventConnectionManager().startTransmitting());
+                .onSuccess(navigationOptionsShown->client.getEventConnectionManager().startTransmitting())
+                .onFailure(err->{
+                    log.error("Error processing guidance request");
+                    log.error(err.getMessage(),err);
+                });
         ;
     }
 
@@ -200,30 +209,30 @@ public class RequestManager {
          * We want to get distinct execution instructions from our set of possible paths. In fact, we have to reduce things to a single possible instruction.
          */
         List<JsonObject> possibleExecutionInstructions = paths.stream()
-                .map(NavPath::getExecutionInstruction)
+                .map(navPath -> navPath.getExecutionInstruction(getActiveExecutionRequest()))
                 .distinct()
                 .peek(instruction -> log.info("{}", instruction.getClass().getName()))
                 .map(instruction -> {
                     if(instruction instanceof DoClick){
                         DoClick doClick = (DoClick)instruction;
                         return new JsonObject()
-                                .put("type", "click")
+                                .put("action", "click")
                                 .put("xpath", doClick.xpath);
                     }
 
                     if(instruction instanceof EnterData){
                         EnterData enterData = (EnterData) instruction;
                         return new JsonObject()
-                                .put("type", "input")
+                                .put("action", "input")
                                 .put("xpath", enterData.xpath)
-                                .put("data", ((InputParameter)activeExecutionRequest.getParameter(enterData.parameterId)).getValue())
+                                .put("data", enterData.data)
                                 ;
                     }
 
                     if(instruction instanceof QueryDom){
                         QueryDom queryDom = (QueryDom) instruction;
                         return new JsonObject()
-                                .put("type", "queryDom")
+                                .put("action", "queryDom")
                                 .put("xpath", queryDom.dynamicXPath.toJson())
                                 .put("parameterId", queryDom.parameterId);
                     }
@@ -359,13 +368,16 @@ public class RequestManager {
 
         if(tempNavPaths.size() > 0){
             this.navPaths = tempNavPaths;
-            client.getGuidanceConnectionManager().showNavigationOptions(
-                    new JsonObject().put("navigationOptions", buildNavigationOptions(this.navPaths))
-            );
+
+            if(getActiveExecutionRequest() != null){
+                client.getGuidanceConnectionManager()
+                        .sendExecutionInstruction(buildExecutionInstruction(tempNavPaths));
+            }else{
+                client.getGuidanceConnectionManager().showNavigationOptions(
+                        new JsonObject().put("navigationOptions", buildNavigationOptions(this.navPaths))
+                );
+            }
         }
-
-
-
     }
 
 

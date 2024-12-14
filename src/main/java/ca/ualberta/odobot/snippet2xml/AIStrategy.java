@@ -30,4 +30,8 @@ public interface AIStrategy {
 
     Future<SemanticObject> makeObject(Snippet snippet, SemanticSchema schema);
 
+    Future<SemanticObject> makeObject(String html, SemanticSchema schema);
+
+    Future<SemanticObject> pickParameterValue(List<SemanticObject> options, String query);
+
 }

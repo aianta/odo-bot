@@ -53,6 +53,7 @@ public class ControlConnectionManager extends AbstractConnectionManager implemen
                         .map(ExecutionParameter::fromJson)
                         .collect(Collectors.toList()));
 
+                client.getRequestManager().addNewRequest(executionRequest);
 
                 break;
             case "STOP_GUIDANCE_REQUEST":

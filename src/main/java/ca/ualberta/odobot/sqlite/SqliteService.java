@@ -49,6 +49,8 @@ public interface SqliteService {
 
     Future<List<SemanticSchema>> getSemanticSchemas();
 
+    Future<SemanticSchema> getSemanticSchemaById(String id);
+
     Future<String> getSchemaSourceNodeId(SemanticSchema schema);
 
     Future<List<JsonObject>> getSemanticSchemasWithSourceNodeIds();
