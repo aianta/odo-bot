@@ -48,6 +48,15 @@ public class Snippet2XMLServiceImpl implements Snippet2XMLService {
     }
 
     @Override
+    public Future<SemanticObject> getObjectFromHTMLIgnoreSchemaIssues(String html, SemanticSchema schema) {
+        return vertx.executeBlocking(blocking->{
+            this.strategy.makeObjectIgnoreSchemaIssues(html, schema)
+                    .onSuccess(blocking::complete)
+                    .onFailure(blocking::fail);
+        });
+    }
+
+    @Override
     public Future<JsonObject> makeSchema(List<Snippet> snippets) {
 
         assert snippets.get(0).getDynamicXpath() != null;

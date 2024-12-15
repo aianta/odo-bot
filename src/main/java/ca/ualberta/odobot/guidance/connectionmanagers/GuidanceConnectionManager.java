@@ -106,6 +106,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
             promise.future().onSuccess(response->{
 
                 List<JsonObject> queryResults = response.getJsonArray("queryResults").stream().map(o->(JsonObject)o).collect(Collectors.toList());
+                log.info("Last result: \n{}", queryResults.get(queryResults.size()-1).getString("html"));
 
                 String schemaId = LogPreprocessor.neo4j.getSchemaId(executionRequest.getString("parameterId"));
 
@@ -113,7 +114,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                         .compose(schema -> {
                            return Future.join(
                                    queryResults.stream()
-                                           .map(html->Snippet2XMLVerticle.snippet2XML.getObjectFromHTML(html.getString("html"), schema).compose(semanticObject -> {
+                                           .map(html->Snippet2XMLVerticle.snippet2XML.getObjectFromHTMLIgnoreSchemaIssues(html.getString("html"), schema).compose(semanticObject -> {
                                                return Future.succeededFuture(new JsonObject().put("semanticObject", semanticObject.toJson()).put("xpath", html.getString("xpath")));
                                            }, err->Future.succeededFuture(null)))
                                            .collect(Collectors.toList())
@@ -170,7 +171,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
 
         activePromises.put("EXECUTION_RESULT", promise);
         try{
-            Thread.sleep(1000);
+            Thread.sleep(3000);
         }catch (InterruptedException e){
             throw new RuntimeException(e);
         }

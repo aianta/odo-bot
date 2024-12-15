@@ -126,7 +126,7 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         if(pickedValue.isPresent()){
             Integer index = Integer.parseInt(pickedValue.get());
             //Subtract 1 from the picked option to get the correct index into the options array.
-            return Future.succeededFuture(options.get(index - 1 ));
+            return Future.succeededFuture(options.get(index - 1));
         }
 
         return Future.failedFuture("Failed to pick a parameter value option from the list!");
@@ -154,6 +154,24 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
 
         return Future.failedFuture("Failed to generate semantic object for snippet: %s and schema: %s".formatted(snippet.getId().toString(), schema.getId().toString()));
+    }
+
+    @Override
+    public Future<SemanticObject> makeObjectIgnoreSchemaIssues(String html, SemanticSchema schema) {
+        List<Predicate<String>> validators = List.of();
+
+        Optional<String> xmlObject = generateXMLObject(html, schema, validators);
+        if(xmlObject.isPresent()){
+            SemanticObject result = new SemanticObject();
+            result.setObject(xmlObject.get());
+            result.setSchemaId(schema.getId());
+            result.setSnippetId(null); //TODO -> we should probably be saving these snippets, they would likely make decent examples to continue enhancing the nav model.
+            result.setId(UUID.randomUUID());
+
+            return Future.succeededFuture(result);
+        }
+
+        return Future.failedFuture("Failed to generate semantic object for HTML!");
     }
 
     @Override
@@ -234,6 +252,7 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
         //If the output is valid wrap it in an optional and return it.
         return isValid? Optional.of(_output): Optional.empty();
+        //return Optional.of(_output); //TODO -> the above line of code is the correct one, this line simply sends back the last attempt no matter waht.
     }
 
 
@@ -320,6 +339,8 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
         List<String> optionStrings = options.stream().map(SemanticObject::getObject).collect(Collectors.toList());
         sb.append(buildXMLExamplesMessageForMakeSchema(optionStrings));
+
+        log.info("pick param prompt segment: \n{}", sb.toString());
 
         chatMessages.add(new ChatRequestUserMessage(sb.toString()));
 

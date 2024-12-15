@@ -32,6 +32,8 @@ public interface AIStrategy {
 
     Future<SemanticObject> makeObject(String html, SemanticSchema schema);
 
+    Future<SemanticObject> makeObjectIgnoreSchemaIssues(String html, SemanticSchema schema);
+
     Future<SemanticObject> pickParameterValue(List<SemanticObject> options, String query);
 
 }

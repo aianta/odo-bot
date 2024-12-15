@@ -113,6 +113,8 @@ public interface Snippet2XMLService {
 
     Future<SemanticObject> getObjectFromHTML(String html, SemanticSchema schema);
 
+    Future<SemanticObject> getObjectFromHTMLIgnoreSchemaIssues(String html, SemanticSchema schema);
+
     /**
      * Provide a set of snippets from which to generate an XML schema
      * @param snippets
