@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.explorer;
 
+import ca.ualberta.odobot.common.HttpServiceVerticle;
 import io.reactivex.rxjava3.core.Completable;
 
 import io.vertx.core.Promise;
@@ -23,7 +24,7 @@ import java.util.Arrays;
  * explores a web application while running the Odo Sight extension in
  * order to generate data that can be used to train TPG.
  */
-public class ExplorerVerticle extends AbstractVerticle {
+public class ExplorerVerticle extends HttpServiceVerticle {
 
     private static final Logger log = LoggerFactory.getLogger(ExplorerVerticle.class);
 
@@ -33,48 +34,28 @@ public class ExplorerVerticle extends AbstractVerticle {
 
     private static final String API_PATH_PREFIX = "/api/*";
 
-    HttpServer server;
+    public String serviceName(){return "Data Generation (Explorer) Service";}
 
-    Router mainRouter;
+    public String configFilePath(){
+        return "config/explorer.yaml";
+    }
 
-    Router api;
 
-    public Completable rxStart(){
-
+    public Completable onStart(){
+        super.onStart();
         try{
-
-            //Setup http server
-            HttpServerOptions options = new HttpServerOptions()
-                    .setHost(HOST)
-                    .setPort(PORT)
-                    .setSsl(false);
-
-            server = vertx.createHttpServer(options);
-            mainRouter = Router.router(vertx);
-            api = Router.router(vertx);
 
             api.route(HttpMethod.POST, "/explore").handler(this::exploreValidationHandler);
             api.route(HttpMethod.POST, "/explore").handler(this::exploreHandler);
             api.route(HttpMethod.POST, "/plan").handler(this::planValidationHandler);
             api.route(HttpMethod.POST, "/plan").handler(this::planHandler);
 
-            mainRouter.route().handler(LoggerHandler.create());
-            mainRouter.route().handler(BodyHandler.create());
-            mainRouter.route().handler(rc->{
-                rc.response().putHeader("Access-Control-Allow-Origin", "*");
-                rc.next();
-            });
-            mainRouter.route(API_PATH_PREFIX).subRouter(api);
-
-            server.requestHandler(mainRouter).listen(PORT);
-
-            log.info("Explorer verticle started, API available on port {}", PORT);
 
         }catch (Exception e){
             log.error(e.getMessage(), e);
         }
 
-        return super.rxStart();
+        return Completable.complete();
 
     }
 
