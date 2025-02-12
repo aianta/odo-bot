@@ -86,7 +86,12 @@ public class MainVerticle extends ConfigurableVerticle {
 
         if(_config.getBoolean("Snippet2XML")){
             Snippet2XMLVerticle snippet2XMLVerticle = new Snippet2XMLVerticle();
-            vertx.deployVerticle(snippet2XMLVerticle);
+            vertx.deployVerticle(snippet2XMLVerticle, new DeploymentOptions()
+                    .setWorkerPoolName("snippet2xml-pool")
+                    .setWorkerPoolSize(8)
+                    .setMaxWorkerExecuteTime(1)
+                    .setMaxWorkerExecuteTimeUnit(TimeUnit.HOURS) //TODO: make this configrable?
+            );
         }
 
         if(_config.getBoolean("DataEntry2Label")){

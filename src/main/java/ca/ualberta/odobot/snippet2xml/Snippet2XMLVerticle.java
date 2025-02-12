@@ -114,6 +114,13 @@ public class Snippet2XMLVerticle extends HttpServiceVerticle {
                         //Now let's make objects for all snippets
                         //TODO: one day, maybe we can re-use/avoid recomputing the
 
+                        Boolean schemaOnlyFlag = Boolean.parseBoolean(rc.request().getParam("schemaOnly", "true"));
+
+                        if(schemaOnlyFlag){
+                            //Skip Semantic Object generation if schemaOnly flag is set.
+                            return Future.succeededFuture();
+                        }
+
                         return Future.join(snippets.stream()
                                 .map(snippet -> {
 
@@ -137,6 +144,11 @@ public class Snippet2XMLVerticle extends HttpServiceVerticle {
                                 .filter(Objects::nonNull)
                                 .collect(Collectors.toList()));
                     }).compose(compositeFuture -> {
+
+                        if(compositeFuture.list() == null){
+                            return Future.succeededFuture();
+                        }
+
                         //have to filter nulls because of otherwiseEmpty
                         List<SemanticObject> semanticObjects = compositeFuture.list().stream().filter(Objects::nonNull).map(o->(SemanticObject)o).collect(Collectors.toList());
                         log.info("Done generating {} XML objects, saving objects to database!", semanticObjects.size());

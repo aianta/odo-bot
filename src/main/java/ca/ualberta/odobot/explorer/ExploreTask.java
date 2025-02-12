@@ -97,7 +97,7 @@ public class ExploreTask implements Runnable{
          * Also, in theory these URL paths could break if the extension structure is updated.
          */
         this.odoSightOptionsUrl = "moz-extension://"+dynamicAddonId.toString()+"/options/options.html";
-        this.odoSightControlsUrl = "moz-extension://"+dynamicAddonId.toString()+"/popup/controls.html";
+        this.odoSightControlsUrl = "moz-extension://"+dynamicAddonId.toString()+"/popup/sight/controls.html";
         log.info("OdoSight Options page @ {}", odoSightOptionsUrl);
 
         //Initialize the login operation.
@@ -175,7 +175,7 @@ public class ExploreTask implements Runnable{
                 try{
 
                 FirefoxOptions options = new FirefoxOptions();
-                options.addArguments("--headless");
+                //options.addArguments("--headless");
 
                 options.setProfile(buildProfile());
 

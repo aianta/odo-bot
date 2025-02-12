@@ -85,7 +85,9 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
                 log.info("Attempting to generate XML schema with the following {} XML objects:", batch.size());
                 batch.values().stream().forEach(log::info);
 
-                schemaOptional = generateXMLSchema(batch.values(), List.of(new IsValidXML(), new SchemaValidatesXMLObjects(batch.values())));
+                //TODO: January 16 2025: for candidacy evaluation, and for now, I have disabled the validator that ensures the schema validates the given XML objects. Will probably have to adjust this if we want to start using the XML objects more formally.
+                //schemaOptional = generateXMLSchema(batch.values(), List.of(new IsValidXML(), new SchemaValidatesXMLObjects(batch.values())));
+                schemaOptional = generateXMLSchema(batch.values(), List.of(new IsValidXML()));
 
                 if(schemaOptional.isPresent()){
                     //If  a valid schema was generated, break out of the batching loop.

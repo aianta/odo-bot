@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
 public class PlanTask implements Runnable {
 
     private static final Logger log = LoggerFactory.getLogger(PlanTask.class);
-    private static final int RESOURCE_LIMIT = 5;
+    private static final int RESOURCE_LIMIT = 2;
 
     JsonObject config;
 
@@ -100,7 +100,8 @@ public class PlanTask implements Runnable {
 
             manifest.add(createOp);
             manifest.add(editOp);
-            manifest.add(deleteOp);
+            //TODO: For candidacy evaluation plan modules do not get deleted
+            //manifest.add(deleteOp);
         });
 
         //Create Assignment operations
@@ -158,43 +159,44 @@ public class PlanTask implements Runnable {
             manifest.add(createOp);
             manifest.add(editOp);
 
-
+            //TODO: Commented out because for candidacy evaluation plan we do not work with quiz questions.
             //Create the operations for the questions of this quiz as well
-            resources.getQuizQuestions(quiz).stream().limit(RESOURCE_LIMIT).forEach(
-                    question -> {
+//            resources.getQuizQuestions(quiz).stream().limit(RESOURCE_LIMIT).forEach(
+//                    question -> {
+//
+//                        QuizQuestionOperations quizQuestionOperations = new QuizQuestionOperations(resources.getCourse(), quiz, question);
+//
+//                        Operation createQuestion = new Operation(Operation.OperationType.CREATE, QuizQuestion.class);
+//                        createQuestion.addRelatedIdentifier("course", resources.getCourse().getIdentifier());
+//                        createQuestion.addRelatedIdentifier("quiz", quiz.getIdentifier());
+//                        createQuestion.addRelatedIdentifier("question", question.getIdentifier());
+//                        createQuestion.addDependency(createCourse, createOp);
+//                        createQuestion.setExecuteMethod(quizQuestionOperations::create);
+//
+//                        Operation editQuestion = new Operation(Operation.OperationType.EDIT, QuizQuestion.class);
+//                        editQuestion.addRelatedIdentifier("course", resources.getCourse().getIdentifier());
+//                        editQuestion.addRelatedIdentifier("quiz", quiz.getIdentifier());
+//                        editQuestion.addRelatedIdentifier("question", question.getIdentifier());
+//                        editQuestion.addDependency(createCourse, createOp, createQuestion);
+//                        editQuestion.setExecuteMethod(quizQuestionOperations::edit);
+//
+//                        Operation deleteQuestion = new Operation(Operation.OperationType.DELETE, QuizQuestion.class);
+//                        deleteQuestion.addRelatedIdentifier("course", resources.getCourse().getIdentifier());
+//                        deleteQuestion.addRelatedIdentifier("quiz", quiz.getIdentifier());
+//                        deleteQuestion.addRelatedIdentifier("question", question.getIdentifier());
+//                        deleteQuestion.addDependency(createCourse, createOp, editQuestion);
+//
+//                        manifest.add(createQuestion);
+//                        manifest.add(editQuestion);
+//                        manifest.add(deleteQuestion);
+//
+//                        //Make the delete operation for the quiz depend on the operations for all questions in the quiz. Ensuring we do not delete the quiz before we're done manipulating the questions.
+//                        deleteOp.addDependency(createQuestion, editQuestion, deleteQuestion);
+//                    }
+//            );
 
-                        QuizQuestionOperations quizQuestionOperations = new QuizQuestionOperations(resources.getCourse(), quiz, question);
-
-                        Operation createQuestion = new Operation(Operation.OperationType.CREATE, QuizQuestion.class);
-                        createQuestion.addRelatedIdentifier("course", resources.getCourse().getIdentifier());
-                        createQuestion.addRelatedIdentifier("quiz", quiz.getIdentifier());
-                        createQuestion.addRelatedIdentifier("question", question.getIdentifier());
-                        createQuestion.addDependency(createCourse, createOp);
-                        createQuestion.setExecuteMethod(quizQuestionOperations::create);
-
-                        Operation editQuestion = new Operation(Operation.OperationType.EDIT, QuizQuestion.class);
-                        editQuestion.addRelatedIdentifier("course", resources.getCourse().getIdentifier());
-                        editQuestion.addRelatedIdentifier("quiz", quiz.getIdentifier());
-                        editQuestion.addRelatedIdentifier("question", question.getIdentifier());
-                        editQuestion.addDependency(createCourse, createOp, createQuestion);
-                        editQuestion.setExecuteMethod(quizQuestionOperations::edit);
-
-                        Operation deleteQuestion = new Operation(Operation.OperationType.DELETE, QuizQuestion.class);
-                        deleteQuestion.addRelatedIdentifier("course", resources.getCourse().getIdentifier());
-                        deleteQuestion.addRelatedIdentifier("quiz", quiz.getIdentifier());
-                        deleteQuestion.addRelatedIdentifier("question", question.getIdentifier());
-                        deleteQuestion.addDependency(createCourse, createOp, editQuestion);
-
-                        manifest.add(createQuestion);
-                        manifest.add(editQuestion);
-                        manifest.add(deleteQuestion);
-
-                        //Make the delete operation for the quiz depend on the operations for all questions in the quiz. Ensuring we do not delete the quiz before we're done manipulating the questions.
-                        deleteOp.addDependency(createQuestion, editQuestion, deleteQuestion);
-                    }
-            );
-
-            manifest.add(deleteOp);
+            //TODO: For candidacy evaluation plan quizzes do not get deleted.
+            //manifest.add(deleteOp);
 
         });
 
