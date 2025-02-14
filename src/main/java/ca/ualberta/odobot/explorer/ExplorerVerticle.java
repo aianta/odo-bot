@@ -6,6 +6,7 @@ import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.Promise;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerOptions;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.core.AbstractVerticle;
 import io.vertx.rxjava3.core.http.HttpServer;
@@ -49,6 +50,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
             api.route(HttpMethod.POST, "/explore").handler(this::exploreHandler);
             api.route(HttpMethod.POST, "/plan").handler(this::planValidationHandler);
             api.route(HttpMethod.POST, "/plan").handler(this::planHandler);
+            api.route(HttpMethod.POST, "/evaluationTasks").handler(this::evaluationTasksHandler);
 
 
         }catch (Exception e){
@@ -119,6 +121,17 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
         PlanTask planTask = new PlanTask(planConfig, promise);
         Thread thread = new Thread(planTask);
+        thread.start();
+    }
+
+    private void evaluationTasksHandler(RoutingContext rc){
+        Promise<JsonArray> promise = Promise.promise();
+        promise.future()
+                .onFailure(err->serverError(rc, err))
+                .onSuccess(results->rc.response().setStatusCode(200).end(results.encodePrettily()));
+
+        EvaluationTaskGenerationTask task = new EvaluationTaskGenerationTask(rc.body().asJsonObject(), promise);
+        Thread thread = new Thread(task);
         thread.start();
     }
 
