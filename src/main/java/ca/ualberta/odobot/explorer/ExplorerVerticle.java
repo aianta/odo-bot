@@ -48,8 +48,11 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
             api.route(HttpMethod.POST, "/explore").handler(this::exploreValidationHandler);
             api.route(HttpMethod.POST, "/explore").handler(this::exploreHandler);
+
             api.route(HttpMethod.POST, "/plan").handler(this::planValidationHandler);
             api.route(HttpMethod.POST, "/plan").handler(this::planHandler);
+
+            api.route(HttpMethod.POST, "/evaluationTasks").handler(this::evaluationTaskValidationHandler);
             api.route(HttpMethod.POST, "/evaluationTasks").handler(this::evaluationTasksHandler);
 
 
@@ -124,7 +127,26 @@ public class ExplorerVerticle extends HttpServiceVerticle {
         thread.start();
     }
 
+    private void evaluationTaskValidationHandler(RoutingContext rc){
+        if(rc.body().available()){
+            JsonObject config = rc.body().asJsonObject();
+            validateFields(rc, config, EvaluationTaskGenerationRequestFields.values());
+
+            if(!rc.response().ended()){
+                rc.put("config", config);
+                rc.next();
+                return;
+            }
+        }
+        rc.response().setStatusCode(400).end("Evaluation Task Generation request was malformed. ");
+    }
+
     private void evaluationTasksHandler(RoutingContext rc){
+        JsonObject config = rc.get("config");
+        if(config == null){
+            config = rc.body().asJsonObject();
+        }
+
         Promise<JsonArray> promise = Promise.promise();
         promise.future()
                 .onFailure(err->serverError(rc, err))

@@ -63,27 +63,13 @@ public class EvaluationTaskGenerationTask implements Runnable {
         //Generate WebVoyager inputs using the config and the course data.
         List<JsonObject> tasks = config.getJsonArray("tasks").stream().map(o->(JsonObject)o).collect(Collectors.toList());
 
-        JsonArray results = tasks.stream().map(task->makeTaskInstance(task, config.getJsonArray(EvaluationTaskGenerationRequestFields.LOGIN_TEMPLATES.field()), plan.getResourceList()))
-                .collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
-
-        promise.complete(results);
-    }
-
-    /**
-     *
-     * @param taskDetails A json object with 'task', 'id', 'parameters', and 'template' fields.
-     * @param loginTemplates
-     * @param courseResources Course resources to fill in the templates.
-     * @return a JSON object containing a WebVoyager formatted task and an Odobot formatted task under the fields 'webVoyager' and 'odoBot' respectively.
-     */
-    private JsonObject makeTaskInstance(JsonObject taskDetails, JsonArray loginTemplates, List<CourseResources> courseResources){
-
-        JsonObject result = new JsonObject();
+//        JsonArray results = tasks.stream().map(task->makeTaskInstance(task, config.getJsonArray(EvaluationTaskGenerationRequestFields.LOGIN_TEMPLATES.field()), plan.getResourceList()))
+//                .collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
 
         //We don't want to repeat/reuse quiz, module, assignment, and page names, so we have to create a structure that keeps track of the ones we haven't used yet.
         Map<String,Map<String,List<String>>> parameterValues = new HashMap<>();
         List<String> courses = new ArrayList<>();
-        for(CourseResources resources: courseResources){
+        for(CourseResources resources: plan.getResourceList()){
 
             HashMap<String, List<String>> resourceLists = new HashMap<>();
             resourceLists.put("assignments", resources.assignments().stream().map(Assignment::getName).collect(Collectors.toList()));
@@ -94,6 +80,45 @@ public class EvaluationTaskGenerationTask implements Runnable {
             parameterValues.put(resources.getCourse().getName(), resourceLists);
             courses.add(resources.getCourse().getName());
         }
+
+        JsonArray results = tasks.stream()
+                .map(task->makeTaskInstances( //Make 5 task instances for each task.
+                        config.getInteger(EvaluationTaskGenerationRequestFields.NUM_INSTANCES_PER_TASK.field()),
+                        task,
+                        config.getJsonArray(EvaluationTaskGenerationRequestFields.LOGIN_TEMPLATES.field()),
+                        courses,
+                        parameterValues
+                ))
+                .collect(JsonArray::new, JsonArray::addAll, JsonArray::addAll);
+
+        promise.complete(results);
+    }
+
+    private JsonArray makeTaskInstances(int numInstances, JsonObject taskDetails, JsonArray loginTemplates, List<String> courses, Map<String,Map<String,List<String>>> courseData){
+
+        JsonArray result = new JsonArray();
+
+        int i = 0;
+        while (i < numInstances){
+            result.add(makeTaskInstance(taskDetails, loginTemplates, courses, courseData));
+            i++;
+        }
+
+        return result;
+
+    }
+
+    /**
+     *
+     * @param taskDetails A json object with 'task', 'id', 'parameters', and 'template' fields.
+     * @param loginTemplates
+     * @return a JSON object containing a WebVoyager formatted task and an Odobot formatted task under the fields 'webVoyager' and 'odoBot' respectively.
+     */
+    private JsonObject makeTaskInstance(JsonObject taskDetails, JsonArray loginTemplates, List<String> courses, Map<String,Map<String,List<String>>> parameterValues){
+
+        JsonObject result = new JsonObject();
+
+
 
         result.put("webVoyager", makeWebVoyagerTask(taskDetails, loginTemplates, courses, parameterValues));
 
@@ -112,18 +137,15 @@ public class EvaluationTaskGenerationTask implements Runnable {
 
         StringBuilder sb = new StringBuilder();
         //Inject the login instruction.
-        sb.append(loginTemplates.getString(random.nextInt(loginTemplates.size())).replace("<username>", this.username).replace("<password>", this.password));
+        sb.append(loginTemplates.getString(random.nextInt(loginTemplates.size())).replace("<username>", this.username).replace("<password>", this.password)+ " ");
 
         //Resolve template parameters
-        //Select a course from which to populate the parameters
-        String chosenCourse = courses.get(random.nextInt(courses.size()));
-        //Retrieve the resource values for that course.
-        Map<String,List<String>> courseValues = parameterValues.get(chosenCourse);
+
 
         //Identify the parameters we will need values for
         JsonArray taskParameters = taskDetails.getJsonArray("parameters");
-        //Get values for those parameters from the available course values
-        JsonObject values = getRandomParameterValues(taskParameters, chosenCourse, courseValues);
+
+        JsonObject values = getParameterValues(courses, taskParameters, parameterValues);
 
         //Fill the template with the chosen values.
         String chosenTemplate = taskDetails.getJsonArray("templates").getString(random.nextInt(taskDetails.getJsonArray("templates").size()));
@@ -141,13 +163,48 @@ public class EvaluationTaskGenerationTask implements Runnable {
 
     }
 
+    /**
+     * Compute parameter values from the course data. If a course has insufficient data to satisfy the task, a new course is chosen.
+     * @param courses A list of courses whose data is included in the parameterValues
+     * @param parameters A JsonArray of strings containing the task parameter values.
+     * @param parameterValues A Map containing sample parameter values for all the courses given in the courses param
+     * @return A JsonObject with values for each parameter given in parameters.
+     */
+    private JsonObject getParameterValues(List<String> courses, JsonArray parameters,  Map<String,Map<String,List<String>>> parameterValues){
+        //Select a course from which to populate the parameters
+        String chosenCourse = courses.get(random.nextInt(courses.size()));
+        //Retrieve the resource values for that course.
+        Map<String,List<String>> courseValues = parameterValues.get(chosenCourse);
+        //Get values for those parameters from the available course values
+        //Try and get the parameters that is, it is possible that the selected course is out of valid values.
+        try{
+            JsonObject values = getRandomParameterValues(parameters, chosenCourse, courseValues);
+            return values;
+        }catch (IndexOutOfBoundsException e){
+            //Compute a new list of courses, excluding the one that caused the IndexOutOfBounds exception.
+            courses = courses.stream().filter(course->!course.equals(chosenCourse)).collect(Collectors.toList());
+
+            if(courses.size() == 0){
+                throw new RuntimeException("Out of valid course materials for parameter values!");
+            }
+
+            //Call this method again, with a new course.
+            return getParameterValues(courses, parameters, parameterValues);
+        }
+    }
+
     private JsonObject getRandomParameterValues(JsonArray parameters, String course, Map<String,List<String>> parameterValues){
 
         JsonObject result = new JsonObject();
 
-        parameters.stream().map(p->(String)p).forEach(param->{
-            result.put(param, getRandomParameterValue(param, course, parameterValues));
-        });
+        var _parameters = parameters.stream().map(p->(String)p).toList();
+        for(String param: _parameters){
+            try{
+                result.put(param, getRandomParameterValue(param, course, parameterValues));
+            }catch (IndexOutOfBoundsException e){
+                throw e;
+            }
+        };
 
         return result;
 
