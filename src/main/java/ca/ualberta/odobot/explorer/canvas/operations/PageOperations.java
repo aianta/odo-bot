@@ -67,6 +67,12 @@ public class PageOperations{
 
         explicitlyWait(driver, 3);
 
+        //Find the input element for the page title
+        WebElement pageTitleField = findElement(driver, By.id("title"));
+        pageTitleField.clear(); //Clear existing title.
+        pageTitleField.sendKeys("Modified - " + page.getTitle());
+        explicitlyWait(driver, 3);
+
         String newContent = page.makeEdit(page.getBody());
 
         //Update the page body

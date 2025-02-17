@@ -30,3 +30,4 @@ test_task
 test_task_results
 config/snippet2xml.yaml
 config/dataentry2label.yaml
+libs/jsoup-1.19.1-SNAPSHOT.jar

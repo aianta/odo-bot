@@ -61,6 +61,13 @@ public class AssignmentOperations {
 
         explicitlyWait(driver, 3);
 
+        //Find the assignment title input field and change the assignment name
+        WebElement assignmentNameField = findElement(driver, By.id("assignment_name"));
+        assignmentNameField.clear(); //Clear existing title.
+        assignmentNameField.sendKeys("Modified - " + assignment.getName());
+        explicitlyWait(driver,3);
+
+        //Then change the content of the assignment too.
         ((JavascriptExecutor)driver).executeScript("tinyMCE.activeEditor.setContent(`"+assignment.makeEdit(assignment.getBody())+"`)");
 
         //Click the save button

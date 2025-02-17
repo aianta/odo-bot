@@ -11,6 +11,9 @@ repositories {
     mavenCentral()
     jcenter()
     maven { url 'https://jitpack.io' }
+    flatDir {
+        dirs("libs")
+    }
 }
 
 vertx{
@@ -55,6 +58,15 @@ dependencies {
 
 
     /**
+     * Import a custom built JSoup snapshot, the author of JSoup patched a bug that was affecting model construction.
+     * However he has not yet released the patch as an official JSoup release, so I downloaded the JSoup repo
+     * and built the current snapshot.
+     *
+     * Once JSoup 1.19.1 is officially out, this import should be deleted.
+     */
+    implementation files("libs/jsoup-1.19.1-SNAPSHOT.jar")
+
+    /**
      * OpenXES implementation
      * https://www.xes-standard.org/openxes/download
      * https://www.xes-standard.org/openxes/developerguide
@@ -76,9 +88,10 @@ dependencies {
 
     /**
      * HTML parsing
+     * This import is temporarily commented out. See above import for JSoup 1.19.1-SNAPSHOT
      */
     // https://mvnrepository.com/artifact/org.jsoup/jsoup
-    implementation 'org.jsoup:jsoup:1.18.3'
+    implementation 'org.jsoup:jsoup:1.19.+'
 
     /**
      * MultiMaps
