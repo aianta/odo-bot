@@ -553,7 +553,7 @@ public class SqliteServiceImpl implements SqliteService {
         Promise<List<Snippet>> promise = Promise.promise();
 
         pool.preparedQuery("""
-            SELECT id, snippet, dynamic_xpath, snippet_type FROM snippets;
+            SELECT id, snippet, dynamic_xpath, snippet_type, base_uri FROM snippets;
         """).execute()
                 .onSuccess(results->{
 
@@ -575,7 +575,7 @@ public class SqliteServiceImpl implements SqliteService {
         Promise<List<Snippet>> promise = Promise.promise();
 
         pool.preparedQuery("""
-            SELECT id, snippet, dynamic_xpath, snippet_type FROM snippets WHERE dynamic_xpath = ?;
+            SELECT id, snippet, dynamic_xpath, snippet_type, base_uri FROM snippets WHERE dynamic_xpath = ?;
         """).execute(Tuple.of(dynamicXpath))
                 .onSuccess(results->{
 
@@ -597,7 +597,7 @@ public class SqliteServiceImpl implements SqliteService {
         Promise<List<Snippet>> promise = Promise.promise();
 
         pool.preparedQuery("""
-            SELECT id, snippet, dynamic_xpath, snippet_type FROM snippets WHERE dynamic_xpath = ? limit ?;
+            SELECT id, snippet, dynamic_xpath, snippet_type, base_uri FROM snippets WHERE dynamic_xpath = ? limit ?;
         """).execute(Tuple.of(dynamicXpath, numSamples))
                 .onSuccess(results->{
 
@@ -637,7 +637,7 @@ public class SqliteServiceImpl implements SqliteService {
     }
 
     @Override
-    public Future<Void> saveSnippet(String snippet, String xpathId, String type, String sourceHTML){
+    public Future<Void> saveSnippetNoURI(String snippet, String xpathId, String type, String sourceHTML){
         String sql = """
             INSERT INTO snippets (
                 id,
@@ -654,6 +654,33 @@ public class SqliteServiceImpl implements SqliteService {
                 xpathId,
                 type,
                 sourceHTML
+        );
+
+        Promise<Void> promise = Promise.promise();
+
+        return executeParameterizedQuery(promise, sql, params, ignoreUniqueConstraintViolationErrorHandler(promise));
+    }
+
+    @Override
+    public Future<Void> saveSnippet(String snippet, String xpathId, String type, String sourceHTML, String baseURI){
+        String sql = """
+            INSERT INTO snippets (
+                id,
+                snippet, 
+                dynamic_xpath,
+                snippet_type,
+                source_html,
+                base_uri
+            ) VALUES (?,?,?,?,?,?)
+        """;
+
+        Tuple params = Tuple.of(
+                UUID.randomUUID().toString(),
+                snippet,
+                xpathId,
+                type,
+                sourceHTML,
+                baseURI
         );
 
         Promise<Void> promise = Promise.promise();
@@ -875,6 +902,7 @@ public class SqliteServiceImpl implements SqliteService {
                 dynamic_xpath text not null, 
                 snippet_type text not null,
                 source_html text not null,
+                base_uri text,
                 UNIQUE(snippet, dynamic_xpath, source_html)
             )
         """);

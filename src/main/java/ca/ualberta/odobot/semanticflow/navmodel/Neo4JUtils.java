@@ -1292,9 +1292,13 @@ public class Neo4JUtils {
         props.put("name", schema.getName());
         props.put("xml", schema.getSchema());
 
-        var createParameterNodeStmt = "MERGE (n:SchemaParameter {schemaId:$schemaId}) ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
+        //TODO: Probably shouldn't merge schemas by name. As the number of schema params grow, there is bound to be clashes between schema parameters that do not represent the same things, but are called the same.
+        //TODO: Schema parameter merging should probably be its own distinct step, where the regions of the model where the parameter was detected is taken into consideration, amongst other heuristics.
+        //TODO: Nevertheless, for now, for Candidacy, let's take the naive approach.
+        //var createParameterNodeStmt = "MERGE (n:SchemaParameter {schemaId:$schemaId}) ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
+        var createParameterNodeStmt = "MERGE (n:SchemaParameter {name:$name}) ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
 
-        Query createParameterNodeQuery = new Query(createParameterNodeStmt, parameters("schemaId", schema.getId().toString(), "props", props));
+        Query createParameterNodeQuery = new Query(createParameterNodeStmt, parameters("name", schema.getName(), "props", props));
 
         var createRelationshipStmt = """
                 MATCH (sourceNode {id:$sourceNodeId}), (parameterNode:SchemaParameter {id:$parameterNodeId}) 

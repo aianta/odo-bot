@@ -73,8 +73,9 @@ public interface SqliteService {
 
     Future<Void> saveDataEntryAnnotation(JsonObject info);
 
+    Future<Void> saveSnippetNoURI(String snippet, String xpathId, String type, String sourceHTML);
 
-    Future<Void> saveSnippet(String snippet, String xpathId, String type, String sourceHTML);
+    Future<Void> saveSnippet(String snippet, String xpathId, String type, String sourceHTML, String baseURI);
 
     Future<Snippet> getSnippetById(String id);
 

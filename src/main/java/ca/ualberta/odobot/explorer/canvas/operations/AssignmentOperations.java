@@ -62,9 +62,10 @@ public class AssignmentOperations {
         explicitlyWait(driver, 3);
 
         //Find the assignment title input field and change the assignment name
+        String newName = "Modified - " + assignment.getName();
         WebElement assignmentNameField = findElement(driver, By.id("assignment_name"));
         assignmentNameField.clear(); //Clear existing title.
-        assignmentNameField.sendKeys("Modified - " + assignment.getName());
+        assignmentNameField.sendKeys(newName);
         explicitlyWait(driver,3);
 
         //Then change the content of the assignment too.
@@ -74,7 +75,11 @@ public class AssignmentOperations {
         click(driver, By.xpath("//form[@id='edit_assignment_form']/div[3]/div[2]/button[3]") );
 
         //Wait to see the assignment title displayed
-        explicitlyWait(driver, 1);
+        explicitlyWait(driver, 3);
+
+        //Update the assignment name and URL since both will have changed.
+        assignment.setName(newName);
+        assignment.setAssignmentPageUrl(driver.getCurrentUrl());
     }
 
     public void create(WebDriver driver) {

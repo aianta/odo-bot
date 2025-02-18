@@ -388,6 +388,13 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
             StringBuilder sb = new StringBuilder();
             sb.append("XML Examples:\n");
             sb.append(buildXMLExamplesMessageForMakeSchema(seedObjects));
+
+            //If the snippet URL is provided, include it in the prompt.
+            if(snippet.getBaseURI() != null){
+                sb.append("Snippet URL:\n");
+                sb.append(snippet.getBaseURI());
+            }
+
             sb.append("HTML Snippet:\n");
             sb.append(snippet.getSnippet());
 

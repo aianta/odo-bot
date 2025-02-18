@@ -20,6 +20,8 @@ public class Snippet {
     private String dynamicXpath;
     private Type type;
 
+    private String baseURI; //This one is optional, but should exist for input changes and button clicks.
+
     public String getDynamicXpath() {
         return dynamicXpath;
     }
@@ -35,6 +37,9 @@ public class Snippet {
         result.setSnippet(row.getString("snippet"));
         result.setType(Type.valueOf(row.getString("snippet_type").toUpperCase()));
         result.setDynamicXpath(row.getString("dynamic_xpath"));
+        if(row.getString("base_uri") != null){
+            result.setBaseURI(row.getString("base_uri"));
+        }
         return result;
     }
 
@@ -44,6 +49,9 @@ public class Snippet {
         result.setSnippet(json.getString("snippet"));
         result.setType(Type.valueOf(json.getString("type")));
         result.setDynamicXpath(json.getString("dynamicXpath"));
+        if(json.containsKey("baseURI")){
+            result.setBaseURI(json.getString("baseURI"));
+        }
         return result;
     }
 
@@ -54,6 +62,9 @@ public class Snippet {
         setSnippet(data.getString("snippet"));
         setType(Type.valueOf(data.getString("type")));
         setDynamicXpath(data.getString("dynamicXpath"));
+        if(data.containsKey("baseURI")){
+            setBaseURI(data.getString("baseURI"));
+        }
     }
 
     public UUID getId() {
@@ -83,14 +94,26 @@ public class Snippet {
         return this;
     }
 
+    public String getBaseURI() {
+        return baseURI;
+    }
+
+    public Snippet setBaseURI(String baseURI) {
+        this.baseURI = baseURI;
+        return this;
+    }
+
     public JsonObject toJson(){
         JsonObject result = new JsonObject();
         result.put("id", getId().toString())
                 .put("snippet", getSnippet())
                 .put("type", getType().toString())
                 .put("dynamicXpath", getDynamicXpath())
-
         ;
+
+        if(getBaseURI() != null){
+            result.put("baseURI", baseURI);
+        }
 
         return result;
     }

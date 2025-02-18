@@ -37,6 +37,7 @@ import static ca.ualberta.odobot.logpreprocessor.Constants.*;
 
 public class Extractor extends HttpServiceVerticle {
 
+    private static final Set<String> VALID_TABLE_INNER_TAGS = Set.of("tr"); //The set of tags inside a table for which we retrieve the table element for extra context.
 
     private static final Logger log = LoggerFactory.getLogger(Extractor.class);
 
@@ -237,6 +238,24 @@ public class Extractor extends HttpServiceVerticle {
             return Future.succeededFuture(List.of());
         }
 
+        String baseURI = null;
+        //Check the eventDetails_element field for a baseURI
+        if(entity.containsKey("eventDetails_element")){
+            JsonObject elementDetails = new JsonObject(entity.getString("eventDetails_element"));
+
+            if(elementDetails.containsKey("baseURI")){
+                baseURI = elementDetails.getString("baseURI");
+            }
+        }
+        //If not, check the eventDetails_nodes field.
+        if(entity.containsKey("eventDetails_nodes")){
+            JsonArray nodes = new JsonArray(entity.getString("eventDetails_nodes"));
+            JsonObject nodeInfo = nodes.getJsonObject(0);
+            if(nodeInfo.containsKey("baseURI")){
+                baseURI = nodeInfo.getString("baseURI");
+            }
+        }
+
         List<String> snippets = new ArrayList<>();
 
         JsonObject _DOMSnapshotJson = new JsonObject(entity.getString("eventDetails_domSnapshot"));
@@ -251,6 +270,8 @@ public class Extractor extends HttpServiceVerticle {
 
         List<Future> sqliteSaveFutures = new ArrayList<>();
 
+        final String _baseURI = baseURI;
+
         parentElements.forEach(element -> {
 
             //Add individual children matching the dynamic tag as snippets as well.
@@ -261,21 +282,83 @@ public class Extractor extends HttpServiceVerticle {
 
             for(Element child: children){
                 if(child.tagName().equals(xPath.getDynamicTag()) && matchesSuffix(child, xPath)){
+
+                    if(VALID_TABLE_INNER_TAGS.contains(child.tagName())){
+                        /*If this is an inner table element, find the containing table and synthesise a snippet of the following format:
+                        *
+                        * <table>
+                        *   <thead><!--thead data --!></thead>
+                        *   <tbody>
+                        *       <!--snippet--!>
+                        *   </tbody>
+                        *  </table>
+                        *
+                         */
+                        child = mergeTableWithSnippet(getContainingTable(child), child);
+                    }
+
                     snippets.add(child.outerHtml());
-                    sqliteSaveFutures.add(sqliteService.saveSnippet(child.outerHtml(), xPath.toString(), "child", htmlString));
+                    if(_baseURI != null){
+                        sqliteSaveFutures.add(sqliteService.saveSnippet(child.outerHtml(), xPath.toString(), "child", htmlString, _baseURI));
+                    }else{
+                        sqliteSaveFutures.add(sqliteService.saveSnippetNoURI(child.outerHtml(), xPath.toString(), "child", htmlString));
+                    }
+
                     childSnippetCount++;
                 }
             }
             //Save the parent element if we found multiple children matching the dynamic xpath.
             if(childSnippetCount > 1){
                 snippets.add(element.outerHtml());
-                sqliteSaveFutures.add(sqliteService.saveSnippet(element.outerHtml(), xPath.toString(), "parent", htmlString));
+                if(_baseURI != null){
+                    sqliteSaveFutures.add(sqliteService.saveSnippet(element.outerHtml(), xPath.toString(), "parent", htmlString, _baseURI));
+                }else{
+                    sqliteSaveFutures.add(sqliteService.saveSnippetNoURI(element.outerHtml(), xPath.toString(), "parent", htmlString));
+                }
+
             }
 
         });
 
 
         return CompositeFuture.all(sqliteSaveFutures).compose(done->Future.succeededFuture(snippets));
+    }
+
+    private static Element mergeTableWithSnippet(Element table, Element snippet){
+
+        if (!snippet.tagName().equals("tr") || !table.tagName().equals("table")){
+            throw new RuntimeException("Can only merge tr snippets into table elements! Got snippet (%s) with table (%s)".formatted(snippet.tagName(), table.tagName()));
+        }
+
+        //Get the table body element
+        Element tableBody = table.children().stream().filter(element->element.tagName().equals("tbody")).findFirst().get();
+
+        //Iterate through the table body's children, and remove them all.
+        Iterator<Element> childIterator = tableBody.children().iterator();
+        while (childIterator.hasNext()){
+            childIterator.next();
+            childIterator.remove();
+        }
+
+        //Then insert the outerHTML of the snippet as the sole contents of the table body.
+        tableBody.append(snippet.outerHtml());
+
+        //Return the table containing the modified table body.
+        return table;
+    }
+
+    private static Element getContainingTable(Element element){
+
+        if(!VALID_TABLE_INNER_TAGS.contains(element.tagName())){
+            throw new RuntimeException("Cannot get containing table for tag: " + element.tagName());
+        }
+
+        Element curr = element;
+        while (!curr.tagName().equals("table") && curr != null){ //Keep climbing up the DOM tree through the parent until a table element or the root is reached.
+            curr = curr.parent();
+        }
+
+        return curr;
     }
 
     public static boolean matchesSuffix(Element element, DynamicXPath xPath){

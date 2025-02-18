@@ -68,9 +68,10 @@ public class PageOperations{
         explicitlyWait(driver, 3);
 
         //Find the input element for the page title
+        String newTitle = "Modified - " + page.getTitle();
         WebElement pageTitleField = findElement(driver, By.id("title"));
         pageTitleField.clear(); //Clear existing title.
-        pageTitleField.sendKeys("Modified - " + page.getTitle());
+        pageTitleField.sendKeys(newTitle);
         explicitlyWait(driver, 3);
 
         String newContent = page.makeEdit(page.getBody());
@@ -81,10 +82,15 @@ public class PageOperations{
         //Save the changes
         click(driver,By.className("submit") );
 
+        explicitlyWait(driver, 1);
+
         //Find the page title element that will show up once the page has been successfully saved.
         findElement(driver, By.className("page-title"));
 
-
+        //Update the page URL since we changed the page title.
+        page.setPageUrl(driver.getCurrentUrl());
+        //Update the page title since we changed it.
+        page.setTitle(newTitle);
     }
 
     public void delete(WebDriver driver){

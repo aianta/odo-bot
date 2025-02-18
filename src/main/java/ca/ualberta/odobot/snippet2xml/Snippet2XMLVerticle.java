@@ -77,7 +77,7 @@ public class Snippet2XMLVerticle extends HttpServiceVerticle {
 
                         List<JsonObject> results = compositeFuture.list().stream().filter(Objects::nonNull).map(o->(JsonObject)o).collect(Collectors.toList());
 
-                        //Extract semantic schemas and objects from makeSchemaResult, they are both contained in the response json.
+                        //Extract semantic schemas and objects from makeSchema result, they are both contained in the response json.
                         List<SemanticSchema> schemas = new ArrayList<>();
                         List<SemanticObject> objects = new ArrayList<>();
 
@@ -145,7 +145,8 @@ public class Snippet2XMLVerticle extends HttpServiceVerticle {
                                 .collect(Collectors.toList()));
                     }).compose(compositeFuture -> {
 
-                        if(compositeFuture.list() == null){
+                        //If objects aren't being returned composite future will be null.
+                        if(compositeFuture == null  || compositeFuture.list() == null){
                             return Future.succeededFuture();
                         }
 
