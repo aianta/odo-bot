@@ -5,6 +5,8 @@ import ca.ualberta.odobot.snippets.Snippet;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 
 import java.util.List;
@@ -12,7 +14,7 @@ import java.util.List;
 
 public class Snippet2XMLServiceImpl implements Snippet2XMLService {
 
-
+    private static final Logger log = LoggerFactory.getLogger(Snippet2XMLServiceImpl.class);
     private Vertx vertx;
     private AIStrategy strategy;
 
@@ -60,6 +62,10 @@ public class Snippet2XMLServiceImpl implements Snippet2XMLService {
     public Future<JsonObject> makeSchema(List<Snippet> snippets) {
 
         assert snippets.get(0).getDynamicXpath() != null;
+
+        log.info("Making schema from samples:");
+        snippets.forEach(snippet -> log.info("{}", snippet.getSnippet().substring(0, Math.min(snippet.getSnippet().length(), 200))));
+
 
         return vertx.<JsonObject>executeBlocking(blocking->{
 

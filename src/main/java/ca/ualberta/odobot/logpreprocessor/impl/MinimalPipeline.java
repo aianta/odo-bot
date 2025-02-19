@@ -87,6 +87,7 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
         int dataEntryCount = 0;
         int networkEventCount = 0;
         int applicationLocationChangeCount = 0;
+        int checkboxCount = 0;
 
         log.info("Building nav model for timeline: {} [{}]: {}", timeline.getId(), timeline.size(), timeline.toString());
 
@@ -104,6 +105,10 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
                 neo4j.processClickEvent(timeline, (ClickEvent) entity);
             }
 
+            if(entity instanceof CheckboxEvent){
+                checkboxCount++;
+                neo4j.processCheckboxEvent(timeline, (CheckboxEvent) entity);
+            }
 
             if(entity instanceof DataEntry){
                 dataEntryCount++;
@@ -193,12 +198,11 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
         }
 
 
-
-
         log.info("Processed {} clicks for nav model", clickEventCount);
         log.info("Processed {} data entries for nav model", dataEntryCount);
         log.info("Processed {} network events for nav model", networkEventCount);
         log.info("Processed {} effects for nav model", effectCount);
+        log.info("Processed {} checkbox events for nav model", checkboxCount);
         log.info("Processed {} application location changes for nav model", applicationLocationChangeCount);
 
 

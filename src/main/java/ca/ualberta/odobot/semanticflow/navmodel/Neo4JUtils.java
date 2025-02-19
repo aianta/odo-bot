@@ -98,6 +98,19 @@ public class Neo4JUtils {
     }
 
     /**
+     * A wrapper method for {@link #processCheckboxEvent(String, String)} to simplify processing {@link CheckboxEvent}s.
+     * @param timeline
+     * @param checkboxEvent
+     */
+    public void processCheckboxEvent(Timeline timeline, CheckboxEvent checkboxEvent){
+        var index = timeline.indexOf(checkboxEvent);
+        var entityTimelineId = timeline.getId().toString()+"#"+index;
+
+        processCheckboxEvent(checkboxEvent.xpath(), entityTimelineId);
+    }
+
+
+    /**
      * A wrapper method for {@link #processNetworkEvent(String, String, String)} to simplify processing {@link NetworkEvent}s.
      * @param timeline
      * @param networkEvent
@@ -334,6 +347,22 @@ public class Neo4JUtils {
         );
     }
 
+    public void processCheckboxEvent(String xpath, String eventId){
+        //If a checkbox node for this event already exists in the database, this supplier will be used to retrieve it;
+        Supplier<CheckboxNode> existingCheckboxNodeSupplier = ()->getCheckboxNode(xpath);
+
+        //Invoke generic processing logic
+        processNode(
+                eventId,
+                CheckboxNode.class,
+                existingCheckboxNodeSupplier,
+                newCheckboxNodeSupplier(xpath, eventId),
+                processCheckboxNodeQueryFunction()
+        );
+
+
+    }
+
     public void processDataEntry(String xpath, String eventId){
 
         //If a data entry node for this event already exists in the database, this supplier will be used to retrieve it.
@@ -350,6 +379,19 @@ public class Neo4JUtils {
 
     }
 
+    private Function<CheckboxNode, Query> processCheckboxNodeQueryFunction(){
+
+        return (checkboxNode)->{
+            HashMap<String, Object> props = new HashMap<>();
+            props.put("xpath", checkboxNode.getXpath());
+            props.put("id", checkboxNode.getId().toString());
+            props.put("instances", checkboxNode.getInstances());
+
+            return makeGenericMergeQuery("CheckboxNode", checkboxNode, props, "xpath", checkboxNode.getXpath(), "props", props);
+        };
+
+    }
+
     private Function<DataEntryNode, Query> processDataEntryNodeQueryFunction(){
 
         Function<DataEntryNode, Query> queryFunction = (dataEntryNode)->{
@@ -362,6 +404,25 @@ public class Neo4JUtils {
         };
 
         return queryFunction;
+    }
+
+    private Supplier<CheckboxNode> newCheckboxNodeSupplier(String xpath, String eventId, String website){
+        return ()->{
+            CheckboxNode node = this.newCheckboxNodeSupplier(xpath, eventId).get();
+            node.setWebsite(website);
+            return node;
+        };
+    }
+
+    private Supplier<CheckboxNode> newCheckboxNodeSupplier(String xpath, String eventId){
+        //If no checkbox node could be found, this supplier will be used to create one.
+        return ()->{
+            CheckboxNode node = new CheckboxNode();
+            node.setId(UUID.randomUUID());
+            node.setXpath(xpath);
+            node.setInstances(Set.of(eventId));
+            return node;
+        };
     }
 
     private Supplier<DataEntryNode> newDataEntryNodeSupplier (String xpath, String eventId, String website){
@@ -746,6 +807,11 @@ public class Neo4JUtils {
             return getDataEntryNode(dataEntry.xpath());
         }
 
+        if(target instanceof CheckboxEvent){
+            CheckboxEvent checkboxEvent = (CheckboxEvent) target;
+            return getCheckboxNode(checkboxEvent.xpath());
+        }
+
         if(target instanceof NetworkEvent){
             NetworkEvent networkEvent = (NetworkEvent) target;
             return getAPINode(networkEvent.getPath(), networkEvent.getMethod());
@@ -796,6 +862,11 @@ public class Neo4JUtils {
         if(predecessor instanceof ClickNode){
             stmt = "MATCH (a:ClickNode {id:$aId})-[:NEXT]->(e:EffectNode)";
         }
+
+        if(predecessor instanceof CheckboxNode){
+            stmt = "MATCH (a:CheckboxNode {id:$aId})-[:NEXT]->(e:EffectNode)";
+        }
+
         if(predecessor instanceof DataEntryNode){
             stmt = "MATCH (a:DataEntryNode {id:$aId})-[:NEXT]->(e:EffectNode)";
         }
@@ -814,6 +885,10 @@ public class Neo4JUtils {
 
         if(successor instanceof ClickNode){
             stmt += "-[:NEXT]->(b:ClickNode {id:$bId}) RETURN e;";
+        }
+
+        if(successor instanceof CheckboxNode){
+            stmt+="-[:NEXT]->(b:CheckboxNode {id:$bId}) RETURN e;";
         }
 
         if(successor instanceof DataEntryNode){
@@ -846,6 +921,10 @@ public class Neo4JUtils {
             stmt = "MATCH (e:EffectNode)-[:NEXT]->(n:ClickNode {id:$id}) RETURN e;";
         }
 
+        if(successor instanceof CheckboxNode){
+            stmt = "MATCH (e:EffectNode)-[:NEXT]->(n:CheckboxNode {id:$id}) RETURN e;";
+        }
+
         if(successor instanceof DataEntryNode){
             stmt = "MATCH (e:EffectNode)-[:NEXT]->(n:DataEntryNode {id:$id}) RETURN e;";
         }
@@ -874,6 +953,10 @@ public class Neo4JUtils {
         var stmt = "";
         if(predecessor instanceof ClickNode){
             stmt = "MATCH (n:ClickNode {id:$id})-[:NEXT]->(e:EffectNode) RETURN e;";
+        }
+
+        if(predecessor instanceof CheckboxNode){
+            stmt = "MATCH (n:CheckboxNode {id:$id})-[:NEXT]->(e:EffectNode) RETURN e;";
         }
 
         if(predecessor instanceof DataEntryNode){
@@ -954,6 +1037,18 @@ public class Neo4JUtils {
         return readNode(query, SelectOptionNode.class);
     }
 
+    private CheckboxNode getCheckboxNode(String xpath){
+        var stmt = "MATCH (n:CheckboxNode {xpath:$xpath}) return n;";
+        var query = new Query(stmt, parameters("xpath", xpath));
+        return readNode(query, CheckboxNode.class);
+    }
+
+    private CheckboxNode getCheckboxNode(String xpath, String website){
+        var stmt = makeSimplePropertyBasedMatchQueryString("CheckboxNode", "xpath", "website");
+        var query = new Query(stmt, parameters("xpath", xpath, "website", website));
+        return readNode(query, CheckboxNode.class);
+    }
+
     private DataEntryNode getDataEntryNode(String xpath){
         var stmt = "MATCH (n:DataEntryNode {xpath:$xpath}) return n";
         var query = new Query(stmt, parameters("xpath", xpath));
@@ -1031,10 +1126,10 @@ public class Neo4JUtils {
         return result;
     }
 
-    public List<DataEntryNode> getDataEntryNodes(){
+    public List<DataEntryNode> getNodesForInputParameters(){
         try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
             String sQuery = """
-                    match (n:DataEntryNode) return n;
+                    match (n) WHERE n:DataEntryNode OR n:CheckboxNode return n;
                     """;
             Query query = new Query(sQuery);
 

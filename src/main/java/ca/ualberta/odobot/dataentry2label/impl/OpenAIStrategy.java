@@ -84,7 +84,10 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         StringBuilder sb = new StringBuilder();
         sb.append("Input Element: %s\n".formatted(input.getString("inputElement")));
         sb.append("HTML Context: %s\n".formatted(input.getString("htmlContext")));
-        sb.append("Example Input Data: %s\n".formatted(exampleInputs.getString(0)));
+
+        if(exampleInputs.size() > 0){
+            sb.append("Example Input Data: %s\n".formatted(exampleInputs.getString(0)));
+        }
 
         chatMessages.add(new ChatRequestUserMessage(sb.toString()));
 

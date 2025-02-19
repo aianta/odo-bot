@@ -1,9 +1,6 @@
 package ca.ualberta.odobot.semanticflow.navmodel;
 
-import ca.ualberta.odobot.semanticflow.navmodel.nodes.CollapsedClickNode;
-import ca.ualberta.odobot.semanticflow.navmodel.nodes.CollapsedDataEntryNode;
-import ca.ualberta.odobot.semanticflow.navmodel.nodes.CollapsedEffectNode;
-import ca.ualberta.odobot.semanticflow.navmodel.nodes.CollapsedNode;
+import ca.ualberta.odobot.semanticflow.navmodel.nodes.*;
 import org.neo4j.graphdb.*;
 import org.neo4j.graphdb.traversal.TraversalDescription;
 import org.neo4j.graphdb.traversal.Traverser;
@@ -98,6 +95,7 @@ public class CollapsingTraversal {
                 case "ClickNode" -> new CollapsedClickNode(nodeSet);
                 case "DataEntryNode" -> new CollapsedDataEntryNode(nodeSet);
                 case "EffectNode" -> new CollapsedEffectNode(nodeSet);
+                case "CheckboxNode" -> new CollapsedCheckboxNode(nodeSet);
                 default -> throw new RuntimeException("Uncollapsable node set!");
             };
 

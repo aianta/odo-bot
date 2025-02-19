@@ -13,6 +13,7 @@ public enum BaseLabel{
     APPLICATION_LOCATION_CHANGE_NODE("ApplicationLocationChangeNode"),
     LOCATION_NODE("LocationNode"),
 
+    CHECKBOX_NODE("CheckboxNode"),
     API_NODE("APINode");
 
     public String label;

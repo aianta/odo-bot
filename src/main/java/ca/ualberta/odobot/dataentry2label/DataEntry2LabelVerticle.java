@@ -7,7 +7,6 @@ import ca.ualberta.odobot.semanticflow.model.*;
 import ca.ualberta.odobot.semanticflow.navmodel.Neo4JUtils;
 import ca.ualberta.odobot.semanticflow.navmodel.nodes.DataEntryNode;
 import ca.ualberta.odobot.sqlite.SqliteService;
-import com.google.api.Http;
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.Future;
 import io.vertx.core.http.HttpMethod;
@@ -23,7 +22,6 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.Files;
-import java.nio.file.OpenOption;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
@@ -86,12 +84,12 @@ public class DataEntry2LabelVerticle extends HttpServiceVerticle {
 
     private void annotateModel(RoutingContext rc){
 
-        List<DataEntryNode> dataEntryNodes = neo4j.getDataEntryNodes();
+        List<DataEntryNode> nodesForInputParameters = neo4j.getNodesForInputParameters();
 
         sqliteService.getAllDataEntryAnnotations()
                 .onSuccess(annotations->{
 
-                    dataEntryNodes.stream()
+                    nodesForInputParameters.stream()
                             .forEach(node->{
 
                                 Optional<JsonObject> parameterAnnotation = annotations.stream().filter(annotation->annotation.getString("xpath").equals(node.getXpath())).findFirst();
@@ -271,25 +269,50 @@ public class DataEntry2LabelVerticle extends HttpServiceVerticle {
                     .compose(timeline->{
 
                         return Future.all(timeline.stream()
-                                .filter(entity->entity instanceof DataEntry)
+                                .filter(entity->entity instanceof DataEntry || entity instanceof CheckboxEvent) //Data entries and checkbox events are both based on InputChanges
                                 .map(entity->{
-                                    DataEntry dataEntry = (DataEntry) entity;
 
-                                    //The DomSnapshot must contain the input element, otherwise what are we doing?
-                                    assert dataEntry.lastChange().getDomSnapshot().outerHtml().contains(dataEntry.inputElement().outerHtml());
+                                    if(entity instanceof CheckboxEvent){
+                                        CheckboxEvent checkboxEvent = (CheckboxEvent) entity;
 
-                                    String htmlContext = getHTMLContext(dataEntry.lastChange().getDomSnapshot().outerHtml(), dataEntry.xpath());
-                                    if(htmlContext == null){
-                                        return null;
+                                        //The DomSnapshot must contain the input element, otherwise what are we doing?
+                                        assert checkboxEvent.getDomSnapshot().outerHtml().contains(checkboxEvent.getInputElement().outerHtml());
+
+                                        String htmlContext = getHTMLContext(checkboxEvent.getDomSnapshot().outerHtml(),checkboxEvent.xpath());
+                                        if(htmlContext == null){
+                                            return null;
+                                        }
+
+                                        JsonObject data = new JsonObject()
+                                                .put("input_element", checkboxEvent.getInputElement().outerHtml())
+                                                .put("html_context", htmlContext)
+                                                .put("xpath", checkboxEvent.xpath());
+
+                                        return data;
                                     }
 
-                                    JsonObject data = new JsonObject()
-                                            .put("input_element", dataEntry.inputElement().outerHtml())
-                                            .put("html_context", htmlContext)
-                                            .put("entered_data", dataEntry.getEnteredData())
-                                            .put("xpath", dataEntry.xpath());
+                                    if(entity instanceof DataEntry){
+                                        DataEntry dataEntry = (DataEntry) entity;
 
-                                    return data;
+                                        //The DomSnapshot must contain the input element, otherwise what are we doing?
+                                        assert dataEntry.lastChange().getDomSnapshot().outerHtml().contains(dataEntry.inputElement().outerHtml());
+
+                                        String htmlContext = getHTMLContext(dataEntry.lastChange().getDomSnapshot().outerHtml(), dataEntry.xpath());
+                                        if(htmlContext == null){
+                                            return null;
+                                        }
+
+                                        JsonObject data = new JsonObject()
+                                                .put("input_element", dataEntry.inputElement().outerHtml())
+                                                .put("html_context", htmlContext)
+                                                .put("entered_data", dataEntry.getEnteredData())
+                                                .put("xpath", dataEntry.xpath());
+
+                                        return data;
+                                    }
+
+                                    log.warn("Unexpected entity type! {}", entity.getClass().getName());
+                                    return null;
 
                                 })
                                 .filter(Objects::nonNull)

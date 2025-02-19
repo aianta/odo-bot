@@ -755,15 +755,18 @@ public class SqliteServiceImpl implements SqliteService {
                 ON CONFLICT(xpath) DO UPDATE SET entered_data = json_insert(entered_data, '$[#]', ?) WHERE NOT INSTR(entered_data, ?);
                 """;
 
-        Tuple params = Tuple.of(
+        log.info("Saving data entry info: \n{}", info.encodePrettily());
+
+        Tuple params = null;
+        params = Tuple.of(
                 info.getString("xpath"),
                 info.getString("input_element"),
                 info.getString("html_context"),
-                new JsonArray().add(info.getString("entered_data")).encode(),
+                info.containsKey("entered_data")?new JsonArray().add(info.getString("entered_data")).encode():new JsonArray().encode(),
                 info.getString("entered_data"),
                 info.getString("entered_data")
         );
-
+        
         return executeParameterizedQuery(sql, params);
 
     }

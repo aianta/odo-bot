@@ -297,11 +297,14 @@ public class Extractor extends HttpServiceVerticle {
                         child = mergeTableWithSnippet(getContainingTable(child), child);
                     }
 
-                    snippets.add(child.outerHtml());
+                    //TODO: I should probably remove these extra attributes from all elements in OdoX.
+                    var _childHTML = child.outerHtml().replaceAll("_odo_ishidden=\"false\"", "").replaceAll("_odo_ishidden=\"true\"", "");
+                    snippets.add(_childHTML);
+
                     if(_baseURI != null){
-                        sqliteSaveFutures.add(sqliteService.saveSnippet(child.outerHtml(), xPath.toString(), "child", htmlString, _baseURI));
+                        sqliteSaveFutures.add(sqliteService.saveSnippet(_childHTML, xPath.toString(), "child", htmlString, _baseURI));
                     }else{
-                        sqliteSaveFutures.add(sqliteService.saveSnippetNoURI(child.outerHtml(), xPath.toString(), "child", htmlString));
+                        sqliteSaveFutures.add(sqliteService.saveSnippetNoURI(_childHTML, xPath.toString(), "child", htmlString));
                     }
 
                     childSnippetCount++;
@@ -332,6 +335,7 @@ public class Extractor extends HttpServiceVerticle {
 
         //Get the table body element
         Element tableBody = table.children().stream().filter(element->element.tagName().equals("tbody")).findFirst().get();
+        //Element tableHeader = table.children().stream().filter(element -> element.tagName().equals("thead")).findFirst().get();
 
         //Iterate through the table body's children, and remove them all.
         Iterator<Element> childIterator = tableBody.children().iterator();

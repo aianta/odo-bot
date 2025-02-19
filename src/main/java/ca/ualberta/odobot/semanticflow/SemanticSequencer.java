@@ -188,6 +188,12 @@ public class SemanticSequencer {
                             artifactConsumer.accept(inputChange); //Invoke them with the newly processed artifact.
                         }
 
+                        if(inputChange instanceof CheckboxEvent){
+                            line.add((CheckboxEvent)inputChange);
+                            log.info("handled INPUT - Checkbox");
+                            return;
+                        }
+
                         /**  Check if the last entity in the timeline is a {@link DataEntry},
                          * if so, add this input change to it. Otherwise, create a new
                          * DataEntry and add this input change to it before adding the created DataEntry to the timeline. */
