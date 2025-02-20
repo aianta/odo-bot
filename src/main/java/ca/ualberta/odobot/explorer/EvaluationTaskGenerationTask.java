@@ -3,6 +3,7 @@ package ca.ualberta.odobot.explorer;
 import ca.ualberta.odobot.explorer.canvas.resources.*;
 import ca.ualberta.odobot.explorer.canvas.resources.Module;
 import ca.ualberta.odobot.explorer.model.DataGenerationPlan;
+import ca.ualberta.odobot.explorer.model.OdoBotExecutionRequest;
 import io.vertx.core.Promise;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -118,34 +119,102 @@ public class EvaluationTaskGenerationTask implements Runnable {
 
         JsonObject result = new JsonObject();
 
+        //Resolve template parameters
+        //Get the parameters we will need values for.
+        JsonArray taskParameters = taskDetails.getJsonArray("parameters");
+        //Get the values for the parameters.
+        JsonObject values = getParameterValues(courses, taskParameters, parameterValues);
 
+        //Establish a task id that is shared for equivalent tasks between odobot and webvoyager.
+        UUID taskId = UUID.randomUUID();
 
-        result.put("webVoyager", makeWebVoyagerTask(taskDetails, loginTemplates, courses, parameterValues));
+        //Get the model mappings for this task
+        JsonObject modelMapping = taskDetails.getJsonObject("model_mapping");
+
+        result.put("webVoyager", makeWebVoyagerTask(taskDetails, loginTemplates, values, taskId));
+        result.put("odoBot", makeOdoBotTask(values, modelMapping, taskId ).put("_evalId", taskDetails.getString("id") + "|OdoBot|" + taskId.toString()));
 
         return result;
     }
 
-    private JsonObject makeWebVoyagerTask(JsonObject taskDetails, JsonArray loginTemplates,List<String> courses, Map<String,Map<String,List<String>>> parameterValues){
+    private OdoBotExecutionRequest makeOdoBotTask(JsonObject values, JsonObject modelMapping, UUID taskId){
+
+        OdoBotExecutionRequest request = new OdoBotExecutionRequest();
+        request.id(taskId);
+        request.target(modelMapping.getString("target"));
+        request.userLocation(config.getString(EvaluationTaskGenerationRequestFields.STARTING_USER_LOCATION.field()));
+
+        values.forEach(entry->{
+            String _value = (String)entry.getValue();
+            switch (entry.getKey()){
+                case "course":
+                    request.addSchemaParameter(modelMapping.getString("course"), _value);
+                    break;
+                case "text-entry-checkbox":
+                    request.addInputParameter(modelMapping.getString("text-entry-checkbox"), _value);
+                    break;
+                case "assignment-title":
+                    request.addInputParameter(modelMapping.getString("assignment-title"), _value);
+                    break;
+                case "page-title":
+                    request.addInputParameter(modelMapping.getString("page-title"), _value);
+                    break;
+                case "module-name":
+                    request.addInputParameter(modelMapping.getString("module-name"), _value);
+                    break;
+                case "old-quiz-title":
+                    request.addSchemaParameter(modelMapping.getString("old-quiz-title"), _value);
+                    break;
+                case "new-quiz-title":
+                    request.addInputParameter(modelMapping.getString("new-quiz-title"), _value);
+                    break;
+                case "old-page-title":
+                    request.addSchemaParameter(modelMapping.getString("old-page-title"), _value);
+                    break;
+                case "new-page-title":
+                    request.addInputParameter(modelMapping.getString("new-page-title"), _value);
+                    break;
+                case "old-module-name":
+                    request.addSchemaParameter(modelMapping.getString("old-module-name"),_value);
+                    break;
+                case "new-module-name":
+                    request.addInputParameter(modelMapping.getString("new-module-name"), _value);
+                    break;
+                case "old-assignment-title":
+                    request.addSchemaParameter(modelMapping.getString("old-assignment-title"), _value);
+                    break;
+                case "new-assignment-title":
+                    request.addInputParameter(modelMapping.getString("new-assignment-title"), _value);
+                    break;
+                case "assignment":
+                    request.addSchemaParameter(modelMapping.getString("assignment"), _value);
+                    break;
+                case "page":
+                    request.addSchemaParameter(modelMapping.getString("page"), _value);
+                    break;
+                default:
+                    log.warn("Encountered UNKNOWN PARAMETER {} while trying to generate OdoBotExecutionRequest", entry.getKey());
+            }
+
+        });
+
+        return request;
+    }
+
+    private JsonObject makeWebVoyagerTask(JsonObject taskDetails, JsonArray loginTemplates,JsonObject values, UUID taskId){
 
         JsonObject result = new JsonObject();
         result.put("web", this.appUrl);
         result.put("web_name", this.appName);
         result.put("description", taskDetails.getString("task"));
 
-        String webVoyagerTaskId = taskDetails.getString("id") + "|WebVoyager|" + UUID.randomUUID().toString();
+        String webVoyagerTaskId = taskDetails.getString("id") + "|WebVoyager|" + taskId.toString();
         result.put("id", webVoyagerTaskId);
 
         StringBuilder sb = new StringBuilder();
         //Inject the login instruction.
         sb.append(loginTemplates.getString(random.nextInt(loginTemplates.size())).replace("<username>", this.username).replace("<password>", this.password)+ " ");
 
-        //Resolve template parameters
-
-
-        //Identify the parameters we will need values for
-        JsonArray taskParameters = taskDetails.getJsonArray("parameters");
-
-        JsonObject values = getParameterValues(courses, taskParameters, parameterValues);
 
         //Fill the template with the chosen values.
         String chosenTemplate = taskDetails.getJsonArray("templates").getString(random.nextInt(taskDetails.getJsonArray("templates").size()));
@@ -220,6 +289,7 @@ public class EvaluationTaskGenerationTask implements Runnable {
             case "course" -> {
                 yield course;
             }
+            case "text-entry-checkbox" -> "true";
             case "assignment-title" -> parameterValues.get("assignments").remove(0);
             case "page-title" -> parameterValues.get("pages").remove(0);
             case "module-name" -> parameterValues.get("modules").remove(0);
