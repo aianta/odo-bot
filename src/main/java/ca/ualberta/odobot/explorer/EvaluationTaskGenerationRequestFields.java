@@ -12,6 +12,8 @@ public enum EvaluationTaskGenerationRequestFields implements RequestFields {
     TARGET_APP_PASSWORD("password", String.class),
 
     STARTING_USER_LOCATION("startingUserLocation", String.class),
+    USERNAME_PARAM_ID("usernameParameterId", String.class),
+    PASSWORD_PARAM_ID("passwordParameterId", String.class),
 
     NUM_INSTANCES_PER_TASK("instancesPerTask", Integer.class),
     TASKS("tasks", JsonArray.class);

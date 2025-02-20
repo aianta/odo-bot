@@ -144,6 +144,11 @@ public class EvaluationTaskGenerationTask implements Runnable {
         request.target(modelMapping.getString("target"));
         request.userLocation(config.getString(EvaluationTaskGenerationRequestFields.STARTING_USER_LOCATION.field()));
 
+        //Add input parameters for the username and password
+        request.addInputParameter(config.getString(EvaluationTaskGenerationRequestFields.USERNAME_PARAM_ID.field()), config.getString(EvaluationTaskGenerationRequestFields.TARGET_APP_USERNAME.field));
+        request.addInputParameter(config.getString(EvaluationTaskGenerationRequestFields.PASSWORD_PARAM_ID.field()), config.getString(EvaluationTaskGenerationRequestFields.TARGET_APP_PASSWORD.field()));
+
+        //Resolve the rest of the task parameters.
         values.forEach(entry->{
             String _value = (String)entry.getValue();
             switch (entry.getKey()){
