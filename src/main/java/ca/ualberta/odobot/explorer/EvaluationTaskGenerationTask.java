@@ -148,6 +148,11 @@ public class EvaluationTaskGenerationTask implements Runnable {
         request.addInputParameter(config.getString(EvaluationTaskGenerationRequestFields.USERNAME_PARAM_ID.field()), config.getString(EvaluationTaskGenerationRequestFields.TARGET_APP_USERNAME.field));
         request.addInputParameter(config.getString(EvaluationTaskGenerationRequestFields.PASSWORD_PARAM_ID.field()), config.getString(EvaluationTaskGenerationRequestFields.TARGET_APP_PASSWORD.field()));
 
+        //Include 'text-entry-checkbox' parameter where appropriate
+        if(modelMapping.containsKey("text-entry-checkbox")){
+            request.addInputParameter(modelMapping.getString("text-entry-checkbox"), "true");
+        }
+
         //Resolve the rest of the task parameters.
         values.forEach(entry->{
             String _value = (String)entry.getValue();
