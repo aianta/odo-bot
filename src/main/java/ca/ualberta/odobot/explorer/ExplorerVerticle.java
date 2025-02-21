@@ -18,8 +18,13 @@ import io.vertx.rxjava3.ext.web.handler.LoggerHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.ListIterator;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -61,12 +66,314 @@ public class ExplorerVerticle extends HttpServiceVerticle {
             api.route(HttpMethod.POST, "/evaluate").handler(this::evaluateValidationHandler);
             api.route(HttpMethod.POST, "/evaluate").handler(this::evaluateHandler);
 
+            api.route(HttpMethod.POST, "/evaluationResults").handler(this::computeEvaluationResults);
+
 
         }catch (Exception e){
             log.error(e.getMessage(), e);
         }
 
         return Completable.complete();
+
+    }
+
+    private void computeEvaluationResults(RoutingContext rc)  {
+
+        JsonObject request = rc.body().asJsonObject();
+
+        String pathToResults = request.getString("results_path");
+        JsonArray odoBotTasks = getOdoBotTasks(request.getJsonArray("tasks"));
+        JsonObject courseIds = request.getJsonObject("course_ids");
+        JsonObject assignmentIds = request.getJsonObject("assignment_ids");
+        JsonObject quizIds = request.getJsonObject("quiz_ids");
+        JsonObject pageSlugs = request.getJsonObject("page_slugs");
+        JsonObject moduleIds = request.getJsonObject("modules_id");
+
+        JsonObject results = new JsonObject();
+        results.put("succedded_tasks", new JsonArray());
+        results.put("failed_tasks", new JsonArray());
+        results.put("manifest", new JsonObject());
+
+        try{
+
+
+        File dir = new File(pathToResults);
+        File[] contents = dir.listFiles();
+        if(contents != null){
+            for(File log: contents){
+
+                JsonObject taskInfo = getOdoBotTaskByFilename(log.getName(), odoBotTasks);
+                String evalId = taskInfo.getString("_evalId");
+                JsonArray events = new JsonArray(new String(Files.readAllBytes(Path.of(log.getPath()))));
+
+                boolean success = switch (getTaskNumber(evalId)){
+                    case 1 -> {
+                        /**
+                         * This is the create quiz task. We verify this one was done correctly by ensuring
+                         * there exists an appropriate network event creating a quiz in the expected course.
+                         */
+
+                        //Get the target course for the task
+                        JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(2);
+                        String targetCourseName = courseParameter.getString("query");
+
+
+                        Optional<JsonObject> networkEvent = events.stream().map(o -> (JsonObject) o)
+                                .filter(event -> event.getJsonObject("eventDetails").getString("name").equals("NETWORK_EVENT") &&
+                                        event.getJsonObject("eventDetails").getString("method").equals("POST") &&
+                                        event.getJsonObject("eventDetails").getString("url")
+                                                .equals("http://localhost:8088/courses/%s/quizzes/new?fresh=1".formatted(
+                                                        courseIds.getString(targetCourseName)
+                                                ))
+                                ).findFirst();
+
+                        yield networkEvent.isPresent();
+                    }
+                    case 2 -> {
+                        /**
+                         * This is the create a new assignment task. We verify this one by ensuring
+                         * there exists a network event creating an assignment in the expected course.
+                         */
+                        JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(4);
+                        String targetCourseName = courseParameter.getString("query");
+
+                        Optional<JsonObject> networkEvent = events.stream().map(o->(JsonObject)o)
+                                .filter(event -> event.getJsonObject("eventDetails").getString("name").equals("NETWORK_EVENT") &&
+                                        event.getJsonObject("eventDetails").getString("method").equals("POST") &&
+                                        event.getJsonObject("eventDetails").getString("url")
+                                                .equals("http://localhost:8088/api/v1/courses/%s/assignments".formatted(
+                                                        courseIds.getString(targetCourseName)
+                                                ))
+
+                                ).findFirst();
+
+                        yield networkEvent.isPresent();
+
+                    }
+                    case 3 -> {
+                        /**
+                         * This is the create page task.
+                         */
+                        JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(3);
+                        String targetCourseName = courseParameter.getString("query");
+
+                        Optional<JsonObject> networkEvent = events.stream().map(o->(JsonObject)o)
+                                .map(event->event.getJsonObject("eventDetails"))
+                                .filter(event->event.getString("name").equals("NETWORK_EVENT") &&
+                                        event.getString("method").equals("POST") &&
+                                        event.getString("url").equals("http://localhost:8088/api/v1/courses/%s/pages".formatted(
+                                                courseIds.getString(targetCourseName)
+                                        ))
+                                ).findFirst();
+
+                        yield networkEvent.isPresent();
+                    }
+
+                    case 4 ->{
+                        /**
+                         * Create a new module task
+                         */
+                        JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(3);
+                        String targetCourseName = courseParameter.getString("query");
+
+                        Optional<JsonObject> networkEvent = events.stream().map(o->(JsonObject)o)
+                                .map(event->event.getJsonObject("eventDetails"))
+                                .filter(event->event.getString("name").equals("NETWORK_EVENT") &&
+                                        event.getString("method").equals("POST") &&
+                                        event.getString("url").equals("http://localhost:8088/courses/%s/modules".formatted(
+                                                courseIds.getString(targetCourseName)
+                                        ))
+                                        )
+                                .findFirst();
+
+                        yield networkEvent.isPresent();
+                    }
+
+                    case 5 ->{
+
+                        /**
+                         * Edit quiz title
+                         */
+                        JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(4);
+                        String targetCourseName = courseParameter.getString("query");
+
+                        JsonObject quizParameter = taskInfo.getJsonArray("parameters").getJsonObject(2);
+                        String targetQuizName = quizParameter.getString("query");
+
+                        Optional<JsonObject> networkEvent = events.stream().map(o->(JsonObject)o)
+                                .map(event->event.getJsonObject("eventDetails"))
+                                .filter(event->event.getString("name").equals("NETWORK_EVENT") &&
+                                        event.getString("method").equals("POST") &&
+                                        event.getString("url").equals("http://localhost:8088/courses/%s/quizzes/%s".formatted(
+                                                courseIds.getString(targetCourseName),
+                                                quizIds.getString(targetQuizName)
+                                        ))
+                                        ).findFirst();
+
+                        yield networkEvent.isPresent();
+                    }
+                    case 6 ->{
+                        /**
+                         *  Edit a page title
+                         */
+
+                        JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(4);
+                        String targetCourseName = courseParameter.getString("query");
+
+                        JsonObject pageParameter = taskInfo.getJsonArray("parameters").getJsonObject(2);
+                        String targetPageName = pageParameter.getString("query");
+
+                        Optional<JsonObject> networkEvent = events.stream().map(o->(JsonObject)o)
+                                .map(event->event.getJsonObject("eventDetails"))
+                                .filter(event->event.getString("name").equals("NETWORK_EVENT") &&
+                                        event.getString("method").equals("PUT") &&
+                                        event.getString("url").equals("http://localhost:8088/api/v1/courses/%s/pages/%s".formatted(
+                                                courseIds.getString(targetCourseName),
+                                                pageSlugs.getString(targetPageName)
+                                        ))).findFirst();
+
+                        yield networkEvent.isPresent();
+                    }
+                    case 7 ->{
+
+                        /**
+                         *  Edit a module title
+                         */
+                        JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(4);
+                        String targetCourseName = courseParameter.getString("query");
+
+                        JsonObject moduleParameter = taskInfo.getJsonArray("parameters").getJsonObject(2);
+                        String targetModuleName = moduleParameter.getString("query");
+
+                        Optional<JsonObject> networkEvent = events.stream().map(o->(JsonObject)o)
+                                .map(event->event.getJsonObject("eventDetails"))
+                                .filter(event->event.getString("name").equals("NETWORK_EVENT") &&
+                                        event.getString("method").equals("POST") &&
+                                        event.getString("url").equals("http://localhost:8088/courses/%s/modules/%s".formatted(
+                                                courseIds.getString(targetCourseName),
+                                                moduleIds.getString(targetModuleName)
+                                        ))).findFirst();
+
+                        yield networkEvent.isPresent();
+
+                    }
+                    case 8 ->{
+                        /**
+                         *  Edit an assignment title.
+                         */
+
+                        JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(4);
+                        String targetCourseName = courseParameter.getString("query");
+
+                        JsonObject assignmentParameter = taskInfo.getJsonArray("parameters").getJsonObject(2);
+                        String targetAssignmentName = assignmentParameter.getString("query");
+
+                        Optional<JsonObject> networkEvent = events.stream().map(o->(JsonObject)o)
+                                .map(event->event.getJsonObject("eventDetails"))
+                                .filter(event->event.getString("name").equals("NETWORK_EVENT") &&
+                                        event.getString("method").equals("PUT") &&
+                                        event.getString("url").equals("http://localhost:8088/api/v1/courses/%s/assignments/%s".formatted(
+                                                courseIds.getString(targetCourseName),
+                                                assignmentIds.getString(targetAssignmentName)
+                                        ))).findFirst();
+
+                        yield networkEvent.isPresent();
+
+                    }
+                    case 9 ->{
+                        /**
+                         *   Delete an assignment
+                         */
+
+                        JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(3);
+                        String targetCourseName = courseParameter.getString("query");
+
+                        JsonObject assignmentParameter = taskInfo.getJsonArray("parameters").getJsonObject(2);
+                        String targetAssignmentName = assignmentParameter.getString("query");
+
+                        Optional<JsonObject> networkEvent = events.stream().map(o->(JsonObject)o)
+                                .map(event->event.getJsonObject("eventDetails"))
+                                .filter(event->event.getString("name").equals("NETWORK_EVENT") &&
+                                        event.getString("method").equals("DELETE") &&
+                                        event.getString("url").equals("http://localhost:8088/api/v1/courses/%s/assignments/%s".formatted(
+                                                courseIds.getString(targetCourseName),
+                                                assignmentIds.getString(targetAssignmentName)
+                                        ))).findFirst();
+
+                        yield networkEvent.isPresent();
+                    }
+                    case 10 ->{
+                        /**
+                         * Delete a page
+                         */
+                        JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(3);
+                        String targetCourseName = courseParameter.getString("query");
+
+                        JsonObject pageParameter = taskInfo.getJsonArray("parameters").getJsonObject(2);
+                        String targetPageName = pageParameter.getString("query");
+
+                        Optional<JsonObject> networkEvent = events.stream().map(o->(JsonObject)o)
+                                .map(event->event.getJsonObject("eventDetails"))
+                                .filter(event->event.getString("name").equals("NETWORK_EVENT") &&
+                                        event.getString("method").equals("DELETE") &&
+                                        event.getString("url").equals("\thttp://localhost:8088/api/v1/courses/%s/pages/%s".formatted(
+                                                courseIds.getString(targetCourseName),
+                                                pageSlugs.getString(targetPageName)
+                                        ))).findFirst();
+
+                        yield networkEvent.isPresent();
+
+                    }
+                    default ->{
+                        throw new RuntimeException("Unknown task type!");
+                    }
+                };
+
+                //Add the verification result to the manifest
+                results.getJsonObject("manifest").put(evalId, success);
+
+                if(success){
+                    results.getJsonArray("succedded_tasks").add(evalId);
+                }else{
+                    results.getJsonArray("failed_tasks").add(evalId);
+                }
+            }
+        }
+
+        results.put("succedded", results.getJsonArray("succedded_tasks").size());
+        results.put("failed", results.getJsonArray("failed_tasks").size());
+        results.put("total", results.getJsonArray("manifest").size());
+
+
+        rc.response().setStatusCode(200).end(results.encodePrettily());
+
+        }catch (IOException e){
+            log.error(e.getMessage(),e);
+        }
+
+
+    }
+
+
+    private int getTaskNumber(String evalId){
+        String [] split = evalId.split("\\|");
+        return Integer.parseInt(split[0]);
+    }
+
+    private JsonObject getOdoBotTaskByFilename(String filename, JsonArray tasks){
+        return tasks.stream()
+                .map(o->(JsonObject)o)
+                .filter(task->filename.contains(task.getString("id")))
+                .findFirst()
+                .get();
+    }
+
+    private JsonObject getOdoBotTaskByEvalId(String evalId, JsonArray tasks){
+
+        return tasks.stream()
+                .map(o->(JsonObject)o)
+                .filter(task->task.getString("_evalId").equals(evalId))
+                .findFirst().get();
 
     }
 
