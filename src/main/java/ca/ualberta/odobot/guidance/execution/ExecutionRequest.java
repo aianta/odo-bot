@@ -1,5 +1,10 @@
 package ca.ualberta.odobot.guidance.execution;
 
+import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
+import org.neo4j.graphdb.Node;
+import org.neo4j.graphdb.ResourceIterator;
+import org.neo4j.graphdb.Result;
+import org.neo4j.graphdb.Transaction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,6 +24,8 @@ public class ExecutionRequest {
 
     private List<ExecutionParameter> parameters;
 
+    private String targetMethod;
+    private String targetPath;
 
     public UUID getId() {
         return id;
@@ -35,6 +42,21 @@ public class ExecutionRequest {
 
     public ExecutionRequest setTarget(UUID target) {
         this.target = target;
+
+        //Fetch identifying properties of the target node.
+        try(Transaction tx = LogPreprocessor.graphDB.db.beginTx();
+            Result result = tx.execute("match (n:APINode) where n.id = '%s' return n limit 1".formatted(target.toString()));
+            ResourceIterator<Node> resultIt = result.columnAs("n");
+        ){
+            Node _targetNode = resultIt.next();
+            if(_targetNode == null){
+                throw new RuntimeException("Could not retrieve target node with id: " + target.toString());
+            }
+
+            this.targetMethod = (String)_targetNode.getProperty("method");
+            this.targetPath = (String)_targetNode.getProperty("path");
+        };
+
         return this;
     }
 
@@ -73,6 +95,24 @@ public class ExecutionRequest {
 
     public ExecutionRequest setUserLocation(String userLocation) {
         this.userLocation = userLocation;
+        return this;
+    }
+
+    public String getTargetMethod() {
+        return targetMethod;
+    }
+
+    public ExecutionRequest setTargetMethod(String targetMethod) {
+        this.targetMethod = targetMethod;
+        return this;
+    }
+
+    public String getTargetPath() {
+        return targetPath;
+    }
+
+    public ExecutionRequest setTargetPath(String targetPath) {
+        this.targetPath = targetPath;
         return this;
     }
 }

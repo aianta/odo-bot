@@ -11,17 +11,19 @@ import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.net.URL;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.semanticflow.Utils.getNormalizedPath;
 
@@ -43,7 +45,32 @@ public class OnlineEventProcessor {
     private JsonMapper<InputChange> inputChangeMapper = new LogUIInputChangeMapper();
     private OnlineTimeline line = new OnlineTimeline();
 
+    private List<JsonObject> rawEvents = new ArrayList<>();
+
+    public void clearRawEvents(){
+        rawEvents.clear();
+    }
+
+    public void saveRawEvents(String filename){
+        log.info("raw events size before save: {}", rawEvents.size());
+        File fout = new File(filename);
+        try(FileWriter fw = new FileWriter(fout);
+            BufferedWriter bw = new BufferedWriter(fw);
+        ){
+
+            JsonArray data = rawEvents.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+            bw.write(data.encodePrettily());
+            bw.flush();
+
+        } catch (IOException e) {
+            log.error(e.getMessage(), e);
+            throw new RuntimeException(e);
+        }
+
+    }
+
     public OnlineEventProcessor(){
+        clearRawEvents();
         line.addListener(this::notify);
     }
 
@@ -75,6 +102,8 @@ public class OnlineEventProcessor {
     }
 
     public void process(JsonObject event){
+        rawEvents.add(new JsonObject(event.encode()));
+        log.info("RAW EVENTS SIZE: {}", rawEvents.size());
         try{
 
 //            int _preprocessLineSize = line.size();
@@ -257,6 +286,12 @@ public class OnlineEventProcessor {
     private void processInputChange(JsonObject event){
         InputChange inputChange = inputChangeMapper.map(event);
         inputChange.setTimestamp(parseTimestamp(event));
+
+        if(inputChange instanceof CheckboxEvent){
+            line.add((CheckboxEvent)inputChange);
+            log.info("handled INPUT - Checkbox");
+            return;
+        }
 
         /**  Check if the last entity in the timeline is a {@link DataEntry},
          * if so, add this input change to it. Otherwise, create a new

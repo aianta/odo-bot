@@ -3,6 +3,7 @@ package ca.ualberta.odobot.explorer;
 import ca.ualberta.odobot.common.HttpServiceVerticle;
 import io.reactivex.rxjava3.core.Completable;
 
+import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerOptions;
@@ -18,6 +19,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
+import java.util.ListIterator;
+import java.util.stream.Collectors;
 
 /**
  * @author Alexandru Ianta
@@ -55,6 +58,9 @@ public class ExplorerVerticle extends HttpServiceVerticle {
             api.route(HttpMethod.POST, "/evaluationTasks").handler(this::evaluationTaskValidationHandler);
             api.route(HttpMethod.POST, "/evaluationTasks").handler(this::evaluationTasksHandler);
 
+            api.route(HttpMethod.POST, "/evaluate").handler(this::evaluateValidationHandler);
+            api.route(HttpMethod.POST, "/evaluate").handler(this::evaluateHandler);
+
 
         }catch (Exception e){
             log.error(e.getMessage(), e);
@@ -62,6 +68,83 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
         return Completable.complete();
 
+    }
+
+    private void evaluateValidationHandler(RoutingContext rc){
+
+        if(rc.body().available()){
+            JsonObject config = rc.body().asJsonObject();
+            validateFields(rc, config, EvaluationTaskRequestFields.values());
+
+            if(!rc.response().ended()){
+                rc.put("config", config);
+                rc.next();
+            }
+        }else {
+            rc.response().setStatusCode(400).end("Evaluate request was malformed or missing body.");
+        }
+
+    }
+
+    private void evaluateHandler(RoutingContext rc){
+        JsonObject config = rc.get("config");
+        if(config == null){
+            config = rc.body().asJsonObject();
+        }
+
+        JsonArray tasks = getOdoBotTasks(config.getJsonArray("tasks"));
+
+
+        Future f = null;
+
+        ListIterator<JsonObject> taskIterator = tasks.stream().map(o->(JsonObject)o).collect(Collectors.toList()).listIterator();
+        while (taskIterator.hasNext()){
+            JsonObject _task = taskIterator.next();
+
+            if(f == null){
+                Promise<Void> promise = Promise.promise();
+                promise.future()
+                        .onFailure(err->serverError(rc, err));
+                f = promise.future();
+
+                EvaluateTask evaluateTask = new EvaluateTask(config, _task, promise);
+                Thread thread = new Thread(evaluateTask);
+                thread.start();
+            }else{
+                JsonObject finalConfig = config;
+                f = f.compose(fDone->{
+
+                    Promise<Void> promise = Promise.promise();
+                    promise.future()
+                            .onFailure(err->serverError(rc, err));
+
+                    EvaluateTask evaluateTask = new EvaluateTask(finalConfig, _task, promise);
+                    Thread thread = new Thread(evaluateTask);
+                    thread.start();
+
+                    return promise.future();
+                });
+            }
+
+
+        }
+
+        f.onSuccess(done->rc.response().setStatusCode(200).end());
+    }
+
+    /**
+     * Helper method that returns a json array of just OdoBot tasks from a
+     * json array that contains both odobot and webvoyager tasks.
+     * @param tasks
+     * @return
+     */
+    private JsonArray getOdoBotTasks(JsonArray tasks){
+        JsonArray result = tasks.stream()
+                .map(o->(JsonObject)o)
+                .map(task->task.getJsonObject("odoBot"))
+                .collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+
+        return result;
     }
 
     private void exploreValidationHandler(RoutingContext rc){
@@ -152,7 +235,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                 .onFailure(err->serverError(rc, err))
                 .onSuccess(results->rc.response().setStatusCode(200).end(results.encodePrettily()));
 
-        EvaluationTaskGenerationTask task = new EvaluationTaskGenerationTask(rc.body().asJsonObject(), promise);
+        EvaluationTaskGenerationTask task = new EvaluationTaskGenerationTask(config, promise);
         Thread thread = new Thread(task);
         thread.start();
     }

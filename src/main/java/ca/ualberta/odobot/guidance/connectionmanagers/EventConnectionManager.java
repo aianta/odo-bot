@@ -2,6 +2,7 @@ package ca.ualberta.odobot.guidance.connectionmanagers;
 
 import ca.ualberta.odobot.guidance.OdoClient;
 import ca.ualberta.odobot.guidance.OnlineEventProcessor;
+import ca.ualberta.odobot.semanticflow.model.CheckboxEvent;
 import ca.ualberta.odobot.semanticflow.model.ClickEvent;
 import ca.ualberta.odobot.semanticflow.model.DataEntry;
 import ca.ualberta.odobot.semanticflow.model.NetworkEvent;
@@ -26,10 +27,13 @@ public class EventConnectionManager extends AbstractConnectionManager implements
 
     private OnlineEventProcessor eventProcessor = new OnlineEventProcessor();
 
+    public OnlineEventProcessor getEventProcessor(){
+        return eventProcessor;
+    }
 
     public EventConnectionManager(OdoClient client){
         super(client);
-        eventProcessor.setOnEntity(client.getRequestManager()::instructionWatcher, entity -> entity instanceof DataEntry || entity instanceof ClickEvent);
+        eventProcessor.setOnEntity(client.getRequestManager()::instructionWatcher, entity -> entity instanceof DataEntry || entity instanceof ClickEvent || entity instanceof CheckboxEvent);
         eventProcessor.setOnEntity(client.getRequestManager()::pathCompletionWatcher, entity -> entity instanceof NetworkEvent);
     }
 

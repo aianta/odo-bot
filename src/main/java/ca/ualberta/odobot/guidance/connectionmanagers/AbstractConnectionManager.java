@@ -72,7 +72,11 @@ public abstract class AbstractConnectionManager implements ConnectionManager {
         JsonObject notifyPathCompleteRequest = new JsonObject()
                 .put("type", "PATH_COMPLETE")
                 .put("source", source)
-                .put("pathsRequestId", client.getRequestManager().getActiveRequest().id().toString());
+                //resolve the paths request id, this can either be a guidance request (Request) or execution request (ExecutionRequest) TODO: refactor this
+                .put("pathsRequestId", client.getRequestManager().getActiveRequest() != null?
+                        client.getRequestManager().getActiveRequest().id().toString():
+                        client.getRequestManager().getActiveExecutionRequest().getId().toString()
+                        );
 
         return notifyPathCompleteRequest;
     }

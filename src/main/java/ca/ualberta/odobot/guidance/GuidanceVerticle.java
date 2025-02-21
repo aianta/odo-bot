@@ -72,6 +72,7 @@ public class GuidanceVerticle extends AbstractVerticle {
 
         //Define API routes
         api.route().method(HttpMethod.GET).path("/targetNodes").handler(this::getTargetNodes);
+        //api.route().method(HttpMethod.POST).path("/evaluate").handler(this::evaluationHandler);
 
         mainRouter.route().handler(LoggerHandler.create());
         mainRouter.route().handler(BodyHandler.create());
@@ -86,14 +87,15 @@ public class GuidanceVerticle extends AbstractVerticle {
 
         log.info("Guidance verticle started and server listening on port {}", PORT);
 
-        vertx.setPeriodic(PERIODIC_REPORTING_INTERVAL, interval->{
-           log.info("{} registered clients, generating status report!", WebSocketConnection.clientMap.size());
-           WebSocketConnection.clientMap.values().forEach(client->{
-               log.info("{}", client.statusReport().encodePrettily());
-           });
-        });
+//        vertx.setPeriodic(PERIODIC_REPORTING_INTERVAL, interval->{
+//           log.info("{} registered clients, generating status report!", WebSocketConnection.clientMap.size());
+//           WebSocketConnection.clientMap.values().forEach(client->{
+//               log.info("{}", client.statusReport().encodePrettily());
+//           });
+//        });
 
     }
+
 
     public void getTargetNodes(RoutingContext rc){
 

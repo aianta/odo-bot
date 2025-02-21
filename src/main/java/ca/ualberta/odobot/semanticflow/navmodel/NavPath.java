@@ -133,13 +133,24 @@ public class NavPath {
                 Instruction instruction = null;
 
                 if(node.hasLabel(Label.label("CollapsedClickNode")) ||
-                        node.hasLabel(Label.label("CollapsedDataEntryNode"))
+                        node.hasLabel(Label.label("CollapsedDataEntryNode")) ||
+                        node.hasLabel(Label.label("CollapsedCheckboxNode"))
                 ){
                     QueryDom _instruction = new QueryDom();
                     _instruction.dynamicXPath = nodeToDynamicXPath(node);
                     _instruction.parameterId = globalParameterMap.get(node.getProperty("id")); //This is going to cause problems for any collapsed click node or data entry node that doesn't have a schema parameter...
                     instruction = _instruction;
                 }else{
+
+                    if(node.hasLabel(Label.label("CheckboxNode"))){
+                        /**
+                         * TODO: proper checkbox support should probably be explicit on whether the checkbox in question should be
+                         * checked or not.
+                         */
+                        DoClick _instruction = new DoClick();
+                        _instruction.xpath = nodeToXPath(node);
+                        instruction = _instruction;
+                    }
 
                     if(node.hasLabel(Label.label("DataEntryNode"))){
 

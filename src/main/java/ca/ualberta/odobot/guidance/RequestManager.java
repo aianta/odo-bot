@@ -4,12 +4,10 @@ import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
 import ca.ualberta.odobot.guidance.execution.InputParameter;
 import ca.ualberta.odobot.guidance.instructions.*;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
-import ca.ualberta.odobot.semanticflow.model.ClickEvent;
-import ca.ualberta.odobot.semanticflow.model.DataEntry;
-import ca.ualberta.odobot.semanticflow.model.NetworkEvent;
-import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
+import ca.ualberta.odobot.semanticflow.model.*;
 import ca.ualberta.odobot.semanticflow.navmodel.NavPath;
 import io.vertx.core.Future;
+import io.vertx.core.Promise;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.neo4j.graphdb.Transaction;
@@ -17,6 +15,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 public class RequestManager {
@@ -25,12 +24,15 @@ public class RequestManager {
 
     private OnlineEventProcessor eventProcessor = new OnlineEventProcessor();
 
+    private Promise<Void> evaluationComplete;
 
     private OdoClient client = null;
 
     private ExecutionRequest activeExecutionRequest = null;
 
     private Request activeRequest = null;
+
+    private String evalId = null;
 
     private List<NavPath> navPaths = null;
 
@@ -42,6 +44,24 @@ public class RequestManager {
         this.client = client;
         this.client.setRequestManager(this);
 
+    }
+
+    public String getEvalId() {
+        return evalId;
+    }
+
+    public RequestManager setEvalId(String evalId) {
+        this.evalId = evalId;
+        return this;
+    }
+
+    public Promise<Void> getEvaluationComplete() {
+        return evaluationComplete;
+    }
+
+    public RequestManager setEvaluationComplete(Promise<Void> evaluationComplete) {
+        this.evaluationComplete = evaluationComplete;
+        return this;
     }
 
     public Request getActiveRequest() {
@@ -92,7 +112,7 @@ public class RequestManager {
 
         log.info("Processing localContext[size:{}] into ExecutionPathsRequestInput", localContext.size());
 
-        eventProcessor.setOnEntity(this::buildPathsRequestInput, (entity)-> entity instanceof DataEntry || entity instanceof ClickEvent);
+        eventProcessor.setOnEntity(this::buildPathsRequestInput, (entity)-> entity instanceof DataEntry || entity instanceof ClickEvent || entity instanceof CheckboxEvent);
         eventProcessor.process(localContext);
 
         log.info("Done processing local context!");
@@ -139,7 +159,7 @@ public class RequestManager {
         log.info("Processing local context[size:{}] into PathsRequestInput", localContext.size());
 
         //TODO: Should we really only be looking at DataEntries and ClickEvents, even for sourcing the last DOM and URL?
-        eventProcessor.setOnEntity( this::buildPathsRequestInput , (entity)->entity instanceof DataEntry || entity instanceof ClickEvent);
+        eventProcessor.setOnEntity( this::buildPathsRequestInput , (entity)->entity instanceof DataEntry || entity instanceof ClickEvent || entity instanceof CheckboxEvent);
         eventProcessor.process(localContext);
 
         log.info("Done processing local context!");
@@ -200,6 +220,12 @@ public class RequestManager {
             result.setUrl(dataEntry.lastChange().getBaseURI());
         }
 
+        if(entity instanceof CheckboxEvent){
+            CheckboxEvent checkboxEvent = (CheckboxEvent) entity;
+            result.setDom(checkboxEvent.getDomSnapshot());
+            result.setUrl(checkboxEvent.getBaseURI());
+        }
+
         _input = result;
     }
 
@@ -210,6 +236,7 @@ public class RequestManager {
          */
         List<JsonObject> possibleExecutionInstructions = paths.stream()
                 .map(navPath -> navPath.getExecutionInstruction(getActiveExecutionRequest()))
+                .filter(Objects::nonNull)
                 .distinct()
                 .peek(instruction -> log.info("{}", instruction.getClass().getName()))
                 .map(instruction -> {
@@ -244,6 +271,11 @@ public class RequestManager {
         ;
 
         log.info("Computed {} possible execution instructions, sending the first one!", possibleExecutionInstructions.size());
+
+        //No instructions left, return null.
+        if(possibleExecutionInstructions.size() == 0){
+            return null;
+        }
 
         JsonObject executionInstruction = possibleExecutionInstructions.get(0);
         log.info("{}", executionInstruction.encodePrettily());
@@ -300,14 +332,42 @@ public class RequestManager {
      */
     public void pathCompletionWatcher(TimelineEntity entity){
 
+
         NetworkEvent apiCall = (NetworkEvent) entity; //Note: When we set up this watcher we ensure it only receives network events.
-        if(
-                apiCall.getMethod().toLowerCase().equals(activeRequest.getTargetMethod().toLowerCase()) && //If the method matches
-                apiCall.getPath().equals(activeRequest.getTargetPath())
-        ){
-            client.getGuidanceConnectionManager().notifyPathComplete();
-            client.getEventConnectionManager().notifyPathComplete();
+
+        if(activeRequest == null){ //If we're handling an execution request, active request (for guidance) will be null. TODO: this is really crappy design and I should refactor it.
+            if(
+                    apiCall.getMethod().toLowerCase().equals(activeExecutionRequest.getTargetMethod().toLowerCase()) && //If the method matches
+                            apiCall.getPath().equals(activeExecutionRequest.getTargetPath())
+            ){
+                client.getGuidanceConnectionManager().notifyPathComplete();
+                client.getEventConnectionManager().notifyPathComplete();
+
+                if(evalId != null && evaluationComplete != null){
+                    //If the evaluation ID is not null (meaning this was an evaluation run, output the raw events from this execution to the appropriate folder.
+                    client.getEventConnectionManager().getEventProcessor().saveRawEvents("./%s/%s.json".formatted("execution_events", evalId).replaceAll("\\|","-"));
+                    evaluationComplete.complete();
+                }
+                client.getEventConnectionManager().getEventProcessor().clearRawEvents();
+            }
+        }else{ //Otherwise, execution request will be null. TODO: This is really crappy design, and I should refactor it.
+            if(
+                    apiCall.getMethod().toLowerCase().equals(activeRequest.getTargetMethod().toLowerCase()) && //If the method matches
+                            apiCall.getPath().equals(activeRequest.getTargetPath())
+            ){
+                client.getGuidanceConnectionManager().notifyPathComplete();
+                client.getEventConnectionManager().notifyPathComplete();
+
+                if(evalId != null && evaluationComplete != null){
+                    //If the evaluation ID is not null (meaning this was an evaluation run, output the raw events from this execution to the appropriate folder.
+                    client.getEventConnectionManager().getEventProcessor().saveRawEvents("./%s/%s.json".formatted("execution_events", evalId).replaceAll("\\|","-"));
+                    evaluationComplete.complete();
+                }
+                client.getEventConnectionManager().getEventProcessor().clearRawEvents();
+            }
         }
+
+
     }
 
     /**
@@ -332,6 +392,11 @@ public class RequestManager {
         if(entity instanceof ClickEvent){
             ClickEvent clickEvent = (ClickEvent) entity;
             xpath = clickEvent.getXpath();
+        }
+
+        if(entity instanceof CheckboxEvent){
+            CheckboxEvent checkboxEvent = (CheckboxEvent) entity;
+            xpath = checkboxEvent.xpath();
         }
 
         final String observedXPath = xpath;
@@ -370,9 +435,15 @@ public class RequestManager {
             this.navPaths = tempNavPaths;
 
             if(getActiveExecutionRequest() != null){
-                client.getGuidanceConnectionManager()
-                        .sendExecutionInstruction(buildExecutionInstruction(tempNavPaths));
+                //Handle execution request TODO: refactor this
+                JsonObject instruction = buildExecutionInstruction(tempNavPaths);
+                if(instruction != null){
+                    client.getGuidanceConnectionManager()
+                            .sendExecutionInstruction(instruction);
+                }
+
             }else{
+                //Handle guidance request TODO: refactor this
                 client.getGuidanceConnectionManager().showNavigationOptions(
                         new JsonObject().put("navigationOptions", buildNavigationOptions(this.navPaths))
                 );
