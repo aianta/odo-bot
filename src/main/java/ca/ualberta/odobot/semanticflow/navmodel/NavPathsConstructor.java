@@ -87,6 +87,9 @@ public class NavPathsConstructor {
                 .collect(Collectors.toList());
         ;
 
+        //Determine which paths satisfy the maximum number of parameters and return those.
+        int maxSatisfiedParameters = paths.stream().map(NavPath::getParameters).mapToInt(Set::size).max().getAsInt();
+        paths = paths.stream().filter(p->p.getParameters().size() == maxSatisfiedParameters).collect(Collectors.toList());
 
         return paths;
     }

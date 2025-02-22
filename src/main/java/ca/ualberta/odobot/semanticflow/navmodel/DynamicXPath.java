@@ -88,8 +88,14 @@ public class DynamicXPath {
      * @return
      */
     public boolean matches(String sampleXPath){
+        log.info("SampleXPath: {}", sampleXPath);
+        log.info("Prefix: {}", prefix);
+        log.info("Suffix: {}", suffix);
+        log.info("Dynamic: {}", dynamicTag);
 
-
+        log.info("startsWith: {}",sampleXPath.startsWith(prefix) );
+        log.info("endsWith: {}", sampleXPath.endsWith(suffix));
+        log.info("matchesDynamicTag: {}", matchesDynamicTag(sampleXPath));
 
         //NOTE: Check dynamic tag AFTER prefix and suffix, as dynamic tag extraction assumes prefix and suffix match.
         return sampleXPath.startsWith(prefix) && //Prefix matches
@@ -115,10 +121,14 @@ public class DynamicXPath {
 
     private boolean matchesDynamicTag(String sampleXPath){
         try{
-            String sampleDynamicTagString = sampleXPath.substring(0, prefix.length());
-            sampleDynamicTagString = sampleDynamicTagString.substring(sampleDynamicTagString.length()-suffix.length());
+            log.info("matchesDynamicTag Logic");
+            log.info("[1]{}", sampleXPath);
+            String sampleDynamicTagString = sampleXPath.substring(prefix.length(), sampleXPath.length()-suffix.length() );
+            log.info("[2]{}", sampleDynamicTagString);
+//            sampleDynamicTagString = sampleDynamicTagString.substring(sampleDynamicTagString.length()-suffix.length());
+//            log.info("[3]{}", sampleDynamicTagString);
             String sampleTag = NavPath.extractTag(sampleDynamicTagString);
-
+            log.info("extractedTag: {}", sampleTag);
             return this.dynamicTag.equals(sampleTag);
         }catch (StringIndexOutOfBoundsException e){
             log.error(e.getMessage(), e);

@@ -235,7 +235,9 @@ public class RequestManager {
          * We want to get distinct execution instructions from our set of possible paths. In fact, we have to reduce things to a single possible instruction.
          */
         List<JsonObject> possibleExecutionInstructions = paths.stream()
+                .peek(navPath -> NavPath.printNavPaths(List.of(navPath),100))
                 .map(navPath -> navPath.getExecutionInstruction(getActiveExecutionRequest()))
+
                 .filter(Objects::nonNull)
                 .distinct()
                 .peek(instruction -> log.info("{}", instruction.getClass().getName()))
@@ -420,7 +422,9 @@ public class RequestManager {
                     }
 
                     if(lastInstruction instanceof DynamicXPathInstruction){
+                        log.info("Last instruction was dynamic xpath");
                         DynamicXPathInstruction dynamicXPathInstruction = (DynamicXPathInstruction) lastInstruction;
+                        log.info("matches: {}, stillMatches: {}",dynamicXPathInstruction.dynamicXPath.matches(observedXPath), dynamicXPathInstruction.dynamicXPath.stillMatches(observedXPath) );
                         return dynamicXPathInstruction.dynamicXPath.matches(observedXPath) || dynamicXPathInstruction.dynamicXPath.stillMatches(observedXPath);
                     }
 

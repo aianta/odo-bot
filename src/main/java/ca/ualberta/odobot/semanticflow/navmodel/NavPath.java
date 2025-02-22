@@ -30,7 +30,7 @@ public class NavPath {
 
     private Iterator<Node> iterator = null;
 
-    private Predicate<Node> instructionNodePredicate = (node)->node.hasLabel(Label.label("ClickNode")) || node.hasLabel(Label.label("DataEntryNode"));
+    private Predicate<Node> instructionNodePredicate = (node)->node.hasLabel(Label.label("ClickNode")) || node.hasLabel(Label.label("DataEntryNode")) || node.hasLabel(Label.label("CheckboxNode"));
 
     private Instruction lastInstruction;
 
@@ -143,6 +143,7 @@ public class NavPath {
                 }else{
 
                     if(node.hasLabel(Label.label("CheckboxNode"))){
+                        log.info("Instruction is a checkbox node!");
                         /**
                          * TODO: proper checkbox support should probably be explicit on whether the checkbox in question should be
                          * checked or not.
