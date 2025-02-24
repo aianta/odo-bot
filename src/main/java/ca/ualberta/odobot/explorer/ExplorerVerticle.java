@@ -134,16 +134,20 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                          * This is the create a new assignment task. We verify this one by ensuring
                          * there exists a network event creating an assignment in the expected course.
                          */
+                        String newAssignmentName = taskInfo.getJsonArray("parameters").getJsonObject(3).getString("value");
+
                         JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(4);
                         String targetCourseName = courseParameter.getString("query");
 
                         Optional<JsonObject> networkEvent = events.stream().map(o->(JsonObject)o)
-                                .filter(event -> event.getJsonObject("eventDetails").getString("name").equals("NETWORK_EVENT") &&
-                                        event.getJsonObject("eventDetails").getString("method").equals("POST") &&
-                                        event.getJsonObject("eventDetails").getString("url")
+                                .map(event->event.getJsonObject("eventDetails"))
+                                .filter(event -> event.getString("name").equals("NETWORK_EVENT") &&
+                                        event.getString("method").equals("POST") &&
+                                        event.getString("url")
                                                 .equals("http://localhost:8088/api/v1/courses/%s/assignments".formatted(
                                                         courseIds.getString(targetCourseName)
-                                                ))
+                                                )) &&
+                                        new JsonObject(event.getString("responseBody")).getString("name").equals(newAssignmentName)
 
                                 ).findFirst();
 
@@ -154,6 +158,8 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                         /**
                          * This is the create page task.
                          */
+                        String newPageName = taskInfo.getJsonArray("parameters").getJsonObject(2).getString("value");
+
                         JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(3);
                         String targetCourseName = courseParameter.getString("query");
 
@@ -163,7 +169,8 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                                         event.getString("method").equals("POST") &&
                                         event.getString("url").equals("http://localhost:8088/api/v1/courses/%s/pages".formatted(
                                                 courseIds.getString(targetCourseName)
-                                        ))
+                                        )) &&
+                                        new JsonObject(event.getString("responseBody")).getString("title").equals(newPageName)
                                 ).findFirst();
 
                         yield networkEvent.isPresent();
@@ -173,6 +180,8 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                         /**
                          * Create a new module task
                          */
+                        String newModuleName = taskInfo.getJsonArray("parameters").getJsonObject(2).getString("value");
+
                         JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(3);
                         String targetCourseName = courseParameter.getString("query");
 
@@ -182,7 +191,8 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                                         event.getString("method").equals("POST") &&
                                         event.getString("url").equals("http://localhost:8088/courses/%s/modules".formatted(
                                                 courseIds.getString(targetCourseName)
-                                        ))
+                                        )) &&
+                                        new JsonObject(event.getString("requestBody")).getJsonObject("formData").getJsonArray("context_module[name]").getString(0).equals(newModuleName)
                                         )
                                 .findFirst();
 
@@ -194,6 +204,8 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                         /**
                          * Edit quiz title
                          */
+                        String updatedQuizName = taskInfo.getJsonArray("parameters").getJsonObject(3).getString("value");
+
                         JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(4);
                         String targetCourseName = courseParameter.getString("query");
 
@@ -207,7 +219,8 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                                         event.getString("url").equals("http://localhost:8088/courses/%s/quizzes/%s".formatted(
                                                 courseIds.getString(targetCourseName),
                                                 quizIds.getString(targetQuizName)
-                                        ))
+                                        )) &&
+                                        new JsonObject(event.getString("responseBody")).getJsonObject("quiz").getString("title").equals(updatedQuizName)
                                         ).findFirst();
 
                         yield networkEvent.isPresent();
@@ -216,6 +229,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                         /**
                          *  Edit a page title
                          */
+                        String updatedPageName = taskInfo.getJsonArray("parameters").getJsonObject(3).getString("value");
 
                         JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(4);
                         String targetCourseName = courseParameter.getString("query");
@@ -230,7 +244,9 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                                         event.getString("url").equals("http://localhost:8088/api/v1/courses/%s/pages/%s".formatted(
                                                 courseIds.getString(targetCourseName),
                                                 pageSlugs.getString(targetPageName)
-                                        ))).findFirst();
+                                        )) &&
+                                        new JsonObject(event.getString("responseBody")).getString("title").equals(updatedPageName)
+                                ).findFirst();
 
                         yield networkEvent.isPresent();
                     }
@@ -239,6 +255,8 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                         /**
                          *  Edit a module title
                          */
+                        String updatedName = taskInfo.getJsonArray("parameters").getJsonObject(3).getString("value");
+
                         JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(4);
                         String targetCourseName = courseParameter.getString("query");
                         log.info("[{}]targetCourseName: [{}]{}", evalId, courseIds.getString(targetCourseName), targetCourseName);
@@ -254,7 +272,14 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                                         event.getString("url").equals("http://localhost:8088/courses/%s/modules/%s".formatted(
                                                 courseIds.getString(targetCourseName),
                                                 moduleIds.getString(targetModuleName)
-                                        ))).findFirst();
+                                        )) &&
+                                        //Verify that the correct name was entered
+                                        new JsonObject(event.getString("responseBody"))
+                                        .getJsonObject("context_module")
+                                        .getString("name").equals(updatedName)
+
+
+                                ).findFirst();
 
                         yield networkEvent.isPresent();
 
@@ -263,6 +288,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                         /**
                          *  Edit an assignment title.
                          */
+                        String editedTitle = taskInfo.getJsonArray("parameters").getJsonObject(3).getString("value");
 
                         JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(4);
                         String targetCourseName = courseParameter.getString("query");
@@ -277,7 +303,11 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                                         event.getString("url").equals("http://localhost:8088/api/v1/courses/%s/assignments/%s".formatted(
                                                 courseIds.getString(targetCourseName),
                                                 assignmentIds.getString(targetAssignmentName)
-                                        ))).findFirst();
+                                        )) &&
+                                        //If we have a response body, it should contain the expected name.
+                                        event.containsKey("responseBody")?new JsonObject(event.getString("responseBody")).getString("name").equals(editedTitle):true
+
+                                ).findFirst();
 
                         yield networkEvent.isPresent();
 
