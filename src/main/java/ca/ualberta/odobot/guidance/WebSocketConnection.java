@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.guidance;
 
+import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.ServerWebSocket;
 import io.vertx.core.json.JsonObject;
@@ -18,11 +19,14 @@ public class WebSocketConnection {
 
     private static final Logger log = LoggerFactory.getLogger(WebSocketConnection.class);
 
+    private static final long PING_PERIOD_MS = 10000; //Send pings every 10 seconds (10,000ms)
+
+    private long pingPongTimer;
     private ServerWebSocket socket;
 
     public static Map<UUID, OdoClient> clientMap = new HashMap<>();
 
-
+    private Vertx vertx;
     private boolean isBound = false;
 
     private OdoClient boundClient = null;
@@ -35,7 +39,8 @@ public class WebSocketConnection {
 
     public WebSocketConnection(){}
 
-    public WebSocketConnection(ServerWebSocket socket){
+    public WebSocketConnection(Vertx vertx, ServerWebSocket socket){
+        this.vertx = vertx; //Get a reference to the vertx instance, we'll need this to ping/pong active sockets.
         handleConnection(socket);
     }
 
@@ -52,11 +57,39 @@ public class WebSocketConnection {
         this.socket.closeHandler(this::onClose);
         this.socket.exceptionHandler(this::onError);
         isConnected = true;
+
+        //Setup ping/pong to keep the connection alive.
+        pingPongTimer = vertx.setPeriodic(PING_PERIOD_MS, timerId->{
+            if(this.socket == null || this.socket.isClosed()){
+                vertx.cancelTimer(timerId);
+            }
+
+           this.socket.writePing(Buffer.buffer("OdoBot Ping"), pingWritten->{
+               //This handler is called when the ping was successfully written to the socket.
+               if(boundClient != null && boundSource != null){
+                   log.info("[%s][%s] Websocket ping sent!".formatted(boundClient.id().toString(), boundSource.name));
+               }else{
+                   log.info("Ping sent!");
+               }
+           });
+        });
+
+        this.socket.pongHandler(pong->{
+            if(boundClient != null && boundSource != null){
+                log.info("[%s][%s] Got pong!".formatted(boundClient.id().toString(), boundSource.name));
+            }else{
+                log.info("Got pong!");
+            }
+        });
+
     }
 
     private void onError(Throwable error){
         String errLine = "[%s][%s] WebSocket Error %s".formatted(boundClient.id().toString(), boundSource.name, error.getMessage() );
         log.error(errLine, error);
+
+        vertx.cancelTimer(pingPongTimer);
+
     }
 
     private void onClose(Void event){
@@ -66,6 +99,8 @@ public class WebSocketConnection {
         }else{
             log.info("[{}] Connection Closed", boundSource.name);
         }
+
+        vertx.cancelTimer(pingPongTimer);
 
     }
 

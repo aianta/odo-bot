@@ -65,7 +65,7 @@ public class GuidanceVerticle extends AbstractVerticle {
 
         server = vertx.createHttpServer(options);
 
-        server.webSocketHandler(WebSocketConnection::new);
+        server.webSocketHandler(serverSocket->new WebSocketConnection(vertx, serverSocket));
 
         mainRouter = Router.router(vertx);
         api = Router.router(vertx);

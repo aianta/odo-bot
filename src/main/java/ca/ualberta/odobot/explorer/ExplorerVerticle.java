@@ -87,7 +87,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
         JsonObject assignmentIds = request.getJsonObject("assignment_ids");
         JsonObject quizIds = request.getJsonObject("quiz_ids");
         JsonObject pageSlugs = request.getJsonObject("page_slugs");
-        JsonObject moduleIds = request.getJsonObject("modules_id");
+        JsonObject moduleIds = request.getJsonObject("module_ids");
 
         JsonObject results = new JsonObject();
         results.put("succedded_tasks", new JsonArray());
@@ -100,11 +100,11 @@ public class ExplorerVerticle extends HttpServiceVerticle {
         File dir = new File(pathToResults);
         File[] contents = dir.listFiles();
         if(contents != null){
-            for(File log: contents){
+            for(File _log: contents){
 
-                JsonObject taskInfo = getOdoBotTaskByFilename(log.getName(), odoBotTasks);
+                JsonObject taskInfo = getOdoBotTaskByFilename(_log.getName(), odoBotTasks);
                 String evalId = taskInfo.getString("_evalId");
-                JsonArray events = new JsonArray(new String(Files.readAllBytes(Path.of(log.getPath()))));
+                JsonArray events = new JsonArray(new String(Files.readAllBytes(Path.of(_log.getPath()))));
 
                 boolean success = switch (getTaskNumber(evalId)){
                     case 1 -> {
@@ -241,9 +241,11 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                          */
                         JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(4);
                         String targetCourseName = courseParameter.getString("query");
+                        log.info("[{}]targetCourseName: [{}]{}", evalId, courseIds.getString(targetCourseName), targetCourseName);
 
                         JsonObject moduleParameter = taskInfo.getJsonArray("parameters").getJsonObject(2);
                         String targetModuleName = moduleParameter.getString("query");
+                        log.info("[{}]targetModuleName: [{}]{}", evalId, moduleIds.getString(targetModuleName), targetModuleName);
 
                         Optional<JsonObject> networkEvent = events.stream().map(o->(JsonObject)o)
                                 .map(event->event.getJsonObject("eventDetails"))
@@ -316,7 +318,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                                 .map(event->event.getJsonObject("eventDetails"))
                                 .filter(event->event.getString("name").equals("NETWORK_EVENT") &&
                                         event.getString("method").equals("DELETE") &&
-                                        event.getString("url").equals("\thttp://localhost:8088/api/v1/courses/%s/pages/%s".formatted(
+                                        event.getString("url").equals("http://localhost:8088/api/v1/courses/%s/pages/%s".formatted(
                                                 courseIds.getString(targetCourseName),
                                                 pageSlugs.getString(targetPageName)
                                         ))).findFirst();
@@ -342,7 +344,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
         results.put("succedded", results.getJsonArray("succedded_tasks").size());
         results.put("failed", results.getJsonArray("failed_tasks").size());
-        results.put("total", results.getJsonArray("manifest").size());
+        results.put("total", results.getJsonObject("manifest").size());
 
 
         rc.response().setStatusCode(200).end(results.encodePrettily());
