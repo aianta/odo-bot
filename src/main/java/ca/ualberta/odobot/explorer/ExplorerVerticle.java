@@ -7,6 +7,7 @@ import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerOptions;
+import io.vertx.core.json.DecodeException;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.core.AbstractVerticle;
@@ -20,6 +21,9 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -67,6 +71,17 @@ public class ExplorerVerticle extends HttpServiceVerticle {
             api.route(HttpMethod.POST, "/evaluate").handler(this::evaluateHandler);
 
             api.route(HttpMethod.POST, "/evaluationResults").handler(this::computeEvaluationResults);
+            //TODO: Refactor these handlers, they should be a single handler, and the validation logic should probably be encapsulated in some other class.
+            api.route(HttpMethod.POST, "/evaluationResultsWebVoyager").handler(this::computeEvaluationResultsWebVoyager);
+
+            api.route(HttpMethod.POST, "/filterTasks").handler(rc->{
+                JsonArray input = rc.body().asJsonArray();
+                String outputType = rc.request().getParam("output");
+                JsonArray output = input.stream().map(o->(JsonObject)o)
+                        .map(json->json.getJsonObject(outputType))
+                        .collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+               rc.response().setStatusCode(200).end(output.encodePrettily());
+            });
 
 
         }catch (Exception e){
@@ -77,12 +92,13 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
     }
 
-    private void computeEvaluationResults(RoutingContext rc)  {
-
+    private void computeEvaluationResultsWebVoyager(RoutingContext rc){
         JsonObject request = rc.body().asJsonObject();
 
         String pathToResults = request.getString("results_path");
-        JsonArray odoBotTasks = getOdoBotTasks(request.getJsonArray("tasks"));
+        JsonArray webVoyagerTasks = getTasks(request.getJsonArray("tasks"), Agent.WEB_VOYAGER);
+        //Still need the OdoBot tasks because the way the parameters are split up there makes it easier to evaluate.
+        JsonArray odoBotTasks = getTasks(request.getJsonArray("tasks"), Agent.ODO_BOT);
         JsonObject courseIds = request.getJsonObject("course_ids");
         JsonObject assignmentIds = request.getJsonObject("assignment_ids");
         JsonObject quizIds = request.getJsonObject("quiz_ids");
@@ -90,7 +106,290 @@ public class ExplorerVerticle extends HttpServiceVerticle {
         JsonObject moduleIds = request.getJsonObject("module_ids");
 
         JsonObject results = new JsonObject();
-        results.put("succedded_tasks", new JsonArray());
+        results.put("succeeded_tasks", new JsonArray());
+        results.put("failed_tasks", new JsonArray());
+        results.put("manifest", new JsonObject());
+
+        try {
+
+
+            File dir = new File(pathToResults);
+            File[] contents = dir.listFiles();
+            if (contents != null) {
+                for (File _log : contents) {
+
+                    JsonObject webVoyagerTaskInfo = getWebVoyagerTaskByFileName(_log.getName(), webVoyagerTasks);
+                    JsonObject taskInfo = getOdoBotTaskByFilename(_log.getName(), odoBotTasks);
+                    String evalId = webVoyagerTaskInfo.getString("id");
+                    JsonArray events = new JsonArray(new String(Files.readAllBytes(Path.of(_log.getPath()))));
+
+                    boolean success = switch (getTaskNumber(evalId)){
+                        case 1 ->{
+                            /**
+                             * Create a blank quiz task
+                             */
+
+                            //Get the target course for the task
+                            JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(2);
+                            String targetCourseName = courseParameter.getString("query");
+
+                            yield urlMatches(events,"http://localhost:8088/courses/%s/quizzes/new?fresh=1".formatted(courseIds.getString(targetCourseName)), "POST");
+                        }
+                        case 2 ->{
+                            /**
+                             * This is the create a new assignment task. We verify this one by ensuring
+                             * there exists a network event creating an assignment in the expected course.
+                             */
+                            String newAssignmentName = taskInfo.getJsonArray("parameters").getJsonObject(3).getString("value");
+
+                            JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(4);
+                            String targetCourseName = courseParameter.getString("query");
+
+                            yield urlMatches(events, "http://localhost:8088/api/v1/courses/%s/assignments".formatted(
+                                    courseIds.getString(targetCourseName)),"POST");
+                        }
+                        case 3 ->{
+                            JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(3);
+                            String targetCourseName = courseParameter.getString("query");
+
+                            yield urlMatches(events, "http://localhost:8088/api/v1/courses/%s/pages".formatted(
+                                    courseIds.getString(targetCourseName)), "POST");
+                        }
+                        case 4 ->{
+                            /**
+                             * Create a new module task
+                             */
+                            String newModuleName = taskInfo.getJsonArray("parameters").getJsonObject(2).getString("value");
+
+                            JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(3);
+                            String targetCourseName = courseParameter.getString("query");
+
+                            yield urlMatches(events, "http://localhost:8088/courses/%s/modules".formatted(
+                                    courseIds.getString(targetCourseName)
+                            ), "POST") && requestPostDataContainsKeyWithValue(events, "context_module[name]", newModuleName);
+                        }
+                        case 5 -> {
+                            /**
+                             * Edit quiz title
+                             */
+                            JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(4);
+                            String targetCourseName = courseParameter.getString("query");
+
+                            JsonObject quizParameter = taskInfo.getJsonArray("parameters").getJsonObject(2);
+                            String targetQuizName = quizParameter.getString("query");
+
+                            yield urlMatches(events, "http://localhost:8088/courses/%s/quizzes/%s".formatted(
+                                    courseIds.getString(targetCourseName),
+                                    quizIds.getString(targetQuizName)
+                            ), "POST");
+                        }
+                        case 6 ->{
+                            /**
+                             * Edit a page title
+                             */
+                            JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(4);
+                            String targetCourseName = courseParameter.getString("query");
+
+                            JsonObject pageParameter = taskInfo.getJsonArray("parameters").getJsonObject(2);
+                            String targetPageName = pageParameter.getString("query");
+
+                            yield urlMatches(events, "http://localhost:8088/api/v1/courses/%s/pages/%s".formatted(
+                                    courseIds.getString(targetCourseName),
+                                    pageSlugs.getString(targetPageName)
+                            ), "PUT");
+                        }
+                        case 7->{
+                            /**
+                             * Edit a module title
+                             */
+
+                            JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(4);
+                            String targetCourseName = courseParameter.getString("query");
+
+                            JsonObject moduleParameter = taskInfo.getJsonArray("parameters").getJsonObject(2);
+                            String targetModuleName = moduleParameter.getString("query");
+
+                            yield urlMatches(events, "http://localhost:8088/courses/%s/modules/%s".formatted(
+                                    courseIds.getString(targetCourseName),
+                                    moduleIds.getString(targetModuleName)
+                            ), "POST");
+                        }
+                        case 8 ->{
+                            /**
+                             * Edit an assignment title.
+                             */
+                            String editedTitle = taskInfo.getJsonArray("parameters").getJsonObject(3).getString("value");
+
+                            JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(4);
+                            String targetCourseName = courseParameter.getString("query");
+
+                            JsonObject assignmentParameter = taskInfo.getJsonArray("parameters").getJsonObject(2);
+                            String targetAssignmentName = assignmentParameter.getString("query");
+
+                            yield urlMatches(events, "http://localhost:8088/api/v1/courses/%s/assignments/%s".formatted(
+                                    courseIds.getString(targetCourseName),
+                                    assignmentIds.getString(targetAssignmentName)
+                            ), "PUT") && responseBodyContainsKeyWithValue(events, "name", editedTitle);
+                        }
+                        case 9 ->{
+                            /**
+                             * Delete an assignment
+                             */
+                            JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(3);
+                            String targetCourseName = courseParameter.getString("query");
+
+                            JsonObject assignmentParameter = taskInfo.getJsonArray("parameters").getJsonObject(2);
+                            String targetAssignmentName = assignmentParameter.getString("query");
+
+                            yield urlMatches(events, "http://localhost:8088/api/v1/courses/%s/assignments/%s".formatted(
+                                    courseIds.getString(targetCourseName),
+                                    assignmentIds.getString(targetAssignmentName)
+                            ), "DELETE");
+                        }
+                        case 10 ->{
+                            JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(3);
+                            String targetCourseName = courseParameter.getString("query");
+
+                            JsonObject pageParameter = taskInfo.getJsonArray("parameters").getJsonObject(2);
+                            String targetPageName = pageParameter.getString("query");
+
+                            yield urlMatches(events, "http://localhost:8088/api/v1/courses/%s/pages/%s".formatted(
+                                    courseIds.getString(targetCourseName),
+                                    pageSlugs.getString(targetPageName)
+                            ),  "DELETE" );
+                        }
+                        default -> throw new RuntimeException("Unknown task type!");
+                    };
+
+                    //Add the verification result to the manifest
+                    results.getJsonObject("manifest").put(evalId, success);
+
+                    if(success){
+                        results.getJsonArray("succeeded_tasks").add(evalId);
+                    }else{
+                        results.getJsonArray("failed_tasks").add(evalId);
+                    }
+                }
+            }
+
+            results.put("succeeded", results.getJsonArray("succeeded_tasks").size());
+            results.put("failed", results.getJsonArray("failed_tasks").size());
+            results.put("total", results.getJsonObject("manifest").size());
+
+
+            rc.response().setStatusCode(200).end(results.encodePrettily());
+
+        }catch (IOException e){
+            log.error(e.getMessage(), e);
+        }
+
+    }
+
+    private boolean responseBodyContainsKeyWithValue(JsonArray events, String key, String expectedValue){
+        return events.stream().map(o->(JsonObject)o)
+                //Only consider response bodies that are parsable.
+                .filter(event->{
+
+                    try{
+                        JsonObject responseBody = event.getJsonObject("responseBody");
+                        return true;
+                    }catch (ClassCastException e){
+                        try{
+                            new JsonObject(event.getString("responseBody"));
+                            return true;
+                        }catch (DecodeException e1){
+                            return false;
+                        }
+                    }
+                })
+                .map(event->{
+                    JsonObject responseBody;
+                    try{
+                        responseBody = event.getJsonObject("responseBody");
+                    }catch (ClassCastException e){
+                        responseBody = new JsonObject(event.getString("responseBody"));
+                    }
+
+                    if(responseBody.containsKey("body")){
+                        return new JsonObject(responseBody.getString("body"));
+                    }else {
+                        return responseBody;
+                    }
+                })
+                .filter(event->event.getString(key).equals(expectedValue))
+                .findFirst().isPresent();
+    }
+
+    /**
+     * Checks for a network request with POST data in URL encoding. If that exists, decodes it
+     * and looks for a particular key value pair.
+     * Returns true if a network event containing post data that contains the expected key with the expected value
+     * @param events
+     * @param key
+     * @param expectedValue
+     * @return
+     */
+    private boolean requestPostDataContainsKeyWithValue(JsonArray events, String key, String expectedValue){
+        return events.stream().map(o->(JsonObject)o)
+                .filter(event->{
+                    if(event.getJsonObject("params").getJsonObject("request").getBoolean("hasPostData")){
+                        String encoded = event.getJsonObject("params").getJsonObject("request").getString("postData");
+                        try{
+                            String decoded = URLDecoder.decode(encoded, StandardCharsets.UTF_8.name());
+                            String split [] = decoded.split("&");
+                            Optional<String> _target = Arrays.stream(split).filter(s->s.contains(key)).findFirst();
+                            if(!_target.isPresent()){
+                                return false;
+                            }
+
+                            String target = _target.get();
+                            target = target.split("=")[1];
+
+                            return target.equals(expectedValue);
+
+                        }catch (UnsupportedEncodingException e){
+                            log.error(e.getMessage(),e);
+                        }
+
+                    }
+
+                    return false;
+
+                }
+                ).findFirst().isPresent();
+    }
+
+    /**
+     * Assumes WebVoyager event format.
+     * @param events
+     * @param expectedUrl
+     * @param expectedMethod
+     * @return true if one of the events in the provided json array is a network request matching the provided url.
+     */
+    private boolean urlMatches(JsonArray events, String expectedUrl, String expectedMethod){
+        return events.stream().map(o->(JsonObject)o)
+                .filter(event-> event.getJsonObject("params").getJsonObject("request").getString("url")
+                        .equals(expectedUrl) &&
+                        event.getJsonObject("params").getJsonObject("request").getString("method").equals(expectedMethod)
+                ).findFirst().isPresent();
+    }
+
+
+
+    private void computeEvaluationResults(RoutingContext rc)  {
+
+        JsonObject request = rc.body().asJsonObject();
+
+        String pathToResults = request.getString("results_path");
+        JsonArray odoBotTasks = getTasks(request.getJsonArray("tasks"), Agent.ODO_BOT);
+        JsonObject courseIds = request.getJsonObject("course_ids");
+        JsonObject assignmentIds = request.getJsonObject("assignment_ids");
+        JsonObject quizIds = request.getJsonObject("quiz_ids");
+        JsonObject pageSlugs = request.getJsonObject("page_slugs");
+        JsonObject moduleIds = request.getJsonObject("module_ids");
+
+        JsonObject results = new JsonObject();
+        results.put("succeeded_tasks", new JsonArray());
         results.put("failed_tasks", new JsonArray());
         results.put("manifest", new JsonObject());
 
@@ -365,14 +664,14 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                 results.getJsonObject("manifest").put(evalId, success);
 
                 if(success){
-                    results.getJsonArray("succedded_tasks").add(evalId);
+                    results.getJsonArray("succeeded_tasks").add(evalId);
                 }else{
                     results.getJsonArray("failed_tasks").add(evalId);
                 }
             }
         }
 
-        results.put("succedded", results.getJsonArray("succedded_tasks").size());
+        results.put("succeeded", results.getJsonArray("succeeded_tasks").size());
         results.put("failed", results.getJsonArray("failed_tasks").size());
         results.put("total", results.getJsonObject("manifest").size());
 
@@ -392,6 +691,17 @@ public class ExplorerVerticle extends HttpServiceVerticle {
         return Integer.parseInt(split[0]);
     }
 
+    private JsonObject getWebVoyagerTaskByFileName(String filename, JsonArray tasks){
+        return tasks.stream()
+                .map(o->(JsonObject)o)
+                /**
+                 * task id is of the format <task number> | <agent> | <uuid>
+                 * so task.getString("id").split("\\|")[2] yields the uuid which we expect to see in the filename of the matching file.
+                 */
+                .filter(task->filename.contains(task.getString("id").split("\\|")[2]))
+                .findFirst()
+                .get();
+    }
     private JsonObject getOdoBotTaskByFilename(String filename, JsonArray tasks){
         return tasks.stream()
                 .map(o->(JsonObject)o)
@@ -431,7 +741,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
             config = rc.body().asJsonObject();
         }
 
-        JsonArray tasks = getOdoBotTasks(config.getJsonArray("tasks"));
+        JsonArray tasks = getTasks(config.getJsonArray("tasks"), Agent.ODO_BOT);
 
 
         Future f = null;
@@ -475,12 +785,13 @@ public class ExplorerVerticle extends HttpServiceVerticle {
      * Helper method that returns a json array of just OdoBot tasks from a
      * json array that contains both odobot and webvoyager tasks.
      * @param tasks
+     * @param agent The format of the task to retrieve either 'odoBot' or 'webVoyager'
      * @return
      */
-    private JsonArray getOdoBotTasks(JsonArray tasks){
+    private JsonArray getTasks(JsonArray tasks, Agent agent){
         JsonArray result = tasks.stream()
                 .map(o->(JsonObject)o)
-                .map(task->task.getJsonObject("odoBot"))
+                .map(task->task.getJsonObject(agent.taskField))
                 .collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
 
         return result;
