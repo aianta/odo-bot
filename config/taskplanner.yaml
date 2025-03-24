@@ -1,0 +1,13 @@
+host: 0.0.0.0
+port: 8054
+apiPathPrefix: "/api/*"
+neo4j:
+  host: "bolt://localhost:7687"
+  user: "neo4j"
+  password: "odobotdb"
+openAI:
+  secretKey: ""
+  model: "gpt-4o-mini"
+  temperature: null
+  topP: 0.01
+  maxTokens: null

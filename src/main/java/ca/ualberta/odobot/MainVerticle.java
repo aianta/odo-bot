@@ -9,6 +9,7 @@ import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import ca.ualberta.odobot.mind2web.Mind2WebService;
 import ca.ualberta.odobot.snippet2xml.Snippet2XMLVerticle;
 import ca.ualberta.odobot.snippets.Extractor;
+import ca.ualberta.odobot.taskplanner.TaskPlannerVerticle;
 import ca.ualberta.odobot.tpg.TPGVerticle;
 import ca.ualberta.odobot.web.OdoSightSupport;
 import ca.ualberta.odobot.web.TimelineWebApp;
@@ -100,6 +101,10 @@ public class MainVerticle extends ConfigurableVerticle {
         }
 
 
+        if(_config.getBoolean("TaskPlanner")){
+            TaskPlannerVerticle taskPlannerVerticle = new TaskPlannerVerticle();
+            vertx.deployVerticle(taskPlannerVerticle);
+        }
 
         return Completable.complete();
     }

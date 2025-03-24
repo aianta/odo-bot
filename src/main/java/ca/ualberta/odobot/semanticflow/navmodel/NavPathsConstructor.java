@@ -2,9 +2,8 @@ package ca.ualberta.odobot.semanticflow.navmodel;
 
 import ca.ualberta.odobot.guidance.execution.ExecutionParameter;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
-import ca.ualberta.odobot.semanticflow.Utils;
-import ca.ualberta.odobot.snippet2xml.SemanticSchema;
 import ca.ualberta.odobot.sqlite.SqliteService;
+import ca.ualberta.odobot.taskplanner.TaskPlanningEvaluator;
 import org.neo4j.graphdb.*;
 import org.neo4j.graphdb.traversal.*;
 import org.slf4j.Logger;
@@ -12,13 +11,12 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 
 public class NavPathsConstructor {
 
     private static final Logger log = LoggerFactory.getLogger(NavPathsConstructor.class);
-    private final GraphDatabaseService db;
+    //private final GraphDatabaseService db;
 
     /**
      * Map of [NodeId][ParameterNodeId]
@@ -28,7 +26,7 @@ public class NavPathsConstructor {
     private SqliteService sqliteService;
 
     public NavPathsConstructor(GraphDB graphDB, SqliteService sqliteService){
-        this.db = graphDB.db;
+        //this.db = graphDB.db;
         this.sqliteService = sqliteService;
 
         //Populate the global parameter map.
@@ -136,6 +134,46 @@ public class NavPathsConstructor {
 //
 //        return shortestPath;
         return paths;
+    }
+
+
+    /**
+     * For use in task query construction
+     * @param tx
+     * @param startingNodeId
+     * @param inputParameters
+     * @param objectParameters
+     * @param apiCalls
+     * @return
+     */
+    public List<NavPath> construct(Transaction tx, String startingNodeId, Set<String> objectParameters, Set<String> inputParameters, Set<String> apiCalls ){
+
+        Node srcNode = fetchNodeById(tx, startingNodeId);
+
+        TaskPlanningEvaluator evaluator = new TaskPlanningEvaluator(inputParameters, objectParameters, apiCalls);
+
+        TraversalDescription traversal = tx.traversalDescription()
+                .breadthFirst()
+                .uniqueness(Uniqueness.NODE_PATH)
+                .relationships(RelationshipType.withName("NEXT"), Direction.OUTGOING)
+                .evaluator(evaluator);
+
+        Traverser traverser = traversal.traverse(srcNode);
+
+        Iterator<Path> it = traverser.iterator();
+        while (it.hasNext()){
+            it.next();
+        }
+
+        List<NavPath> paths = new ArrayList<>();
+        it = evaluator._paths.iterator();
+        while (it.hasNext()){
+            NavPath navPath = new NavPath();
+            navPath.setPath(it.next());
+            paths.add(navPath);
+        }
+        return paths;
+
     }
 
     public List<NavPath> constructMind2Web(Transaction tx, UUID src, UUID tgt){
