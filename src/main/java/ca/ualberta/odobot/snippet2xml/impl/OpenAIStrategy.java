@@ -29,7 +29,7 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIStrategy.class);
 
-    private Pattern xmlResponsePattern = Pattern.compile("(?<=```xml).+(?=```)", Pattern.DOTALL);
+    private static Pattern xmlResponsePattern = Pattern.compile("(?<=```xml).+(?=```)", Pattern.DOTALL);
 
     public OpenAIStrategy(JsonObject config) {
         super(config);
@@ -254,7 +254,7 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
         //If the output is valid wrap it in an optional and return it.
         return isValid? Optional.of(_output): Optional.empty();
-        //return Optional.of(_output); //TODO -> the above line of code is the correct one, this line simply sends back the last attempt no matter waht.
+        //return Optional.of(_output); //TODO -> the above line of code is the correct one, this line simply sends back the last attempt no matter what.
     }
 
 

@@ -60,6 +60,23 @@ public abstract class AbstractOpenAIStrategy {
      * @param maxAttempts
      * @return An Optional containing a valid generated string output if one was generated, otherwise an empty optional
      */
-    protected abstract Optional<String> generateWithValidation(Supplier<String> outputGenerator, List<Predicate<String>> validators, int maxAttempts);
+    protected Optional<String> generateWithValidation(Supplier<String> outputGenerator, List<Predicate<String>> validators, int maxAttempts){
+        String output = outputGenerator.get();
+        int attempt = 1;
+
+        boolean isValid = validators.stream().allMatch(validator->validator.test(output));
+        String _output = output;
+
+        while (!isValid && attempt < maxAttempts){
+            log.info("Attempt {} output was not valid, trying again...", attempt);
+            String nextOutput = outputGenerator.get();
+            isValid = validators.stream().allMatch(validator->validator.test(nextOutput));
+            _output = nextOutput;
+            attempt++;
+        }
+
+        return isValid?Optional.of(_output): Optional.empty();
+
+    }
 
 }

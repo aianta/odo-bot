@@ -484,6 +484,7 @@ public class SqliteServiceImpl implements SqliteService {
     }
 
     public Future<List<SemanticSchema>> getSemanticSchemas(){
+        log.info("Getting semantic schemas!");
         Promise<List<SemanticSchema>> promise = Promise.promise();
         String sql = """
                 Select * from semantic_schemas;
@@ -496,9 +497,12 @@ public class SqliteServiceImpl implements SqliteService {
                     for(Row row: rows){
                         result.add(SemanticSchema.fromRow(row));
                     }
-
+                    promise.complete(result);
                 })
-                .onFailure(promise::fail)
+                .onFailure(err->{
+                    log.error(err.getMessage(), err);
+                    promise.fail(err);
+                })
         ;
 
         return promise.future();

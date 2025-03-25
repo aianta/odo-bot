@@ -1003,6 +1003,8 @@ public class Neo4JUtils {
         return readNode(query, APINode.class);
     }
 
+
+
     private APINode getAPINode(String path, String method, String website){
         var stmt = makeSimplePropertyBasedMatchQueryString("APINode", "path", "method", "website");
         var query = new Query(stmt, parameters("path", path, "method", method, "website", website));
@@ -1220,6 +1222,34 @@ public class Neo4JUtils {
 
     }
 
+    public <T extends NavNode> List<T> readNodes(Query query, Class<T> tClass){
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+            List<Record> nodes = session.executeRead(tx->{
+                var result = tx.run(query);
+                return result.list();
+            });
+
+            if(nodes != null){
+                return nodes.stream()
+                        .map(record-> {
+                            try {
+                                return (T) tClass.getMethod("fromRecord", Record.class).invoke(null, record);
+                            } catch (IllegalAccessException e) {
+                                throw new RuntimeException(e);
+                            } catch (InvocationTargetException e) {
+                                throw new RuntimeException(e);
+                            } catch (NoSuchMethodException e) {
+                                throw new RuntimeException(e);
+                            }
+                        })
+                        .collect(Collectors.toList());
+            }
+
+            log.error("Error reading list of nodes!");
+            return null;
+        }
+    }
+
     public <T extends NavNode> T readNode(Query query, Class<T> tClass){
         try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
             Record node = session.executeRead(tx->{
@@ -1337,6 +1367,53 @@ public class Neo4JUtils {
 
     }
 
+    public String getNodeIdBySchemaId(String schemaId){
+        String sQuery = "match (n:SchemaParameter) where n.schemaId = $schemaId return n.id;";
+        Query query = new Query(sQuery, parameters("schemaId", schemaId));
+
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+            String id = session.executeRead(tx->{
+                var result = tx.run(query);
+                return result.single().get(0).asString();
+            });
+
+            return id;
+        }
+    }
+
+    /**
+     * Returns the id of a non-parameter node matching a particular xpath
+     *
+     * This is used to look up input parameters vertices during input parameter mapping
+     * @param xpath
+     * @return
+     */
+    public String getNonParameterNodeIdByXpath(String xpath){
+        String sQuery = """
+                match (n)  WHERE NOT n:SchemaParameter AND NOT n:InputParameter AND n.xpath = $xpath return n.id;
+                """;
+        Query query = new Query(sQuery, parameters("xpath", xpath));
+
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+            String id = session.executeRead(tx->{
+                var result = tx.run(query);
+
+                return result.single().get(0).asString();
+            });
+
+            return id;
+        }
+    }
+
+    public List<APINode> getAllAPINodes(){
+        String sQuery = """
+                match (n:APINode) return n;
+                """;
+        Query query = new Query(sQuery);
+
+        return readNodes(query, APINode.class);
+    }
+
     public List<String> getAllXpaths(){
         String sQuery = """
                     match (n) where n.xpath is not null return n.xpath;
@@ -1413,6 +1490,20 @@ public class Neo4JUtils {
 
         return parameterNodeId;
 
+    }
+
+    public String getInputParameterId(String xpath){
+        String sQuery = "match (n:InputParameter) where n.xpath = $xpath return n.id;";
+        Query query = new Query(sQuery, parameters("xpath", xpath));
+
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+            String id = session.executeRead(tx->{
+                var result = tx.run(query);
+                return result.single().get(0).asString();
+            });
+
+            return id;
+        }
     }
 
     public UUID addInputParameter(JsonObject parameter, String nodeId){

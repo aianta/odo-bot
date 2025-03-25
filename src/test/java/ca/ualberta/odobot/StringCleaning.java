@@ -1,8 +1,13 @@
 package ca.ualberta.odobot;
 
+import io.vertx.core.json.JsonArray;
 import org.junit.jupiter.api.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class StringCleaning {
+
+    private static final Logger log = LoggerFactory.getLogger(StringCleaning.class);
 
     @Test
     public void why(){
@@ -13,5 +18,25 @@ public class StringCleaning {
 
         System.out.println(sample);
 
+    }
+
+    @Test
+    public void jsonArray(){
+
+        String input = """
+                [
+                    ["Email Address", "ianta@ualberta.ca"],
+                    ["Password", "01134hello"],
+                    ["Course Name", "SPA101 Beginning Spanish I (36086)"],
+                    ["Quiz Title", null],
+                    ["Assignment Name", null],
+                    ["Page Title", null],
+                    ["Module Name", null],
+                    ["Online Submission Type - Text Entry", null]
+                ]
+                """;
+
+        JsonArray array = new JsonArray(input);
+        log.info("{}", array.encodePrettily());
     }
 }
