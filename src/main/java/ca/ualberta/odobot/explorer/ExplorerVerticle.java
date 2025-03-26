@@ -1,10 +1,12 @@
 package ca.ualberta.odobot.explorer;
 
 import ca.ualberta.odobot.common.HttpServiceVerticle;
+import ca.ualberta.odobot.taskplanner.TaskPlannerService;
 import io.reactivex.rxjava3.core.Completable;
 
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
+import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.DecodeException;
@@ -31,6 +33,8 @@ import java.util.ListIterator;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import static ca.ualberta.odobot.logpreprocessor.Constants.TASK_PLANNER_SERVICE_ADDRESS;
+
 /**
  * @author Alexandru Ianta
  * A wrapper verticle for the Odo Explorer, a selenium based tool which
@@ -41,11 +45,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
     private static final Logger log = LoggerFactory.getLogger(ExplorerVerticle.class);
 
-    private static final String HOST = "0.0.0.0";
-
-    private static final int PORT = 8076;
-
-    private static final String API_PATH_PREFIX = "/api/*";
+    private static TaskPlannerService taskPlannerService;
 
     public String serviceName(){return "Data Generation (Explorer) Service";}
 
@@ -58,6 +58,9 @@ public class ExplorerVerticle extends HttpServiceVerticle {
         super.onStart();
         try{
 
+            //Init task planner service proxy
+            taskPlannerService = TaskPlannerService.createProxy(vertx.getDelegate(), TASK_PLANNER_SERVICE_ADDRESS);
+
             api.route(HttpMethod.POST, "/explore").handler(this::exploreValidationHandler);
             api.route(HttpMethod.POST, "/explore").handler(this::exploreHandler);
 
@@ -66,6 +69,8 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
             api.route(HttpMethod.POST, "/evaluationTasks").handler(this::evaluationTaskValidationHandler);
             api.route(HttpMethod.POST, "/evaluationTasks").handler(this::evaluationTasksHandler);
+
+            api.route(HttpMethod.POST, "/convertToOdoBotNL").handler(this::convertToOdoBotNL);
 
             api.route(HttpMethod.POST, "/evaluate").handler(this::evaluateValidationHandler);
             api.route(HttpMethod.POST, "/evaluate").handler(this::evaluateHandler);
@@ -89,6 +94,59 @@ public class ExplorerVerticle extends HttpServiceVerticle {
         }
 
         return Completable.complete();
+
+    }
+
+    /**
+     * Converts a list of evaluation tasks to OdoBotNL format.
+     * @param rc
+     */
+    private void convertToOdoBotNL(RoutingContext rc){
+
+        //Let the user specify whether or not the odoBotNL tasks should be merged into the provided input tasks.
+        //If false the output will be a json array of just odoBotNL tasks.
+        boolean merge = Boolean.parseBoolean(rc.request().getParam("merge", "true"));
+        JsonArray input = rc.body().asJsonArray();
+
+
+        JsonArray nlTasks = input.stream()
+                .map(o->(JsonObject)o)
+                .map(taskDefinition->{
+
+                    //Modify the evalId to distinguish OdoBotNL tasks
+                    String evalId = taskDefinition.getJsonObject("odoBot").getString("_evalId");
+                    String [] split = evalId.split("\\|");
+                    split[1] = "OdoBotNL";
+                    evalId = split[0] +"|"+ split[1] + "|"+ split[2];
+
+                    JsonObject nlTask = new JsonObject()
+                            .put("id", taskDefinition.getJsonObject("odoBot").getString("id"))
+                            .put("_evalId", evalId)
+                            .put("userLocation", taskDefinition.getJsonObject("odoBot").getString("userLocation"))
+                            .put("task", taskDefinition.getJsonObject("webVoyager").getString("ques"));
+
+                    return nlTask;
+                }).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+
+        if(merge){
+            JsonArray output = new JsonArray();
+
+            for(int i = 0; i < input.size(); i++){
+                JsonObject webVoyagerTask = input.getJsonObject(i).getJsonObject("webVoyager");
+                JsonObject odoBotTask = input.getJsonObject(i).getJsonObject("odoBot");
+                JsonObject odoBotNLTask = nlTasks.getJsonObject(i);
+
+                JsonObject mergedResult = new JsonObject()
+                        .put("webVoyager", webVoyagerTask)
+                        .put("odoBot", odoBotTask)
+                        .put("odoBotNL", odoBotNLTask);
+                output.add(mergedResult);
+            }
+
+            rc.response().setStatusCode(200).end(output.encodePrettily());
+        }else{
+            rc.response().setStatusCode(200).end(nlTasks.encodePrettily());
+        }
 
     }
 
@@ -741,7 +799,10 @@ public class ExplorerVerticle extends HttpServiceVerticle {
             config = rc.body().asJsonObject();
         }
 
-        JsonArray tasks = getTasks(config.getJsonArray("tasks"), Agent.ODO_BOT);
+        String _agent = rc.request().getParam("agent", "odoBot");
+        Agent agent = Agent.fromField(_agent);
+
+        JsonArray tasks = getTasks(config.getJsonArray("tasks"), agent);
 
 
         Future f = null;
@@ -756,7 +817,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                         .onFailure(err->serverError(rc, err));
                 f = promise.future();
 
-                EvaluateTask evaluateTask = new EvaluateTask(config, _task, promise);
+                EvaluateTask evaluateTask = new EvaluateTask(config, _task, promise, taskPlannerService, agent);
                 Thread thread = new Thread(evaluateTask);
                 thread.start();
             }else{
@@ -767,7 +828,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                     promise.future()
                             .onFailure(err->serverError(rc, err));
 
-                    EvaluateTask evaluateTask = new EvaluateTask(finalConfig, _task, promise);
+                    EvaluateTask evaluateTask = new EvaluateTask(finalConfig, _task, promise, taskPlannerService, agent);
                     Thread thread = new Thread(evaluateTask);
                     thread.start();
 

@@ -3,6 +3,7 @@ package ca.ualberta.odobot.semanticflow.navmodel;
 import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
 import ca.ualberta.odobot.guidance.execution.InputParameter;
 import ca.ualberta.odobot.guidance.instructions.*;
+import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import io.vertx.core.json.JsonObject;
 import org.neo4j.graphdb.Label;
 import org.neo4j.graphdb.Node;
@@ -138,7 +139,7 @@ public class NavPath {
                 ){
                     QueryDom _instruction = new QueryDom();
                     _instruction.dynamicXPath = nodeToDynamicXPath(node);
-                    _instruction.parameterId = globalParameterMap.get(node.getProperty("id")); //This is going to cause problems for any collapsed click node or data entry node that doesn't have a schema parameter...
+                    _instruction.parameterId = LogPreprocessor.neo4j.getAssociatedParameterId((String)node.getProperty("id")); //This is going to cause problems for any collapsed click node or data entry node that doesn't have a schema parameter...
                     instruction = _instruction;
                 }else{
 
@@ -157,7 +158,7 @@ public class NavPath {
 
                         EnterData _instruction = new EnterData();
                         _instruction.xpath = nodeToXPath(node);
-                        _instruction.parameterId = globalParameterMap.get(node.getProperty("id"));//This is going to cause problems for any data entry node that doesn't have an input parameter...
+                        _instruction.parameterId = LogPreprocessor.neo4j.getAssociatedParameterId((String)node.getProperty("id")); //This is going to cause problems for any data entry node that doesn't have an input parameter...
                         _instruction.data = ((InputParameter)request.getParameter(_instruction.parameterId)).getValue();
                         instruction = _instruction;
                     }

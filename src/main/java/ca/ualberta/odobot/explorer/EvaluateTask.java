@@ -5,7 +5,9 @@ import ca.ualberta.odobot.guidance.OnlineEventProcessor;
 import ca.ualberta.odobot.guidance.WebSocketConnection;
 import ca.ualberta.odobot.guidance.execution.ExecutionParameter;
 import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
+import ca.ualberta.odobot.taskplanner.TaskPlannerService;
 import io.vertx.core.AsyncResult;
+import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -34,6 +36,8 @@ public class EvaluateTask implements Runnable{
 
     private static final Logger log = LoggerFactory.getLogger(EvaluateTask.class);
     private static final String ADDON_ID = "odosight@ualberta.ca";
+
+    Agent agent;
     UUID dynamicAddonId = UUID.randomUUID();
 
     String webAppTabHandle;
@@ -49,7 +53,11 @@ public class EvaluateTask implements Runnable{
 
     Promise<Void> promise;
 
-    public EvaluateTask(JsonObject config, JsonObject task, Promise<Void> promise){
+    TaskPlannerService taskPlannerService;
+
+    public EvaluateTask(JsonObject config, JsonObject task, Promise<Void> promise, TaskPlannerService taskPlannerService, Agent agent){
+        this.agent = agent;
+        this.taskPlannerService = taskPlannerService;
         this.config = config;
         this.promise = promise;
         this.task = task;
@@ -92,14 +100,16 @@ public class EvaluateTask implements Runnable{
 
         log.info("Starting task {}", task.getString("_evalId"));
 
-        ExecutionRequest executionRequest = taskToExecutionRequest(task);
+        taskToExecutionRequest(task).onSuccess(executionRequest->{
+            Promise<Void> evaluationPromise = Promise.promise();
+            evaluationPromise.future().onSuccess((done)->this.taskComplete());
 
-        Promise<Void> evaluationPromise = Promise.promise();
-        evaluationPromise.future().onSuccess((done)->this.taskComplete());
+            odoXClient.getRequestManager().setEvaluationComplete(evaluationPromise);
+            odoXClient.getRequestManager().setEvalId(task.getString("_evalId")); //Set the evaluationId for this execution.
+            odoXClient.getRequestManager().addNewRequest(executionRequest);
+        });
 
-        odoXClient.getRequestManager().setEvaluationComplete(evaluationPromise);
-        odoXClient.getRequestManager().setEvalId(task.getString("_evalId")); //Set the evaluationId for this execution.
-        odoXClient.getRequestManager().addNewRequest(executionRequest);
+
     }
 
     public void taskComplete(){
@@ -121,20 +131,51 @@ public class EvaluateTask implements Runnable{
 
 
 
-    private ExecutionRequest taskToExecutionRequest(JsonObject task){
+    private Future<ExecutionRequest> taskToExecutionRequest(JsonObject task){
         ExecutionRequest executionRequest = new ExecutionRequest();
-        executionRequest.setId(UUID.fromString(task.getString("id")));
-        executionRequest.setTarget(UUID.fromString(task.getString("target")));
-        executionRequest.setUserLocation(task.getString("userLocation"));
 
-        JsonArray parameters = task.getJsonArray("parameters");
-        executionRequest.setParameters(parameters.stream()
-                .map(o->(JsonObject)o)
-                .map(ExecutionParameter::fromJson)
-                .collect(Collectors.toList())
-        );
+        if(agent == Agent.ODO_BOT_NL){
+            return taskPlannerService.taskQueryConstruction(task)
+                    .compose(definedTask->{
+                        executionRequest.setId(UUID.fromString(definedTask.getString("id")));
+                        executionRequest.setUserLocation(definedTask.getString("userLocation"));
+                        executionRequest.setType(ExecutionRequest.Type.NL);
 
-        return executionRequest;
+                        JsonArray targets = definedTask.getJsonArray("targets");
+                        executionRequest.setTargets(targets.stream()
+                                .map(o->(String)o)
+                                .collect(Collectors.toSet())
+                        );
+
+                        JsonArray parameters = definedTask.getJsonArray("parameters");
+                        executionRequest.setParameters(parameters.stream()
+                                .map(o->(JsonObject)o)
+                                .map(ExecutionParameter::fromJson)
+                                .collect(Collectors.toList())
+                        );
+
+                        return Future.succeededFuture(executionRequest);
+                    });
+        }
+
+        if(agent == Agent.ODO_BOT){
+            executionRequest.setId(UUID.fromString(task.getString("id")));
+            executionRequest.setTarget(UUID.fromString(task.getString("target")));
+            executionRequest.setUserLocation(task.getString("userLocation"));
+            executionRequest.setType(ExecutionRequest.Type.PREDEFINED);
+
+            JsonArray parameters = task.getJsonArray("parameters");
+            executionRequest.setParameters(parameters.stream()
+                    .map(o->(JsonObject)o)
+                    .map(ExecutionParameter::fromJson)
+                    .collect(Collectors.toList())
+            );
+
+            return Future.succeededFuture(executionRequest);
+        }
+
+        log.error("Unknown or unsupported agent type!");
+        return Future.failedFuture("Unknown or unsupported agent type!");
     }
 
     /**

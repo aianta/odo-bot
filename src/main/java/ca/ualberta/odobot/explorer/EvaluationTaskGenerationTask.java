@@ -113,7 +113,7 @@ public class EvaluationTaskGenerationTask implements Runnable {
      *
      * @param taskDetails A json object with 'task', 'id', 'parameters', and 'template' fields.
      * @param loginTemplates
-     * @return a JSON object containing a WebVoyager formatted task and an Odobot formatted task under the fields 'webVoyager' and 'odoBot' respectively.
+     * @return a JSON object containing a WebVoyager formatted task and an Odobot formatted task under the fields 'webVoyager','odoBot' and 'odoBotNL' respectively.
      */
     private JsonObject makeTaskInstance(JsonObject taskDetails, JsonArray loginTemplates, List<String> courses, Map<String,Map<String,List<String>>> parameterValues){
 
@@ -131,11 +131,31 @@ public class EvaluationTaskGenerationTask implements Runnable {
         //Get the model mappings for this task
         JsonObject modelMapping = taskDetails.getJsonObject("model_mapping");
 
+        String evalId = taskDetails.getString("id") + "|OdoBot|" + taskId.toString();
+
         result.put("webVoyager", makeWebVoyagerTask(taskDetails, loginTemplates, values, taskId));
-        result.put("odoBot", makeOdoBotTask(values, modelMapping, taskId ).put("_evalId", taskDetails.getString("id") + "|OdoBot|" + taskId.toString()));
+        result.put("odoBot", makeOdoBotTask(values, modelMapping, taskId ).put("_evalId", evalId));
+        result.put("odoBotNL", makeOdoBotNLTask(result.getJsonObject("webVoyager"), evalId, taskId));
+
 
         return result;
     }
+
+    /**
+     * Create a natural language task for OdoBot. These are built from webvoyager tasks.
+     * @param webVoyagerTask
+     * @return
+     */
+    private JsonObject makeOdoBotNLTask(JsonObject webVoyagerTask, String evalId, UUID id){
+        JsonObject result = new JsonObject()
+                .put("id", id.toString())
+                .put("_evalId", evalId)
+                .put("userLocation", config.getString(EvaluationTaskGenerationRequestFields.STARTING_USER_LOCATION.field()))
+                .put("task", webVoyagerTask.getString("ques"));
+
+        return result;
+    }
+
 
     private OdoBotExecutionRequest makeOdoBotTask(JsonObject values, JsonObject modelMapping, UUID taskId){
 

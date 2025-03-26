@@ -1,10 +1,7 @@
 package ca.ualberta.odobot.taskplanner.impl;
 
-import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
-import ca.ualberta.odobot.semanticflow.navmodel.GraphDB;
-import ca.ualberta.odobot.semanticflow.navmodel.NavPathsConstructor;
 import ca.ualberta.odobot.semanticflow.navmodel.Neo4JUtils;
-import ca.ualberta.odobot.semanticflow.navmodel.nodes.APINode;
+
 import ca.ualberta.odobot.snippet2xml.SemanticSchema;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import ca.ualberta.odobot.taskplanner.AIStrategy;
@@ -14,8 +11,7 @@ import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
-import org.neo4j.graphdb.GraphDatabaseService;
-import org.neo4j.graphdb.Transaction;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,6 +42,59 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
         };
     }
 
+
+    public Future<JsonObject> taskQueryConstruction(JsonObject task){
+
+        String taskDescription = task.getString("task");
+
+        return Future.all(
+                //Resolve input parameter mappings for the task.
+                this.getInputParameterMappings(taskDescription),
+                //Resolve object parameter mappings for the task.
+                this.getRelevantObjectParameters(taskDescription),
+                //Resolve target API calls for the task.
+                this.getRelevantAPICalls(taskDescription)
+        ).compose(compositeFuture -> {
+
+            //Extract the results from the composite future.
+            List<JsonObject> inputParameterMappings = compositeFuture.resultAt(0);
+            List<JsonObject> objectParameters = compositeFuture.resultAt(1);
+            List<JsonObject> apiCalls = compositeFuture.resultAt(2);
+
+            JsonObject result =  new JsonObject();
+            result.put("id", task.getString("id"));
+            result.put("userLocation", task.getString("userLocation"));
+            result.put("targets", apiCalls.stream().map(apiCall->apiCall.getString("id")).collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
+
+            //Compute input parameters in task format for odobot.
+            JsonArray parameters = inputParameterMappings.stream()
+                    .map(inputParam->{
+                        JsonObject _param = new JsonObject()
+                                .put("id", inputParam.getString("id"))
+                                .put("type", "InputParameter")
+                                .put("value", inputParam.getString("value"));
+                        return _param;
+                    }).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+
+            //Add schema/object parameters
+            parameters.addAll(
+                    objectParameters.stream()
+                            .map(objectParam->{
+                                JsonObject _param = new JsonObject()
+                                        .put("id", objectParam.getString("id"))
+                                        .put("type", "SchemaParameter")
+                                        .put("query", objectParam.getString("query"));
+                                return _param;
+                            }).collect(JsonArray::new, JsonArray::add, JsonArray::addAll)
+            );
+
+            result.put("parameters", parameters);
+            result.put("_evalId", task.getString("_evalId"));
+
+            return Future.succeededFuture(result);
+        });
+
+    }
 
     @Override
     public Future<List<JsonObject>> getRelevantObjectParameters(String taskDescription) {

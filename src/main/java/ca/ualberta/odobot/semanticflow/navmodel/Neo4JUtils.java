@@ -1367,6 +1367,41 @@ public class Neo4JUtils {
 
     }
 
+    public String getAssociatedParameterId(String nodeId){
+        String sQuery = """
+                match (m)-[:PARAM]->(n) WHERE (n:InputParameter OR n:SchemaParameter) AND m.id = $id RETURN n.id; 
+                """;
+        Query query = new Query(sQuery, parameters("id", nodeId));
+
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+            String id = session.executeRead(tx->{
+                var result = tx.run(query);
+                return result.single().get(0).asString();
+            });
+
+            return id;
+        }
+    }
+
+    public Set<String> getParameterAssociatedNodes(String parameterNodeId){
+
+        String sQuery = """
+                match (n)<-[:PARAM]-(m) WHERE n:InputParameter OR n:SchemaParameter AND n.id = $id RETURN m.id;
+                """;
+
+        Query query = new Query(sQuery, parameters("id", parameterNodeId));
+
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+            Set<String> ids = session.executeRead(tx->{
+                var result = tx.run(query);
+                return result.list().stream().map(record->record.get(0).asString()).collect(Collectors.toSet());
+            });
+
+            return ids;
+        }
+
+    }
+
     public String getNodeIdBySchemaId(String schemaId){
         String sQuery = "match (n:SchemaParameter) where n.schemaId = $schemaId return n.id;";
         Query query = new Query(sQuery, parameters("schemaId", schemaId));

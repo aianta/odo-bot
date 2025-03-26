@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.guidance;
 
+import ca.ualberta.odobot.guidance.execution.ExecutionParameter;
 import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
 import ca.ualberta.odobot.guidance.execution.InputParameter;
 import ca.ualberta.odobot.guidance.instructions.*;
@@ -123,31 +124,78 @@ public class RequestManager {
             }
 
             _input.setUserLocation(request.getUserLocation());
-            _input.setTargetNode(request.getTarget().toString());
+
             _input.setPathRequestId(request.getId().toString());
 
             log.info("LastEntity: {}", _input.getLastEntity() != null?_input.lastEntity.symbol(): "N/A");
             log.info("URL: {}", _input.getUrl() != null? _input.getUrl(): "N/A");
             log.info("DOM: {}", _input.getDom() != null? _input.dom.toString().substring(0, Math.min(_input.dom.toString().length(), 150)): "N/A");
-            log.info("TargetNode: {}", _input.targetNode);
+
 
             Optional<UUID> startingNode = LogPreprocessor.localizer.resolveStartingNode(_input);
             log.info("Found starting node? {}", startingNode.isPresent());
 
             UUID src = startingNode.get();
-            UUID tgt = request.getTarget();
 
-            log.info("Resolving execution path from {} to {}", src.toString(), tgt.toString());
+            //Handle Natural Language tasks
+            if(request.getType() == ExecutionRequest.Type.NL){
 
-            tx = LogPreprocessor.graphDB.db.beginTx();
+                //Resolve the parameter associated input and object nodes
+                //Basically the node IDs in the task definition correspond with the actual, Input and Schema parameter nodes.
+                //What we actually want, are the ids of the nodes associated with those input and schema parameter nodes (as defined by the PARAM edge).
+                Set<String> inputParameters = request.getParameters().stream()
+                        .filter(p->p.getType() == ExecutionParameter.ParameterType.InputParameter)
+                        .map(p->LogPreprocessor.neo4j.getParameterAssociatedNodes(p.getNodeId().toString()))
+                        .collect(HashSet::new, HashSet::addAll, HashSet::addAll);
 
-            navPaths = LogPreprocessor.pathsConstructor.construct(tx, src,tgt, request.getParameters());
+                Set<String> objectParameters = request.getParameters().stream()
+                        .filter(p->p.getType() == ExecutionParameter.ParameterType.SchemaParameter)
+                        .map(p->LogPreprocessor.neo4j.getParameterAssociatedNodes(p.getNodeId().toString()))
+                        .collect(HashSet::new, HashSet::addAll,HashSet::addAll);
 
-            log.info("Found {} execution paths", navPaths.size());
+                Set<String> apiCalls = request.getTargets();
+
+                tx = LogPreprocessor.graphDB.db.beginTx();
+
+                navPaths = LogPreprocessor.pathsConstructor.construct(tx, src.toString(), objectParameters, inputParameters, apiCalls);
+
+                navPaths = List.of(navPaths.get(0)); //Only return/use the first path for execution. TODO: leveraging multiple paths + using them to fallback could be an interesting direction to explore.
+
+                /**
+                 * We still need a target node so that the execution mechanism can determine when the task has been completed.
+                 * All paths produced using the new path construction logic will end in an API node.
+                 *
+                 * I think, in practice, we ultimately end up following the first path's instructions. So the last node in the first path should effectively
+                 * be our target node.
+                 */
+                var targetNodeId = UUID.fromString(navPaths.get(0).getPath().endNode().getProperty("id").toString());
+                _input.setTargetNode(targetNodeId.toString());
+                request.setTarget(targetNodeId);
+
+                log.info("Found {} execution paths", navPaths.size());
+            }
+
+            //Handle tasks that have been pre-defined in terms of the navigational model.
+            if(request.getType() == ExecutionRequest.Type.PREDEFINED){
+                _input.setTargetNode(request.getTarget().toString());
+                log.info("TargetNode: {}", _input.targetNode);
+
+                UUID tgt = request.getTarget();
+
+                log.info("Resolving execution path from {} to {}", src.toString(), tgt.toString());
+
+                tx = LogPreprocessor.graphDB.db.beginTx();
+
+                navPaths = LogPreprocessor.pathsConstructor.construct(tx, src,tgt, request.getParameters());
+
+                log.info("Found {} execution paths", navPaths.size());
+
+            }
 
             JsonObject executionInstruction = buildExecutionInstruction(navPaths);
 
             return Future.succeededFuture(executionInstruction);
+
         }catch (Exception e){
             log.error(e.getMessage(), e);
             return Future.failedFuture(e);
