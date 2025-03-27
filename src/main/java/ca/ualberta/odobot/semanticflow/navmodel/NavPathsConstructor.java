@@ -166,7 +166,7 @@ public class NavPathsConstructor {
         }
 
         List<NavPath> paths = new ArrayList<>();
-        it = evaluator._paths.iterator();
+        it = evaluator.getPaths().iterator();
         while (it.hasNext()){
             NavPath navPath = new NavPath();
             navPath.setPath(it.next());

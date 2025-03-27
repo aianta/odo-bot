@@ -86,7 +86,28 @@ public class TaskPlanningEvaluator implements Evaluator {
 
 
 
+
         return Evaluation.INCLUDE_AND_CONTINUE;
+    }
+
+    public List<Path> getPaths(){
+        Iterator<Path> it = _paths.iterator();
+        int maxTargetsHit = 0;
+        while (it.hasNext()){
+            var p = it.next();
+            var pTargetsHit = numTargetsHit(p, apiCalls);
+            if(pTargetsHit > maxTargetsHit){
+                maxTargetsHit = pTargetsHit;
+            }
+            if(pTargetsHit < maxTargetsHit){
+                it.remove(); //Remove all paths that don't achieve the max targets hit.
+            }
+        }
+
+        //Sort the remaining paths by the number of input parameters hit
+        _paths.sort(Comparator.comparing(p->numTargetsHit((Path)p, inputParameters)).reversed());
+
+        return _paths;
     }
 
     private Integer numTargetsHit(Path path, Set<String> targetNodeIds){

@@ -193,6 +193,21 @@ public class RequestManager {
             }
 
             JsonObject executionInstruction = buildExecutionInstruction(navPaths);
+            if(executionInstruction == null){
+                /**
+                 * This method (getExecutionPath) is only called on to produce the first instruction for the execution.
+                 * If the chosen path begins with a LocationNode (which is common), then the first instruction would
+                 * be to wait for that location change. But since we likely just initialized our local context. There's
+                 * not going to be an application location change event.
+                 *
+                 * To deal with this, if the execution instruction is null, as would be the case for WaitFor type instructions
+                 * (because they don't send anything to OdoX, the instruction JSON is null), call buildExecutionInstruction again
+                 * to get the next instruction.
+                 *
+                 * TODO: refactor this. This method is doing too much. And this 'temporary fix' only adds to the complexity of the execution logic.
+                 */
+                executionInstruction = buildExecutionInstruction(navPaths);
+            }
 
             return Future.succeededFuture(executionInstruction);
 
@@ -314,6 +329,10 @@ public class RequestManager {
                                 .put("parameterId", queryDom.parameterId);
                     }
 
+
+                    //Expect to return null for WaitForLocationChange and WaitForNetworkEvent instructions.
+                    //This is because they do not entail sending any instructions to OdoX. Rather, they are instructions for the server
+                    //to wait for the specified interactions to take place in the online timeline.
                     return null;
                 })
                 .filter(Objects::nonNull)
@@ -433,6 +452,8 @@ public class RequestManager {
         }
 
         String xpath = null;
+        String path = null;
+        String method = null;
 
         if(entity instanceof DataEntry){
             DataEntry dataEntry = (DataEntry) entity;
@@ -449,8 +470,32 @@ public class RequestManager {
             xpath = checkboxEvent.xpath();
         }
 
+        if(entity instanceof NetworkEvent){
+            NetworkEvent networkEvent = (NetworkEvent) entity;
+            path = networkEvent.getPath();
+            method = networkEvent.getMethod();
+        }
+
+        if(entity instanceof ApplicationLocationChange){
+            ApplicationLocationChange applicationLocationChange = (ApplicationLocationChange) entity;
+            path = applicationLocationChange.getToPath();
+        }
+
         final String observedXPath = xpath;
-        log.info("Observed {} on xpath: {}", entity.symbol(), observedXPath);
+        final String observedPath = path;
+        final String observedMethod = method;
+
+        if(observedXPath != null){
+            log.info("Observed {} on xpath: {}", entity.symbol(), observedXPath);
+        }
+
+        if(observedPath != null){
+            log.info("Observed {} with path: {}", entity.symbol(), observedPath);
+        }
+
+        if(observedMethod != null){
+            log.info("Observed {} with method: {}", entity.symbol(), observedMethod);
+        }
 
         /**
          * Update the navPaths associated with this request.
@@ -466,14 +511,28 @@ public class RequestManager {
                     }
 
                     if(lastInstruction instanceof XPathInstruction){
+                        if(observedXPath == null){
+                            return false;
+                        }
                         return observedXPath.equals(((XPathInstruction) lastInstruction).xpath);
                     }
 
                     if(lastInstruction instanceof DynamicXPathInstruction){
+                        if(observedXPath == null){
+                            return false;
+                        }
                         log.info("Last instruction was dynamic xpath");
                         DynamicXPathInstruction dynamicXPathInstruction = (DynamicXPathInstruction) lastInstruction;
                         log.info("matches: {}, stillMatches: {}",dynamicXPathInstruction.dynamicXPath.matches(observedXPath), dynamicXPathInstruction.dynamicXPath.stillMatches(observedXPath) );
                         return dynamicXPathInstruction.dynamicXPath.matches(observedXPath) || dynamicXPathInstruction.dynamicXPath.stillMatches(observedXPath);
+                    }
+
+                    if(lastInstruction instanceof WaitForLocationChange){
+                        return ((WaitForLocationChange) lastInstruction).path.equals(observedPath);
+                    }
+
+                    if(lastInstruction instanceof WaitForNetworkEvent){
+                        return ((WaitForNetworkEvent) lastInstruction).path.equals(observedPath) && ((WaitForNetworkEvent) lastInstruction).method.equals(observedMethod);
                     }
 
 

@@ -31,7 +31,13 @@ public class NavPath {
 
     private Iterator<Node> iterator = null;
 
-    private Predicate<Node> instructionNodePredicate = (node)->node.hasLabel(Label.label("ClickNode")) || node.hasLabel(Label.label("DataEntryNode")) || node.hasLabel(Label.label("CheckboxNode"));
+    //These are the nodes that produce instructions.
+    private Predicate<Node> instructionNodePredicate = (node)->
+            node.hasLabel(Label.label("ClickNode")) ||
+            node.hasLabel(Label.label("DataEntryNode")) ||
+            node.hasLabel(Label.label("CheckboxNode")) ||
+            node.hasLabel(Label.label("APINode")) ||
+            node.hasLabel(Label.label("LocationNode"));
 
     private Instruction lastInstruction;
 
@@ -133,6 +139,7 @@ public class NavPath {
             if(instructionNodePredicate.test(node)){
                 Instruction instruction = null;
 
+                //Handle collapsed nodes
                 if(node.hasLabel(Label.label("CollapsedClickNode")) ||
                         node.hasLabel(Label.label("CollapsedDataEntryNode")) ||
                         node.hasLabel(Label.label("CollapsedCheckboxNode"))
@@ -142,6 +149,19 @@ public class NavPath {
                     _instruction.parameterId = LogPreprocessor.neo4j.getAssociatedParameterId((String)node.getProperty("id")); //This is going to cause problems for any collapsed click node or data entry node that doesn't have a schema parameter...
                     instruction = _instruction;
                 }else{
+
+                    if(node.hasLabel(Label.label("APINode"))){
+                        WaitForNetworkEvent _instruction = new WaitForNetworkEvent();
+                        _instruction.method = (String) node.getProperty("method");
+                        _instruction.path = (String) node.getProperty("path");
+                        instruction = _instruction;
+                    }
+
+                    if(node.hasLabel(Label.label("LocationNode"))){
+                        WaitForLocationChange _instruction = new WaitForLocationChange();
+                        _instruction.path = (String)node.getProperty("path");
+                        instruction = _instruction;
+                    }
 
                     if(node.hasLabel(Label.label("CheckboxNode"))){
                         log.info("Instruction is a checkbox node!");

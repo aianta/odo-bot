@@ -67,7 +67,9 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
         chatMessages.add(new ChatRequestUserMessage(sb.toString()));
 
-        return executeChatCompletion(chatMessages);
+        return executeChatCompletion(chatMessages)
+                //Sometimes the LLM can't help itself but include the list in square brackets
+                .replaceAll("\\[", "").replaceAll("\\]", "");
     }
 
     public Future<List<JsonObject>> getTaskInputParameterMappings(String taskDescription, List<JsonObject> dataEntryAnnotations){
@@ -97,6 +99,14 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
                         //Exclude mappings to null.
                         if(entry.getValue(1) == null){
+
+                            //Handle checkbox inputs differently, if they seem relevant, but no value can be attached to them, assume true.
+                            JsonObject annotation = getAnnotationByLabel(entry.getString(0), dataEntryAnnotations);
+                            if(annotation != null && annotation.getString("description").contains("checkbox")){
+                                annotation.put("value", "true");
+                                return annotation;
+                            }
+
                             return null;
                         }
 
@@ -137,7 +147,7 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         ListIterator<JsonObject> it = dataEntryAnnotations.listIterator();
         while (it.hasNext()){
             JsonObject curr = it.next();
-            sb.append((it.previousIndex() + 1) + ". " + curr.getString("label") + "\n");
+            sb.append((it.previousIndex() + 1) + ". " + curr.getString("label") + "["+curr.getString("description")+"]\n");
         }
         sb.append("\n");
         sb.append("Task Description:\n");
