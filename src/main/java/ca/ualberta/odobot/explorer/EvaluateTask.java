@@ -22,6 +22,10 @@ import org.openqa.selenium.firefox.ProfilesIni;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Iterator;
 import java.util.ListIterator;
@@ -102,7 +106,7 @@ public class EvaluateTask implements Runnable{
 
         taskToExecutionRequest(task).onSuccess(executionRequest->{
             Promise<Void> evaluationPromise = Promise.promise();
-            evaluationPromise.future().onSuccess((done)->this.taskComplete());
+            evaluationPromise.future().onComplete((done)->this.taskComplete());
 
             odoXClient.getRequestManager().setEvaluationComplete(evaluationPromise);
             odoXClient.getRequestManager().setEvalId(task.getString("_evalId")); //Set the evaluationId for this execution.
@@ -138,6 +142,7 @@ public class EvaluateTask implements Runnable{
             return taskPlannerService.taskQueryConstruction(task)
                     .compose(definedTask->{
                         log.info("Got task definition from task query construction:\n{}", definedTask.encodePrettily());
+                        saveTaskQueryConstructionResult("./%s/%s-task-query-construction-result.json".formatted("execution_events", definedTask.getString("_evalId")).replaceAll("\\|","-"), definedTask);
 
                         executionRequest.setId(UUID.fromString(definedTask.getString("id")));
                         executionRequest.setUserLocation(definedTask.getString("userLocation"));
@@ -178,6 +183,22 @@ public class EvaluateTask implements Runnable{
 
         log.error("Unknown or unsupported agent type!");
         return Future.failedFuture("Unknown or unsupported agent type!");
+    }
+
+    private void saveTaskQueryConstructionResult(String filename, JsonObject result){
+        File fout = new File(filename);
+        try(FileWriter fw = new FileWriter(fout);
+            BufferedWriter bw = new BufferedWriter(fw);
+        ){
+
+            bw.write(result.encodePrettily());
+            bw.flush();
+
+        } catch (IOException e) {
+            log.error(e.getMessage(), e);
+            throw new RuntimeException(e);
+        }
+
     }
 
     /**

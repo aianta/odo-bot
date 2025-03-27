@@ -62,6 +62,14 @@ public class RequestManager {
 
     public RequestManager setEvaluationComplete(Promise<Void> evaluationComplete) {
         this.evaluationComplete = evaluationComplete;
+        this.evaluationComplete.future().onSuccess(done->{
+            //Clear timeout timer
+            GuidanceVerticle._vertx.cancelTimer(client.getGuidanceConnectionManager().timeoutTimer);
+        });
+        this.evaluationComplete.future().onFailure(err->{
+            log.error(err.getMessage(), err);
+            client.getEventConnectionManager().getEventProcessor().saveRawEvents("./%s/%s.json".formatted("execution_events", evalId).replaceAll("\\|","-"));
+        });
         return this;
     }
 
@@ -160,6 +168,9 @@ public class RequestManager {
                 navPaths = LogPreprocessor.pathsConstructor.construct(tx, src.toString(), objectParameters, inputParameters, apiCalls);
 
                 navPaths = List.of(navPaths.get(0)); //Only return/use the first path for execution. TODO: leveraging multiple paths + using them to fallback could be an interesting direction to explore.
+
+                //Save the navPath for this request.
+                NavPath.saveNavPath("./%s/%s-navpath.txt".formatted("execution_events", evalId).replaceAll("\\|","-"), navPaths.get(0));
 
                 /**
                  * We still need a target node so that the execution mechanism can determine when the task has been completed.

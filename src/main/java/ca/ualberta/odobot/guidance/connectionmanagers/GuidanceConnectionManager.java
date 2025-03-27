@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.guidance.connectionmanagers;
 
+import ca.ualberta.odobot.guidance.GuidanceVerticle;
 import ca.ualberta.odobot.guidance.OdoClient;
 import ca.ualberta.odobot.guidance.Request;
 import ca.ualberta.odobot.guidance.WebSocketConnection;
@@ -24,7 +25,9 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
     private static final String SOURCE = "GuidanceConnectionManager";
     private Map<String, Promise> activePromises = new LinkedHashMap<>();
 
+    public long timeoutTimer = -1l;
 
+    private static final long TIMEOUT = 300000l; //5 minutes
 
     public GuidanceConnectionManager(OdoClient client){
         super(client);
@@ -92,6 +95,18 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
     }
 
     public Future<JsonObject> sendExecutionInstruction(JsonObject instruction){
+
+        //Reset the timeout timer.
+        if(timeoutTimer != -1l){ //Only if it hasn't yet been set.
+            GuidanceVerticle._vertx.cancelTimer(timeoutTimer);
+        }
+
+        GuidanceVerticle._vertx.setTimer(TIMEOUT, id->{
+            timeoutTimer = id;
+            log.info("Task execution timed out!");
+            client.getRequestManager().getEvaluationComplete().tryFail("Timeout!");
+        });
+
         JsonObject executionRequest = new JsonObject()
                 .put("type", "EXECUTE")
                 .put("source", SOURCE)

@@ -4,6 +4,7 @@ import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import ca.ualberta.odobot.semanticflow.navmodel.Localizer;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
+import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.*;
 import io.vertx.core.json.JsonArray;
@@ -40,10 +41,12 @@ public class GuidanceVerticle extends AbstractVerticle {
 
     private Router api;
 
-
+    public static Vertx _vertx;
 
     @Override
     public void start(Promise<Void> startPromise) throws Exception {
+
+        _vertx = vertx;
 
         log.info("Starting guidance verticle");
 

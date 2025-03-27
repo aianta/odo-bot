@@ -52,7 +52,7 @@ public class OnlineEventProcessor {
     }
 
     public void saveRawEvents(String filename){
-        log.info("raw events size before save: {}", rawEvents.size());
+//        log.info("raw events size before save: {}", rawEvents.size());
         File fout = new File(filename);
         try(FileWriter fw = new FileWriter(fout);
             BufferedWriter bw = new BufferedWriter(fw);

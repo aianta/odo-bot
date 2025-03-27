@@ -4,6 +4,7 @@ import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
 import ca.ualberta.odobot.guidance.execution.InputParameter;
 import ca.ualberta.odobot.guidance.instructions.*;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.neo4j.graphdb.Label;
 import org.neo4j.graphdb.Node;
@@ -11,6 +12,10 @@ import org.neo4j.graphdb.Path;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.*;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
@@ -425,6 +430,32 @@ public class NavPath {
         Matcher matcher = pattern.matcher(input);
         matcher.find();
         return matcher.group();
+    }
+
+    public static void saveNavPath(String filename, NavPath path){
+        File fout = new File(filename);
+        try(FileWriter fw = new FileWriter(fout);
+            BufferedWriter bw = new BufferedWriter(fw);
+        ){
+
+            StringBuilder sb = new StringBuilder();
+            path.getPath().nodes().forEach(n->{
+                StringBuilder nsb = new StringBuilder();
+                nsb.append("(");
+                n.getLabels().forEach(label->nsb.append(":" + label.name()));
+                nsb.append("| id:%s)".formatted((String)n.getProperty("id")));
+                nsb.append("-->");
+                sb.append(nsb.toString());
+            });
+
+            bw.write(sb.toString());
+            bw.flush();
+
+        } catch (IOException e) {
+            log.error(e.getMessage(), e);
+            throw new RuntimeException(e);
+        }
+
     }
 
     public static void printNavPaths(List<NavPath> paths, int limit){

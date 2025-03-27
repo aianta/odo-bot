@@ -4,6 +4,7 @@ import ca.ualberta.odobot.guidance.execution.ExecutionParameter;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import ca.ualberta.odobot.taskplanner.TaskPlanningEvaluator;
+import ca.ualberta.odobot.taskplanner.TaskPlanningEvaluatorForSingleTargets;
 import org.neo4j.graphdb.*;
 import org.neo4j.graphdb.traversal.*;
 import org.slf4j.Logger;
@@ -150,7 +151,15 @@ public class NavPathsConstructor {
 
         Node srcNode = fetchNodeById(tx, startingNodeId);
 
-        TaskPlanningEvaluator evaluator = new TaskPlanningEvaluator(inputParameters, objectParameters, apiCalls);
+        //Multi-target Evaluator
+        Evaluator evaluator = new TaskPlanningEvaluator(inputParameters, objectParameters, apiCalls);
+
+        if(apiCalls.size() == 1){
+            //Single target evaluator
+            evaluator = new TaskPlanningEvaluatorForSingleTargets(inputParameters, objectParameters, apiCalls);
+        }
+
+
 
         TraversalDescription traversal = tx.traversalDescription()
                 .breadthFirst()
@@ -166,7 +175,12 @@ public class NavPathsConstructor {
         }
 
         List<NavPath> paths = new ArrayList<>();
-        it = evaluator.getPaths().iterator();
+        if(apiCalls.size() == 1){
+            it = ((TaskPlanningEvaluatorForSingleTargets)evaluator).getPaths().iterator();
+        }else{
+            it = ((TaskPlanningEvaluator)evaluator).getPaths().iterator();
+        }
+
         while (it.hasNext()){
             NavPath navPath = new NavPath();
             navPath.setPath(it.next());
