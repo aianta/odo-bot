@@ -205,6 +205,9 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
                     .filter(Objects::nonNull)
                     .collect(Collectors.toList());
 
+            log.info("Chose the following schemas:");
+            chosenSchemas.forEach(s->log.info("{}", s.encodePrettily()));
+
             return Future.succeededFuture(chosenSchemas);
         }
 

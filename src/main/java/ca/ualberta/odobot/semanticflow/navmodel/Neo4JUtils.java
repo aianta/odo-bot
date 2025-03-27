@@ -1402,6 +1402,20 @@ public class Neo4JUtils {
 
     }
 
+    public String getNodeIdBySchemaName(String name){
+        String sQuery = "match (n:SchemaParameter) where n.name = $name return n.id;";
+        Query query = new Query(sQuery, parameters("name", name));
+
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+            String id = session.executeRead(tx->{
+                var result = tx.run(query);
+                return result.single().get(0).asString();
+            });
+
+            return id;
+        }
+    }
+
     public String getNodeIdBySchemaId(String schemaId){
         String sQuery = "match (n:SchemaParameter) where n.schemaId = $schemaId return n.id;";
         Query query = new Query(sQuery, parameters("schemaId", schemaId));

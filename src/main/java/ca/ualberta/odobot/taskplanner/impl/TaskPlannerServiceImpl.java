@@ -54,44 +54,50 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
                 this.getRelevantObjectParameters(taskDescription),
                 //Resolve target API calls for the task.
                 this.getRelevantAPICalls(taskDescription)
-        ).compose(compositeFuture -> {
+        ).onFailure(err->log.error(err.getMessage(), err)).compose(compositeFuture -> {
 
-            //Extract the results from the composite future.
-            List<JsonObject> inputParameterMappings = compositeFuture.resultAt(0);
-            List<JsonObject> objectParameters = compositeFuture.resultAt(1);
-            List<JsonObject> apiCalls = compositeFuture.resultAt(2);
+            try{
+                //Extract the results from the composite future.
+                List<JsonObject> inputParameterMappings = compositeFuture.resultAt(0);
+                List<JsonObject> objectParameters = compositeFuture.resultAt(1);
+                List<JsonObject> apiCalls = compositeFuture.resultAt(2);
 
-            JsonObject result =  new JsonObject();
-            result.put("id", task.getString("id"));
-            result.put("userLocation", task.getString("userLocation"));
-            result.put("targets", apiCalls.stream().map(apiCall->apiCall.getString("id")).collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
+                JsonObject result =  new JsonObject();
+                result.put("id", task.getString("id"));
+                result.put("userLocation", task.getString("userLocation"));
+                result.put("targets", apiCalls.stream().map(apiCall->apiCall.getString("id")).collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
 
-            //Compute input parameters in task format for odobot.
-            JsonArray parameters = inputParameterMappings.stream()
-                    .map(inputParam->{
-                        JsonObject _param = new JsonObject()
-                                .put("id", inputParam.getString("id"))
-                                .put("type", "InputParameter")
-                                .put("value", inputParam.getString("value"));
-                        return _param;
-                    }).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+                //Compute input parameters in task format for odobot.
+                JsonArray parameters = inputParameterMappings.stream()
+                        .map(inputParam->{
+                            JsonObject _param = new JsonObject()
+                                    .put("id", inputParam.getString("id"))
+                                    .put("type", "InputParameter")
+                                    .put("value", inputParam.getString("value"));
+                            return _param;
+                        }).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
 
-            //Add schema/object parameters
-            parameters.addAll(
-                    objectParameters.stream()
-                            .map(objectParam->{
-                                JsonObject _param = new JsonObject()
-                                        .put("id", objectParam.getString("id"))
-                                        .put("type", "SchemaParameter")
-                                        .put("query", objectParam.getString("query"));
-                                return _param;
-                            }).collect(JsonArray::new, JsonArray::add, JsonArray::addAll)
-            );
+                //Add schema/object parameters
+                parameters.addAll(
+                        objectParameters.stream()
+                                .map(objectParam->{
+                                    JsonObject _param = new JsonObject()
+                                            .put("id", objectParam.getString("id"))
+                                            .put("type", "SchemaParameter")
+                                            .put("query", objectParam.getString("query"));
+                                    return _param;
+                                }).collect(JsonArray::new, JsonArray::add, JsonArray::addAll)
+                );
 
-            result.put("parameters", parameters);
-            result.put("_evalId", task.getString("_evalId"));
+                result.put("parameters", parameters);
+                result.put("_evalId", task.getString("_evalId"));
 
-            return Future.succeededFuture(result);
+                return Future.succeededFuture(result);
+            }catch (Exception e){
+                log.error(e.getMessage(), e);
+                return Future.failedFuture(e);
+            }
+
         });
 
     }
@@ -122,7 +128,7 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
                     //TODO: Should schemaIds even be a separate thing from the ids of the nodes in which they're stored in the nav model?
                     .compose(schemas->{
                         for(JsonObject schema: schemas){
-                            schema.put("id", neo4j.getNodeIdBySchemaId(schema.getString("id")));
+                            schema.put("id", neo4j.getNodeIdBySchemaName(schema.getString("name")));
                         }
                         return Future.succeededFuture(schemas);
                     })

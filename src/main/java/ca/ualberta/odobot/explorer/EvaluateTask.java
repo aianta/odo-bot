@@ -137,6 +137,8 @@ public class EvaluateTask implements Runnable{
         if(agent == Agent.ODO_BOT_NL){
             return taskPlannerService.taskQueryConstruction(task)
                     .compose(definedTask->{
+                        log.info("Got task definition from task query construction:\n{}", definedTask.encodePrettily());
+
                         executionRequest.setId(UUID.fromString(definedTask.getString("id")));
                         executionRequest.setUserLocation(definedTask.getString("userLocation"));
                         executionRequest.setType(ExecutionRequest.Type.NL);
