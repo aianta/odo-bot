@@ -28,6 +28,7 @@ neo4j-plugins/*
 !neo4j-logs/.gitkeep
 test_task
 test_task_results
+execution_events
 config/snippet2xml.yaml
 config/dataentry2label.yaml
 config/taskplanner.yaml
