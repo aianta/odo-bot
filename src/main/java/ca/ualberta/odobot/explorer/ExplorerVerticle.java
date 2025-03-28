@@ -176,6 +176,11 @@ public class ExplorerVerticle extends HttpServiceVerticle {
             if (contents != null) {
                 for (File _log : contents) {
 
+                    if(_log.getName().contains("navpath") || _log.getName().contains("task-query") || _log.isDirectory()){
+                        //Skip navpath and task query details
+                        continue;
+                    }
+
                     JsonObject webVoyagerTaskInfo = getWebVoyagerTaskByFileName(_log.getName(), webVoyagerTasks);
                     JsonObject taskInfo = getOdoBotTaskByFilename(_log.getName(), odoBotTasks);
                     String evalId = webVoyagerTaskInfo.getString("id");
@@ -459,6 +464,11 @@ public class ExplorerVerticle extends HttpServiceVerticle {
         if(contents != null){
             for(File _log: contents){
 
+                if(_log.getName().contains("navpath") || _log.getName().contains("task-query") || _log.isDirectory()){
+                    //Skip navpath and task query logs
+                    continue;
+                }
+
                 JsonObject taskInfo = getOdoBotTaskByFilename(_log.getName(), odoBotTasks);
                 String evalId = taskInfo.getString("_evalId");
                 JsonArray events = new JsonArray(new String(Files.readAllBytes(Path.of(_log.getPath()))));
@@ -503,8 +513,8 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                                         event.getString("url")
                                                 .equals("http://localhost:8088/api/v1/courses/%s/assignments".formatted(
                                                         courseIds.getString(targetCourseName)
-                                                )) &&
-                                        new JsonObject(event.getString("responseBody")).getString("name").equals(newAssignmentName)
+                                                ))
+                                        //&& new JsonObject(event.getString("responseBody")).getString("name").equals(newAssignmentName)
 
                                 ).findFirst();
 
@@ -761,6 +771,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                 .get();
     }
     private JsonObject getOdoBotTaskByFilename(String filename, JsonArray tasks){
+        log.info("{}", filename);
         return tasks.stream()
                 .map(o->(JsonObject)o)
                 .filter(task->filename.contains(task.getString("id")))
