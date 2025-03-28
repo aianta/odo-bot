@@ -464,7 +464,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
         if(contents != null){
             for(File _log: contents){
 
-                if(_log.getName().contains("navpath") || _log.getName().contains("task-query") || _log.isDirectory()){
+                if(_log.getName().contains("navpath") || _log.getName().contains("task-query") || _log.isDirectory() || _log.getName().contains(".yaml")){
                     //Skip navpath and task query logs
                     continue;
                 }
@@ -581,8 +581,9 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
                         Optional<JsonObject> networkEvent = events.stream().map(o->(JsonObject)o)
                                 .map(event->event.getJsonObject("eventDetails"))
-                                .filter(event->event.getString("name").equals("NETWORK_EVENT") &&
-                                        event.getString("method").equals("POST") &&
+                                .filter(event->event.getString("name").equals("NETWORK_EVENT"))
+                                .filter(event->event.getString("method").equals("POST"))
+                                .filter(event->
                                         event.getString("url").equals("http://localhost:8088/courses/%s/quizzes/%s".formatted(
                                                 courseIds.getString(targetCourseName),
                                                 quizIds.getString(targetQuizName)
@@ -634,8 +635,9 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
                         Optional<JsonObject> networkEvent = events.stream().map(o->(JsonObject)o)
                                 .map(event->event.getJsonObject("eventDetails"))
-                                .filter(event->event.getString("name").equals("NETWORK_EVENT") &&
-                                        event.getString("method").equals("POST") &&
+                                .filter(event->event.getString("name").equals("NETWORK_EVENT"))
+                                .filter(event->event.getString("method").equals("POST"))
+                                .filter(event->
                                         event.getString("url").equals("http://localhost:8088/courses/%s/modules/%s".formatted(
                                                 courseIds.getString(targetCourseName),
                                                 moduleIds.getString(targetModuleName)
@@ -665,15 +667,14 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
                         Optional<JsonObject> networkEvent = events.stream().map(o->(JsonObject)o)
                                 .map(event->event.getJsonObject("eventDetails"))
-                                .filter(event->event.getString("name").equals("NETWORK_EVENT") &&
-                                        event.getString("method").equals("PUT") &&
-                                        event.getString("url").equals("http://localhost:8088/api/v1/courses/%s/assignments/%s".formatted(
+                                .filter(event->event.getString("name").equals("NETWORK_EVENT"))
+                                .filter(event->event.getString("method").equals("PUT"))
+                                .filter(event->event.getString("url").equals("http://localhost:8088/api/v1/courses/%s/assignments/%s".formatted(
                                                 courseIds.getString(targetCourseName),
                                                 assignmentIds.getString(targetAssignmentName)
-                                        )) &&
-                                        //If we have a response body, it should contain the expected name.
+                                        )))
+                                .filter(event->
                                         event.containsKey("responseBody")?new JsonObject(event.getString("responseBody")).getString("name").equals(editedTitle):true
-
                                 ).findFirst();
 
                         yield networkEvent.isPresent();
