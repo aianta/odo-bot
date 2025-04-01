@@ -144,6 +144,8 @@ public class EvaluateTask implements Runnable{
                         log.info("Got task definition from task query construction:\n{}", definedTask.encodePrettily());
                         saveTaskQueryConstructionResult("./%s/%s-task-query-construction-result.json".formatted("execution_events", definedTask.getString("_evalId")).replaceAll("\\|","-"), definedTask);
 
+                        executionRequest.setTaskDescription(task.getString("task"));
+
                         executionRequest.setId(UUID.fromString(definedTask.getString("id")));
                         executionRequest.setUserLocation(definedTask.getString("userLocation"));
                         executionRequest.setType(ExecutionRequest.Type.NL);

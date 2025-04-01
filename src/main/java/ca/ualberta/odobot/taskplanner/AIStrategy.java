@@ -14,4 +14,6 @@ public interface AIStrategy {
     Future<List<JsonObject>> getTaskInputParameterMappings(String taskDescription, List<JsonObject> dataEntryAnnotations);
 
     Future<List<JsonObject>> getTaskAPICalls(String taskDescription, List<JsonObject> apiCalls);
+
+    Future<String> selectPath(JsonObject paths, String taskDescription);
 }

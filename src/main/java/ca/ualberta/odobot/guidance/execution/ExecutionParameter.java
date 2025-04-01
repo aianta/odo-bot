@@ -14,6 +14,25 @@ public class ExecutionParameter {
         InputParameter, SchemaParameter
     }
 
+    public JsonObject toJson(){
+        JsonObject result = new JsonObject();
+        result.put("id", getNodeId().toString());
+
+        switch (type){
+            case InputParameter ->{
+                result.put("type", "InputParameter");
+                result.put("value", ((InputParameter)this).getValue());
+            }
+            case SchemaParameter ->{
+                result.put("type", "SchemaParameter");
+                result.put("query", ((SchemaParameter)this).getQuery());
+            }
+            default -> log.error("Unrecognized parameter type!");
+        }
+
+        return result;
+    }
+
     public static ExecutionParameter fromJson(JsonObject json){
         String type = json.getString("type");
 

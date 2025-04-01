@@ -29,6 +29,64 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         super(config);
     }
 
+
+    public Future<String> selectPath(JsonObject paths, String taskDescription){
+        log.info("Selecting from nav path options...");
+
+        Optional<String> result = generateWithValidation(
+                ()->_selectPath(paths, taskDescription),
+                List.of((output)->{
+                    try{
+                        UUID.fromString(output);
+                        return true;
+                    }catch (IllegalArgumentException e){
+                        return false;
+                    }
+                }),
+                config.getJsonObject("selectPath").getInteger("maxAttempts")
+                );
+
+        if(result.isPresent()){
+            Future.succeededFuture(UUID.fromString(result.get()).toString());
+        }
+
+        return Future.failedFuture("Failed to select a nav path!");
+
+    }
+
+    private String _selectPath(JsonObject paths, String taskDescription){
+        List<ChatRequestMessage> chatMessages = new ArrayList<>();
+        String prompt = config.getJsonObject("selectPath").getString("systemPrompt").formatted(taskDescription);
+        chatMessages.add(new ChatRequestSystemMessage(prompt));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n");
+        Iterator<Map.Entry<String,Object>> it = paths.stream().iterator();
+        while (it.hasNext()){
+            Map.Entry<String, Object> entry = it.next();
+            String navPathId = entry.getKey();
+            JsonArray steps = (JsonArray)entry.getValue();
+            sb.append("Path[id: %s]:\n".formatted(navPathId));
+
+            //Write out all the steps in a path
+            Iterator<String> stepIterator = steps.stream().map(o->(String)o).iterator();
+            int stepNumber = 0;
+            while (stepIterator.hasNext()){
+                String currStep = stepIterator.next();
+                stepNumber++;
+                sb.append("\t%s. %s\n".formatted(Integer.toString(stepNumber), currStep));
+            }
+
+            sb.append("\n");
+
+        }
+
+        log.info("\n{}", sb.toString());
+        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+
+        return executeChatCompletion(chatMessages);
+    }
+
     public Future<List<JsonObject>> getTaskAPICalls(String taskDescription, List<JsonObject> apiCalls){
 
         log.info("Getting relevant API calls from task descriptions:\n{}", taskDescription);
@@ -50,7 +108,7 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
     private String _getTaskAPICalls(String taskDescription, List<JsonObject> apiCalls) {
         List<ChatRequestMessage> chatMessages = new ArrayList<>();
-        chatMessages.add(new ChatRequestSystemMessage(config.getString("getTaskAPICalls")));
+        chatMessages.add(new ChatRequestSystemMessage(config.getJsonObject("getTaskAPICalls").getString("systemPrompt")));
 
         StringBuilder sb = new StringBuilder();
         sb.append("\n");

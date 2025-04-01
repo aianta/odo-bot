@@ -43,6 +43,15 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
     }
 
 
+    public Future<String> selectPath(JsonObject paths, String taskDescription){
+
+        return vertx.<String>executeBlocking(blocking->{
+            this.strategy.selectPath(paths, taskDescription)
+                    .onSuccess(pathId->blocking.complete(pathId))
+                    .onFailure(err->blocking.fail(err));
+        });
+    }
+
     public Future<JsonObject> taskQueryConstruction(JsonObject task){
 
         String taskDescription = task.getString("task");

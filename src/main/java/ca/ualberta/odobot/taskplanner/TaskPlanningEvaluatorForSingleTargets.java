@@ -106,7 +106,10 @@ public class TaskPlanningEvaluatorForSingleTargets implements Evaluator {
         }
 
         //Sort the remaining paths by the number of input parameters hit
-        _paths.sort(Comparator.comparing(p->numTargetsHit((Path)p, inputParameters)).reversed());
+        Set<String> combinedParameters = new HashSet<>();
+        combinedParameters.addAll(inputParameters);
+        //combinedParameters.addAll(objectParameters);
+        _paths.sort(Comparator.comparing(p->numTargetsHit((Path)p, combinedParameters)).reversed());
 
         return _paths;
     }

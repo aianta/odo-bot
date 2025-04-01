@@ -7,14 +7,14 @@ neo4j:
   password: "odobotdb"
 openAI:
   secretKey: ""
-  model: "gpt-4o-mini"
+  model: "gpt-4o"
   temperature: null
   topP: 0.01
   maxTokens: null
   getRelevantObjectParameters:
     maxAttempts: 5
     systemPrompt: |
-      What follows is a list of objects that exist in a web application. Your job is to identify instances of these objects in the description of a task to be completed on the web application. The output should be a list of numbers corresponding with the objects you have identified as relevant and nothing else.
+      What follows is a list of objects that exist in a web application. Your job is to identify instances of these items in the description of a task to be completed on the web application. The output should be a list of 2-length arrays [input field, value] in valid JSON and nothing else. If you cannot determine an appropriate value for a field, set the value to null.
   getInputParameterMappings:
     maxAttempts: 5
     systemPrompt: |
@@ -22,4 +22,12 @@ openAI:
   getTaskAPICalls:
     maxAttempts: 5
     systemPrompt: |
-      What follows is a list of API routes that have been captured for a web application. You will also be given a description of a task to be completed on the web application. Your job is to identify which of the API calls would be relevant to the described task. The output should be a list of numbers corresponding with the API routes you have identified as relevant and nothing else.
+      What follows is a list of API routes that have been captured for a web application. You will also be given a description of a task to be completed on the web application. Your job is to identify one single API route, that best characterizes the intent of the task. The output should be a single number corresponding with the API route you have identified and nothing else.
+  selectPath:
+    maxAttempts: 5
+    systemPrompt: |
+      You are meant to complete the following task on a web application: 
+      
+      %s
+      
+      What follows is a list of possible paths to achieving the above task on the web application. Each path has an ID and a list of interactions to be applied to the web application. Your job is to select the ID of the path that best fits the description of the task above. The output should be the ID of the selected path an nothing else.

@@ -641,11 +641,12 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                                         event.getString("url").equals("http://localhost:8088/courses/%s/modules/%s".formatted(
                                                 courseIds.getString(targetCourseName),
                                                 moduleIds.getString(targetModuleName)
-                                        )) &&
+                                        )))
+                                .filter(event->event.containsKey("responseBody")?
                                         //Verify that the correct name was entered
                                         new JsonObject(event.getString("responseBody"))
                                         .getJsonObject("context_module")
-                                        .getString("name").equals(updatedName)
+                                        .getString("name").equals(updatedName):true
 
 
                                 ).findFirst();

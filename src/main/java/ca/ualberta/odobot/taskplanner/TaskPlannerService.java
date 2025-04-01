@@ -33,6 +33,15 @@ public interface TaskPlannerService {
      */
     Future<JsonObject> taskQueryConstruction(JsonObject task);
 
+    /**
+     * Given a set of nav paths, select the one which best aligns with the task description.
+     *
+     * @param paths a JsonObject whose keys are NavPath IDs and whose values are JsonArrays of the natural language representation of that navPath.
+     * @param taskDescription
+     * @return
+     */
+    Future<String> selectPath(JsonObject paths, String taskDescription);
+
     Future<List<JsonObject>> getRelevantObjectParameters(String taskDescription);
 
     Future<List<JsonObject>> getInputParameterMappings(String taskDescription);

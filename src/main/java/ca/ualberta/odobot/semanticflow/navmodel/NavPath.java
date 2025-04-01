@@ -6,9 +6,7 @@ import ca.ualberta.odobot.guidance.instructions.*;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
-import org.neo4j.graphdb.Label;
-import org.neo4j.graphdb.Node;
-import org.neo4j.graphdb.Path;
+import org.neo4j.graphdb.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -477,6 +475,79 @@ public class NavPath {
                     log.info("Path[{}] length: {}: {}", i, paths.get(i).getPath().length(), sb.toString());
 
                 });
+    }
+
+    public List<String> toNaturalLanguage(JsonArray parameters){
+
+        List<String> result = new ArrayList<>();
+
+        Iterator<Node> it = path.nodes().iterator();
+        while (it.hasNext()){
+            Node curr = it.next();
+            String currNodeId = (String)curr.getProperty("id");
+
+            //Need to handle collapsed click nodes first.
+            if(curr.hasLabel(Label.label("CollapsedClickNode")) && curr.hasRelationship(Direction.OUTGOING, RelationshipType.withName("PARAM"))){
+                JsonObject parameterMapping = getParameterById(currNodeId, parameters);
+                String schemaName = getAssociatedSchemaName(curr);
+                result.add("Select the %s '%s'.".formatted(schemaName, parameterMapping.getString("query")));
+            }
+
+            if(curr.hasLabel(Label.label("ClickNode"))){
+
+                String btnText = (String) curr.getProperty("text");
+                //If the text property of the button isn't blank.
+                if(!btnText.isBlank() && !btnText.isEmpty()){
+                    result.add("Click on the '%s' button.".formatted((String)curr.getProperty("text")));
+                }else{
+                    result.add("Click on a button.");
+                }
+            }
+
+            if(curr.hasLabel(Label.label("DataEntryNode"))){
+                JsonObject parameterMapping = getParameterById(currNodeId, parameters);
+                String parameterLabel = getAssociatedInputParameterLabel(curr);
+                result.add("Enter '%s' as the %s value.".formatted(parameterMapping.getString("value"), parameterLabel));
+            }
+
+            if(curr.hasLabel(Label.label("CheckboxNode"))){
+                String parameterLabel = getAssociatedInputParameterLabel(curr);
+                result.add("Click the '%s' checkbox.".formatted(parameterLabel));
+            }
+
+        }
+
+        return result;
+    }
+
+    /**
+     * For use in {@link #toNaturalLanguage(JsonArray)}
+     * @param id
+     * @param parameters
+     * @return
+     */
+    private JsonObject getParameterById(String id, JsonArray parameters){
+        return parameters.stream().map(o->(JsonObject)o).filter(param->param.getString("id").equals(id)).findFirst().get();
+    }
+
+    /**
+     * For use in {@link #toNaturalLanguage(JsonArray)}
+     * @param node
+     * @return
+     */
+    private String getAssociatedSchemaName(Node node){
+        Relationship r = node.getRelationships(Direction.OUTGOING, RelationshipType.withName("PARAM")).iterator().next();
+        return (String)r.getEndNode().getProperty("name");
+    }
+
+    /**
+     * For use in {@link #toNaturalLanguage(JsonArray)}
+     * @param node
+     * @return
+     */
+    private String getAssociatedInputParameterLabel(Node node){
+        Relationship r = node.getRelationships(Direction.OUTGOING, RelationshipType.withName("PARAM")).iterator().next();
+        return (String)r.getEndNode().getProperty("label");
     }
 
 

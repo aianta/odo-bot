@@ -21,6 +21,8 @@ public class ExecutionRequest {
         PREDEFINED, NL
     }
 
+    private String taskDescription;
+
     private Type type;
     private UUID id;
 
@@ -34,6 +36,15 @@ public class ExecutionRequest {
 
     private String targetMethod;
     private String targetPath;
+
+    public String getTaskDescription() {
+        return taskDescription;
+    }
+
+    public ExecutionRequest setTaskDescription(String taskDescription) {
+        this.taskDescription = taskDescription;
+        return this;
+    }
 
     public UUID getId() {
         return id;

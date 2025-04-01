@@ -152,12 +152,14 @@ public class NavPathsConstructor {
         Node srcNode = fetchNodeById(tx, startingNodeId);
 
         //Multi-target Evaluator
-        Evaluator evaluator = new TaskPlanningEvaluator(inputParameters, objectParameters, apiCalls);
+        //Evaluator evaluator = new TaskPlanningEvaluator(inputParameters, objectParameters, apiCalls);
+        //Single Target Evaluator.
+        Evaluator evaluator =  new TaskPlanningEvaluatorForSingleTargets(inputParameters, objectParameters, apiCalls);
 
-        if(apiCalls.size() == 1){
-            //Single target evaluator
-            evaluator = new TaskPlanningEvaluatorForSingleTargets(inputParameters, objectParameters, apiCalls);
-        }
+//        if(apiCalls.size() == 1){
+//            //Single target evaluator
+//            evaluator = new TaskPlanningEvaluatorForSingleTargets(inputParameters, objectParameters, apiCalls);
+//        }
 
 
 
