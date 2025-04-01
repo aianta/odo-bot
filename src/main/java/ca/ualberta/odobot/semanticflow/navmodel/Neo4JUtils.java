@@ -1386,7 +1386,7 @@ public class Neo4JUtils {
     public Set<String> getParameterAssociatedNodes(String parameterNodeId){
 
         String sQuery = """
-                match (n)<-[:PARAM]-(m) WHERE n:InputParameter OR n:SchemaParameter AND n.id = $id RETURN m.id;
+                match (n)<-[:PARAM]-(m) WHERE (n:InputParameter OR n:SchemaParameter) AND n.id = $id RETURN m.id;
                 """;
 
         Query query = new Query(sQuery, parameters("id", parameterNodeId));

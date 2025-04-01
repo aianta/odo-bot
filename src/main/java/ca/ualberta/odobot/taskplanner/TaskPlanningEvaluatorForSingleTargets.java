@@ -28,6 +28,10 @@ public class TaskPlanningEvaluatorForSingleTargets implements Evaluator {
         this.inputParameters = inputParameters;
         this.apiCalls = apiCalls;
         this.objectParameters = objectParameters;
+
+        log.info("InputParameter Set: {} ", inputParameters );
+        log.info("SchemaParameter Set: {} ", objectParameters );
+        log.info("apiCall Set: {}", apiCalls);
     }
 
     @Override

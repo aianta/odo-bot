@@ -153,12 +153,12 @@ public class RequestManager {
                 //Basically the node IDs in the task definition correspond with the actual, Input and Schema parameter nodes.
                 //What we actually want, are the ids of the nodes associated with those input and schema parameter nodes (as defined by the PARAM edge).
                 Set<String> inputParameters = request.getParameters().stream()
-                        .filter(p->p.getType() == ExecutionParameter.ParameterType.InputParameter)
+                        .filter(p->p.getType().equals(ExecutionParameter.ParameterType.InputParameter))
                         .map(p->LogPreprocessor.neo4j.getParameterAssociatedNodes(p.getNodeId().toString()))
                         .collect(HashSet::new, HashSet::addAll, HashSet::addAll);
 
                 Set<String> objectParameters = request.getParameters().stream()
-                        .filter(p->p.getType() == ExecutionParameter.ParameterType.SchemaParameter)
+                        .filter(p->p.getType().equals(ExecutionParameter.ParameterType.SchemaParameter))
                         .map(p->LogPreprocessor.neo4j.getParameterAssociatedNodes(p.getNodeId().toString()))
                         .collect(HashSet::new, HashSet::addAll,HashSet::addAll);
 
@@ -168,16 +168,33 @@ public class RequestManager {
 
                 navPaths = LogPreprocessor.pathsConstructor.construct(tx, src.toString(), objectParameters, inputParameters, apiCalls);
 
+                //First collect together our parameter mappings, we'll need this to generate semantically meaningful natural language descriptions of the different paths.
+                JsonArray parameters = request.getParameters().stream().map(ExecutionParameter::toJson).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+
+                //Different nav paths only matter if they involve different interactions.
+                //We can determine if they actually have unique sets of interactions by converting them to natural language and ensuring the uniqueness of the output.
+                Set<String> uniqueNavPaths = new HashSet<>();
+                Iterator<NavPath> pathIt = navPaths.iterator();
+                while (pathIt.hasNext()){
+                    NavPath p = pathIt.next();
+                    JsonArray nlPath = p.toNaturalLanguage(parameters).stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+                    int prevSize = uniqueNavPaths.size();
+                    uniqueNavPaths.add(nlPath.encode());
+                    if(prevSize == uniqueNavPaths.size()){
+                        pathIt.remove();
+                    }
+                }
+
+                log.info("Found {} execution paths", navPaths.size());
                 if(navPaths.size() > 1){
-                    log.info("Found {} execution paths", navPaths.size());
+
                     //Now we prompt the LLM to decide between the paths we were able to find. This is where/how the system decides between create/edit paths for example.
 
-                    //First collect together our parameter mappings, we'll need this to generate semantically meaningful natural language descriptions of the different paths.
-                    JsonArray parameters = request.getParameters().stream().map(ExecutionParameter::toJson).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
 
                     //Create a JsonObject containing all the different path options.
                     //Each entry in the object is going to be <navPathID> : <Natural language steps in JsonArray>
                     JsonObject paths = new JsonObject();
+
                     navPaths.forEach(navPath -> paths.put(navPath.getId().toString(), navPath.toNaturalLanguage(parameters).stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll)));
                     return TaskPlannerVerticle.service.selectPath(paths, request.getTaskDescription())
                             .onFailure(err->log.error(err.getMessage(), err))

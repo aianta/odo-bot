@@ -479,6 +479,8 @@ public class NavPath {
 
     public List<String> toNaturalLanguage(JsonArray parameters){
 
+        printNavPaths(List.of(this), 10);
+
         List<String> result = new ArrayList<>();
 
         Iterator<Node> it = path.nodes().iterator();
@@ -488,31 +490,48 @@ public class NavPath {
 
             //Need to handle collapsed click nodes first.
             if(curr.hasLabel(Label.label("CollapsedClickNode")) && curr.hasRelationship(Direction.OUTGOING, RelationshipType.withName("PARAM"))){
-                JsonObject parameterMapping = getParameterById(currNodeId, parameters);
+                JsonObject parameterMapping = getParameterById(getAssociatedSchemaParameterId(curr), parameters);
                 String schemaName = getAssociatedSchemaName(curr);
                 result.add("Select the %s '%s'.".formatted(schemaName, parameterMapping.getString("query")));
+                continue;
             }
 
             if(curr.hasLabel(Label.label("ClickNode"))){
 
-                String btnText = (String) curr.getProperty("text");
+                String btnText = "";
+                if(curr.hasProperty("text")){
+                    btnText = (String) curr.getProperty("text");
+                }
+
+                //If we're dealing with collapsed click
+//                if(curr.hasProperty("texts") && ((List<String>)curr.getProperty("texts")).size() == 1){
+//                    btnText = ((List<String>)curr.getProperty("texts")).get(0);
+//                }
+
+
                 //If the text property of the button isn't blank.
-                if(!btnText.isBlank() && !btnText.isEmpty()){
+                if(!btnText.isBlank() && !btnText.isEmpty() && btnText != null){
                     result.add("Click on the '%s' button.".formatted((String)curr.getProperty("text")));
                 }else{
                     result.add("Click on a button.");
                 }
+                continue;
             }
 
             if(curr.hasLabel(Label.label("DataEntryNode"))){
-                JsonObject parameterMapping = getParameterById(currNodeId, parameters);
+                JsonObject parameterMapping = getParameterById(getAssociatedInputParameterId(curr), parameters);
+                if(parameterMapping == null){
+                    continue;
+                }
                 String parameterLabel = getAssociatedInputParameterLabel(curr);
                 result.add("Enter '%s' as the %s value.".formatted(parameterMapping.getString("value"), parameterLabel));
+                continue;
             }
 
             if(curr.hasLabel(Label.label("CheckboxNode"))){
                 String parameterLabel = getAssociatedInputParameterLabel(curr);
                 result.add("Click the '%s' checkbox.".formatted(parameterLabel));
+                continue;
             }
 
         }
@@ -527,7 +546,8 @@ public class NavPath {
      * @return
      */
     private JsonObject getParameterById(String id, JsonArray parameters){
-        return parameters.stream().map(o->(JsonObject)o).filter(param->param.getString("id").equals(id)).findFirst().get();
+        log.info("Looking for id: {}", id);
+        return parameters.stream().map(o->(JsonObject)o).filter(param->param.getString("id").equals(id)).findFirst().orElseGet(()->null);
     }
 
     /**
@@ -538,6 +558,16 @@ public class NavPath {
     private String getAssociatedSchemaName(Node node){
         Relationship r = node.getRelationships(Direction.OUTGOING, RelationshipType.withName("PARAM")).iterator().next();
         return (String)r.getEndNode().getProperty("name");
+    }
+
+    private String getAssociatedSchemaParameterId(Node node){
+        Relationship r = node.getRelationships(Direction.OUTGOING, RelationshipType.withName("PARAM")).iterator().next();
+        return (String)r.getEndNode().getProperty("id");
+    }
+
+    private String getAssociatedInputParameterId(Node node){
+        Relationship r = node.getRelationships(Direction.OUTGOING, RelationshipType.withName("PARAM")).iterator().next();
+        return (String)r.getEndNode().getProperty("id");
     }
 
     /**

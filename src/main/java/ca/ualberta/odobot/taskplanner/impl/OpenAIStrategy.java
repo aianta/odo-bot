@@ -47,7 +47,7 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
                 );
 
         if(result.isPresent()){
-            Future.succeededFuture(UUID.fromString(result.get()).toString());
+            return Future.succeededFuture(UUID.fromString(result.get()).toString());
         }
 
         return Future.failedFuture("Failed to select a nav path!");
