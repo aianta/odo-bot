@@ -587,8 +587,9 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                                         event.getString("url").equals("http://localhost:8088/courses/%s/quizzes/%s".formatted(
                                                 courseIds.getString(targetCourseName),
                                                 quizIds.getString(targetQuizName)
-                                        )) &&
-                                        new JsonObject(event.getString("responseBody")).getJsonObject("quiz").getString("title").equals(updatedQuizName)
+                                        )))
+                                .filter(event->event.containsKey("responseBody")?
+                                        new JsonObject(event.getString("responseBody")).getJsonObject("quiz").getString("title").equals(updatedQuizName):true
                                         ).findFirst();
 
                         yield networkEvent.isPresent();
