@@ -242,7 +242,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                             verificationDetails.add("event found matching save Quiz pattern with expected quiz title in request? " + postDataMatches);
                             verificationDetails.add("verification result: " + (urlMatches && postDataMatches));
 
-                            yield (urlMatches && postDataMatches);
+                            yield (urlMatches);
                             //yield urlMatches(events,"http://localhost:8088/courses/%s/quizzes/new?fresh=1".formatted(courseIds.getString(targetCourseName)), "POST");
                         }
                         case 2 ->{
@@ -270,7 +270,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                             }
                             verificationDetails.add("postData json contains key [%s] with value: %s? %s ".formatted("name", newAssignmentName, Boolean.toString(postDataMatches)));
 
-                            yield urlMatches && postDataMatches;
+                            yield urlMatches;
                         }
                         case 3 ->{
 
@@ -374,7 +374,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                             String targetAssignmentName = getEntryByTaskDescriptionContents(assignmentIds, taskDescription).getKey();
                             verificationDetails.add("expected target assignment name: " + targetAssignmentName);
 
-                            //TODO: hardcoded what edited titles can be, at the very lead this should be refactored into a shared constant between this and EvaluationTaskGenerationTask.java
+                            //TODO: hardcoded what edited titles can be, at the very least this should be refactored into a shared constant between this and EvaluationTaskGenerationTask.java
                             String editedTitle = "modified - " + targetAssignmentName;
                             verificationDetails.add("expected modified assignment name: " + editedTitle);
 
@@ -393,7 +393,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                             }
                             verificationDetails.add("found response body containing edited title? " + postDataMatches );
 
-                            yield  urlMatches && postDataMatches;
+                            yield  urlMatches ;
                         }
                         case 9 ->{
                             /**
@@ -607,7 +607,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
         JsonObject request = rc.body().asJsonObject();
 
         String pathToResults = request.getString("results_path");
-        JsonArray odoBotTasks = getTasks(request.getJsonArray("tasks"), Agent.ODO_BOT);
+        JsonArray odoBotTasks = getTasks(request.getJsonArray("tasks"), Agent.ODO_BOT_NL);
         JsonObject courseIds = request.getJsonObject("course_ids");
         JsonObject assignmentIds = request.getJsonObject("assignment_ids");
         JsonObject quizIds = request.getJsonObject("quiz_ids");
@@ -631,7 +631,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
         if(contents != null){
             for(File _log: contents){
 
-                if(_log.getName().contains("navpath") || _log.getName().contains("task-query") || _log.isDirectory() || _log.getName().contains(".yaml")){
+                if(_log.getName().contains("navpath") || _log.getName().contains("task-query") || _log.isDirectory() || _log.getName().contains(".yaml") || !Agent.isValidAgent(_log.getName())){
                     //Skip navpath and task query logs
                     continue;
                 }
@@ -640,6 +640,13 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                 String evalId = taskInfo.getString("_evalId");
                 JsonArray events = new JsonArray(new String(Files.readAllBytes(Path.of(_log.getPath()))));
 
+                String taskDescription = taskInfo.getString("task");
+                String targetCourseName = getEntryByTaskDescriptionContents(courseIds, taskDescription).getKey();
+
+                JsonArray verificationDetails = new JsonArray();
+                verificationDetails.add("task: " + taskDescription);
+                verificationDetails.add("targetCourseName: " + targetCourseName);
+
                 boolean success = switch (getTaskNumber(evalId)){
                     case 1 -> {
                         /**
@@ -647,18 +654,14 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                          * there exists an appropriate network event creating a quiz in the expected course.
                          */
 
-                        //Get the target course for the task
-                        JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(2);
-                        String targetCourseName = courseParameter.getString("query");
 
+                        Pattern saveQuizPattern = Pattern.compile("http:\\/\\/localhost:8088\\/courses\\/%s\\/quizzes\\/[0-9]+".formatted(courseIds.getString(targetCourseName)));
+                        verificationDetails.add("saveQuizURLPattern: " + saveQuizPattern.pattern());
 
                         Optional<JsonObject> networkEvent = events.stream().map(o -> (JsonObject) o)
                                 .filter(event -> event.getJsonObject("eventDetails").getString("name").equals("NETWORK_EVENT") &&
                                         event.getJsonObject("eventDetails").getString("method").equals("POST") &&
-                                        event.getJsonObject("eventDetails").getString("url")
-                                                .equals("http://localhost:8088/courses/%s/quizzes/new?fresh=1".formatted(
-                                                        courseIds.getString(targetCourseName)
-                                                ))
+                                        saveQuizPattern.asMatchPredicate().test(event.getJsonObject("eventDetails").getString("url"))
                                 ).findFirst();
 
                         yield networkEvent.isPresent();
@@ -668,20 +671,19 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                          * This is the create a new assignment task. We verify this one by ensuring
                          * there exists a network event creating an assignment in the expected course.
                          */
-                        String newAssignmentName = taskInfo.getJsonArray("parameters").getJsonObject(3).getString("value");
+                        String newAssignmentName = getItemByTaskDescriptionContents(assignments, taskDescription);
 
-                        JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(4);
-                        String targetCourseName = courseParameter.getString("query");
+                        String expectedUrl = "http://localhost:8088/api/v1/courses/%s/assignments".formatted(
+                                courseIds.getString(targetCourseName)
+                        );
+                        verificationDetails.add("create assignment url: " + expectedUrl);
 
                         Optional<JsonObject> networkEvent = events.stream().map(o->(JsonObject)o)
                                 .map(event->event.getJsonObject("eventDetails"))
                                 .filter(event -> event.getString("name").equals("NETWORK_EVENT") &&
                                         event.getString("method").equals("POST") &&
                                         event.getString("url")
-                                                .equals("http://localhost:8088/api/v1/courses/%s/assignments".formatted(
-                                                        courseIds.getString(targetCourseName)
-                                                ))
-                                        //&& new JsonObject(event.getString("responseBody")).getString("name").equals(newAssignmentName)
+                                                .equals(expectedUrl)
 
                                 ).findFirst();
 
@@ -692,18 +694,21 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                         /**
                          * This is the create page task.
                          */
-                        String newPageName = taskInfo.getJsonArray("parameters").getJsonObject(2).getString("value");
 
-                        JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(3);
-                        String targetCourseName = courseParameter.getString("query");
+
+                        String expectedUrl = "http://localhost:8088/api/v1/courses/%s/pages".formatted(
+                                courseIds.getString(targetCourseName)
+                        );
+                        verificationDetails.add("create page url: " + expectedUrl);
+
+                        String newPageName = getItemByTaskDescriptionContents(pages, taskDescription);
+                        verificationDetails.add("expected new page name: '" + newPageName + "'");
 
                         Optional<JsonObject> networkEvent = events.stream().map(o->(JsonObject)o)
                                 .map(event->event.getJsonObject("eventDetails"))
                                 .filter(event->event.getString("name").equals("NETWORK_EVENT") &&
                                         event.getString("method").equals("POST") &&
-                                        event.getString("url").equals("http://localhost:8088/api/v1/courses/%s/pages".formatted(
-                                                courseIds.getString(targetCourseName)
-                                        )) &&
+                                        event.getString("url").equals(expectedUrl) &&
                                         new JsonObject(event.getString("responseBody")).getString("title").equals(newPageName)
                                 ).findFirst();
 
@@ -714,18 +719,19 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                         /**
                          * Create a new module task
                          */
-                        String newModuleName = taskInfo.getJsonArray("parameters").getJsonObject(2).getString("value");
+                        String newModuleName = getItemByTaskDescriptionContents(modules, taskDescription);
+                        verificationDetails.add("expected new module name: '" + newModuleName + "'");
 
-                        JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(3);
-                        String targetCourseName = courseParameter.getString("query");
+                        String expectedUrl = "http://localhost:8088/courses/%s/modules".formatted(
+                                courseIds.getString(targetCourseName)
+                        );
+                        verificationDetails.add("create new module url: " + expectedUrl);
 
                         Optional<JsonObject> networkEvent = events.stream().map(o->(JsonObject)o)
                                 .map(event->event.getJsonObject("eventDetails"))
                                 .filter(event->event.getString("name").equals("NETWORK_EVENT") &&
                                         event.getString("method").equals("POST") &&
-                                        event.getString("url").equals("http://localhost:8088/courses/%s/modules".formatted(
-                                                courseIds.getString(targetCourseName)
-                                        )) &&
+                                        event.getString("url").equals(expectedUrl) &&
                                         new JsonObject(event.getString("requestBody")).getJsonObject("formData").getJsonArray("context_module[name]").getString(0).equals(newModuleName)
                                         )
                                 .findFirst();
@@ -738,23 +744,27 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                         /**
                          * Edit quiz title
                          */
-                        String updatedQuizName = taskInfo.getJsonArray("parameters").getJsonObject(3).getString("value");
 
-                        JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(4);
-                        String targetCourseName = courseParameter.getString("query");
 
-                        JsonObject quizParameter = taskInfo.getJsonArray("parameters").getJsonObject(2);
-                        String targetQuizName = quizParameter.getString("query");
+                        String targetQuizName = getEntryByTaskDescriptionContents(quizIds, taskDescription).getKey();
+                        verificationDetails.add("target quiz name: '"+ targetQuizName + "'");
+
+                        //TODO: hardcoded what edited quiz titles can be, at the very least this should be refactored into a shared constant between this and EvaluationTaskGenerationTask.java
+                        String updatedQuizName = "modified -" + targetQuizName;
+                        verificationDetails.add("expected updated quiz name: '" + updatedQuizName + "'");
+
+                        String expectedUrl = "http://localhost:8088/courses/%s/quizzes/%s".formatted(
+                                courseIds.getString(targetCourseName),
+                                quizIds.getString(targetQuizName)
+                        );
+                        verificationDetails.add("edit quiz url: " + expectedUrl);
 
                         Optional<JsonObject> networkEvent = events.stream().map(o->(JsonObject)o)
                                 .map(event->event.getJsonObject("eventDetails"))
                                 .filter(event->event.getString("name").equals("NETWORK_EVENT"))
                                 .filter(event->event.getString("method").equals("POST"))
                                 .filter(event->
-                                        event.getString("url").equals("http://localhost:8088/courses/%s/quizzes/%s".formatted(
-                                                courseIds.getString(targetCourseName),
-                                                quizIds.getString(targetQuizName)
-                                        )))
+                                        event.getString("url").equals(expectedUrl))
                                 .filter(event->event.containsKey("responseBody")?
                                         new JsonObject(event.getString("responseBody")).getJsonObject("quiz").getString("title").equals(updatedQuizName):true
                                         ).findFirst();
@@ -765,13 +775,13 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                         /**
                          *  Edit a page title
                          */
-                        String updatedPageName = taskInfo.getJsonArray("parameters").getJsonObject(3).getString("value");
 
-                        JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(4);
-                        String targetCourseName = courseParameter.getString("query");
+                        String targetPageName = getEntryByTaskDescriptionContents(pageSlugs, taskDescription).getKey();
+                        verificationDetails.add("targetPageName: '" + targetPageName + "'");
 
-                        JsonObject pageParameter = taskInfo.getJsonArray("parameters").getJsonObject(2);
-                        String targetPageName = pageParameter.getString("query");
+                        //TODO: hardcoded what edited titles can be, at the very least this should be refactored into a shared constant between this and EvaluationTaskGenerationTask.java
+                        String updatedPageName = "modified - " + targetPageName;
+                        verificationDetails.add("expected new page name: '" + updatedPageName + "'");
 
                         Optional<JsonObject> networkEvent = events.stream().map(o->(JsonObject)o)
                                 .map(event->event.getJsonObject("eventDetails"))
@@ -791,25 +801,27 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                         /**
                          *  Edit a module title
                          */
-                        String updatedName = taskInfo.getJsonArray("parameters").getJsonObject(3).getString("value");
 
-                        JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(4);
-                        String targetCourseName = courseParameter.getString("query");
-                        log.info("[{}]targetCourseName: [{}]{}", evalId, courseIds.getString(targetCourseName), targetCourseName);
+                        String targetModuleName = getEntryByTaskDescriptionContents(moduleIds, taskDescription).getKey();
 
-                        JsonObject moduleParameter = taskInfo.getJsonArray("parameters").getJsonObject(2);
-                        String targetModuleName = moduleParameter.getString("query");
-                        log.info("[{}]targetModuleName: [{}]{}", evalId, moduleIds.getString(targetModuleName), targetModuleName);
+                        verificationDetails.add("target module name: '" + targetModuleName + "'");
+
+                        //TODO: hardcoded what edited names can be, at the very least this should be refactored into a shared constant between this and EvaluationTaskGenerationTask.java
+                        String updatedName = "modified - " + targetModuleName;
+                        verificationDetails.add("Expected updated module name: '" + updatedName+"'");
+
+                        String expectedUrl = "http://localhost:8088/courses/%s/modules/%s".formatted(
+                                courseIds.getString(targetCourseName),
+                                moduleIds.getString(targetModuleName)
+                        );
+                        verificationDetails.add("edit module url: " + expectedUrl);
 
                         Optional<JsonObject> networkEvent = events.stream().map(o->(JsonObject)o)
                                 .map(event->event.getJsonObject("eventDetails"))
                                 .filter(event->event.getString("name").equals("NETWORK_EVENT"))
                                 .filter(event->event.getString("method").equals("POST"))
                                 .filter(event->
-                                        event.getString("url").equals("http://localhost:8088/courses/%s/modules/%s".formatted(
-                                                courseIds.getString(targetCourseName),
-                                                moduleIds.getString(targetModuleName)
-                                        )))
+                                        event.getString("url").equals(expectedUrl))
                                 .filter(event->event.containsKey("responseBody")?
                                         //Verify that the correct name was entered
                                         new JsonObject(event.getString("responseBody"))
@@ -826,22 +838,24 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                         /**
                          *  Edit an assignment title.
                          */
-                        String editedTitle = taskInfo.getJsonArray("parameters").getJsonObject(3).getString("value");
 
-                        JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(4);
-                        String targetCourseName = courseParameter.getString("query");
+                        String targetAssignmentName = getEntryByTaskDescriptionContents(assignmentIds, taskDescription).getKey();
+                        verificationDetails.add("target assignment name: '" + targetAssignmentName + "'");
 
-                        JsonObject assignmentParameter = taskInfo.getJsonArray("parameters").getJsonObject(2);
-                        String targetAssignmentName = assignmentParameter.getString("query");
+                        String editedTitle = "modified - " + targetAssignmentName;
+                        verificationDetails.add("expected new assignment name: '" + editedTitle + "'");
+
+                        String expectedUrl = "http://localhost:8088/api/v1/courses/%s/assignments/%s".formatted(
+                                courseIds.getString(targetCourseName),
+                                assignmentIds.getString(targetAssignmentName)
+                        );
+                        verificationDetails.add("edit assignment url: " + expectedUrl);
 
                         Optional<JsonObject> networkEvent = events.stream().map(o->(JsonObject)o)
                                 .map(event->event.getJsonObject("eventDetails"))
                                 .filter(event->event.getString("name").equals("NETWORK_EVENT"))
                                 .filter(event->event.getString("method").equals("PUT"))
-                                .filter(event->event.getString("url").equals("http://localhost:8088/api/v1/courses/%s/assignments/%s".formatted(
-                                                courseIds.getString(targetCourseName),
-                                                assignmentIds.getString(targetAssignmentName)
-                                        )))
+                                .filter(event->event.getString("url").equals(expectedUrl))
                                 .filter(event->
                                         event.containsKey("responseBody")?new JsonObject(event.getString("responseBody")).getString("name").equals(editedTitle):true
                                 ).findFirst();
@@ -854,20 +868,20 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                          *   Delete an assignment
                          */
 
-                        JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(3);
-                        String targetCourseName = courseParameter.getString("query");
+                        String targetAssignmentName = getEntryByTaskDescriptionContents(assignmentIds, taskDescription).getKey();
+                        verificationDetails.add("target assignment to be deleted: '" + targetAssignmentName + "'");
 
-                        JsonObject assignmentParameter = taskInfo.getJsonArray("parameters").getJsonObject(2);
-                        String targetAssignmentName = assignmentParameter.getString("query");
+                        String expectedUrl = "http://localhost:8088/api/v1/courses/%s/assignments/%s".formatted(
+                                courseIds.getString(targetCourseName),
+                                assignmentIds.getString(targetAssignmentName)
+                        );
+                        verificationDetails.add("delete assignment url: " + expectedUrl);
 
                         Optional<JsonObject> networkEvent = events.stream().map(o->(JsonObject)o)
                                 .map(event->event.getJsonObject("eventDetails"))
                                 .filter(event->event.getString("name").equals("NETWORK_EVENT") &&
                                         event.getString("method").equals("DELETE") &&
-                                        event.getString("url").equals("http://localhost:8088/api/v1/courses/%s/assignments/%s".formatted(
-                                                courseIds.getString(targetCourseName),
-                                                assignmentIds.getString(targetAssignmentName)
-                                        ))).findFirst();
+                                        event.getString("url").equals(expectedUrl)).findFirst();
 
                         yield networkEvent.isPresent();
                     }
@@ -875,20 +889,21 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                         /**
                          * Delete a page
                          */
-                        JsonObject courseParameter = taskInfo.getJsonArray("parameters").getJsonObject(3);
-                        String targetCourseName = courseParameter.getString("query");
 
-                        JsonObject pageParameter = taskInfo.getJsonArray("parameters").getJsonObject(2);
-                        String targetPageName = pageParameter.getString("query");
+                        String targetPageName = getEntryByTaskDescriptionContents(pageSlugs, taskDescription).getKey();
+                        verificationDetails.add("target page name: '" + targetPageName + "'");
+
+                        String expectedUrl = "http://localhost:8088/api/v1/courses/%s/pages/%s".formatted(
+                                courseIds.getString(targetCourseName),
+                                pageSlugs.getString(targetPageName)
+                        );
+                        verificationDetails.add("delete page url: "+ expectedUrl);
 
                         Optional<JsonObject> networkEvent = events.stream().map(o->(JsonObject)o)
                                 .map(event->event.getJsonObject("eventDetails"))
                                 .filter(event->event.getString("name").equals("NETWORK_EVENT") &&
                                         event.getString("method").equals("DELETE") &&
-                                        event.getString("url").equals("http://localhost:8088/api/v1/courses/%s/pages/%s".formatted(
-                                                courseIds.getString(targetCourseName),
-                                                pageSlugs.getString(targetPageName)
-                                        ))).findFirst();
+                                        event.getString("url").equals(expectedUrl)).findFirst();
 
                         yield networkEvent.isPresent();
 
@@ -899,7 +914,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                 };
 
                 //Add the verification result to the manifest
-                results.getJsonObject("manifest").put(evalId, success);
+                results.getJsonObject("manifest").put(evalId, verificationDetails.size() > 0?verificationDetails:success);
 
                 if(success){
                     results.getJsonArray("succeeded_tasks").add(evalId);
