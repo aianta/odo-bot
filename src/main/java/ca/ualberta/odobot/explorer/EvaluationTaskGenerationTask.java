@@ -134,7 +134,8 @@ public class EvaluationTaskGenerationTask implements Runnable {
         String evalId = taskDetails.getString("id") + "|OdoBot|" + taskId.toString();
 
         result.put("webVoyager", makeWebVoyagerTask(taskDetails, loginTemplates, values, taskId));
-        result.put("odoBot", makeOdoBotTask(values, modelMapping, taskId ).put("_evalId", evalId));
+        //ASE 2025 paper compares vs OdoBotNL
+        //result.put("odoBot", makeOdoBotTask(values, modelMapping, taskId ).put("_evalId", evalId));
         result.put("odoBotNL", makeOdoBotNLTask(result.getJsonObject("webVoyager"), evalId, taskId));
 
 
@@ -185,6 +186,9 @@ public class EvaluationTaskGenerationTask implements Runnable {
                     break;
                 case "assignment-title":
                     request.addInputParameter(modelMapping.getString("assignment-title"), _value);
+                    break;
+                case "quiz-title":
+                    request.addInputParameter(modelMapping.getString("quiz-title"), _value);
                     break;
                 case "page-title":
                     request.addInputParameter(modelMapping.getString("page-title"), _value);
@@ -321,6 +325,7 @@ public class EvaluationTaskGenerationTask implements Runnable {
             }
             case "text-entry-checkbox" -> "true";
             case "assignment-title" -> parameterValues.get("assignments").remove(0);
+            case "quiz-title" -> parameterValues.get("quizzes").remove(0);
             case "page-title" -> parameterValues.get("pages").remove(0);
             case "module-name" -> parameterValues.get("modules").remove(0);
             case "old-quiz-title" -> {
