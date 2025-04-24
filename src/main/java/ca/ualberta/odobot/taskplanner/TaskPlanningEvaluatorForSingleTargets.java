@@ -34,35 +34,55 @@ public class TaskPlanningEvaluatorForSingleTargets implements Evaluator {
         log.info("apiCall Set: {}", apiCalls);
     }
 
-    @Override
-    public Evaluation evaluate(Path path) {
+    public List<Path> removePathsThatDoNotEndAtTargetAPICall(List<Path> paths){
+        Iterator<Path> it = paths.iterator();
+        while (it.hasNext()){
+            Path curr = it.next();
+//            if(numTargetsHit(curr, apiCalls) == 0){
+//                it.remove();
+//                continue;
+//            }
 
-        if(path.length() != lastPathLength){
-            log.info("Evaluating paths of length: {}", path.length());
-            lastPathLength = path.length();
-
-//            //_paths.clear();
-            Iterator<Path> it = _paths.iterator();
-            while (it.hasNext()){
-                Path curr = it.next();
-                if(numTargetsHit(curr, apiCalls) == 0){
-                    it.remove();
-                    continue;
-                }
-
-                if(curr.length() < lastPathLength &&
-                        !apiCalls.contains(curr.endNode().getProperty("id"))){
-                    it.remove();
-                }
+            if(!apiCalls.contains((String)curr.endNode().getProperty("id"))){
+                it.remove();
             }
         }
+        return paths;
+    }
 
+    @Override
+    public Evaluation evaluate(Path path) {
 
         Node endNode = path.endNode();
         String endNodeId = (String)endNode.getProperty("id");
 
+//        if(path.length() != lastPathLength){
+//            log.info("Evaluating paths of length: {}", path.length());
+//            lastPathLength = path.length();
+//
+//
+//            Iterator<Path> it = _paths.iterator();
+//            while (it.hasNext()){
+//                Path curr = it.next();
+//                if(numTargetsHit(curr, apiCalls) == 0){
+//                    it.remove();
+//                    continue;
+//                }
+//
+//                if(curr.length() < lastPathLength &&
+//                        !apiCalls.contains((String)curr.endNode().getProperty("id"))){
+//                    it.remove();
+//                }
+//            }
+//        }
 
-        if(endNode.hasLabel(Label.label("DataEntryNode")) && !inputParameters.contains(endNodeId)){
+
+
+
+
+        if(endNode.hasLabel(Label.label("DataEntryNode")) &&
+                !inputParameters.contains(endNodeId)){
+//                !inputParameters.contains((String)endNode.getSingleRelationship(RelationshipType.withName("PARAM"), Direction.OUTGOING).getEndNode().getProperty("id"))){
             //Stop exploring paths which contain data entry nodes that do not appear in our input parameter set.
             //These would be input parameters for which we don't have values or which have not been deemed to be relevant to the task at hand.
             return Evaluation.EXCLUDE_AND_PRUNE;
@@ -74,11 +94,16 @@ public class TaskPlanningEvaluatorForSingleTargets implements Evaluator {
 //        }
         if(endNode.hasLabel(Label.label("APINode")) && apiCalls.contains(endNodeId)){
             _paths.add(path);
+            log.info("Found path ending at target API Node...");
             return Evaluation.INCLUDE_AND_PRUNE;
         }
 
+
+
         if(endNode.hasLabel(Label.label("CollapsedClickNode")) &&
                 endNode.hasRelationship(Direction.OUTGOING, RelationshipType.withName("PARAM")) &&
+                //Compare object parameter node id to our set of object parameter nodes. NOTE: this is not the endNode, but rather the SchemaParameter node attached to the endNode.
+                //objectParameters.contains((String)endNode.getSingleRelationship(RelationshipType.withName("PARAM"), Direction.OUTGOING).getEndNode().getProperty("id"))
                 !objectParameters.contains(endNodeId)
         ){
             //Stop exploring paths which contain object parameters that are not referenced in the task description
@@ -96,6 +121,12 @@ public class TaskPlanningEvaluatorForSingleTargets implements Evaluator {
     }
 
     public List<Path> getPaths(){
+        log.info("_paths before pruning: {}", _paths.size());
+
+        _paths = removePathsThatDoNotEndAtTargetAPICall(_paths);
+
+        log.info("Removed paths that didn't end at target API call.");
+
         Iterator<Path> it = _paths.iterator();
         int minAPICallsHit = Integer.MAX_VALUE;
         while (it.hasNext()){

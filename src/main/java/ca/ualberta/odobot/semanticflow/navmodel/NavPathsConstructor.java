@@ -151,6 +151,8 @@ public class NavPathsConstructor {
 
         Node srcNode = fetchNodeById(tx, startingNodeId);
 
+        log.info("Path construction starting from node: {}", startingNodeId);
+
         //Multi-target Evaluator
         //Evaluator evaluator = new TaskPlanningEvaluator(inputParameters, objectParameters, apiCalls);
         //Single Target Evaluator.

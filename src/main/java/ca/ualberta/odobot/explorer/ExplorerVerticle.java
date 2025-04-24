@@ -159,7 +159,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
      * @param taskDescription the natural language description of a task.
      */
     private Map.Entry<String,Object> getEntryByTaskDescriptionContents(JsonObject entries, String taskDescription){
-
+        log.info("entries: \n{}\n{}\n", entries.encodePrettily(), taskDescription);
         return entries.stream().filter(entry->taskDescription.contains(entry.getKey())).findFirst().get();
 
     }
@@ -750,7 +750,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                         verificationDetails.add("target quiz name: '"+ targetQuizName + "'");
 
                         //TODO: hardcoded what edited quiz titles can be, at the very least this should be refactored into a shared constant between this and EvaluationTaskGenerationTask.java
-                        String updatedQuizName = "modified -" + targetQuizName;
+                        String updatedQuizName = "modified - " + targetQuizName;
                         verificationDetails.add("expected updated quiz name: '" + updatedQuizName + "'");
 
                         String expectedUrl = "http://localhost:8088/courses/%s/quizzes/%s".formatted(
@@ -791,7 +791,8 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                                                 courseIds.getString(targetCourseName),
                                                 pageSlugs.getString(targetPageName)
                                         )) &&
-                                        new JsonObject(event.getString("responseBody")).getString("title").equals(updatedPageName)
+                                        (event.containsKey("responseBody")?new JsonObject(event.getString("responseBody")).getString("title").equals(updatedPageName):true)
+
                                 ).findFirst();
 
                         yield networkEvent.isPresent();
@@ -913,6 +914,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                     }
                 };
 
+                verificationDetails.add("verification result: " + success);
                 //Add the verification result to the manifest
                 results.getJsonObject("manifest").put(evalId, verificationDetails.size() > 0?verificationDetails:success);
 
