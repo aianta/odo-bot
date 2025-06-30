@@ -181,6 +181,8 @@ public class ExploreTask implements Runnable{
 
 
                 driver = new FirefoxDriver(options);
+                //File profileFile = options.getProfile().layoutOnDisk(); //Persist the profile to the disk.
+                //log.info("Firefox profile saved to: {}", profileFile.getAbsolutePath());
 
                 driver.installExtension(Path.of(config.getString(ExploreRequestFields.ODOSIGHT_PATH.field)), true);
 
@@ -485,6 +487,7 @@ public class ExploreTask implements Runnable{
         profile.setPreference("browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons", false);
         profile.setPreference("browser.newtabpage.activity-stream.asrouter.useRemoteL10n", false);
         profile.setPreference("browser.newtabpage.activity-stream.asrouter.providers.onboarding", "{\"id\":\"onboarding\",\"type\":\"local\",\"localProvider\":\"OnboardingMessageProvider\",\"enabled\":false,\"exclude\":[]}");
+
 
         return profile;
     }
