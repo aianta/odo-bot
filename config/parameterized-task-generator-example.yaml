@@ -1,0 +1,22 @@
+canvasUserManualPath: "./canvas-user-manual"
+canvasTasksOutputDir: "./canvas-user-manual/tasks"
+openAI:
+  secretKey: ""
+  temperature: null
+  topP: 0.01
+  maxTokens: null
+  canvas:
+    taskGeneration:
+      maxAttempts: 3
+      systemPrompt: "Rephrase the following question into a corresponding task that can be accomplished on Canvas:\n"
+    parameterizedTaskGeneration:
+      maxAttempts: 3
+      systemPrompt: |
+        Given this task: 
+        <task>
+
+        And this page in the user manual: 
+
+        <user manual page body>
+
+        Write a parameterized version of the initial task, with slots for each domain entity required to complete the task as described in the manual. Put identified domain entities in between square brackets like this: [Course], [Assignment], [Quiz], [Module], [Quiz Question], [Page]. Output the parameterized task and nothing else.
