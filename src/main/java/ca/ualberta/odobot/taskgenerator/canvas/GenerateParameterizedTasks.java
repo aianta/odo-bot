@@ -68,9 +68,9 @@ public class GenerateParameterizedTasks extends AbstractOpenAIStrategy {
 
                     GenerateParameterizedTasks generator = new GenerateParameterizedTasks(_config);
                     List<CanvasTask> tasks = generator.generateTasks();
-                    //generator.saveTasks(tasks, _config.getString("canvasTasksOutputDir"));
-                    tasks = generator.generateParameterizedTasks(tasks);
                     generator.saveTasks(tasks, _config.getString("canvasTasksOutputDir"));
+                    //tasks = generator.generateParameterizedTasks(tasks);
+                    //generator.saveTasks(tasks, _config.getString("canvasTasksOutputDir"));
 
                     log.info("Done!");
                 });
@@ -138,17 +138,13 @@ public class GenerateParameterizedTasks extends AbstractOpenAIStrategy {
 
         for(CanvasSourceFile page: canvasSourceFiles){
 
-            StringBuilder promptAudit = new StringBuilder();
-
             String systemPrompt = taskGenerationConfig.getString("systemPrompt");
+            systemPrompt = systemPrompt.replaceAll("<title>", page.getTitle());
+            systemPrompt = systemPrompt.replaceAll("<body>", page.getBody());
 
             List<ChatRequestMessage> chatMessages = new ArrayList<>();
 
             chatMessages.add(new ChatRequestSystemMessage(systemPrompt));
-            promptAudit.append(systemPrompt);
-
-            chatMessages.add(new ChatRequestUserMessage(page.getTitle()));
-            promptAudit.append(page.getTitle());
 
             String output = executeChatCompletion(chatMessages);
 
@@ -156,7 +152,7 @@ public class GenerateParameterizedTasks extends AbstractOpenAIStrategy {
             canvasTask.setId(UUID.randomUUID());
             canvasTask.setLocalPath(page.getLocalPath());
             canvasTask.setPlainTask(output);
-            canvasTask.setPlainTaskPrompt(promptAudit.toString());
+            canvasTask.setPlainTaskPrompt(systemPrompt);
 
             tasks.add(canvasTask);
 
