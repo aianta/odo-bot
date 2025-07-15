@@ -8,10 +8,8 @@ import ca.ualberta.odobot.snippet2xml.SemanticSchema;
 import ca.ualberta.odobot.snippets.Snippet;
 import ca.ualberta.odobot.sqlite.LogParser;
 import ca.ualberta.odobot.sqlite.SqliteService;
-import io.vertx.core.Future;
-import io.vertx.core.Handler;
-import io.vertx.core.Promise;
-import io.vertx.core.Vertx;
+import ca.ualberta.odobot.taskgenerator.canvas.CanvasTask;
+import io.vertx.core.*;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.jdbcclient.JDBCPool;
@@ -52,6 +50,8 @@ public class SqliteServiceImpl implements SqliteService {
         createSemanticSchemaTable();
         createDataEntriesTable();
         createDataEntryAnnotationTable();
+        createTaskParameterTable();
+        createTaskTable();
     }
 
 
@@ -155,6 +155,73 @@ public class SqliteServiceImpl implements SqliteService {
         return promise.future();
     }
 
+    public Future<Void> insertTask(CanvasTask task){
+        String sql = """
+                INSERT INTO tasks (id, parameterized_text, plain_text, local_path, plain_prompt, parameterized_prompt)
+                VALUES (?,?,?,?,?,?);
+                """;
+
+        Tuple params = Tuple.of(
+                task.getId().toString(),
+                task.getParameterizedTask(),
+                task.getPlainTask(),
+                task.getLocalPath(),
+                task.getPlainPrompt(),
+                task.getParameterizedPrompt()
+        );
+
+        return executeParameterizedQuery(sql, params).compose(done->insertTaskParameters(task.getId(), task.getParameters()));
+
+    }
+
+    public Future<Void> updateTask(CanvasTask task){
+        String sql = """
+                UPDATE tasks
+                SET parameterized_text = ?,
+                    plain_text = ?,
+                    local_path = ?,
+                    plain_prompt = ?,
+                    parameterized_prompt = ?
+                WHERE id = ?;
+                """;
+
+        Tuple params = Tuple.of(
+                task.getParameterizedTask(),
+                task.getPlainTask(),
+                task.getLocalPath(),
+                task.getPlainPrompt(),
+                task.getParameterizedPrompt(),
+                task.getId().toString()
+        );
+
+        return executeParameterizedQuery(sql, params);
+    }
+
+    public Future<Void> insertTaskParameters(UUID taskId, JsonObject parameters){
+        String sql = """
+                INSERT INTO task_parameters (task_id, name, type) VALUES (?,?,?);
+                """;
+
+        List<Future<Void>> futures = new ArrayList<>();
+        Iterator<Map.Entry<String, Object>> it = parameters.iterator();
+        while (it.hasNext()){
+            Map.Entry<String,Object> taskParameter = it.next();
+            Tuple stmtParams = Tuple.of(
+                    taskId.toString(),
+                    taskParameter.getKey(),
+                    (String)taskParameter.getValue()
+            );
+
+            futures.add(executeParameterizedQuery(sql, stmtParams));
+
+        }
+
+        return Future.all(futures).compose(done->{
+            log.info("Task parameters saved to database!");
+            return Future.succeededFuture();
+        });
+    }
+
     public Future<Void> insertLogEntry(JsonObject json){
         return insertLogEntry(DbLogEntry.fromJson(json));
     }
@@ -217,6 +284,52 @@ public class SqliteServiceImpl implements SqliteService {
                     SemanticSchema schema = SemanticSchema.fromRow(rows.iterator().next());
                     promise.complete(schema);
                 });
+
+        return promise.future();
+    }
+
+    public Future<List<CanvasTask>> loadTasks(){
+
+        Promise<List<CanvasTask>> promise = Promise.promise();
+
+
+        //Load parameter table
+        Future.all(
+                pool.preparedQuery("""
+                    SELECT * FROM task_parameters WHERE valid = 1;
+                """).execute(),
+                pool.preparedQuery("""
+                    SELECT * FROM tasks;
+                """).execute()
+        ).onSuccess(compositeFuture -> {
+                    List<CanvasTask> results = new ArrayList<>();
+                    RowSet<Row> parameters = compositeFuture.resultAt(0);
+                    Map<UUID, JsonObject> parameterMap = new HashMap<>();
+
+                    /**
+                     * Create a map of valid parameters to properly reconstruct the Canvas tasks
+                     * The keys will be the id of the task, and the values the parameter JSON object.
+                     */
+                    parameters.forEach(row->{
+                        //Only include valid parameters or those whose validity has not yet been decided.
+                        if(row.getInteger("valid") == 1 || row.getInteger("valid") == null){
+                            UUID taskId = row.getUUID("task_id");
+                            JsonObject taskParameters = parameterMap.getOrDefault(taskId, new JsonObject());
+                            taskParameters.put(row.getString("name"), row.getString("type"));
+                            parameterMap.put(taskId, taskParameters);
+                        }
+                    });
+
+                    RowSet<Row> tasks = compositeFuture.resultAt(1);
+
+                    tasks.forEach(row->{
+                        UUID id = row.getUUID("id");
+                        results.add(CanvasTask.fromRow(row, parameterMap.getOrDefault(id, new JsonObject())));
+                    });
+
+                    promise.complete(results);
+                })
+                .onFailure(err->log.error(err.getMessage(),err));
 
         return promise.future();
     }
@@ -783,6 +896,33 @@ public class SqliteServiceImpl implements SqliteService {
                     label text NOT NULL,
                     description text NOT NULL
                 ) 
+                """);
+    }
+
+    private Future<Void> createTaskParameterTable(){
+        return createTable("""
+                CREATE TABLE IF NOT EXISTS task_parameters (
+                    name text not null,
+                    type text not null,
+                    task_id text not null,
+                    valid integer,
+                    primary key (name, type, task_id)
+                    );
+                """
+        );
+    }
+
+    private Future<Void> createTaskTable(){
+        return createTable("""
+                CREATE TABLE IF NOT EXISTS tasks (
+                    id text PRIMARY KEY,
+                    parameterized_text text not null,
+                    plain_text text not null,
+                    local_path text not null,
+                    plain_prompt text not null,
+                    parameterized_prompt text not null,
+                    valid integer
+                )
                 """);
     }
 

@@ -1,12 +1,14 @@
 package ca.ualberta.odobot.taskgenerator.canvas;
 
 import ca.ualberta.odobot.common.AbstractOpenAIStrategy;
+import ca.ualberta.odobot.sqlite.SqliteService;
 import com.azure.ai.openai.models.ChatRequestMessage;
 import com.azure.ai.openai.models.ChatRequestSystemMessage;
 import com.azure.ai.openai.models.ChatRequestUserMessage;
 import io.vertx.config.ConfigRetriever;
 import io.vertx.config.ConfigRetrieverOptions;
 import io.vertx.config.ConfigStoreOptions;
+import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.VertxOptions;
 import io.vertx.core.json.JsonObject;
@@ -25,6 +27,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * This is a utility class that generates parameterized tasks for Canvas.
@@ -37,9 +40,10 @@ public class GenerateParameterizedTasks extends AbstractOpenAIStrategy {
     private static final String configPath = "./config/parameterized-task-generator.yaml";
     private static final String canvasRootUrl = "https://community.canvaslms.com";
 
+    private static SqliteService sqlite;
     private List<CanvasSourceFile> canvasSourceFiles;
 
-    public static void main (String [] args){
+    public static void main (String [] args) throws InterruptedException {
 
         //Init a vertx instance to retrieve yaml config
         Vertx vertx = Vertx.builder()
@@ -48,6 +52,10 @@ public class GenerateParameterizedTasks extends AbstractOpenAIStrategy {
                         .setBlockedThreadCheckIntervalUnit(TimeUnit.HOURS)
                 )
                 .build();
+
+        //Initialize Sqlite Service
+        sqlite = SqliteService.create(vertx);
+
 
         ConfigStoreOptions yamlStore = new ConfigStoreOptions()
                 .setType("file")
@@ -67,8 +75,30 @@ public class GenerateParameterizedTasks extends AbstractOpenAIStrategy {
                 .onSuccess(_config->{
 
                     GenerateParameterizedTasks generator = new GenerateParameterizedTasks(_config);
-                    List<CanvasTask> tasks = generator.generateTasks();
-                    generator.saveTasks(tasks, _config.getString("canvasTasksOutputDir"));
+                    //List<CanvasTask> tasks = generator.loadTasksFromDirectory(_config.getString("canvasTasksOutputDir"));
+
+                    log.info("Loading tasks from database");
+                    sqlite.loadTasks().onSuccess(
+                            tasks->{
+
+                                log.info("Updating parameterization based on selected valid parameters.");
+                                tasks.forEach(CanvasTask::refreshParameterizedTask);
+
+                                Future.all(
+                                        tasks.stream().map(task->sqlite.updateTask(task)).collect(Collectors.toList())
+                                ).onSuccess(done->log.info("Updated tasks in database!"))
+                                        .onFailure(err->log.error(err.getMessage(),err));
+
+                            }
+                    );
+
+
+
+                    //tasks = generator.generateParameterizedTasks(tasks);
+                    //generator.saveTasks(tasks, _config.getString("canvasTasksOutputDir"));
+
+                    //List<CanvasTask> tasks = generator.generateTasks();
+                    //generator.saveTasks(tasks, _config.getString("canvasTasksOutputDir"));
                     //tasks = generator.generateParameterizedTasks(tasks);
                     //generator.saveTasks(tasks, _config.getString("canvasTasksOutputDir"));
 
@@ -100,6 +130,33 @@ public class GenerateParameterizedTasks extends AbstractOpenAIStrategy {
 
     }
 
+    public List<CanvasTask> loadTasksFromDirectory(String path){
+        Path dirPath = Path.of(path);
+        List<CanvasTask> results = new ArrayList<>();
+
+        try {
+            Files.list(dirPath).forEach(filePath->{
+
+                if(!Files.isDirectory(filePath)){
+                    try{
+                        JsonObject loadedTask = new JsonObject(new String(Files.readAllBytes(filePath)));
+                        CanvasTask canvasTask = CanvasTask.fromJson(loadedTask);
+                        results.add(canvasTask);
+
+                    }catch (IOException e){
+                        log.error(e.getMessage(), e);
+                    }
+                }
+
+            });
+        } catch (IOException e) {
+            log.error(e.getMessage(), e);
+        }
+
+        return results;
+
+    }
+
     public List<CanvasTask> generateParameterizedTasks(List<CanvasTask> tasks){
 
         JsonObject parameterizedTaskGenerationConfig = config.getJsonObject("canvas").getJsonObject("parameterizedTaskGeneration");
@@ -108,19 +165,23 @@ public class GenerateParameterizedTasks extends AbstractOpenAIStrategy {
             CanvasSourceFile sourceFile = CanvasSourceFile.loadFromFile(task.getLocalPath());
 
             String systemPrompt = parameterizedTaskGenerationConfig.getString("systemPrompt");
-            systemPrompt = systemPrompt.replaceAll("<task>", task.getPlainTask());
-            systemPrompt = systemPrompt.replaceAll("<user manual page body>", sourceFile.getBody());
+//            systemPrompt = systemPrompt.replaceAll("<task>", task.getPlainTask());
+//            systemPrompt = systemPrompt.replaceAll("<user manual page body>", sourceFile.getBody());
 
-            task.setParameterizedTaskPrompt(systemPrompt);
+            StringBuilder promptAudit = new StringBuilder();
+            promptAudit.append(systemPrompt);
 
             List<ChatRequestMessage> chatMessages = new ArrayList<>();
 
             chatMessages.add(new ChatRequestSystemMessage(systemPrompt));
+            chatMessages.add(new ChatRequestUserMessage(task.getPlainTask()));
+            promptAudit.append("\n");
+            promptAudit.append(task.getPlainTask());
 
             String output = executeChatCompletion(chatMessages);
 
             task.setParameterizedTask(output);
-            task.setParameterizedTaskPrompt(systemPrompt);
+            task.setParameterizedTaskPrompt(promptAudit.toString());
         }
 
         return tasks;

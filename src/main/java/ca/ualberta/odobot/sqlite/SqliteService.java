@@ -4,6 +4,7 @@ import ca.ualberta.odobot.snippet2xml.SemanticObject;
 import ca.ualberta.odobot.snippet2xml.SemanticSchema;
 import ca.ualberta.odobot.snippets.Snippet;
 import ca.ualberta.odobot.sqlite.impl.SqliteServiceImpl;
+import ca.ualberta.odobot.taskgenerator.canvas.CanvasTask;
 import io.vertx.codegen.annotations.ProxyGen;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
@@ -34,6 +35,8 @@ public interface SqliteService {
     Future<Void> saveStateSample(JsonObject json);
 
     Future<JsonArray> loadDynamicXpaths(String website);
+
+    Future<Void> insertTask(CanvasTask task);
 
     Future<Void> saveTrainingExemplar(JsonObject json);
 
@@ -88,6 +91,10 @@ public interface SqliteService {
      * @return
      */
     Future<JsonArray> loadTrainingDataset(String datasetName);
+
+    Future<List<CanvasTask>> loadTasks();
+
+    Future<Void> updateTask(CanvasTask task);
 
     Future<Void> insertLogEntry(JsonObject json);
 
