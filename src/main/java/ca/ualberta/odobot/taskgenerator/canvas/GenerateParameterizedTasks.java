@@ -77,6 +77,13 @@ public class GenerateParameterizedTasks extends AbstractOpenAIStrategy {
                     GenerateParameterizedTasks generator = new GenerateParameterizedTasks(_config);
                     //List<CanvasTask> tasks = generator.loadTasksFromDirectory(_config.getString("canvasTasksOutputDir"));
 
+                    //For saving parameterized tasks to the database.
+//                    Future.all(tasks.stream().map(task->sqlite.insertTask(task)).collect(Collectors.toList()))
+//                            .onFailure(err->log.error(err.getMessage(), err))
+//                            .onSuccess(done->log.info("Done saving parameterized tasks to the database!"))
+//                    ;
+
+                    //For updating parameterized tasks after manually reviewing parameters in the database.
                     log.info("Loading tasks from database");
                     sqlite.loadTasks().onSuccess(
                             tasks->{
@@ -99,8 +106,8 @@ public class GenerateParameterizedTasks extends AbstractOpenAIStrategy {
 
                     //List<CanvasTask> tasks = generator.generateTasks();
                     //generator.saveTasks(tasks, _config.getString("canvasTasksOutputDir"));
-                    //tasks = generator.generateParameterizedTasks(tasks);
-                    //generator.saveTasks(tasks, _config.getString("canvasTasksOutputDir"));
+//                    tasks = generator.generateParameterizedTasks(tasks);
+//                    generator.saveTasks(tasks, _config.getString("canvasTasksOutputDir"));
 
                     log.info("Done!");
                 });
