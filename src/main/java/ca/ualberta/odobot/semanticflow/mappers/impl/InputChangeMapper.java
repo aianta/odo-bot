@@ -3,6 +3,7 @@ package ca.ualberta.odobot.semanticflow.mappers.impl;
 import ca.ualberta.odobot.semanticflow.mappers.JsonMapper;
 import ca.ualberta.odobot.semanticflow.model.CheckboxEvent;
 import ca.ualberta.odobot.semanticflow.model.InputChange;
+import ca.ualberta.odobot.semanticflow.model.TinymceEvent;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.jsoup.Jsoup;
@@ -37,28 +38,48 @@ public class InputChangeMapper extends JsonMapper<InputChange> {
     @Override
     public InputChange map(JsonObject event) {
 
-        JsonObject element = new JsonObject(event.getString(ELEMENT_FIELD));
-        //TODO METADATA_FIELD is not valid json string, is mongo BSON
-        JsonArray metadata = new JsonArray(event.getString(METADATA_FIELD));
-
         InputChange result = null;
-        //Create the appropriate type of InputChange
-        if(isCheckbox(element)){
-            result = new CheckboxEvent();
-        }else{
-            result = new InputChange();
-        }
 
-        result.setDomSnapshot(getDOMSnapshot(event));
-        result.setXpath(event.getString(XPATH_FIELD));
-        result.setOuterHTML(element.getString(ELEMENT_HTML_FIELD));
-        result.setInputElement(extractElement(element.getString(ELEMENT_HTML_FIELD)));
-        result.setTag(element.getString(ELEMENT_TAG_FIELD));
-        result.setHtmlId(element.getString(ELEMENT_ID_FIELD));
-        result.setBaseURI(element.getString(ELEMENT_BASEURI_FIELD));
-        result.setPlaceholderText(result.getInputElement().attr("placeholder"));
-        //TODO - this will yield results 1 character off, this is a problem in the data being sent back by LogUI
-        result.setValue(getMetadataValue(METADATA_VALUE_FIELD, metadata));
+        //Handle input change events from tiny MCE
+        if (event.containsKey("eventDetails_source") && event.getString("eventDetails_source").equals("tinyMCE")) {
+            JsonObject element = new JsonObject(event.getString(ELEMENT_FIELD));
+
+            result = new TinymceEvent();
+            result.setDomSnapshot(getDOMSnapshot(event));
+            result.setXpath(event.getString(XPATH_FIELD));
+            ((TinymceEvent)result).setEditorId(event.getString("eventDetails_editorId"));
+            ((TinymceEvent)result).setInputType(event.getString("eventDetails_inputType"));
+            ((TinymceEvent)result).setValue(event.getString("eventDetails_editorContent"));
+
+            result.setOuterHTML(element.getString(ELEMENT_HTML_FIELD));
+            result.setInputElement(extractElement(element.getString(ELEMENT_HTML_FIELD)));
+            result.setTag(element.getString(ELEMENT_TAG_FIELD));
+            result.setBaseURI(element.getString(ELEMENT_BASEURI_FIELD));
+        }else{
+            JsonObject element = new JsonObject(event.getString(ELEMENT_FIELD));
+            //TODO METADATA_FIELD is not valid json string, is mongo BSON
+            JsonArray metadata = new JsonArray(event.getString(METADATA_FIELD));
+
+
+            //Create the appropriate type of InputChange
+            if(isCheckbox(element)){
+                result = new CheckboxEvent();
+            }else{
+                result = new InputChange();
+            }
+
+            //Otherwise handle a regular input change event
+            result.setDomSnapshot(getDOMSnapshot(event));
+            result.setXpath(event.getString(XPATH_FIELD));
+            result.setOuterHTML(element.getString(ELEMENT_HTML_FIELD));
+            result.setInputElement(extractElement(element.getString(ELEMENT_HTML_FIELD)));
+            result.setTag(element.getString(ELEMENT_TAG_FIELD));
+            result.setHtmlId(element.getString(ELEMENT_ID_FIELD));
+            result.setBaseURI(element.getString(ELEMENT_BASEURI_FIELD));
+            result.setPlaceholderText(result.getInputElement().attr("placeholder"));
+            //TODO - this will yield results 1 character off, this is a problem in the data being sent back by LogUI
+            result.setValue(getMetadataValue(METADATA_VALUE_FIELD, metadata));
+        }
 
         return result;
     }

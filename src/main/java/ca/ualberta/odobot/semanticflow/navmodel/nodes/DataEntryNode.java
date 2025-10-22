@@ -7,6 +7,7 @@ import org.neo4j.driver.types.Node;
 public class DataEntryNode extends NavNode {
 
     private String xpath;
+    private String editorId;
 
     public static DataEntryNode fromRecord(Record record){
 
@@ -14,6 +15,12 @@ public class DataEntryNode extends NavNode {
 
         DataEntryNode result = fromRecord(record, new DataEntryNode());
         result.setXpath(n.get("xpath").asString());
+
+        String editorId = n.get("editorId").asString();
+        if (editorId != null) {
+            result.setEditorId(editorId);
+        }
+
 
         return  result;
     }
@@ -25,5 +32,14 @@ public class DataEntryNode extends NavNode {
 
     public void setXpath(String xpath) {
         this.xpath = xpath;
+    }
+
+    public String getEditorId() {
+        return editorId;
+    }
+
+    public DataEntryNode setEditorId(String editorId) {
+        this.editorId = editorId;
+        return this;
     }
 }

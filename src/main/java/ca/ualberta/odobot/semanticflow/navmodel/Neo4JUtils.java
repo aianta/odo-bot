@@ -74,19 +74,15 @@ public class Neo4JUtils {
 
 
     /**
-     * A wrapper method for {@link #processDataEntry(String, String)} to simplify processing {@link Type}s.
+     * A wrapper method for {@link #processMind2WebDataEntry(String, String, String)} to simplify processing {@link Type}s.
      * @param type
      */
-    public void processType(Type type){
-        processDataEntry(type.getTargetElementXpath(), type.getActionId());
-    }
-
     public void processType(Type type, String website){
-        processDataEntry(type.getTargetElementXpath(), type.getActionId(), website);
+        processMind2WebDataEntry(type.getTargetElementXpath(), type.getActionId(), website);
     }
 
     /**
-     * A wrapper method for {@link #processDataEntry(String, String)} to simplify processing {@link DataEntry}s.
+     * A wrapper method for {@link #processDataEntry(String, String, String)} to simplify processing {@link DataEntry}s.
      * @param timeline
      * @param dataEntry
      */
@@ -94,7 +90,13 @@ public class Neo4JUtils {
         var index = timeline.indexOf(dataEntry);
         var entityTimelineId = timeline.getId().toString()+"#"+index;
 
-        processDataEntry(dataEntry.xpath(), entityTimelineId);
+        if(dataEntry.lastChange() instanceof TinymceEvent){
+            processDataEntry(dataEntry.xpath(), ((TinymceEvent) dataEntry.lastChange()).getEditorId(), entityTimelineId);
+        }else{
+            processDataEntry(dataEntry.xpath(), null, entityTimelineId);
+        }
+
+
     }
 
     /**
@@ -333,7 +335,7 @@ public class Neo4JUtils {
                 queryFunction);
     }
 
-    public void processDataEntry(String xpath, String eventId, String website){
+    public void processMind2WebDataEntry(String xpath, String eventId, String website){
         //If a data entry node for this event already exists in the database, this supplier will be used to retrieve it.
         Supplier<DataEntryNode> existingDataEntryNodeSupplier = ()->getDataEntryNode(xpath, website);
 
@@ -363,7 +365,13 @@ public class Neo4JUtils {
 
     }
 
-    public void processDataEntry(String xpath, String eventId){
+    /**
+     *
+     * @param xpath
+     * @param editorId tinyMCE editor id, only defined if this data entry interaction originated from there.
+     * @param eventId
+     */
+    public void processDataEntry(String xpath, String editorId, String eventId){
 
         //If a data entry node for this event already exists in the database, this supplier will be used to retrieve it.
         Supplier<DataEntryNode> existingDataEntryNodeSupplier = ()->getDataEntryNode(xpath);
@@ -373,7 +381,7 @@ public class Neo4JUtils {
                 eventId,
                 DataEntryNode.class,
                 existingDataEntryNodeSupplier, //If a data entry node for this event already exists in the database, this supplier will be used to retrieve it.
-                newDataEntryNodeSupplier(xpath, eventId), //If no data entry node could be found, this supplier will be used to create one
+                newDataEntryNodeSupplier(xpath, editorId, eventId), //If no data entry node could be found, this supplier will be used to create one
                 processDataEntryNodeQueryFunction()//The update query used to update/merge the processed data entry node into the database.
         );
 
@@ -400,6 +408,10 @@ public class Neo4JUtils {
             props.put("id", dataEntryNode.getId().toString());
             props.put("instances", dataEntryNode.getInstances());
 
+            if (dataEntryNode.getEditorId() != null) {
+                props.put("editorId", dataEntryNode.getEditorId());
+            }
+
             return makeGenericMergeQuery("DataEntryNode", dataEntryNode, props, "xpath", dataEntryNode.getXpath(), "props", props);
         };
 
@@ -425,22 +437,27 @@ public class Neo4JUtils {
         };
     }
 
-    private Supplier<DataEntryNode> newDataEntryNodeSupplier (String xpath, String eventId, String website){
+    private Supplier<DataEntryNode> newMind2WebDataEntryNodeSupplier (String xpath, String eventId, String website){
         Supplier<DataEntryNode> newDataEntryNodeSupplier = ()->{
-            DataEntryNode node = this.newDataEntryNodeSupplier(xpath, eventId).get();
+            DataEntryNode node = this.newDataEntryNodeSupplier(xpath, null, eventId).get();
             node.setWebsite(website);
             return node;
         };
         return newDataEntryNodeSupplier;
     }
 
-    private Supplier<DataEntryNode> newDataEntryNodeSupplier (String xpath, String eventId){
+    private Supplier<DataEntryNode> newDataEntryNodeSupplier (String xpath, String editorId, String eventId){
         //If no data entry node could be found, this supplier will be used to create one
         Supplier<DataEntryNode> newDataEntryNodeSupplier = ()->{
             DataEntryNode node = new DataEntryNode();
             node.setId(UUID.randomUUID());
             node.setXpath(xpath);
             node.setInstances(Set.of(eventId));
+
+            if (editorId != null) {
+                node.setEditorId(editorId);
+            }
+
             return node;
         };
         return newDataEntryNodeSupplier;

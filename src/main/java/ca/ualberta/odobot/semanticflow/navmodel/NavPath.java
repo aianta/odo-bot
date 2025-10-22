@@ -178,8 +178,12 @@ public class NavPath {
                     }
 
                     if(node.hasLabel(Label.label("DataEntryNode"))){
-
                         EnterData _instruction = new EnterData();
+
+                        if (node.hasProperty("editorId")){
+                            _instruction = new EnterDataTinymce();
+                            ((EnterDataTinymce)_instruction).editorId = (String) node.getProperty("editorId");
+                        }
                         _instruction.xpath = nodeToXPath(node);
                         _instruction.parameterId = LogPreprocessor.neo4j.getAssociatedParameterId((String)node.getProperty("id")); //This is going to cause problems for any data entry node that doesn't have an input parameter...
                         _instruction.data = ((InputParameter)request.getParameter(_instruction.parameterId)).getValue();

@@ -396,6 +396,17 @@ public class RequestManager {
                                 .put("xpath", doClick.xpath);
                     }
 
+                    if (instruction instanceof EnterDataTinymce){
+                        EnterDataTinymce enterDataTinymce = (EnterDataTinymce) instruction;
+                        return new JsonObject()
+                                .put("action", "input")
+                                .put("xpath", enterDataTinymce.xpath)
+                                .put("editorId", enterDataTinymce.editorId)
+                                .put("data", enterDataTinymce.data)
+                                ;
+
+                    }
+
                     if(instruction instanceof EnterData){
                         EnterData enterData = (EnterData) instruction;
                         return new JsonObject()

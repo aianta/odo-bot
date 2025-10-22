@@ -88,6 +88,7 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
         int networkEventCount = 0;
         int applicationLocationChangeCount = 0;
         int checkboxCount = 0;
+        int tinymceEventCount = 0;
 
         log.info("Building nav model for timeline: {} [{}]: {}", timeline.getId(), timeline.size(), timeline.toString());
 

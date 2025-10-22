@@ -294,6 +294,17 @@ public class DataEntry2LabelVerticle extends HttpServiceVerticle {
                                     if(entity instanceof DataEntry){
                                         DataEntry dataEntry = (DataEntry) entity;
 
+                                        JsonObject data = new JsonObject()
+                                                .put("input_element", dataEntry.inputElement().outerHtml())
+                                                .put("entered_data", dataEntry.getEnteredData())
+                                                .put("xpath", dataEntry.xpath());
+
+                                        //For tinyMCE events, lets leave the HTML context as the input element.
+                                        if (dataEntry.lastChange() instanceof TinymceEvent){
+                                            data.put("html_context", dataEntry.inputElement().outerHtml());
+                                            return data;
+                                        }
+
                                         //The DomSnapshot must contain the input element, otherwise what are we doing?
                                         assert dataEntry.lastChange().getDomSnapshot().outerHtml().contains(dataEntry.inputElement().outerHtml());
 
@@ -302,11 +313,7 @@ public class DataEntry2LabelVerticle extends HttpServiceVerticle {
                                             return null;
                                         }
 
-                                        JsonObject data = new JsonObject()
-                                                .put("input_element", dataEntry.inputElement().outerHtml())
-                                                .put("html_context", htmlContext)
-                                                .put("entered_data", dataEntry.getEnteredData())
-                                                .put("xpath", dataEntry.xpath());
+                                        data.put("html_context", htmlContext);
 
                                         return data;
                                     }

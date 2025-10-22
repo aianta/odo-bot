@@ -82,6 +82,12 @@ public class SemanticSequencer {
     public Timeline parse(List<JsonObject> events){
         line = new Timeline();
 
+        log.info("Expected events:");
+        for (int i=0; i<events.size(); i++){
+            JsonObject event = events.get(i);
+            log.info("[{}] {}", i, event.getString("eventDetails_name"));
+        }
+
 
         for(JsonObject event: events){
             try {
@@ -148,11 +154,6 @@ public class SemanticSequencer {
                     case CLICK -> {
                         ClickEvent clickEvent = clickEventMapper.map(event);
                         clickEvent.setTimestamp(ZonedDateTime.parse(event.getString(TIMESTAMP_FIELD), timeFormatter));
-//                        line.add(clickEvent);
-//
-//                        if(artifactConsumer != null){ //If we have an artifact consumer set
-//                            artifactConsumer.accept(clickEvent); //Invoke them with the newly processed artifact.
-//                        }
 
 
                         /**
@@ -220,6 +221,36 @@ public class SemanticSequencer {
                 break;
             case "customEvent":
                 switch (InteractionType.getType(event.getString("eventDetails_name"))){
+                    case INPUT -> {
+                        InputChange inputChange = inputChangeMapper.map(event);
+                        inputChange.setTimestamp(ZonedDateTime.parse(event.getString(TIMESTAMP_FIELD), timeFormatter));
+
+                        if(artifactConsumer != null){
+                            artifactConsumer.accept(inputChange);
+                        }
+
+                        /**  Check if the last entity in the timeline is a {@link DataEntry},
+                         * if so, add this input change to it. Otherwise, create a new
+                         * DataEntry and add this input change to it before adding the created DataEntry to the timeline. */
+                        if(line.last() != null && line.last() instanceof DataEntry){
+                            DataEntry dataEntry = (DataEntry) line.last();
+                            if(!dataEntry.add(inputChange)){
+                                //If the input change was not added it is because it is referring to a different input element
+                                //So create a separate DataEntry object for this input change and add it to the timeline.
+                                DataEntry newEntry = new DataEntry();
+                                newEntry.add(inputChange);
+                                line.add(newEntry);
+                            }
+                        }
+
+                        if(line.last() == null || !(line.last() instanceof DataEntry)){
+                            DataEntry dataEntry = new DataEntry();
+                            dataEntry.add(inputChange);
+                            line.add(dataEntry);
+                        }
+                        log.info("handled INPUT from TinyMCE");
+
+                    }
                     case DOM_EFFECT -> {
                         //return;
 //                        TODO - We don't use DOM effects in training data, so we can skip them.
