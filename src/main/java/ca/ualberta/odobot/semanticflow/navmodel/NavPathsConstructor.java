@@ -68,7 +68,7 @@ public class NavPathsConstructor {
                 .map(UUID::toString)
                 .collect(Collectors.toSet());
 
-        //Compute a set of all other parameters by getting the set of all parameters, and then removing the expected parameters.
+        //Compute a set of all other parameters by getting the set of all parameters in the model, and then removing the expected parameters defined in the task request.
         Set<String> otherParameters = globalParameterMap.values().stream().collect(Collectors.toSet());
         otherParameters.removeAll(expectedParameters);
 

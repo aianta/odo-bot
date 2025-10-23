@@ -113,8 +113,8 @@ public class OnlineEventProcessor {
             String eventType = event.getString("eventType");
             String eventName = eventDetails.getString("name");
 
-//            log.info("event type: {}", eventType);
-//            log.info("event name: {}", eventName);
+            log.info("event type: {}", eventType);
+            log.info("event name: {}", eventName);
 
             switch (eventType){
                 case "interactionEvent":
@@ -127,6 +127,7 @@ public class OnlineEventProcessor {
                     switch (InteractionType.getType(eventName)){
                         case DOM_EFFECT -> processDomEffect(event);
                         case NETWORK_EVENT -> processNetworkEvent(event);
+                        case INPUT -> processInputChange(event);
                     }
                     break;
             }

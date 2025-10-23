@@ -68,6 +68,7 @@ public class EvaluateTask implements Runnable{
 
         this.odoXControlsUrl = "moz-extension://"+dynamicAddonId.toString()+"/popup/bot/bot.html";
         this.odoXOptionsUrl = "moz-extension://"+dynamicAddonId.toString()+"/options/options.html";
+
     }
 
     @Override

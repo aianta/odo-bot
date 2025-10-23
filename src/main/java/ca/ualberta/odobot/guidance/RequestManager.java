@@ -139,7 +139,7 @@ public class RequestManager {
             log.info("LastEntity: {}", _input.getLastEntity() != null?_input.lastEntity.symbol(): "N/A");
             log.info("URL: {}", _input.getUrl() != null? _input.getUrl(): "N/A");
             log.info("DOM: {}", _input.getDom() != null? _input.dom.toString().substring(0, Math.min(_input.dom.toString().length(), 150)): "N/A");
-
+            log.info("User Location: {}",  _input.getUserLocation() != null? _input.getUserLocation(): "N/A");
 
             Optional<UUID> startingNode = LogPreprocessor.localizer.resolveStartingNode(_input);
             log.info("Found starting node? {}", startingNode.isPresent());
@@ -148,7 +148,7 @@ public class RequestManager {
 
             //Handle Natural Language tasks
             if(request.getType() == ExecutionRequest.Type.NL){
-
+                log.info("Natural language task request");
                 //Resolve the parameter associated input and object nodes
                 //Basically the node IDs in the task definition correspond with the actual, Input and Schema parameter nodes.
                 //What we actually want, are the ids of the nodes associated with those input and schema parameter nodes (as defined by the PARAM edge).
@@ -323,7 +323,7 @@ public class RequestManager {
             log.info("URL: {}", _input.getUrl() != null? _input.getUrl(): "N/A");
             log.info("DOM: {}", _input.getDom() != null? _input.dom.toString().substring(0, Math.min(_input.dom.toString().length(), 150)): "N/A");
             log.info("TargetNode: {}", _input.targetNode);
-
+            log.info("User Location: {}",  _input.getUserLocation());
 
             Optional<UUID> startingNode = LogPreprocessor.localizer.resolveStartingNode(_input);
             log.info("Found starting node? {}", startingNode.isPresent());
@@ -547,12 +547,17 @@ public class RequestManager {
         }
 
         String xpath = null;
+        String editorId = null; //Defined when an instruction is a data entry into tinyMCE.
         String path = null;
         String method = null;
 
         if(entity instanceof DataEntry){
             DataEntry dataEntry = (DataEntry) entity;
             xpath = dataEntry.lastChange().getXpath();
+
+            if (dataEntry.lastChange() instanceof TinymceEvent){
+                editorId = ((TinymceEvent) dataEntry.lastChange()).getEditorId();
+            }
         }
 
         if(entity instanceof ClickEvent){
@@ -579,6 +584,7 @@ public class RequestManager {
         final String observedXPath = xpath;
         final String observedPath = path;
         final String observedMethod = method;
+        final String observedEditorId = editorId;
 
         if(observedXPath != null){
             log.info("Observed {} on xpath: {}", entity.symbol(), observedXPath);
@@ -592,6 +598,10 @@ public class RequestManager {
             log.info("Observed {} with method: {}", entity.symbol(), observedMethod);
         }
 
+        if (observedEditorId != null){
+            log.info("Observed {} with editor id: {}", entity.symbol(), observedEditorId);
+        }
+
         /**
          * Update the navPaths associated with this request.
          * Prune all paths whose last instruction was not followed by the user.
@@ -603,6 +613,13 @@ public class RequestManager {
                     if(lastInstruction == null){
                         log.error("Last instruction is null!");
                         throw new RuntimeException("Last instruction was null!");
+                    }
+
+                    if (lastInstruction instanceof EnterDataTinymce){
+                        if(observedEditorId == null){
+                            return false;
+                        }
+                        return observedEditorId.equals(((EnterDataTinymce) lastInstruction).editorId);
                     }
 
                     if(lastInstruction instanceof XPathInstruction){

@@ -17,7 +17,7 @@ public class DataEntryNode extends NavNode {
         result.setXpath(n.get("xpath").asString());
 
         String editorId = n.get("editorId").asString();
-        if (editorId != null) {
+        if (editorId != null && !editorId.equals("null")) {
             result.setEditorId(editorId);
         }
 
