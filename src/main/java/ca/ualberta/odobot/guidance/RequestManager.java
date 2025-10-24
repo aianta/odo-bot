@@ -626,6 +626,15 @@ public class RequestManager {
                         if(observedXPath == null){
                             return false;
                         }
+
+                        //guidance.js cannot click on xpaths ending in 'svg', so it will click on the next closest element described in the xpath.
+                        //Therefore, we have to register clicks on next-closest elements when the last instruction's xpath ends in 'svg'.
+                        if(((XPathInstruction) lastInstruction).xpath.endsWith("/svg")){
+                            String alsoValidXpath = (((XPathInstruction) lastInstruction).xpath).substring(0, ((XPathInstruction) lastInstruction).xpath.length() - "/svg".length());
+                            log.info("alsoValidXpath: {}, observedXpath: {}", alsoValidXpath, observedXPath);
+                            return observedXPath.equals(alsoValidXpath);
+                        }
+
                         return observedXPath.equals(((XPathInstruction) lastInstruction).xpath);
                     }
 
