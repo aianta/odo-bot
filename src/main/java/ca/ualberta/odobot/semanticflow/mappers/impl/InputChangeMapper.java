@@ -3,6 +3,7 @@ package ca.ualberta.odobot.semanticflow.mappers.impl;
 import ca.ualberta.odobot.semanticflow.mappers.JsonMapper;
 import ca.ualberta.odobot.semanticflow.model.CheckboxEvent;
 import ca.ualberta.odobot.semanticflow.model.InputChange;
+import ca.ualberta.odobot.semanticflow.model.RadioButtonEvent;
 import ca.ualberta.odobot.semanticflow.model.TinymceEvent;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -12,6 +13,7 @@ import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -64,6 +66,29 @@ public class InputChangeMapper extends JsonMapper<InputChange> {
             //Create the appropriate type of InputChange
             if(isCheckbox(element)){
                 result = new CheckboxEvent();
+            }else if (isRadioButton(element)) {
+                result = new RadioButtonEvent();
+                ((RadioButtonEvent)result).setRadioGroup(event.getString("eventDetails_radioGroup"));
+
+                /**
+                 * This will be a list of all radio buttons in the same group.
+                 */
+                JsonArray relatedElements = new JsonArray(event.getString("eventDetails_relatedElements"));
+                List<RadioButtonEvent.RadioButton> buttons = relatedElements.stream().map(o->(JsonObject)o)
+                        .map(_element->{
+                            RadioButtonEvent.RadioButton radioButton = new RadioButtonEvent.RadioButton(
+                                    _element.getString("xpath"),
+                                    _element.getString("html"),
+                                    _element.getBoolean("checked"),
+                                    _element.getString("value")
+                            );
+                            return radioButton;
+                        }).toList();
+
+                for(RadioButtonEvent.RadioButton button:buttons){
+                    ((RadioButtonEvent) result).addOption(button);
+                }
+
             }else{
                 result = new InputChange();
             }
@@ -76,12 +101,26 @@ public class InputChangeMapper extends JsonMapper<InputChange> {
             result.setTag(element.getString(ELEMENT_TAG_FIELD));
             result.setHtmlId(element.getString(ELEMENT_ID_FIELD));
             result.setBaseURI(element.getString(ELEMENT_BASEURI_FIELD));
-            result.setPlaceholderText(result.getInputElement().attr("placeholder"));
+
+            if(result.getInputElement().hasAttr("placeholder")){
+                result.setPlaceholderText(result.getInputElement().attr("placeholder"));
+            }
             //TODO - this will yield results 1 character off, this is a problem in the data being sent back by LogUI
             result.setValue(getMetadataValue(METADATA_VALUE_FIELD, metadata));
         }
 
         return result;
+    }
+
+    private static boolean isRadioButton(JsonObject elementData){
+        Element inputElement = Jsoup.parse(elementData.getString(ELEMENT_HTML_FIELD)).body().firstElementChild();
+
+        if(inputElement.hasAttr("type")){
+            return inputElement.attr("type").equals("radio");
+        }else{
+            return false;
+        }
+
     }
 
     private static boolean isCheckbox(JsonObject elementData){

@@ -1,94 +1,78 @@
 package ca.ualberta.odobot.guidance;
 
+import ca.ualberta.odobot.common.HttpServiceVerticle;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
-import ca.ualberta.odobot.semanticflow.navmodel.Localizer;
-import io.vertx.core.AbstractVerticle;
-import io.vertx.core.Promise;
+import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.Vertx;
-import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.*;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.core.net.JksOptions;
-import io.vertx.core.net.TrustOptions;
-import io.vertx.ext.web.Router;
-import io.vertx.ext.web.RoutingContext;
-import io.vertx.ext.web.handler.BodyHandler;
-import io.vertx.ext.web.handler.LoggerHandler;
+
+import io.vertx.rxjava3.ext.web.RoutingContext;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Result;
 import org.neo4j.graphdb.Transaction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
 
-public class GuidanceVerticle extends AbstractVerticle {
+import java.util.Map;
+
+
+public class GuidanceVerticle extends HttpServiceVerticle {
 
     private static final Logger log = LoggerFactory.getLogger(GuidanceVerticle.class);
-    private static final String SSL_FOLDER_PATH = "./ssl/"; //Path to folder containing the .jks
-    private static final String JKS_NAME = "odobot-server.jks";
-    private static final String API_PATH_PREFIX = "/api/*";
-    private static final String HOST = "0.0.0.0";
-    private static final int PORT = 7080;
+
     private static final int PERIODIC_REPORTING_INTERVAL = 10000; //10s
 
-    private HttpServer server;
-
-    private Router mainRouter;
-
-    private Router api;
 
     public static Vertx _vertx;
 
-    @Override
-    public void start(Promise<Void> startPromise) throws Exception {
+    public String serviceName(){
+        return "Guidance Service";
+    }
 
-        _vertx = vertx;
+    public String configFilePath(){
+        return "config/guidance.yaml";
+    }
 
-        log.info("Starting guidance verticle");
-
+    protected HttpServerOptions getServerOptions() {
         JksOptions jksOptions = new JksOptions()
-                .setPath(SSL_FOLDER_PATH+JKS_NAME)
+                .setPath(_config.getString("jksPath"))
                 .setAlias("odobot-server")
-                .setPassword(System.getenv("ODOBOT_JKS_PASSWORD"));
+                .setPassword(_config.getString("jksPassword"));
 
-
-        HttpServerOptions options = new HttpServerOptions()
-                .setLogActivity(true)
-                .setHost(HOST)
-                .setPort(PORT)
+        HttpServerOptions serverOptions = super.getServerOptions();
+        serverOptions.setLogActivity(true)
                 .setSsl(true)
                 .setKeyStoreOptions(jksOptions)
-                .setMaxWebSocketFrameSize(10000000)  //10MB
-                .setMaxWebSocketMessageSize(10000000)//10MB
+                .setMaxWebSocketFrameSize(10000000)     //10MB
+                .setMaxWebSocketMessageSize(10000000)   //10MB
                 ;
 
-        server = vertx.createHttpServer(options);
+        return serverOptions;
+    }
 
-        server.webSocketHandler(serverSocket->new WebSocketConnection(vertx, serverSocket));
+    protected io.vertx.rxjava3.core.http.HttpServer afterServerCreate(io.vertx.rxjava3.core.http.HttpServer server) {
+        server.webSocketHandler(serverSocket->new WebSocketConnection(vertx.getDelegate(), serverSocket.getDelegate()));
+        return server;
+    }
 
-        mainRouter = Router.router(vertx);
-        api = Router.router(vertx);
+    @Override
+    public Completable onStart()  {
+        super.onStart();
+
+        _vertx = vertx.getDelegate();
+
+//        server.webSocketHandler(serverSocket->new WebSocketConnection(_vertx, serverSocket.getDelegate()));
 
         //Define API routes
         api.route().method(HttpMethod.GET).path("/targetNodes").handler(this::getTargetNodes);
         //api.route().method(HttpMethod.POST).path("/evaluate").handler(this::evaluationHandler);
 
-        mainRouter.route().handler(LoggerHandler.create());
-        mainRouter.route().handler(BodyHandler.create());
-        mainRouter.route().handler(rc->{
-            rc.response().putHeader("Access-Control-Allow-Origin", "*");
-            rc.next();
-        });
-        mainRouter.route(API_PATH_PREFIX).subRouter(api);
         mainRouter.route().handler(rc->rc.response().setStatusCode(200).end("Greetings! This should be a secure line!"));
 
-        server.requestHandler(mainRouter).listen(PORT);
-
-        log.info("Guidance verticle started and server listening on port {}", PORT);
 
 //        vertx.setPeriodic(PERIODIC_REPORTING_INTERVAL, interval->{
 //           log.info("{} registered clients, generating status report!", WebSocketConnection.clientMap.size());
@@ -97,6 +81,7 @@ public class GuidanceVerticle extends AbstractVerticle {
 //           });
 //        });
 
+        return Completable.complete();
     }
 
 

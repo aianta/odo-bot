@@ -5,6 +5,7 @@ import ca.ualberta.odobot.semanticflow.SemanticSequencer;
 import ca.ualberta.odobot.semanticflow.model.*;
 import ca.ualberta.odobot.semanticflow.navmodel.nodes.LocationNode;
 import ca.ualberta.odobot.semanticflow.navmodel.nodes.NavNode;
+import ca.ualberta.odobot.semanticflow.navmodel.nodes.RadioButtonNode;
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.core.Vertx;
@@ -88,7 +89,7 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
         int networkEventCount = 0;
         int applicationLocationChangeCount = 0;
         int checkboxCount = 0;
-        int tinymceEventCount = 0;
+        int radioButtonCount = 0;
 
         log.info("Building nav model for timeline: {} [{}]: {}", timeline.getId(), timeline.size(), timeline.toString());
 
@@ -109,6 +110,11 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
             if(entity instanceof CheckboxEvent){
                 checkboxCount++;
                 neo4j.processCheckboxEvent(timeline, (CheckboxEvent) entity);
+            }
+
+            if(entity instanceof RadioButtonEvent){
+                radioButtonCount++;
+                neo4j.processRadioButtonEvent(timeline, (RadioButtonEvent) entity);
             }
 
             if(entity instanceof DataEntry){
@@ -204,6 +210,7 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
         log.info("Processed {} network events for nav model", networkEventCount);
         log.info("Processed {} effects for nav model", effectCount);
         log.info("Processed {} checkbox events for nav model", checkboxCount);
+        log.info("Processed {} radio button events for nav model", radioButtonCount);
         log.info("Processed {} application location changes for nav model", applicationLocationChangeCount);
 
 

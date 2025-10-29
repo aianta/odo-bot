@@ -111,6 +111,13 @@ public class Neo4JUtils {
         processCheckboxEvent(checkboxEvent.xpath(), entityTimelineId);
     }
 
+    public void processRadioButtonEvent(Timeline timeline, RadioButtonEvent radioButtonEvent){
+        var index = timeline.indexOf(radioButtonEvent);
+        var entityTimelineId = timeline.getId().toString()+"#"+index;
+
+        processRadioButtonEvent(radioButtonEvent.getXpath(), entityTimelineId, radioButtonEvent.getRadioGroup(), radioButtonEvent.getOptions());
+    }
+
 
     /**
      * A wrapper method for {@link #processNetworkEvent(String, String, String)} to simplify processing {@link NetworkEvent}s.
@@ -349,6 +356,22 @@ public class Neo4JUtils {
         );
     }
 
+    public void processRadioButtonEvent(String xpath, String eventId, String radioGroup, List<RadioButtonEvent.RadioButton> relatedElements){
+
+        //If a radiobutton node for this event already exists in the database, this supplier will be used to retrieve it;
+        Supplier<RadioButtonNode> existingRadioButtonNodeSupplier = ()->getRadioButtonNode(xpath);
+
+        //Invoke generic processing logic
+        processNode(
+                eventId,
+                RadioButtonNode.class,
+                existingRadioButtonNodeSupplier,
+                newRadioButtonNodeSupplier(xpath, eventId, radioGroup, relatedElements),
+                processRadioButtonNodeQueryFunction()
+        );
+
+    }
+
     public void processCheckboxEvent(String xpath, String eventId){
         //If a checkbox node for this event already exists in the database, this supplier will be used to retrieve it;
         Supplier<CheckboxNode> existingCheckboxNodeSupplier = ()->getCheckboxNode(xpath);
@@ -384,6 +407,21 @@ public class Neo4JUtils {
                 newDataEntryNodeSupplier(xpath, editorId, eventId), //If no data entry node could be found, this supplier will be used to create one
                 processDataEntryNodeQueryFunction()//The update query used to update/merge the processed data entry node into the database.
         );
+
+    }
+
+    private Function<RadioButtonNode, Query> processRadioButtonNodeQueryFunction(){
+
+        return (radioButtonNode) -> {
+          HashMap<String, Object> props = new HashMap<>();
+          props.put("xpath", radioButtonNode.getXpath());
+          props.put("id", radioButtonNode.getId().toString());
+          props.put("instances", radioButtonNode.getInstances());
+          props.put("relatedElements", radioButtonNode.getButtonsAsStrings());
+
+
+            return makeGenericMergeQuery("RadioButtonNode", radioButtonNode, props, "xpath", radioButtonNode.getXpath(), "props", props);
+        };
 
     }
 
@@ -424,6 +462,20 @@ public class Neo4JUtils {
             node.setWebsite(website);
             return node;
         };
+    }
+
+    private Supplier<RadioButtonNode> newRadioButtonNodeSupplier(String xpath, String eventId, String radioGroup, List<RadioButtonEvent.RadioButton> relatedElements){
+        //If no radiobutton node could be found, this supplier will be used to create one.
+        return ()->{
+            RadioButtonNode node = new RadioButtonNode();
+            node.setId(UUID.randomUUID());
+            node.setXpath(xpath);
+            node.setInstances(Set.of(eventId));
+            node.setRadioGroup(radioGroup);
+            node.setRadioButtons(relatedElements);
+            return node;
+        };
+
     }
 
     private Supplier<CheckboxNode> newCheckboxNodeSupplier(String xpath, String eventId){
@@ -577,7 +629,7 @@ public class Neo4JUtils {
             query = new Query(stmt, parameters(keysAndValues));
         }
 
-        //log.info("Merge Query:\n{}", stmt); //For debugging
+        log.info("Merge Query:\n{}", stmt); //For debugging
 
         return query;
 
@@ -824,6 +876,11 @@ public class Neo4JUtils {
             return getDataEntryNode(dataEntry.xpath());
         }
 
+        if(target instanceof RadioButtonEvent){
+            RadioButtonEvent radioButtonEvent = (RadioButtonEvent) target;
+            return getRadioButtonNode(radioButtonEvent.getXpath());
+        }
+
         if(target instanceof CheckboxEvent){
             CheckboxEvent checkboxEvent = (CheckboxEvent) target;
             return getCheckboxNode(checkboxEvent.xpath());
@@ -880,6 +937,10 @@ public class Neo4JUtils {
             stmt = "MATCH (a:ClickNode {id:$aId})-[:NEXT]->(e:EffectNode)";
         }
 
+        if(predecessor instanceof RadioButtonNode){
+            stmt = "MATCH (a:RadioButtonNode {id:$aId})-[:NEXT]->(e:EffectNode)";
+        }
+
         if(predecessor instanceof CheckboxNode){
             stmt = "MATCH (a:CheckboxNode {id:$aId})-[:NEXT]->(e:EffectNode)";
         }
@@ -902,6 +963,10 @@ public class Neo4JUtils {
 
         if(successor instanceof ClickNode){
             stmt += "-[:NEXT]->(b:ClickNode {id:$bId}) RETURN e;";
+        }
+
+        if(successor instanceof RadioButtonNode){
+            stmt += "-[:NEXT]->(b:RadioButtonNode {id:$bId}) RETURN e;";
         }
 
         if(successor instanceof CheckboxNode){
@@ -938,6 +1003,10 @@ public class Neo4JUtils {
             stmt = "MATCH (e:EffectNode)-[:NEXT]->(n:ClickNode {id:$id}) RETURN e;";
         }
 
+        if (successor instanceof RadioButtonNode){
+            stmt = "MATCH (e:EffectNode)-[:NEXT]->(n:RadioButtonNode {id:$id}) RETURN e;";
+        }
+
         if(successor instanceof CheckboxNode){
             stmt = "MATCH (e:EffectNode)-[:NEXT]->(n:CheckboxNode {id:$id}) RETURN e;";
         }
@@ -970,6 +1039,10 @@ public class Neo4JUtils {
         var stmt = "";
         if(predecessor instanceof ClickNode){
             stmt = "MATCH (n:ClickNode {id:$id})-[:NEXT]->(e:EffectNode) RETURN e;";
+        }
+
+        if(predecessor instanceof RadioButtonNode){
+            stmt = "MATCH (n:RadioButtonNode {id:$id})-[:NEXT]->(e:EffectNode) RETURN e;";
         }
 
         if(predecessor instanceof CheckboxNode){
@@ -1054,6 +1127,12 @@ public class Neo4JUtils {
         log.info("getSelectOptionNode Query: {}", stmt);
 
         return readNode(query, SelectOptionNode.class);
+    }
+
+    private RadioButtonNode getRadioButtonNode(String xpath){
+        var stmt = "MATCH (n:RadioButtonNode {xpath:$xpath}) return n";
+        var query = new Query(stmt, parameters("xpath", xpath));
+        return readNode(query, RadioButtonNode.class);
     }
 
     private CheckboxNode getCheckboxNode(String xpath){

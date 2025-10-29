@@ -189,6 +189,12 @@ public class SemanticSequencer {
                             artifactConsumer.accept(inputChange); //Invoke them with the newly processed artifact.
                         }
 
+                        if (inputChange instanceof RadioButtonEvent){
+                            line.add((RadioButtonEvent)inputChange);
+                            log.info("handled INPUT - Radio button");
+                            return;
+                        }
+
                         if(inputChange instanceof CheckboxEvent){
                             line.add((CheckboxEvent)inputChange);
                             log.info("handled INPUT - Checkbox");

@@ -25,14 +25,26 @@ public abstract class HttpServiceVerticle extends ConfigurableVerticle {
 
     public abstract String configFilePath();
 
+    protected HttpServerOptions getServerOptions() {
+        return new HttpServerOptions()
+                .setHost(_config.getString("host", "0.0.0.0"))
+                .setPort(_config.getInteger("port", 8080));
+    }
+
+    protected HttpServer afterServerCreate(HttpServer server){
+        return server;
+    }
+
     public Completable onStart(){
 
         //Initialize Http Server
-        HttpServerOptions serverOptions = new HttpServerOptions()
-                .setHost(_config.getString("host", "0.0.0.0"))
-                .setPort(_config.getInteger("port", 8080));
+        HttpServerOptions serverOptions = getServerOptions();
 
         server = vertx.createHttpServer(serverOptions);
+
+        //Call afterServerCreate to allow subclasses to attach any custom handlers before we invoke server.listen
+        server = afterServerCreate(server);
+
         mainRouter = Router.router(vertx);
         api = Router.router(vertx);
 
