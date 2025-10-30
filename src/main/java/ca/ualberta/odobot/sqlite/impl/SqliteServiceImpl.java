@@ -93,6 +93,10 @@ public class SqliteServiceImpl implements SqliteService {
                                 .put("label", row.getString("label"))
                                 .put("description", row.getString("description"));
 
+                        if (row.getString("radio_group") != null) {
+                            result.put("radioGroup", row.getString("radio_group"));
+                        }
+
                         results.add(result);
                     }
 
@@ -117,6 +121,10 @@ public class SqliteServiceImpl implements SqliteService {
                                 .put("inputElement", row.getString("input_element"))
                                 .put("htmlContext", row.getString("html_context"))
                                 .put("enteredData", new JsonArray(row.getString("entered_data")));
+
+                        if (row.getString("radio_group") != null) {
+                            result.put("radioGroup", row.getString("radio_group"));
+                        }
 
                         results.add(result);
                     }
@@ -252,13 +260,14 @@ public class SqliteServiceImpl implements SqliteService {
     public Future<Void> saveDataEntryAnnotation(JsonObject info){
 
         String sql = """
-                INSERT INTO data_entry_annotations (xpath, label, description) VALUES (?,?,?);
+                INSERT INTO data_entry_annotations (xpath, label, description, radio_group) VALUES (?,?,?,?);
                 """;
 
         Tuple params = Tuple.of(
                 info.getString("xpath"),
                 info.getString("label"),
-                info.getString("description")
+                info.getString("description"),
+                info.containsKey("radioGroup")?info.getString("radioGroup"):null
         );
 
         return executeParameterizedQuery(sql, params);
@@ -868,7 +877,7 @@ public class SqliteServiceImpl implements SqliteService {
          *
          */
         String sql = """
-                INSERT INTO data_entries(xpath, input_element, html_context, entered_data) VALUES (?,?,?,?)
+                INSERT INTO data_entries(xpath, input_element, html_context, entered_data, radio_group) VALUES (?,?,?,?,?)
                 ON CONFLICT(xpath) DO UPDATE SET entered_data = json_insert(entered_data, '$[#]', ?) WHERE NOT INSTR(entered_data, ?);
                 """;
 
@@ -880,6 +889,7 @@ public class SqliteServiceImpl implements SqliteService {
                 info.getString("input_element"),
                 info.getString("html_context"),
                 info.containsKey("entered_data")?new JsonArray().add(info.getString("entered_data")).encode():new JsonArray().encode(),
+                info.containsKey("radio_group")?info.getString("radio_group"):null,
                 info.getString("entered_data"),
                 info.getString("entered_data")
         );
@@ -894,7 +904,8 @@ public class SqliteServiceImpl implements SqliteService {
                 CREATE TABLE IF NOT EXISTS data_entry_annotations(
                     xpath text PRIMARY KEY,
                     label text NOT NULL,
-                    description text NOT NULL
+                    description text NOT NULL,
+                    radio_group text
                 ) 
                 """);
     }
@@ -932,7 +943,8 @@ public class SqliteServiceImpl implements SqliteService {
                     xpath text PRIMARY KEY,
                     input_element text NOT NULL,
                     html_context text NOT NULL,
-                    entered_data text NOT NULL
+                    entered_data text NOT NULL,
+                    radio_group text
                 );
                 """);
     }

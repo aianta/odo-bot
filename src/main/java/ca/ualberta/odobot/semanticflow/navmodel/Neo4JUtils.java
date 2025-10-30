@@ -1269,10 +1269,10 @@ public class Neo4JUtils {
         return result;
     }
 
-    public List<DataEntryNode> getNodesForInputParameters(){
+    public List<NavNode> getNodesForInputParameters(){
         try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
             String sQuery = """
-                    match (n) WHERE n:DataEntryNode OR n:CheckboxNode return n;
+                    match (n) WHERE n:DataEntryNode OR n:CheckboxNode OR n:RadioButtonNode return n;
                     """;
             Query query = new Query(sQuery);
 
@@ -1281,11 +1281,22 @@ public class Neo4JUtils {
                 return result.list();
             });
 
-            List<DataEntryNode> dataEntryNodes = results.stream()
-                    .map(DataEntryNode::fromRecord)
+            List<NavNode> nodes = results.stream()
+                    .map(record->{
+                        var node = record.get(0).asNode();
+                        if(node.hasLabel("DataEntryNode")){
+                            return DataEntryNode.fromRecord(record);
+                        }else if(node.hasLabel("CheckboxNode")){
+                            return CheckboxNode.fromRecord(record);
+                        } else if(node.hasLabel("RadioButtonNode")){
+                            return RadioButtonNode.fromRecord(record);
+                        }else{
+                            return null;
+                        }
+                    })
                     .collect(Collectors.toList());
 
-            return dataEntryNodes;
+            return nodes;
         }
     }
 

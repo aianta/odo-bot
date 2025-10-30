@@ -5,7 +5,10 @@ import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 import ca.ualberta.odobot.semanticflow.SemanticSequencer;
 import ca.ualberta.odobot.semanticflow.model.*;
 import ca.ualberta.odobot.semanticflow.navmodel.Neo4JUtils;
+import ca.ualberta.odobot.semanticflow.navmodel.nodes.CheckboxNode;
 import ca.ualberta.odobot.semanticflow.navmodel.nodes.DataEntryNode;
+import ca.ualberta.odobot.semanticflow.navmodel.nodes.NavNode;
+import ca.ualberta.odobot.semanticflow.navmodel.nodes.RadioButtonNode;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.Future;
@@ -84,7 +87,7 @@ public class DataEntry2LabelVerticle extends HttpServiceVerticle {
 
     private void annotateModel(RoutingContext rc){
 
-        List<DataEntryNode> nodesForInputParameters = neo4j.getNodesForInputParameters();
+        List<NavNode> nodesForInputParameters = neo4j.getNodesForInputParameters();
 
         sqliteService.getAllDataEntryAnnotations()
                 .onSuccess(annotations->{
@@ -92,7 +95,18 @@ public class DataEntry2LabelVerticle extends HttpServiceVerticle {
                     nodesForInputParameters.stream()
                             .forEach(node->{
 
-                                Optional<JsonObject> parameterAnnotation = annotations.stream().filter(annotation->annotation.getString("xpath").equals(node.getXpath())).findFirst();
+                                Optional<JsonObject> parameterAnnotation = annotations.stream().filter(annotation->{
+                                    if(node instanceof RadioButtonNode){
+                                        return ((RadioButtonNode)node).getXpaths().contains(annotation.getString("xpath"));
+                                    }else if (node instanceof DataEntryNode){
+                                        return annotation.getString("xpath").equals(((DataEntryNode)node).getXpath());
+                                    }else if (node instanceof CheckboxNode){
+                                        return annotation.getString("xpath").equals(((CheckboxNode)node).getXpath());
+                                    }
+
+                                    return false;
+
+                                }).findFirst();
 
                                 if(parameterAnnotation.isPresent()){
                                     UUID parameterNodeId = neo4j.addInputParameter(parameterAnnotation.get(), node.getId().toString());
@@ -100,6 +114,8 @@ public class DataEntry2LabelVerticle extends HttpServiceVerticle {
                                 }
 
                             });
+
+                    rc.response().setStatusCode(200).end();
 
                 })
                 .onFailure(err->{
@@ -269,8 +285,28 @@ public class DataEntry2LabelVerticle extends HttpServiceVerticle {
                     .compose(timeline->{
 
                         return Future.all(timeline.stream()
-                                .filter(entity->entity instanceof DataEntry || entity instanceof CheckboxEvent) //Data entries and checkbox events are both based on InputChanges
+                                .filter(entity->entity instanceof DataEntry || entity instanceof CheckboxEvent || entity instanceof RadioButtonEvent) //Data entries, checkbox events, and radio button events are all based on InputChanges
                                 .map(entity->{
+
+                                    if(entity instanceof RadioButtonEvent){
+                                        RadioButtonEvent radioButtonEvent = (RadioButtonEvent)entity;
+
+                                        //The DomSnapshot must contain the input element, otherwise what are we doing?
+                                        assert  radioButtonEvent.getDomSnapshot().outerHtml().contains(radioButtonEvent.getInputElement().outerHtml());
+
+                                        //Assemble the HTML context as a concatenation of all radio button options.
+                                        StringBuilder htmlContext = new StringBuilder();
+                                        radioButtonEvent.getOptions().forEach(radioButton -> htmlContext.append(radioButton.getHtml() + "\n"));
+
+                                        JsonObject data = new JsonObject()
+                                                .put("input_element", radioButtonEvent.getInputElement().outerHtml())
+                                                .put("html_context", htmlContext.toString())
+                                                .put("radio_group", radioButtonEvent.getRadioGroup())
+                                                .put("xpath", radioButtonEvent.getXpath());
+
+                                        return data;
+                                    }
+
 
                                     if(entity instanceof CheckboxEvent){
                                         CheckboxEvent checkboxEvent = (CheckboxEvent) entity;

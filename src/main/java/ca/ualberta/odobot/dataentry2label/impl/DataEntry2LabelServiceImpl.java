@@ -24,7 +24,13 @@ public class DataEntry2LabelServiceImpl implements DataEntry2LabelService {
 
         return vertx.executeBlocking(blocking->
             this.strategy.generateLabelAndDescription(dataEntryInfo)
-                    .compose(result->Future.succeededFuture(result.put("xpath", dataEntryInfo.getString("xpath"))))
+                    .compose(result->{
+                        result.put("xpath", dataEntryInfo.getString("xpath"));
+                        if(dataEntryInfo.containsKey("radioGroup")){
+                            result.put("radioGroup", dataEntryInfo.getString("radioGroup"));
+                        }
+                        return Future.succeededFuture(result);
+                    })
                     .onSuccess(blocking::complete)
                     .onFailure(blocking::fail)
         );
