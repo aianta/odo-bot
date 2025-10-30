@@ -12,7 +12,6 @@ import java.util.Map;
 
 public class RadioButtonNode extends NavNode{
 
-    private String xpath;
 
     private String radioGroup;
 
@@ -22,7 +21,6 @@ public class RadioButtonNode extends NavNode{
         Node n = record.get(0).asNode();
 
         RadioButtonNode result = fromRecord(record, new RadioButtonNode());
-        result.setXpath(n.get("xpath").asString());
         result.setRadioGroup(n.get("radioGroup").asString());
 
         result.setRadioButtons(n.get("relatedElements").asList(value -> {
@@ -36,14 +34,10 @@ public class RadioButtonNode extends NavNode{
 
     }
 
-    public String getXpath() {
-        return xpath;
+    public List<String> getXpaths(){
+        return radioButtons.stream().map(RadioButtonEvent.RadioButton::getXpath).toList();
     }
 
-    public RadioButtonNode setXpath(String xpath) {
-        this.xpath = xpath;
-        return this;
-    }
 
     public String getRadioGroup() {
         return radioGroup;

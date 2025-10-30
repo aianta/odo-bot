@@ -358,17 +358,61 @@ public class Neo4JUtils {
 
     public void processRadioButtonEvent(String xpath, String eventId, String radioGroup, List<RadioButtonEvent.RadioButton> relatedElements){
 
-        //If a radiobutton node for this event already exists in the database, this supplier will be used to retrieve it;
-        Supplier<RadioButtonNode> existingRadioButtonNodeSupplier = ()->getRadioButtonNode(xpath);
+        log.info("Processing RadioButtonEvent {} [xpath: {}, radioGroup: {}]", eventId, xpath, radioGroup);
 
-        //Invoke generic processing logic
-        processNode(
-                eventId,
-                RadioButtonNode.class,
-                existingRadioButtonNodeSupplier,
-                newRadioButtonNodeSupplier(xpath, eventId, radioGroup, relatedElements),
-                processRadioButtonNodeQueryFunction()
-        );
+        //If a radiobutton node for this event already exists in the database, this supplier will be used to retrieve it;
+        Supplier<RadioButtonNode> existingRadioButtonNodeSupplier = ()->getRadioButtonNode(xpath, radioGroup);
+
+        RadioButtonNode node = existingRadioButtonNodeSupplier.get();
+
+        if(node == null){ //Node cannot be found.
+            //Create it.
+            node = newRadioButtonNodeSupplier(eventId, radioGroup, relatedElements).get();
+        }else{
+            //If the node was found, update its list of instances.
+            node.getInstances().add(eventId);
+        }
+
+        //Write changes to the node back into the database
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+
+            //Try and find the existing node in the database.
+            RadioButtonNode _existing = getRadioButtonNode(xpath, radioGroup);
+            if(_existing != null){
+                log.info("Updating existing RadioButtonNode");
+
+                //Update its instances
+                var stmt = "MATCH (n:RadioButtonNode {id:$id}) SET n.instances = $instances RETURN n";
+                var query = new Query(stmt, parameters("id",_existing.getId().toString(), "instances", node.getInstances()));
+                session.executeWrite(tx->{
+                    tx.run(query);
+                    return 0;
+                });
+            }else{
+                log.info("Creating new RadioButtonNode");
+
+                //Sanity check
+                log.info("Event xpath exists in RadioButtonNode's xpath: {}", node.getXpaths().contains(xpath));
+                assert node.getXpaths().contains(xpath);
+
+                //No existing node. Create one now.
+                HashMap<String, Object> props = new HashMap<>();
+                props.put("xpaths", node.getXpaths());
+                props.put("id", node.getId().toString());
+                props.put("instances", node.getInstances());
+                props.put("radioGroup", node.getRadioGroup());
+                props.put("relatedElements", node.getButtonsAsStrings());
+
+                var stmt = "CREATE (n:RadioButtonNode) SET n = $props RETURN n;";
+                var query = new Query(stmt, parameters( "props", props));
+                session.executeWrite(tx->{
+                    tx.run(query);
+                    return 0;
+                });
+            }
+
+        }
+
 
     }
 
@@ -410,20 +454,21 @@ public class Neo4JUtils {
 
     }
 
-    private Function<RadioButtonNode, Query> processRadioButtonNodeQueryFunction(){
-
-        return (radioButtonNode) -> {
-          HashMap<String, Object> props = new HashMap<>();
-          props.put("xpath", radioButtonNode.getXpath());
-          props.put("id", radioButtonNode.getId().toString());
-          props.put("instances", radioButtonNode.getInstances());
-          props.put("relatedElements", radioButtonNode.getButtonsAsStrings());
-
-
-            return makeGenericMergeQuery("RadioButtonNode", radioButtonNode, props, "xpath", radioButtonNode.getXpath(), "props", props);
-        };
-
-    }
+//    private Function<RadioButtonNode, Query> processRadioButtonNodeQueryFunction(){
+//
+//        return (radioButtonNode) -> {
+//          HashMap<String, Object> props = new HashMap<>();
+//          props.put("xpaths", radioButtonNode.getXpaths());
+//          props.put("id", radioButtonNode.getId().toString());
+//          props.put("instances", radioButtonNode.getInstances());
+//          props.put("radioGroup", radioButtonNode.getRadioGroup());
+//          props.put("relatedElements", radioButtonNode.getButtonsAsStrings());
+//
+//
+//            return makeGenericMergeQuery("RadioButtonNode", radioButtonNode, props, "xpath", radioButtonNode.getXpath(), "props", props);
+//        };
+//
+//    }
 
     private Function<CheckboxNode, Query> processCheckboxNodeQueryFunction(){
 
@@ -464,12 +509,11 @@ public class Neo4JUtils {
         };
     }
 
-    private Supplier<RadioButtonNode> newRadioButtonNodeSupplier(String xpath, String eventId, String radioGroup, List<RadioButtonEvent.RadioButton> relatedElements){
+    private Supplier<RadioButtonNode> newRadioButtonNodeSupplier(String eventId, String radioGroup, List<RadioButtonEvent.RadioButton> relatedElements){
         //If no radiobutton node could be found, this supplier will be used to create one.
         return ()->{
             RadioButtonNode node = new RadioButtonNode();
             node.setId(UUID.randomUUID());
-            node.setXpath(xpath);
             node.setInstances(Set.of(eventId));
             node.setRadioGroup(radioGroup);
             node.setRadioButtons(relatedElements);
@@ -598,7 +642,7 @@ public class Neo4JUtils {
 
 
     /**
-     * Helper method that returns a cypher query to match or create a specific node based on its propery values.
+     * Helper method that returns a cypher query to match or create a specific node based on its property values.
      * @param nodeLabel
      * @param node
      * @param props the properties of the node to create/update.
@@ -878,7 +922,8 @@ public class Neo4JUtils {
 
         if(target instanceof RadioButtonEvent){
             RadioButtonEvent radioButtonEvent = (RadioButtonEvent) target;
-            return getRadioButtonNode(radioButtonEvent.getXpath());
+            log.info("RadioButtonNode with xpath: {}", radioButtonEvent.getXpath());
+            return getRadioButtonNode(radioButtonEvent.getXpath(), radioButtonEvent.getRadioGroup());
         }
 
         if(target instanceof CheckboxEvent){
@@ -1129,9 +1174,9 @@ public class Neo4JUtils {
         return readNode(query, SelectOptionNode.class);
     }
 
-    private RadioButtonNode getRadioButtonNode(String xpath){
-        var stmt = "MATCH (n:RadioButtonNode {xpath:$xpath}) return n";
-        var query = new Query(stmt, parameters("xpath", xpath));
+    private RadioButtonNode getRadioButtonNode(String xpath, String radioGroup){
+        var stmt = "MATCH (n:RadioButtonNode {radioGroup:$radioGroup}) WHERE $xpath IN n.xpaths return n";
+        var query = new Query(stmt, parameters("xpath", xpath, "radioGroup", radioGroup));
         return readNode(query, RadioButtonNode.class);
     }
 
