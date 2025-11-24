@@ -2,12 +2,9 @@ package ca.ualberta.odobot.guidance.connectionmanagers;
 
 import ca.ualberta.odobot.guidance.GuidanceVerticle;
 import ca.ualberta.odobot.guidance.OdoClient;
-import ca.ualberta.odobot.guidance.Request;
-import ca.ualberta.odobot.guidance.WebSocketConnection;
 import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
 import ca.ualberta.odobot.guidance.execution.SchemaParameter;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
-import ca.ualberta.odobot.semanticflow.navmodel.DynamicXPath;
 import ca.ualberta.odobot.snippet2xml.SemanticObject;
 import ca.ualberta.odobot.snippet2xml.Snippet2XMLVerticle;
 import io.vertx.core.Future;
@@ -56,7 +53,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
         JsonObject clearNavigationOptionsRequest = new JsonObject()
                 .put("type", "CLEAR_NAVIGATION_OPTIONS")
                 .put("source", SOURCE)
-                .put("pathsRequestId", client.getRequestManager().getActiveRequest().id().toString());
+                .put("pathsRequestId", client.getRequestManager().getActiveExecutionRequest().getId().toString());
 
         Promise<JsonObject> promise = Promise.promise();
         activePromises.put("CLEAR_NAVIGATION_OPTIONS_RESULT", promise);
@@ -79,7 +76,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
         JsonObject showNavigationOptionsRequest = new JsonObject()
                 .put("type", "SHOW_NAVIGATION_OPTIONS")
                 .put("source", SOURCE)
-                .put("pathsRequestId", client.getRequestManager().getActiveRequest().id().toString())
+                .put("pathsRequestId", client.getRequestManager().getActiveExecutionRequest().getId().toString())
                 .mergeIn(navigationOptions);
 
         Promise<JsonObject> promise = Promise.promise();

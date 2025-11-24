@@ -745,15 +745,16 @@ public class SqliteServiceImpl implements SqliteService {
     public Future<Void> saveDynamicXpathForWebsite(JsonObject xpathData, String xpathId, String nodeId, String website) {
         String sql = """
             INSERT INTO dynamic_xpaths (
-                id, prefix, tag, suffix, source_node_id,website
-            ) VALUES (?,?,?,?,?,?);
+                id, prefix, tag, suffix, suffix_pattern, source_node_id,website
+            ) VALUES (?,?,?,?,?,?,?);
         """;
 
         Tuple params = Tuple.of(
                 xpathId,
                 xpathData.getString("prefix"),
                 xpathData.getString("dynamicTag"),
-                xpathData.getString("suffix"),
+                xpathData.containsKey("suffix")?xpathData.getJsonArray("suffix").encode():null,
+                xpathData.containsKey("suffixPattern")?xpathData.getString("suffixPattern"):null,
                 nodeId,
                 website
         );
@@ -1023,10 +1024,11 @@ public class SqliteServiceImpl implements SqliteService {
                 id text not null,
                 prefix text not null,
                 tag text not null,
-                suffix text not null,
+                suffix text,
+                suffix_pattern text, 
                 source_node_id text not null,
                 website not null,
-                primary key (prefix, tag, suffix, website)
+                primary key (prefix, tag, website)
             )
         """);
     }

@@ -1,8 +1,6 @@
 package ca.ualberta.odobot.guidance.connectionmanagers;
 
 import ca.ualberta.odobot.guidance.OdoClient;
-import ca.ualberta.odobot.guidance.Request;
-import ca.ualberta.odobot.guidance.WebSocketConnection;
 import ca.ualberta.odobot.guidance.execution.ExecutionParameter;
 import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
 import io.vertx.core.json.JsonArray;
@@ -11,7 +9,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.UUID;
-import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
 public class ControlConnectionManager extends AbstractConnectionManager implements ConnectionManager{
@@ -31,11 +28,16 @@ public class ControlConnectionManager extends AbstractConnectionManager implemen
         log.info("ControlConnectionManager onMessage invoked! - {}", message.getString("type"));
         switch (message.getString("type")){
             case "PATHS_REQUEST":
-                Request request = new Request(UUID.fromString(message.getString("pathsRequestId")));
-                request.setTargetNode(message.getString("targetNode"));
-                request.setUserLocation(message.getString("userLocation"));
+                ExecutionRequest _request = new ExecutionRequest();
+                _request.setId(UUID.fromString(message.getString("pathsRequestId")));
+                _request.setTarget(message.getString("targetNode"));
+                _request.setUserLocation(message.getString("userLocation"));
+                //TODO -> do we want/need to support this avenue for requesting executions?
+//                Request request = new Request(UUID.fromString(message.getString("pathsRequestId")));
+//                request.setTargetNode(message.getString("targetNode"));
+//                request.setUserLocation(message.getString("userLocation"));
 
-                client.getRequestManager().addNewRequest(request);
+                //client.getRequestManager().addNewRequest(request);
 
 
                 break;

@@ -19,6 +19,7 @@ public enum InteractionType{
     private static final Logger log = LoggerFactory.getLogger(InteractionType.class);
 
     public static InteractionType getType(String eventDetails_name){
+        log.info("Looking for InteractionType for {}", eventDetails_name);
         if(CLICK.logNames.contains(eventDetails_name))return CLICK;
         if(INPUT.logNames.contains(eventDetails_name))return INPUT;
         if(NETWORK_EVENT.logNames.contains(eventDetails_name))return NETWORK_EVENT;

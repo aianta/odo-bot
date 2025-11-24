@@ -73,10 +73,7 @@ public abstract class AbstractConnectionManager implements ConnectionManager {
                 .put("type", "PATH_COMPLETE")
                 .put("source", source)
                 //resolve the paths request id, this can either be a guidance request (Request) or execution request (ExecutionRequest) TODO: refactor this
-                .put("pathsRequestId", client.getRequestManager().getActiveRequest() != null?
-                        client.getRequestManager().getActiveRequest().id().toString():
-                        client.getRequestManager().getActiveExecutionRequest().getId().toString()
-                        );
+                .put("pathsRequestId", client.getRequestManager().getActiveExecutionRequest().getId().toString());
 
         return notifyPathCompleteRequest;
     }

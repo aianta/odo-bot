@@ -210,7 +210,8 @@ public class CollapsingEvaluator implements Evaluator {
                  */
                 if(!patternNode.label.equals(pathNode.label) || //If the labels do not match, then this is not a match.
                         (patternNode.label.equals("APINode") && pathNode.label.equals("APINode") && !patternNode.elementId.equals(pathNode.elementId))  ||//If the nodes have matching APINode labels, they must be an ending anchor (that is, the same elementId), otherwise, no match.
-                        (patternNode.label.equals("ApplicationLocationChangeNode") && pathNode.label.equals("ApplicationLocationChangeNode") && !patternNode.elementId.equals(pathNode.elementId)) //Similarly if the nodes have matching ApplicationLocationChangeNode labels, they must be an ending anchor (that is, the same elementId), otherwise no match.
+                        (patternNode.label.equals("ApplicationLocationChangeNode") && pathNode.label.equals("ApplicationLocationChangeNode") && !patternNode.elementId.equals(pathNode.elementId)) ||//Similarly if the nodes have matching ApplicationLocationChangeNode labels, they must be an ending anchor (that is, the same elementId), otherwise no match.
+                        (patternNode.label.equals("LocationNode") && pathNode.label.equals("LocationNode") && !patternNode.elementId.equals(pathNode.elementId))
                 ){
                     log.info("MISMATCH FOR {}", pathNode.toString());
                     return false;

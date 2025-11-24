@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.semanticflow.navmodel;
 
+import ca.ualberta.odobot.common.Xpath;
 import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
 import ca.ualberta.odobot.guidance.execution.InputParameter;
 import ca.ualberta.odobot.guidance.instructions.*;
@@ -18,6 +19,7 @@ import java.util.*;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 public class NavPath {
@@ -43,6 +45,8 @@ public class NavPath {
             node.hasLabel(Label.label("LocationNode"));
 
     private Instruction lastInstruction;
+
+    private String lastInstructionNodeId; //The id of the node corresponding with the last instruction.
 
     private Set<String> parameters;
 
@@ -199,6 +203,7 @@ public class NavPath {
                 }
 
                 lastInstruction = instruction;
+                setLastInstructionNodeId((String)node.getProperty("id")); //Set this so we can keep track of which nodes have already been visited.
                 return instruction;
 
             }
@@ -234,6 +239,7 @@ public class NavPath {
                 }
 
                 lastInstruction = instruction;
+                setLastInstructionNodeId((String)node.getProperty("id")); //Set this so we can keep track of which nodes have already been visited.
                 return instruction;
             }
         }
@@ -296,7 +302,15 @@ public class NavPath {
         }
 
         String [] xpaths = (String[]) n.getProperty("xpaths");
-        return findDynamicXPath(xpaths);
+        Set<Xpath> uniqueXpaths = Arrays.stream(xpaths).map(Xpath::new).collect(Collectors.toSet());
+        if(uniqueXpaths.size() > 1){
+            return findDynamicXPath(xpaths);
+        }else{
+            log.info("Node {} does not contain a dynamic xpath.", (String)n.getProperty("id"));
+            return null;
+        }
+
+
     }
 
     private JsonObject makeInstructionFromCollapsedNode(Node n){
@@ -314,9 +328,14 @@ public class NavPath {
     }
 
 
+    public String getLastInstructionNodeId() {
+        return lastInstructionNodeId;
+    }
 
-
-
+    public NavPath setLastInstructionNodeId(String lastInstructionNodeId) {
+        this.lastInstructionNodeId = lastInstructionNodeId;
+        return this;
+    }
 
     public static String findCommonXpath(String [] xpaths){
 
@@ -356,8 +375,24 @@ public class NavPath {
             return null;
         }
 
+        //Prune any xpaths that go beyond svgs. For example .../svg/g/path becomes .../svg
+        //TODO: these should probably be pruned way earlier...but whatever, we can do that later.
+        for(int i=0;i<xpaths.length;i++){
+            String xpath = xpaths[i];
+            if (xpath.lastIndexOf("svg") != -1){
+                xpaths[i] = xpath.substring(0, xpath.lastIndexOf("svg") + 3);
+            }
+        }
+
         //Ensure longest entry first
         Arrays.sort(xpaths, Comparator.comparing(s->((String)s).length()).reversed());
+
+
+
+        //For debugging
+        for(String xpath: xpaths){
+            log.info("{}", xpath);
+        }
 
         String first = xpaths[0];
         int length = 1;
@@ -384,37 +419,58 @@ public class NavPath {
                 .findFirst()
                 .get();
 
-        length = 2;
-
         log.info("Working on suffix");
-        while (length < first.length()){
-
-            final int _length = length;
-
-            if(Arrays.stream(xpaths).allMatch(example->example.substring(example.length()-_length).equals(first.substring(first.length()-_length)))){
-                length++;
-            }else {
-                break;
+        List<String> suffixes = Arrays.stream(xpaths).map(s->{
+            try{
+                var temp = s.substring(MATCHING_LENGTH);
+                return temp.substring(temp.indexOf("/")+1);
+            }catch (StringIndexOutOfBoundsException e){
+                return null; //If there is a sample where there is no suffix, discard it.
             }
+
+
+        }).filter(Objects::nonNull).
+                toList();
+        Pattern suffixPattern = DynamicXPath.toSuffixPattern(suffixes);
+
+
+
+
+//        length = 2;
+//
+//        while (length < first.length()){
+//
+//            final int _length = length;
+//
+//            if(Arrays.stream(xpaths).allMatch(example->example.substring(example.length()-_length).equals(first.substring(first.length()-_length)))){
+//                length++;
+//            }else {
+//                break;
+//            }
+//        }
+//
+//        final int MATCHING_SUFFIX_LENGTH = length;
+//        log.info("Matching suffix length was: {}", MATCHING_SUFFIX_LENGTH);
+//        String suffix = Arrays.stream(xpaths).map(s->{
+//            String slice = s.substring(s.length()-MATCHING_SUFFIX_LENGTH);
+//            if(!slice.contains("/")){
+//                throw new RuntimeException("Suffix doesn't contain any forward slashes, how'd you manage that? Suffix: " + slice);
+//            }
+//            slice = slice.substring(slice.indexOf("/"));
+//            return slice;
+//        }).peek(s->System.out.println(s))
+//                .findFirst()
+//                .get();
+
+        log.info("Prefix: {} SuffixPattern: {}", prefix, suffixPattern.pattern());
+        String tagString = first.substring(prefix.length());
+
+        var matcher = suffixPattern.matcher(first);
+        if(matcher.find()){
+            var suffix = matcher.group(0);
+            tagString = tagString.substring(0, tagString.length()-suffix.length());
         }
 
-        final int MATCHING_SUFFIX_LENGTH = length;
-        log.info("Matching suffix length was: {}", MATCHING_SUFFIX_LENGTH);
-        String suffix = Arrays.stream(xpaths).map(s->{
-            String slice = s.substring(s.length()-MATCHING_SUFFIX_LENGTH);
-            if(!slice.contains("/")){
-                throw new RuntimeException("Suffix doesn't contain any forward slashes, how'd you manage that? Suffix: " + slice);
-            }
-            slice = slice.substring(slice.indexOf("/"));
-            return slice;
-        }).peek(s->System.out.println(s))
-                .findFirst()
-                .get();
-
-        log.info("Prefix: {} Suffix: {}", prefix, suffix);
-
-        String tagString = first.substring(prefix.length());
-        tagString = tagString.substring(0, tagString.length()-suffix.length());
         log.info("tagString: {}", tagString);
 
         String tag = extractTag(tagString);
@@ -422,7 +478,9 @@ public class NavPath {
 
         DynamicXPath dXpath = new DynamicXPath();
         dXpath.setPrefix(prefix);
-        dXpath.setSuffix(suffix);
+        //dXpath.setSuffix(suffix);
+        dXpath.setSuffixPattern(suffixPattern);
+        dXpath.setKnownSuffixes(suffixes);
         dXpath.setDynamicTag(tag);
 
         return dXpath;
@@ -432,6 +490,24 @@ public class NavPath {
         Matcher matcher = pattern.matcher(input);
         matcher.find();
         return matcher.group();
+    }
+
+    public String makeCypherQueryForNodes(){
+
+        StringBuilder sbIds =  new StringBuilder();
+        sbIds.append("[");
+        Iterator<Node> it = getPath().nodes().iterator();
+        while (it.hasNext()){
+            Node node = it.next();
+            sbIds.append("\"%s\"".formatted(node.getProperty("id")));
+            if(it.hasNext()){
+                sbIds.append(",");
+            }
+        }
+        sbIds.append("]");
+
+
+        return "MATCH (n)-[r]-(m) WHERE n.id IN %s AND m.id IN %s RETURN n,m,r;".formatted(sbIds.toString(), sbIds.toString());
     }
 
     public static void saveNavPath(String filename, NavPath path){
@@ -449,6 +525,9 @@ public class NavPath {
                 nsb.append("-->");
                 sb.append(nsb.toString());
             });
+
+            sb.append("\n\n");
+            sb.append(path.makeCypherQueryForNodes());
 
             bw.write(sb.toString());
             bw.flush();

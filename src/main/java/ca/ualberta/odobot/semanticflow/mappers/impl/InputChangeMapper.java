@@ -128,9 +128,9 @@ public class InputChangeMapper extends JsonMapper<InputChange> {
 
         if(inputElement.attributes().hasKey("type")){
             return inputElement.attributes().get("type").equals("checkbox");
-        }else{
-            return false;
         }
+        return false;
+
     }
 
     public static String getMetadataValue(String key, JsonArray metadata){

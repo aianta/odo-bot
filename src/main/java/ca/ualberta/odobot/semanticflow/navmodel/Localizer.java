@@ -1,8 +1,10 @@
 package ca.ualberta.odobot.semanticflow.navmodel;
 
 import ca.ualberta.odobot.guidance.PathsRequestInput;
+import ca.ualberta.odobot.semanticflow.model.ApplicationLocationChange;
 import ca.ualberta.odobot.semanticflow.model.ClickEvent;
 import ca.ualberta.odobot.semanticflow.model.DataEntry;
+import ca.ualberta.odobot.semanticflow.model.NetworkEvent;
 import org.neo4j.graphdb.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,6 +23,8 @@ public class Localizer {
     private static final Logger log = LoggerFactory.getLogger(Localizer.class);
 
     private GraphDatabaseService db;
+
+    private Map<String, UUID> networkRequestIndex = new HashMap<>();
 
     /**
      * Index for resolving userLocation urls to node ids. These will map to LocationNode
@@ -46,6 +50,7 @@ public class Localizer {
         xPathLocationIndex = buildXpathLocationIndex();
         dynamicXPathLocationIndex = buildDynamicXPathLocationIndex();
         locationIndex = buildLocationIndex();
+        networkRequestIndex = buildNetworkEventIndex();
     }
 
     private Map<DynamicXPath, UUID> buildDynamicXPathLocationIndex(){
@@ -54,12 +59,30 @@ public class Localizer {
 
         executeNodesQuery("match (n) where n:CollapsedClickNode or n:CollapsedDataEntryNode return n;", "n",
                 (node)->{
+
+                    //For debugging
+                    log.info("Node:");
+                    node.getLabels().forEach(label->log.info("\t{}", label.name()));
+                    node.getAllProperties().forEach((key,value)->log.info("\t{}:{}", key, value.toString()));
+
                     DynamicXPathIndexEntry entry = buildDynamicXPathIndexEntry(node);
                     index.put(entry.dynamicXPath(), entry.nodeId());
                 });
 
         return index;
 
+    }
+
+    private Map<String, UUID> buildNetworkEventIndex(){
+        Map<String, UUID> index = new HashMap<>();
+        executeNodesQuery("match (n:APINode) return n;", "n", node->{
+            String method = (String)node.getProperty("method");
+            String path = (String)node.getProperty("path");
+
+            index.put(method+"-"+path, UUID.fromString((String)node.getProperty("id")));
+        });
+
+        return index;
     }
 
     private Map<String, UUID> buildLocationIndex(){
@@ -133,6 +156,19 @@ public class Localizer {
             }
 
         }
+    }
+
+    public Optional<UUID> findNodeByNetworkEvent(NetworkEvent networkEvent){
+        String key = networkEvent.getMethod() + "-" + networkEvent.getPath();
+        Optional<UUID> result = networkRequestIndex.entrySet().stream()
+                .filter(entry->entry.getKey().equals(key))
+                .map(Map.Entry::getValue)
+                .findAny();
+        return result;
+    }
+
+    public Optional<UUID> findNodeByLocationChange(ApplicationLocationChange locationChange){
+        return findNodeByLocation(locationChange.getToPath());
     }
 
 

@@ -62,7 +62,12 @@ public class MainVerticle extends ConfigurableVerticle {
 
         if(_config.getBoolean("Explorer")){
             ExplorerVerticle explorerVerticle = new ExplorerVerticle();
-            vertx.deployVerticle(explorerVerticle);
+            vertx.deployVerticle(explorerVerticle, new DeploymentOptions()
+                    .setWorkerPoolName("explorer-pool")
+                    .setWorkerPoolSize(8)
+                    .setMaxWorkerExecuteTime(1)
+                    .setMaxWorkerExecuteTimeUnit(TimeUnit.HOURS) //TODO: make this configrable?
+            );
         }
 
         if(_config.getBoolean("SnippetExtractor")){
@@ -72,7 +77,12 @@ public class MainVerticle extends ConfigurableVerticle {
 
         if(_config.getBoolean("Guidance")){
             GuidanceVerticle guidanceVerticle = new GuidanceVerticle();
-            vertx.deployVerticle(guidanceVerticle);
+            vertx.deployVerticle(guidanceVerticle, new DeploymentOptions()
+                    .setWorkerPoolName("guidance-pool")
+                    .setWorkerPoolSize(8)
+                    .setMaxWorkerExecuteTime(1)
+                    .setMaxWorkerExecuteTimeUnit(TimeUnit.HOURS) //TODO: make this configrable?);
+            );
         }
 
         if(_config.getBoolean("Mind2Web")){

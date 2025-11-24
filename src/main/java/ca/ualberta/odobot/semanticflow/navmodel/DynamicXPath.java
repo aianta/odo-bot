@@ -1,10 +1,16 @@
 package ca.ualberta.odobot.semanticflow.navmodel;
 
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.sqlclient.Row;
 import org.apache.commons.lang3.builder.HashCodeBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+
+import java.util.*;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 public class DynamicXPath {
 
@@ -14,9 +20,19 @@ public class DynamicXPath {
 
         DynamicXPath result = new DynamicXPath();
 
-        result.setSuffix(row.getString("suffix"));
+        if(row.getString("suffix") != null){
+            result.setKnownSuffixes(new JsonArray(row.getString("suffix")).stream().map(o->(String)o).collect(Collectors.toSet()));
+        }
+
+        if(row.getString("suffix_pattern") != null){
+            result.setSuffixPattern(Pattern.compile(row.getString("suffix_pattern")));
+        }
+
+
+
         result.setPrefix(row.getString("prefix"));
         result.setDynamicTag(row.getString("tag"));
+
 
         return result;
 
@@ -30,11 +46,12 @@ public class DynamicXPath {
             return missingField("prefix", json);
         }
 
+        if(json.containsKey("suffixPattern")){
+            result.setSuffixPattern(Pattern.compile(json.getString("suffixPattern")));
+        }
 
         if(json.containsKey("suffix")){
-            result.setSuffix(json.getString("suffix"));
-        }else {
-            return missingField("suffix", json);
+            result.setKnownSuffixes(new JsonArray(json.getString("suffix")).stream().map(o->(String)o).collect(Collectors.toSet()));
         }
 
         if(json.containsKey("dynamicTag")){
@@ -55,7 +72,41 @@ public class DynamicXPath {
 
     private String suffix;
 
+    private Pattern suffixPattern;
+
     private String dynamicTag;
+
+    private Set<String> knownSuffixes = new HashSet<>();
+
+    public Set<String> getKnownSuffixes() {
+        return knownSuffixes;
+    }
+
+    public DynamicXPath setKnownSuffixes(Set<String> knownSuffixes) {
+        this.knownSuffixes = knownSuffixes;
+        if(this.knownSuffixes.size() == 1){
+            this.suffix = knownSuffixes.iterator().next();
+        }
+        return this;
+    }
+
+    public DynamicXPath setKnownSuffixes(List<String> knownSuffixes) {
+        Set<String> knownSuffixesSet = new HashSet<>(knownSuffixes);
+        if(knownSuffixesSet.size() == 1){
+            this.suffix = knownSuffixes.get(0);
+        }
+        this.knownSuffixes = knownSuffixesSet;
+        return this;
+    }
+
+    public Pattern getSuffixPattern() {
+        return suffixPattern;
+    }
+
+    public DynamicXPath setSuffixPattern(Pattern suffixPattern) {
+        this.suffixPattern = suffixPattern;
+        return this;
+    }
 
     public String getPrefix() {
         return prefix;
@@ -90,18 +141,41 @@ public class DynamicXPath {
     public boolean matches(String sampleXPath){
         log.info("SampleXPath: {}", sampleXPath);
         log.info("Prefix: {}", prefix);
-        log.info("Suffix: {}", suffix);
+        log.info("SuffixPattern: {}", suffixPattern.pattern());
         log.info("Dynamic: {}", dynamicTag);
 
         log.info("startsWith: {}",sampleXPath.startsWith(prefix) );
         log.info("endsWith: {}", sampleXPath.endsWith(suffix));
+        log.info("matchesSuffixPattern: {}", suffixPattern.asPredicate().test(sampleXPath));
         log.info("matchesDynamicTag: {}", matchesDynamicTag(sampleXPath));
 
         //NOTE: Check dynamic tag AFTER prefix and suffix, as dynamic tag extraction assumes prefix and suffix match.
         return sampleXPath.startsWith(prefix) && //Prefix matches
-                sampleXPath.endsWith(suffix) && //Suffix matches
+                (suffixPattern.asPredicate().test(sampleXPath) || (sampleXPath.equals(prefix + "/" + dynamicTag) )) && //Suffix matches
                 matchesDynamicTag(sampleXPath); //Dynamic tag matches
 
+
+    }
+
+    public static Pattern toSuffixPattern(List<String> suffixes){
+
+        //Get rid of duplicates
+        Set<String> suffixSet = new HashSet<String>(suffixes);
+        Iterator<String> it = suffixSet.iterator();
+        StringBuilder sb = new StringBuilder();
+        while (it.hasNext()){
+            String _suffix = it.next();
+            sb.append("(");
+            sb.append(_suffix.replaceAll("/", "\\\\/"));
+            sb.append(")");
+            if(it.hasNext()){
+                sb.append("|");
+            }
+        }
+
+        log.info("SuffixPattern: {}", sb.toString());
+
+        return Pattern.compile(sb.toString());
 
     }
 
@@ -123,13 +197,25 @@ public class DynamicXPath {
         try{
             log.info("matchesDynamicTag Logic");
             log.info("[1]{}", sampleXPath);
-            String sampleDynamicTagString = sampleXPath.substring(prefix.length(), sampleXPath.length()-suffix.length() );
+
+            var matcher = suffixPattern.matcher(sampleXPath);
+            String sampleDynamicTagString = null;
+            if(matcher.find()){
+                var _suffix = matcher.group(0);
+                sampleDynamicTagString = sampleXPath.substring(prefix.length(), sampleXPath.length()-_suffix.length() );
+
+            }else{
+                sampleDynamicTagString = sampleXPath.substring(sampleXPath.lastIndexOf("/")+1);
+            }
+
             log.info("[2]{}", sampleDynamicTagString);
 //            sampleDynamicTagString = sampleDynamicTagString.substring(sampleDynamicTagString.length()-suffix.length());
 //            log.info("[3]{}", sampleDynamicTagString);
             String sampleTag = NavPath.extractTag(sampleDynamicTagString);
             log.info("extractedTag: {}", sampleTag);
             return this.dynamicTag.equals(sampleTag);
+
+
         }catch (StringIndexOutOfBoundsException e){
             log.error(e.getMessage(), e);
 
@@ -140,8 +226,16 @@ public class DynamicXPath {
     public JsonObject toJson(){
         JsonObject result = new JsonObject()
                 .put("prefix", getPrefix())
-                .put("suffix", getSuffix())
                 .put("dynamicTag", getDynamicTag());
+
+        if (suffixPattern != null) {
+            result.put("suffixPattern", getSuffixPattern().pattern());
+        }
+
+        if(suffix != null || knownSuffixes != null){
+            result.put("suffix", knownSuffixes.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
+        }
+
 
         return result;
     }
@@ -157,7 +251,24 @@ public class DynamicXPath {
     }
 
     public String toString(){
-        return getPrefix() + "/" + getDynamicTag() + getSuffix();
+        StringBuilder sb = new StringBuilder();
+        sb.append(getPrefix());
+        sb.append("/");
+        sb.append(getDynamicTag());
+        sb.append("/");
+
+        if (suffixPattern != null){
+            sb.append("{" + getSuffixPattern().pattern() + "}");
+            return sb.toString();
+        }
+
+        if(suffix != null){
+            sb.append(getSuffix());
+        }
+
+
+
+        return sb.toString();
     }
 
     public int hashCode(){

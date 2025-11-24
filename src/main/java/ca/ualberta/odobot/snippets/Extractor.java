@@ -68,12 +68,13 @@ public class Extractor extends HttpServiceVerticle {
         elasticsearchService = elasticsearchServiceProxyBuilder.build(ElasticsearchService.class);
 
 
-        api.route().method(HttpMethod.GET).path("/processSnippets").handler(this::getCollapsedNodes);
+        api.route().method(HttpMethod.GET).path("/processSnippets").handler(this::getDynamicXpaths);
         api.route().method(HttpMethod.GET).path("/processSnippets").handler(this::configureExtractorService);
         api.route().method(HttpMethod.GET).path("/processSnippets").handler(this::getFlights);
         api.route().method(HttpMethod.GET).path("/processSnippets").handler(this::processFlights);
 
-        api.route().method(HttpMethod.GET).path("/extractSnippets").handler(this::getCollapsedNodes); //Get Dynamic XPaths and instances from Collapsed nodes.
+        //TODO: figure out why this is being done twice.
+        api.route().method(HttpMethod.GET).path("/extractSnippets").handler(this::getDynamicXpaths); //Get Dynamic XPaths and instances from Collapsed nodes.
         //Doing a lot in this handler to minimize memory usage. Initially I tried to retrieve all the necessary data and save snippets in a downstream handler, but that resulted in OOM errors.
         api.route().method(HttpMethod.GET).path("/extractSnippets").handler(this::getDOMSnapshotsAndSaveSnippets); //Get the actual timeline entities backing those instances from elasticsearch and use the dynamic xpaths on the retrieved  entities to produce and save snippets.
 
@@ -97,9 +98,11 @@ public class Extractor extends HttpServiceVerticle {
      *     <li>Dynamic XPaths</li>
      *     <li>Instances associated with the dynamic XPaths</li>
      * </ul>
+     *
+     * Note: Not all CollapsedClickNodes produce dynamicXpaths.
      * @param rc
      */
-    public void getCollapsedNodes(RoutingContext rc){
+    public void getDynamicXpaths(RoutingContext rc){
 
         Transaction tx = LogPreprocessor.graphDB.db.beginTx();
 
@@ -115,9 +118,10 @@ public class Extractor extends HttpServiceVerticle {
                 String[] instances = (String[])curr.getProperty("instances");
 
                 DynamicXPath dynamicXPath = NavPath.nodeToDynamicXPath(curr);
-                dynamicXPaths.put(dynamicXPath, instances);
-
-                sqliteService.saveDynamicXpath(dynamicXPath.toJson(), dynamicXPath.toString(), (String)curr.getProperty("id") );
+                if (dynamicXPath != null){
+                    dynamicXPaths.put(dynamicXPath, instances);
+                    sqliteService.saveDynamicXpath(dynamicXPath.toJson(), dynamicXPath.toString(), (String)curr.getProperty("id") );
+                }
 
             }
 
@@ -234,7 +238,7 @@ public class Extractor extends HttpServiceVerticle {
     public static Future<List<String>> getSnippets(DynamicXPath xPath, JsonObject entity){
 
         if(!entity.containsKey("eventDetails_domSnapshot")){
-            //log.error("Entity does not contain DOMSnapshot, cannot extract snippets");
+            log.error("Entity does not contain DOMSnapshot, cannot extract snippets");
             return Future.succeededFuture(List.of());
         }
 
@@ -263,10 +267,10 @@ public class Extractor extends HttpServiceVerticle {
 
         Document document = Jsoup.parse(htmlString);
 
-        //log.info("Attempting to extract snippet with dynamic tag:\n{}", xPath.toJson().encodePrettily());
+        log.info("Attempting to extract snippet with dynamic tag:\n{}", xPath.toJson().encodePrettily());
 
         Elements parentElements = document.selectXpath(xPath.getPrefix()); //This should yield the parent element.
-        //log.info("Found {} parent elements matching dynamic xpath prefix.", parentElements.size());
+        log.info("Found {} parent elements matching dynamic xpath prefix.", parentElements.size());
 
         List<Future> sqliteSaveFutures = new ArrayList<>();
 
@@ -367,20 +371,28 @@ public class Extractor extends HttpServiceVerticle {
 
     public static boolean matchesSuffix(Element element, DynamicXPath xPath){
 
+
+
         //Create a test xpath, with the current element selected for the dynamic tag, and the suffix of dynamic xpath.
 
-        String testXpath = xPath.getPrefix() + "/" + element.tagName();
-        int elementIndex = element.elementSiblingIndex();
+        Set<String> testXpaths = new HashSet<>();
+        Elements results = null;
+        for(String suffix: xPath.getKnownSuffixes()){
+            String testXpath = xPath.getPrefix() + "/" + element.tagName();
+            int elementIndex = element.elementSiblingIndex();
+            testXpath += "[" + elementIndex + "]";
+            testXpath += "/" + suffix;
+            testXpaths.add(testXpath);
+            if(results == null){
+                results = element.selectXpath(testXpath);
+            }else{
+                results.addAll(element.selectXpath(testXpath));
+            }
+        }
 
+        log.info("testXpaths: {}", testXpaths);
 
-        testXpath += "[" + elementIndex + "]";
-
-
-        testXpath += xPath.getSuffix();
-
-        Elements result = element.selectXpath(testXpath);
-
-        return  result.size() > 0;
+        return  results == null? false: results.size() > 0;
 
     }
 

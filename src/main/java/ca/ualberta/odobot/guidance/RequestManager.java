@@ -12,6 +12,8 @@ import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import org.neo4j.graphdb.Label;
+import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.Transaction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,8 +33,6 @@ public class RequestManager {
     private OdoClient client = null;
 
     private ExecutionRequest activeExecutionRequest = null;
-
-    private Request activeRequest = null;
 
     private String evalId = null;
 
@@ -74,13 +74,6 @@ public class RequestManager {
         return this;
     }
 
-    public Request getActiveRequest() {
-        return activeRequest;
-    }
-
-    public void setActiveRequest(Request activeRequest) {
-        this.activeRequest = activeRequest;
-    }
 
     public ExecutionRequest getActiveExecutionRequest() {
         return activeExecutionRequest;
@@ -105,18 +98,6 @@ public class RequestManager {
         ;
     }
 
-    public void addNewRequest(Request request){
-        setActiveRequest(request);
-        client.getEventConnectionManager().getLocalContext()
-                .compose(localContext->getPaths(request, localContext))
-                .compose(navigationOptions->client.getGuidanceConnectionManager().showNavigationOptions(navigationOptions))
-                .onSuccess(navigationOptionsShown->client.getEventConnectionManager().startTransmitting())
-                .onFailure(err->{
-                    log.error("Error processing guidance request");
-                    log.error(err.getMessage(),err);
-                });
-        ;
-    }
 
     public Future<JsonObject> getExecutionPath(ExecutionRequest request, JsonArray localContext){
 
@@ -163,6 +144,11 @@ public class RequestManager {
                         .collect(HashSet::new, HashSet::addAll,HashSet::addAll);
 
                 Set<String> apiCalls = request.getTargets();
+
+                //Save these for later if we need to re-compute paths for this request.
+                request.setApiCalls(apiCalls);
+                request.setInputParameters(inputParameters);
+                request.setObjectParameters(objectParameters);
 
                 tx = LogPreprocessor.graphDB.db.beginTx();
 
@@ -301,54 +287,6 @@ public class RequestManager {
         }
     }
 
-    public Future<JsonObject> getPaths(Request request,  JsonArray localContext){
-
-        log.info("Processing local context[size:{}] into PathsRequestInput", localContext.size());
-
-        //TODO: Should we really only be looking at DataEntries and ClickEvents, even for sourcing the last DOM and URL?
-        eventProcessor.setOnEntity( this::buildPathsRequestInput , (entity)->entity instanceof DataEntry || entity instanceof ClickEvent || entity instanceof CheckboxEvent);
-        eventProcessor.process(localContext);
-
-        log.info("Done processing local context!");
-        try{
-            if(_input == null){
-                //This happens when there is no meaningful local context. IE: local context that doesn't include a data entry or click event
-                _input = new PathsRequestInput();
-            }
-
-            _input.setUserLocation(request.getUserLocation());
-            _input.setTargetNode(request.getTargetNode());
-            _input.setPathRequestId(request.id().toString());
-            log.info("LastEntity: {}", _input.getLastEntity() != null?_input.lastEntity.symbol(): "N/A");
-            log.info("URL: {}", _input.getUrl() != null? _input.getUrl(): "N/A");
-            log.info("DOM: {}", _input.getDom() != null? _input.dom.toString().substring(0, Math.min(_input.dom.toString().length(), 150)): "N/A");
-            log.info("TargetNode: {}", _input.targetNode);
-            log.info("User Location: {}",  _input.getUserLocation());
-
-            Optional<UUID> startingNode = LogPreprocessor.localizer.resolveStartingNode(_input);
-            log.info("Found starting node? {}", startingNode.isPresent());
-
-            UUID src = startingNode.get();
-            UUID tgt = UUID.fromString(request.getTargetNode());
-
-            log.info("Resolving path from {} to {}", src.toString(), tgt.toString());
-
-            tx = LogPreprocessor.graphDB.db.beginTx();
-
-            navPaths = LogPreprocessor.pathsConstructor.construct(tx, src, tgt);
-
-            log.info("Found {} paths", navPaths.size());
-
-            buildNavigationOptions(navPaths);
-
-            return Future.succeededFuture(new JsonObject().put("navigationOptions", buildNavigationOptions(navPaths)));
-        }catch (Exception e){
-            log.error(e.getMessage(), e);
-            return Future.failedFuture(e);
-        }
-
-
-    }
 
     private void buildPathsRequestInput(TimelineEntity entity){
 
@@ -387,7 +325,13 @@ public class RequestManager {
 
                 .filter(Objects::nonNull)
                 .distinct()
-                .peek(instruction -> log.info("{}", instruction.getClass().getName()))
+                .peek(instruction -> {log.info("{}", instruction.getClass().getName());
+
+                    if(instruction instanceof WaitForLocationChange){
+                        log.info("Waiting for location to change to: {}", ((WaitForLocationChange) instruction).path);
+                    }
+
+                })
                 .map(instruction -> {
                     if(instruction instanceof DoClick){
                         DoClick doClick = (DoClick)instruction;
@@ -447,47 +391,6 @@ public class RequestManager {
         return executionInstruction;
     }
 
-    private JsonArray buildNavigationOptions(List<NavPath> paths){
-
-
-        /**
-         * We want to get distinct instructions from our set of possible paths. Many paths will overlap
-         * and thus may have identical instructions.
-         */
-        JsonArray navOptions = paths.stream()
-                .map(NavPath::getInstruction)
-                .distinct()
-                .peek(instruction -> {
-                    if(instruction instanceof XPathInstruction){
-                        log.info(" {} - {}", instruction.hashCode(), ((XPathInstruction)instruction).xpath);
-                    }else{
-                        log.info("{} - {}", instruction.hashCode(), ((DynamicXPathInstruction)instruction).dynamicXPath.toJson().encodePrettily());
-                    }
-                })
-                //Convert instruction objects into JsonObjects
-                .map(instruction -> {
-                    if(instruction instanceof XPathInstruction){
-                        XPathInstruction xPathInstruction = (XPathInstruction) instruction;
-                        return new JsonObject().put("type", "guidance").put("xpath", xPathInstruction.xpath);
-                    }
-
-                    if(instruction instanceof DynamicXPathInstruction){
-                        DynamicXPathInstruction dynamicXPathInstruction = (DynamicXPathInstruction) instruction;
-                        return new JsonObject().put("type", "guidance").put("xpath", dynamicXPathInstruction.dynamicXPath.toJson());
-                    }
-
-                    return null;
-                })
-                //Filter out any nulls, and collect it all into a JsonArray
-                .filter(Objects::nonNull)
-                .collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
-
-
-        log.info("Produced {} instructions/unique navigation options.", navOptions.size());
-
-        return navOptions;
-
-    }
 
     /**
      * This method checks if a given timeline entity matches corresponds with the specified target node for the active request.
@@ -499,37 +402,22 @@ public class RequestManager {
 
         NetworkEvent apiCall = (NetworkEvent) entity; //Note: When we set up this watcher we ensure it only receives network events.
 
-        if(activeRequest == null){ //If we're handling an execution request, active request (for guidance) will be null. TODO: this is really crappy design and I should refactor it.
-            if(
-                    apiCall.getMethod().toLowerCase().equals(activeExecutionRequest.getTargetMethod().toLowerCase()) && //If the method matches
-                            apiCall.getPath().equals(activeExecutionRequest.getTargetPath())
-            ){
-                client.getGuidanceConnectionManager().notifyPathComplete();
-                client.getEventConnectionManager().notifyPathComplete();
 
-                if(evalId != null && evaluationComplete != null){
-                    //If the evaluation ID is not null (meaning this was an evaluation run, output the raw events from this execution to the appropriate folder.
-                    client.getEventConnectionManager().getEventProcessor().saveRawEvents("./%s/%s.json".formatted("execution_events", evalId).replaceAll("\\|","-"));
-                    evaluationComplete.complete();
-                }
-                client.getEventConnectionManager().getEventProcessor().clearRawEvents();
-            }
-        }else{ //Otherwise, execution request will be null. TODO: This is really crappy design, and I should refactor it.
-            if(
-                    apiCall.getMethod().toLowerCase().equals(activeRequest.getTargetMethod().toLowerCase()) && //If the method matches
-                            apiCall.getPath().equals(activeRequest.getTargetPath())
-            ){
-                client.getGuidanceConnectionManager().notifyPathComplete();
-                client.getEventConnectionManager().notifyPathComplete();
+        if(
+                apiCall.getMethod().toLowerCase().equals(activeExecutionRequest.getTargetMethod().toLowerCase()) && //If the method matches
+                        apiCall.getPath().equals(activeExecutionRequest.getTargetPath())
+        ){
+            client.getGuidanceConnectionManager().notifyPathComplete();
+            client.getEventConnectionManager().notifyPathComplete();
 
-                if(evalId != null && evaluationComplete != null){
-                    //If the evaluation ID is not null (meaning this was an evaluation run, output the raw events from this execution to the appropriate folder.
-                    client.getEventConnectionManager().getEventProcessor().saveRawEvents("./%s/%s.json".formatted("execution_events", evalId).replaceAll("\\|","-"));
-                    evaluationComplete.complete();
-                }
-                client.getEventConnectionManager().getEventProcessor().clearRawEvents();
+            if(evalId != null && evaluationComplete != null){
+                //If the evaluation ID is not null (meaning this was an evaluation run, output the raw events from this execution to the appropriate folder.
+                client.getEventConnectionManager().getEventProcessor().saveRawEvents("./%s/%s.json".formatted("execution_events", evalId).replaceAll("\\|","-"));
+                evaluationComplete.complete();
             }
+            client.getEventConnectionManager().getEventProcessor().clearRawEvents();
         }
+
 
 
     }
@@ -663,22 +551,97 @@ public class RequestManager {
                 .collect(Collectors.toList())
         ;
 
+        if(getActiveExecutionRequest() == null){
+            log.info("No active execution request!");
+        }
+
+        //Track which nodes (excluding dom effects) we have visited so far.
+        tempNavPaths.forEach(navPath -> getActiveExecutionRequest().getVisitedNodes().add(navPath.getLastInstructionNodeId()));
+
         if(tempNavPaths.size() > 0){
             this.navPaths = tempNavPaths;
 
-            if(getActiveExecutionRequest() != null){
-                //Handle execution request TODO: refactor this
-                JsonObject instruction = buildExecutionInstruction(tempNavPaths);
-                if(instruction != null){
-                    client.getGuidanceConnectionManager()
-                            .sendExecutionInstruction(instruction);
+            //Handle execution request TODO: refactor this
+            JsonObject instruction = buildExecutionInstruction(tempNavPaths);
+            if(instruction != null){
+                client.getGuidanceConnectionManager()
+                        .sendExecutionInstruction(instruction);
+            }
+
+        }else{
+            //The observed event didn't match any of the events we'd expect to see along one of our current paths.
+            if (entity instanceof NetworkEvent || entity instanceof ApplicationLocationChange) {
+                //And the unmatched entity is a network or location change, then we re-compute paths to our target node.
+                log.info("Observed an unexpected network event or an application location change!");
+
+                Optional<UUID> updatedStartingNode = entity instanceof NetworkEvent?LogPreprocessor.localizer.findNodeByNetworkEvent((NetworkEvent) entity) : LogPreprocessor.localizer.findNodeByLocationChange((ApplicationLocationChange) entity);
+
+                log.info("Does the unexpected network event or application location change exist in the nav model? {}", updatedStartingNode.isPresent());
+
+                if(updatedStartingNode.isPresent()){
+                    log.info("The unexpected network event or an application location change was found in the nav model! Re-computing paths...");
+
+                    //Before we can recompute paths, we need to look through the object/input parameters associated with the request, and prune any that we've already encountered in the online timeline.
+                    //Otherwise we'd look for paths that would try to revisit things we've already done. Or we won't find any paths because no paths exist that include the parameters in a way we'd expect.
+                    //This approach is very limiting, especially for any kind of task that involves looping or revisiting nodes. We have to sit and think about path planning at some point.
+
+                    ExecutionRequest request = getActiveExecutionRequest();
+                    request.getInputParameters().removeAll(request.getVisitedNodes());
+                    request.getObjectParameters().removeAll(request.getVisitedNodes());
+
+                    tx.close(); //Close the previous graphdb transaction.
+                    tx = LogPreprocessor.graphDB.db.beginTx();
+                    navPaths = LogPreprocessor.pathsConstructor.construct(tx, updatedStartingNode.get().toString(), request.getObjectParameters(), request.getInputParameters(), request.getApiCalls());
+                    request.addRecomputation();
+
+                    log.info("Found {} paths after recomputation", navPaths.size());
+                    navPaths = List.of(navPaths.get(0)); //Only return/use the first path for execution.
+
+                    //Write the new path down for debugging
+                    NavPath.saveNavPath("./%s/%s-navpath-%d.txt".formatted("execution_events", evalId, request.getPathRecomputations()).replaceAll("\\|","-"), navPaths.get(0));
+
+
+                    /**
+                     * We still need a target node so that the execution mechanism can determine when the task has been completed.
+                     * All paths produced using the new path construction logic will end in an API node.
+                     *
+                     * I think, in practice, we ultimately end up following the first path's instructions. So the last node in the first path should effectively
+                     * be our target node.
+                     */
+                    var targetNodeId = UUID.fromString(navPaths.get(0).getPath().endNode().getProperty("id").toString());
+                    request.setTarget(targetNodeId);
+
+                    JsonObject instruction = buildExecutionInstruction(navPaths);
+
+                    Node firstNode = navPaths.get(0).getPath().startNode();
+
+                    /**
+                     * This method (getExecutionPath) is only called on to produce the first instruction for the execution.
+                     * If the chosen path begins with a LocationNode (which is common), then the first instruction would
+                     * be to wait for that location change. But since we likely just initialized our local context. There's
+                     * not going to be an application location change event.
+                     *
+                     * To deal with this, if the execution instruction is null, as would be the case for WaitFor type instructions
+                     * (because they don't send anything to OdoX, the instruction JSON is null), call buildExecutionInstruction again
+                     * to get the next instruction.
+                     *
+                     * TODO: refactor this. This method is doing too much. And this 'temporary fix' only adds to the complexity of the execution logic.
+                     */
+                    if(instruction == null && (firstNode.hasLabel(Label.label("LocationNode")) || firstNode.hasLabel(Label.label("APINode")))) {
+                        instruction = buildExecutionInstruction(navPaths);
+                    }
+
+                    if(instruction != null){
+                        client.getGuidanceConnectionManager()
+                                .sendExecutionInstruction(instruction);
+                    }else{
+                        log.error("Couldn't produce execution instruction for the re-computed path!");
+                    }
+
                 }
 
-            }else{
-                //Handle guidance request TODO: refactor this
-                client.getGuidanceConnectionManager().showNavigationOptions(
-                        new JsonObject().put("navigationOptions", buildNavigationOptions(this.navPaths))
-                );
+
+
             }
         }
     }

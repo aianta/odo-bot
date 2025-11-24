@@ -47,7 +47,28 @@ public abstract class AbstractArtifact {
     }
 
     public void setXpath(String xpath) {
-        this.xpath = xpath;
+
+        /**
+         * Certain xpaths should be truncated. For example:
+         * .../svg/g/path -> .../svg
+         * .../button/i -> .../button
+         * .../a/div/span/h1 -> .../a
+         *
+         */
+
+        if (xpath.lastIndexOf("/a") != -1){
+            this.xpath = xpath.substring(0, xpath.lastIndexOf("/a") + 2);
+        } else if (xpath.lastIndexOf("/btn") != -1){
+            this.xpath = xpath.substring(0, xpath.lastIndexOf("/btn") + 4);
+        } else if (xpath.lastIndexOf("button") != -1){
+            this.xpath = xpath.substring(0, xpath.lastIndexOf("button") + 6);
+        } else if (xpath.lastIndexOf("svg") != -1){
+            this.xpath = xpath.substring(0, xpath.lastIndexOf("svg") + 3);
+        }else{
+            this.xpath = xpath;
+        }
+
+
     }
 
     public Document getDomSnapshot() {

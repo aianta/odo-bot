@@ -12,7 +12,7 @@ public enum BaseLabel{
     EFFECT_NODE("EffectNode"),
     APPLICATION_LOCATION_CHANGE_NODE("ApplicationLocationChangeNode"),
     LOCATION_NODE("LocationNode"),
-
+    RADIO_BUTTON_NODE("RadioButtonNode"),
     CHECKBOX_NODE("CheckboxNode"),
     API_NODE("APINode");
 

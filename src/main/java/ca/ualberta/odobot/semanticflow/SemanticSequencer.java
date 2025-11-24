@@ -148,6 +148,10 @@ public class SemanticSequencer {
 
         log.info("eventType: {}", event.getString("eventType"));
         log.info("eventDetails_name: {}", event.getString("eventDetails_name"));
+        if(event.getString("eventDetails_name") == null){
+            log.error("eventDetails_name is null, skipping event.");
+            return;
+        }
         switch (event.getString("eventType")){
             case "interactionEvent":
                 switch (InteractionType.getType(event.getString("eventDetails_name"))){

@@ -92,9 +92,6 @@ public class EventConnectionManager extends AbstractConnectionManager implements
                 .put("type", "GET_LOCAL_CONTEXT")
                 .put("source", "EventConnectionManager");
 
-        if(client.getRequestManager().getActiveRequest() != null){
-            localContextRequest.put("pathsRequestId", client.getRequestManager().getActiveRequest().id().toString());
-        }
 
         if(client.getRequestManager().getActiveExecutionRequest() != null){
             localContextRequest.put("pathsRequestId", client.getRequestManager().getActiveExecutionRequest().getId().toString());
@@ -116,9 +113,6 @@ public class EventConnectionManager extends AbstractConnectionManager implements
                 .put("type", "START_TRANSMISSION")
                 .put("source", "EventConnectionManager");
 
-        if(client.getRequestManager().getActiveRequest() != null){
-            startTransmissionRequest.put("pathsRequestId", client.getRequestManager().getActiveRequest().id().toString());
-        }
 
         if(client.getRequestManager().getActiveExecutionRequest() != null){
             startTransmissionRequest.put("pathsRequestId", client.getRequestManager().getActiveExecutionRequest().getId().toString());
@@ -143,7 +137,7 @@ public class EventConnectionManager extends AbstractConnectionManager implements
         JsonObject stopTransmissionRequest = new JsonObject()
                 .put("type", "STOP_TRANSMISSION")
                 .put("source", "EventConnectionManager")
-                .put("pathsRequestId", client.getRequestManager().getActiveRequest().id().toString());
+                .put("pathsRequestId", client.getRequestManager().getActiveExecutionRequest().getId().toString());
 
         Promise<JsonObject> promise = Promise.promise();
         activePromises.put("TRANSMISSION_STOPPED", promise);

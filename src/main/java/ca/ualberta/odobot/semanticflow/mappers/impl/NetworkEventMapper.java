@@ -41,8 +41,13 @@ public class NetworkEventMapper extends JsonMapper<NetworkEvent>{
                 JsonObject request = new JsonObject(event.getString("eventDetails_requestBody"));
                 result.setRequestObject(request);
             }catch (DecodeException de){
-                JsonArray requestArray = new JsonArray(event.getString("eventDetails_requestBody"));
-                result.setRequestArray(requestArray);
+                try{
+                    JsonArray requestArray = new JsonArray(event.getString("eventDetails_requestBody"));
+                    result.setRequestArray(requestArray);
+                }catch (DecodeException de2){
+                    log.error("Request body could not be decoded as JsonObject or JsonArray. Body value was: {}", event.getString("eventDetails_requestBody"));
+                }
+
             }
 
         }

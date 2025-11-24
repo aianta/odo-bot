@@ -19,7 +19,7 @@ public class WebSocketConnection {
 
     private static final Logger log = LoggerFactory.getLogger(WebSocketConnection.class);
 
-    private static final long PING_PERIOD_MS = 10000; //Send pings every 10 seconds (10,000ms)
+    private static final long PING_PERIOD_MS = 600000; //Send pings every 10 seconds (10,000ms)
 
     private long pingPongTimer;
     private ServerWebSocket socket;

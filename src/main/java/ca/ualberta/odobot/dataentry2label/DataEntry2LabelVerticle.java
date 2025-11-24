@@ -130,9 +130,15 @@ public class DataEntry2LabelVerticle extends HttpServiceVerticle {
     private void generateDataEntryLabels(RoutingContext rc){
 
         sqliteService.getAllDataEntryInfo()
-                .compose(dataEntries-> Future.all(dataEntries.stream().map(dataEntry->dataEntry2LabelService.generateLabelAndDescription(dataEntry)).collect(Collectors.toList())))
+                .compose(dataEntries-> Future.join(dataEntries.stream().map(dataEntry->dataEntry2LabelService.generateLabelAndDescription(dataEntry).otherwise((JsonObject) null)).collect(Collectors.toList())))
                 .compose(compositeFuture->{
-                    List<JsonObject> results = compositeFuture.list();
+
+                    //Go through the results and remove any failures.
+                    List<JsonObject> results = compositeFuture.list().stream()
+                            .filter(Objects::nonNull).map(o->(JsonObject)o)
+                            .collect(Collectors.toList());
+
+
                     log.info("Generated {} labels and descriptions. Saving them to the database now.", results.size());
 
                     rc.put("dataEntryLabels", results);
@@ -151,7 +157,7 @@ public class DataEntry2LabelVerticle extends HttpServiceVerticle {
                 })
                 .onFailure(err->{
                     log.error(err.getMessage(),err);
-                    rc.response().setStatusCode(500).end(err.getMessage());
+                    //rc.response().setStatusCode(500).end(err.getMessage());
                 })
 
         ;

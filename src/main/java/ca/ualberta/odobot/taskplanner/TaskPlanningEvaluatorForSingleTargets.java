@@ -15,6 +15,8 @@ public class TaskPlanningEvaluatorForSingleTargets implements Evaluator {
 
     public List<Path> _paths = new ArrayList<>();
 
+    private int numPathsToTarget = 0;
+
     private int lastPathLength = 0;
 
     //UUIDs of defined input parameters
@@ -95,6 +97,7 @@ public class TaskPlanningEvaluatorForSingleTargets implements Evaluator {
         if(endNode.hasLabel(Label.label("APINode")) && apiCalls.contains(endNodeId)){
             _paths.add(path);
             log.info("Found path ending at target API Node...");
+            this.numPathsToTarget++;
             return Evaluation.INCLUDE_AND_PRUNE;
         }
 
@@ -114,8 +117,9 @@ public class TaskPlanningEvaluatorForSingleTargets implements Evaluator {
         //We're looking for the least number of API calls while still reaching the target API call.
         _paths.sort(Comparator.comparing(p->numAPICallsInPath((Path)p)));
 
-
-
+        if(this.numPathsToTarget > 10){
+            return Evaluation.EXCLUDE_AND_PRUNE;
+        }
 
         return Evaluation.INCLUDE_AND_CONTINUE;
     }

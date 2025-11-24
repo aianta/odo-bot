@@ -8,10 +8,7 @@ import org.neo4j.graphdb.Transaction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 
 public class ExecutionRequest {
 
@@ -23,6 +20,8 @@ public class ExecutionRequest {
 
     private String taskDescription;
 
+    private int pathRecomputations = 0;
+
     private Type type;
     private UUID id;
 
@@ -33,6 +32,12 @@ public class ExecutionRequest {
     private String userLocation;
 
     private List<ExecutionParameter> parameters;
+
+    private Set<String> objectParameters; //Resolved object parameters from the execution parameters above.
+    private Set<String> inputParameters; //Resolved input parameters from the execution parameters above.
+    private Set<String> apiCalls; //Resolved target node ids.
+
+    private Set<String> visitedNodes = new HashSet<>();
 
     private String targetMethod;
     private String targetPath;
@@ -57,6 +62,10 @@ public class ExecutionRequest {
 
     public UUID getTarget() {
         return target;
+    }
+
+    public ExecutionRequest setTarget(String target) {
+        return this.setTarget(UUID.fromString(target));
     }
 
     public ExecutionRequest setTarget(UUID target) {
@@ -94,6 +103,20 @@ public class ExecutionRequest {
 
     public ExecutionRequest setType(Type type) {
         this.type = type;
+        return this;
+    }
+
+    public ExecutionRequest addRecomputation(){
+        this.pathRecomputations++;
+        return this;
+    }
+
+    public int getPathRecomputations() {
+        return pathRecomputations;
+    }
+
+    public ExecutionRequest setPathRecomputations(int pathRecomputations) {
+        this.pathRecomputations = pathRecomputations;
         return this;
     }
 
@@ -152,4 +175,45 @@ public class ExecutionRequest {
         this.targetPath = targetPath;
         return this;
     }
+
+    public Set<String> getObjectParameters() {
+        return objectParameters;
+    }
+
+    public ExecutionRequest setObjectParameters(Set<String> objectParameters) {
+        this.objectParameters = objectParameters;
+        return this;
+    }
+
+    public Set<String> getInputParameters() {
+        return inputParameters;
+    }
+
+    public ExecutionRequest setInputParameters(Set<String> inputParameters) {
+        this.inputParameters = inputParameters;
+        return this;
+    }
+
+    public Set<String> getApiCalls() {
+        return apiCalls;
+    }
+
+    public ExecutionRequest setApiCalls(Set<String> apiCalls) {
+        this.apiCalls = apiCalls;
+        return this;
+    }
+
+    public Set<String> getVisitedNodes() {
+        if(visitedNodes == null){
+            visitedNodes = new HashSet<>();
+        }
+        return visitedNodes;
+    }
+
+    public ExecutionRequest setVisitedNodes(Set<String> visitedNodes) {
+        this.visitedNodes = visitedNodes;
+        return this;
+    }
 }
+
+
