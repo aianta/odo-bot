@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.semanticflow.model;
 
+import ca.ualberta.odobot.common.Xpath;
 import io.vertx.core.json.JsonObject;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -52,25 +53,30 @@ public abstract class AbstractArtifact {
 
     public void setXpath(String xpath) {
 
+
         /**
          * Certain xpaths should be truncated. For example:
          * .../svg/g/path -> .../svg
          * .../button/i -> .../button
          * .../a/div/span/h1 -> .../a
+         * .../a[3]/div/div/span -> /a[3]
          *
          */
+        this.xpath = Xpath.truncateXpath(xpath);
 
-        if (xpath.lastIndexOf("/a") != -1){
-            this.xpath = xpath.substring(0, xpath.lastIndexOf("/a") + 2);
-        } else if (xpath.lastIndexOf("/btn") != -1){
-            this.xpath = xpath.substring(0, xpath.lastIndexOf("/btn") + 4);
-        } else if (xpath.lastIndexOf("button") != -1){
-            this.xpath = xpath.substring(0, xpath.lastIndexOf("button") + 6);
-        } else if (xpath.lastIndexOf("svg") != -1){
-            this.xpath = xpath.substring(0, xpath.lastIndexOf("svg") + 3);
-        }else{
-            this.xpath = xpath;
-        }
+
+//
+//        if (xpath.lastIndexOf("/a") != -1){
+//            this.xpath = xpath.substring(0, xpath.lastIndexOf("/a") + 2);
+//        } else if (xpath.lastIndexOf("/btn") != -1){
+//            this.xpath = xpath.substring(0, xpath.lastIndexOf("/btn") + 4);
+//        } else if (xpath.lastIndexOf("button") != -1){
+//            this.xpath = xpath.substring(0, xpath.lastIndexOf("button") + 6);
+//        } else if (xpath.lastIndexOf("svg") != -1){
+//            this.xpath = xpath.substring(0, xpath.lastIndexOf("svg") + 3);
+//        }else{
+//            this.xpath = xpath;
+//        }
 
 
     }

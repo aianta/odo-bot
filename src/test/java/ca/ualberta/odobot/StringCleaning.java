@@ -9,6 +9,19 @@ public class StringCleaning {
 
     private static final Logger log = LoggerFactory.getLogger(StringCleaning.class);
 
+
+    @Test
+    public void trimmingXpaths(){
+        var sample = "html/btn[3]";
+
+        if(sample.lastIndexOf("/btn") != -1){
+            var trimmed = sample.substring(0, sample.lastIndexOf("/btn") + 4);
+            var remainder = sample.substring(trimmed.length()).split("/")[0];
+            log.info("trimmed: {} remainder: {}", trimmed, remainder);
+        }
+
+    }
+
     @Test
     public void why(){
 

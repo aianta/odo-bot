@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.semanticflow.navmodel;
 
+import ca.ualberta.odobot.common.BasePathAndXpath;
 import ca.ualberta.odobot.common.Xpath;
 import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
 import ca.ualberta.odobot.guidance.execution.InputParameter;
@@ -302,9 +303,9 @@ public class NavPath {
         }
 
         String [] xpaths = (String[]) n.getProperty("xpaths");
-        Set<Xpath> uniqueXpaths = Arrays.stream(xpaths).map(Xpath::new).collect(Collectors.toSet());
+        Set<Xpath> uniqueXpaths = Arrays.stream(xpaths).map(BasePathAndXpath::fromString).map(BasePathAndXpath::getXpath).collect(Collectors.toSet());
         if(uniqueXpaths.size() > 1){
-            return findDynamicXPath(xpaths);
+            return findDynamicXPath(uniqueXpaths.stream().map(Xpath::toString).collect(Collectors.toSet()).toArray(new String[0]));
         }else{
             log.info("Node {} does not contain a dynamic xpath.", (String)n.getProperty("id"));
             return null;

@@ -2,24 +2,31 @@ package ca.ualberta.odobot.common;
 
 import org.apache.commons.lang3.builder.HashCodeBuilder;
 
+import java.util.Set;
+
 public class Xpath {
 
     String value;
 
     public Xpath(String xpath){
 
-        if (xpath.lastIndexOf("/a") != -1){
-            this.value = xpath.substring(0, xpath.lastIndexOf("/a") + 2);
-        } else if (xpath.lastIndexOf("/btn") != -1){
-            this.value = xpath.substring(0, xpath.lastIndexOf("/btn") + 4);
-        } else if (xpath.lastIndexOf("button") != -1){
-            this.value = xpath.substring(0, xpath.lastIndexOf("button") + 6);
-        } else if (xpath.lastIndexOf("svg") != -1){
-            this.value = xpath.substring(0, xpath.lastIndexOf("svg") + 3);
-        }else{
-            this.value = xpath;
+       this.value = truncateXpath(xpath);
+
+    }
+
+    static Set<String> terminalElements = Set.of("/a", "/btn", "button", "svg");
+
+    public static String truncateXpath(String xpath){
+
+        for(String element: terminalElements){
+            if (xpath.lastIndexOf(element) != -1){
+                var trimmed = xpath.substring(0, xpath.lastIndexOf(element) + element.length());
+                var remainder = xpath.substring(trimmed.length()).split("/")[0];
+                return trimmed + remainder;
+            }
         }
 
+        return xpath;
     }
 
     public String toString(){
