@@ -89,6 +89,8 @@ public class InputChangeMapper extends JsonMapper<InputChange> {
                     ((RadioButtonEvent) result).addOption(button);
                 }
 
+
+
             }else{
                 result = new InputChange();
             }

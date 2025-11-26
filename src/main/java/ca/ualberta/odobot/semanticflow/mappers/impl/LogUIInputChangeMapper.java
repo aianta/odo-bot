@@ -55,6 +55,7 @@ public class LogUIInputChangeMapper extends JsonMapper<InputChange> {
             List<RadioButtonEvent.RadioButton> buttons = relatedElements.stream().map(o->(JsonObject)o)
                     .map(_element->{
                         RadioButtonEvent.RadioButton radioButton = new RadioButtonEvent.RadioButton(
+                                _element.getString("baseURI"),
                                 _element.getString("xpath"),
                                 _element.getString("html"),
                                 _element.getBoolean("checked"),

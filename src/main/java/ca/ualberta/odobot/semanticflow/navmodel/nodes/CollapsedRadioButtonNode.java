@@ -9,9 +9,8 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-public class CollapsedRadioButtonNode extends CollapsedNode{
+public class CollapsedRadioButtonNode extends CollapsedXpathAndBasePathNode {
 
-    public Set<String> xpaths = new HashSet<String>();
     public Set<String> radioGroups = new HashSet<>();
     public Set<String> relatedElements = new HashSet<>();
 
@@ -20,10 +19,6 @@ public class CollapsedRadioButtonNode extends CollapsedNode{
         super(nodeSet);
 
         nodeSet.forEach(node -> {
-            if(node.hasProperty("xpaths")){
-                Set<String> nodeXpaths = Arrays.stream((String[])node.getProperty("xpaths")).collect(Collectors.toSet());
-                xpaths.addAll(nodeXpaths);
-            }
 
             if(node.hasProperty("radioGroup")){
                 String radioGroup = (String)node.getProperty("radioGroup");
@@ -45,7 +40,6 @@ public class CollapsedRadioButtonNode extends CollapsedNode{
     public Node createNode(Transaction tx){
         Node result = super.createNode(tx);
         result.addLabel(Label.label("CollapsedRadioButtonNode"));
-        result.setProperty("xpaths", xpaths.toArray(new String[1]));
         result.setProperty("radioGroups", radioGroups.toArray(new String[1]));
         result.setProperty("relatedElements", relatedElements.toArray(new String[1]));
         return result;

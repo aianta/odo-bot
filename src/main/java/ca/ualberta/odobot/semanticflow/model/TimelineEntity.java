@@ -5,8 +5,6 @@ import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.List;
-
 import static ca.ualberta.odobot.semanticflow.Utils.getNormalizedPath;
 
 public interface TimelineEntity {

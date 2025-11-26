@@ -296,19 +296,19 @@ public class RequestManager {
         if(entity instanceof ClickEvent){
             ClickEvent clickEvent = (ClickEvent) entity;
             result.setDom(clickEvent.getDomSnapshot());
-            result.setUrl(clickEvent.getBaseURI());
+            result.setUrl(clickEvent.getBaseURI().toString());
         }
 
         if(entity instanceof DataEntry){
             DataEntry dataEntry = (DataEntry) entity;
             result.setDom(dataEntry.lastChange().getDomSnapshot());
-            result.setUrl(dataEntry.lastChange().getBaseURI());
+            result.setUrl(dataEntry.lastChange().getBaseURI().toString());
         }
 
         if(entity instanceof CheckboxEvent){
             CheckboxEvent checkboxEvent = (CheckboxEvent) entity;
             result.setDom(checkboxEvent.getDomSnapshot());
-            result.setUrl(checkboxEvent.getBaseURI());
+            result.setUrl(checkboxEvent.getBaseURI().toString());
         }
 
         _input = result;

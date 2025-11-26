@@ -3,7 +3,6 @@ package ca.ualberta.odobot.extractors.impl;
 import ca.ualberta.odobot.extractors.SemanticArtifactExtractor;
 import ca.ualberta.odobot.semanticflow.model.Effect;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
-import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

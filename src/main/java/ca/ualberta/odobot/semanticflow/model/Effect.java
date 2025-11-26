@@ -10,6 +10,7 @@ import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.URL;
 import java.util.*;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -29,7 +30,7 @@ public class Effect extends ArrayList<DomEffect> implements TimelineEntity {
     }
 
     public Set<String> getBaseURIs(){
-        return this.stream().map(DomEffect::getBaseURI).collect(Collectors.toSet());
+        return this.stream().map(DomEffect::getBaseURI).map(URL::toString).collect(Collectors.toSet());
     }
 
     public Set<Element> netVisible(){

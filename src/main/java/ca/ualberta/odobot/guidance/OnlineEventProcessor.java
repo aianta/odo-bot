@@ -23,7 +23,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
-import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.semanticflow.Utils.getNormalizedPath;
 
@@ -199,8 +198,8 @@ public class OnlineEventProcessor {
                     throw new RuntimeException("Invalid Effect BaseURI set size!");
                 }
 
-                String previousBasePath = new URL(effect.getBaseURIs().iterator().next()).getPath().replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*");;
-                String currentBasePath = new URL(domEffect.getBaseURI()).getPath().replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*");;
+                String previousBasePath =new URL(effect.getBaseURIs().iterator().next()).getPath().replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*");;
+                String currentBasePath = domEffect.getBaseURI().getPath().replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*");;
 
                 if(previousBasePath.equals(currentBasePath)){
                     effect.add(domEffect);
@@ -208,7 +207,7 @@ public class OnlineEventProcessor {
                     //Handle URL change in the middle of a series of DOM Effects
                     ApplicationLocationChange applicationLocationChange = new ApplicationLocationChange();
                     applicationLocationChange.setFrom(new URL(effect.getBaseURIs().iterator().next()));
-                    applicationLocationChange.setTo(new URL(domEffect.getBaseURI()));
+                    applicationLocationChange.setTo(domEffect.getBaseURI());
 
                     //Set the location change timestamp as the average between the current and last domEffect timestamps.
                     long lastTimestamp = effect.get(effect.size()-1).getTimestamp().toInstant().toEpochMilli();
@@ -247,14 +246,14 @@ public class OnlineEventProcessor {
 
                 if(line.last() instanceof ClickEvent){
                     ClickEvent lastEntity = (ClickEvent) line.last();
-                    lastURL = lastEntity.getBaseURI();
+                    lastURL = lastEntity.getBaseURI().toString();
                     lastBasePath = getNormalizedPath(lastURL);
                 }
 
                 //I don't think this one should ever be possible...
                 if(line.last() instanceof DataEntry){
                     DataEntry lastEntity = (DataEntry)line.last();
-                    lastURL = lastEntity.lastChange().getBaseURI();
+                    lastURL = lastEntity.lastChange().getBaseURI().toString();
                     lastBasePath = getNormalizedPath(lastURL);
                 }
 

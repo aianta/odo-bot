@@ -124,7 +124,7 @@ public class Mind2WebService extends HttpServiceVerticle {
         modelConstructionRoute = api.route().method(HttpMethod.POST).path(MODEL_CONSTRUCTION_PATH);
         modelConstructionRoute.handler(this::loadDataSetup); //Figure out what/how to load
         modelConstructionRoute.handler(this::loadDataFromFile); //Load
-        modelConstructionRoute.handler(this::buildTraces); //Build traces from loaded data
+        //modelConstructionRoute.handler(this::buildTraces); //Build traces from loaded data
 
         //Configure a route for mining dynamic xpaths, this should be invoked after model construction.
         mineDynamicXpathsRoute = api.route().method(HttpMethod.POST).path(MINE_DYNAMIC_XPATHS_PATH)
@@ -910,124 +910,124 @@ public class Mind2WebService extends HttpServiceVerticle {
         }
     }
 
-    private void buildTraces(RoutingContext rc){
-
-        log.info("Hit build traces!");
-
-        //Get the json traces from the routing context
-        JsonArray tasks = rc.get("taskData");
-
-        vertx.<List<Trace>>executeBlocking(blocking->{
-            List<Trace> traces = tasks.stream()
-                    .map(o->(JsonObject)o)
-                    .map(Mind2WebUtils::taskToTrace)
-                    .collect(Collectors.toList());
-
-            blocking.complete(traces);
-
-        }).subscribe(traces->{
-
-            log.info("Processed {} traces", traces.size());
-            log.info("{} clicks", traces.stream().mapToLong(Trace::numClicks).sum());
-            log.info("{} selects", traces.stream().mapToLong(Trace::numSelects).sum());
-            log.info("{} types", traces.stream().mapToLong(Trace::numTypes).sum());
-            log.info("{} total actions", traces.stream().mapToInt(Trace::size).sum());
-
-            //For debugging
-//            log.info("XPaths:");
-//            traces.stream().forEach(trace->trace.forEach(operation -> log.info("{}", operation.getTargetElementXpath())));
-
-            log.info("Constructing nav model from traces!");
-
-            vertx.executeBlocking(blocking->{
-                traces.stream().forEach(this::buildNavModel);
-                log.info("Trace construction complete. ");
-                blocking.complete(traces);
-            }).subscribe(_traces->{
-
-                log.info("Saving traces to routing context.");
-                rc.put("traces", traces);
-
-                //Check to see if we have more files to process.
-                String nextFile = rc.get("currentFile");
-                if(nextFile != null){
-                    rc.reroute(HttpMethod.POST, getFullModelConstructionRoutePath());
-                }else{
-                    log.info("Model construction complete");
-                    neo4j.createNodeLabelsUsingWebsiteProperty();
-                    rc.response().setStatusCode(200).end(Mind2WebUtils.targetTags.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encodePrettily());
-                }
-            });
-        });
-    }
-
-
-
-    public void buildNavModel(Trace trace){
-
-        log.info("Inserting trace {} into nav model. ", trace.getAnnotationId());
-
-        ListIterator<Operation> it = trace.listIterator();
-
-        //Do one pass through the trace to create/update all required nodes.
-        while (it.hasNext()){
-
-            Operation op = it.next();
-
-            if(op instanceof Click){
-                neo4j.processClick((Click) op, trace.getWebsite());
-            }
-
-            if(op instanceof Type){
-                neo4j.processType((Type) op, trace.getWebsite());
-            }
-
-            if(op instanceof SelectOption){
-                neo4j.processSelectOption((SelectOption) op, trace.getWebsite());
-            }
-
-            if(op instanceof Start){
-                //EventId for startNodes feel more meaningful if they were populated with the trace annotationId. Maybe this is a bad idea...idk...
-                neo4j.processStart(trace.getWebsite(), trace.getAnnotationId());
-            }
-
-            if(op instanceof End){
-                //EventId for endNodes feel more meaningful if they were populated with the trace annotationId. Maybe this is a bad idea...idk...
-                neo4j.processEnd(trace.getWebsite(), trace.getAnnotationId());
-            }
-
-        }
-
-        //Now do another pass to connect everything
-        if(trace.size() > 2){
-            it = trace.listIterator();
-            ListIterator<Operation> successorIt = trace.listIterator();
-            successorIt.next();
-
-            while (it.hasNext() && successorIt.hasNext()){
-                Operation curr = it.next();
-                Operation next = successorIt.next();
-
-                NavNode a = neo4j.resolveNavNode(curr, trace.getWebsite());
-                NavNode b = neo4j.resolveNavNode(next, trace.getWebsite());
-
-                neo4j.bind(a, b);
-            }
+//    private void buildTraces(RoutingContext rc){
+//
+//        log.info("Hit build traces!");
+//
+//        //Get the json traces from the routing context
+//        JsonArray tasks = rc.get("taskData");
+//
+//        vertx.<List<Trace>>executeBlocking(blocking->{
+//            List<Trace> traces = tasks.stream()
+//                    .map(o->(JsonObject)o)
+//                    .map(Mind2WebUtils::taskToTrace)
+//                    .collect(Collectors.toList());
+//
+//            blocking.complete(traces);
+//
+//        }).subscribe(traces->{
+//
+//            log.info("Processed {} traces", traces.size());
+//            log.info("{} clicks", traces.stream().mapToLong(Trace::numClicks).sum());
+//            log.info("{} selects", traces.stream().mapToLong(Trace::numSelects).sum());
+//            log.info("{} types", traces.stream().mapToLong(Trace::numTypes).sum());
+//            log.info("{} total actions", traces.stream().mapToInt(Trace::size).sum());
+//
+//            //For debugging
+////            log.info("XPaths:");
+////            traces.stream().forEach(trace->trace.forEach(operation -> log.info("{}", operation.getTargetElementXpath())));
+//
+//            log.info("Constructing nav model from traces!");
+//
+//            vertx.executeBlocking(blocking->{
+//                traces.stream().forEach(this::buildNavModel);
+//                log.info("Trace construction complete. ");
+//                blocking.complete(traces);
+//            }).subscribe(_traces->{
+//
+//                log.info("Saving traces to routing context.");
+//                rc.put("traces", traces);
+//
+//                //Check to see if we have more files to process.
+//                String nextFile = rc.get("currentFile");
+//                if(nextFile != null){
+//                    rc.reroute(HttpMethod.POST, getFullModelConstructionRoutePath());
+//                }else{
+//                    log.info("Model construction complete");
+//                    neo4j.createNodeLabelsUsingWebsiteProperty();
+//                    rc.response().setStatusCode(200).end(Mind2WebUtils.targetTags.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encodePrettily());
+//                }
+//            });
+//        });
+//    }
+//
 
 
-        }else if(trace.size() == 2){
-
-            NavNode a = neo4j.resolveNavNode(trace.get(0), trace.getWebsite());
-            NavNode b = neo4j.resolveNavNode(trace.get(1), trace.getWebsite());
-
-            neo4j.bind(a,b);
-
-        }else{
-            log.info("Trace size: {}", trace.size());
-            throw new RuntimeException("Trace is too small to model!");
-        }
-
-    }
+//    public void buildNavModel(Trace trace){
+//
+//        log.info("Inserting trace {} into nav model. ", trace.getAnnotationId());
+//
+//        ListIterator<Operation> it = trace.listIterator();
+//
+//        //Do one pass through the trace to create/update all required nodes.
+//        while (it.hasNext()){
+//
+//            Operation op = it.next();
+//
+//            if(op instanceof Click){
+//                neo4j.processClickWithWebsite((Click) op, trace.getWebsite());
+//            }
+//
+//            if(op instanceof Type){
+//                neo4j.processType((Type) op, trace.getWebsite());
+//            }
+//
+//            if(op instanceof SelectOption){
+//                neo4j.processSelectOptionWithWebsite((SelectOption) op, trace.getWebsite());
+//            }
+//
+//            if(op instanceof Start){
+//                //EventId for startNodes feel more meaningful if they were populated with the trace annotationId. Maybe this is a bad idea...idk...
+//                neo4j.processStart(trace.getWebsite(), trace.getAnnotationId());
+//            }
+//
+//            if(op instanceof End){
+//                //EventId for endNodes feel more meaningful if they were populated with the trace annotationId. Maybe this is a bad idea...idk...
+//                neo4j.processEnd(trace.getWebsite(), trace.getAnnotationId());
+//            }
+//
+//        }
+//
+//        //Now do another pass to connect everything
+//        if(trace.size() > 2){
+//            it = trace.listIterator();
+//            ListIterator<Operation> successorIt = trace.listIterator();
+//            successorIt.next();
+//
+//            while (it.hasNext() && successorIt.hasNext()){
+//                Operation curr = it.next();
+//                Operation next = successorIt.next();
+//
+//                NavNode a = neo4j.resolveNavNode(curr, trace.getWebsite());
+//                NavNode b = neo4j.resolveNavNode(next, trace.getWebsite());
+//
+//                neo4j.bind(a, b);
+//            }
+//
+//
+//        }else if(trace.size() == 2){
+//
+//            NavNode a = neo4j.resolveNavNode(trace.get(0), trace.getWebsite());
+//            NavNode b = neo4j.resolveNavNode(trace.get(1), trace.getWebsite());
+//
+//            neo4j.bind(a,b);
+//
+//        }else{
+//            log.info("Trace size: {}", trace.size());
+//            throw new RuntimeException("Trace is too small to model!");
+//        }
+//
+//    }
 
     private void mineDynamicXpaths(RoutingContext rc){
 

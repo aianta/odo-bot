@@ -269,7 +269,7 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
                 ClickEvent clickEvent = (ClickEvent) entity;
 
                 sample.domHTML = clickEvent.getDomSnapshot().outerHtml();
-                sample.baseURI = clickEvent.getBaseURI();
+                sample.baseURI = clickEvent.getBaseURI().toString();
 
             }
 
@@ -278,7 +278,7 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
 
                 DomEffect lastEffect = effect.get(effect.size()-1);
                 sample.domHTML = lastEffect.getDomSnapshot().outerHtml();
-                sample.baseURI = lastEffect.getBaseURI();
+                sample.baseURI = lastEffect.getBaseURI().toString();
             }
 
             if (entity instanceof DataEntry){
@@ -286,7 +286,7 @@ public class SimplePreprocessingPipeline extends AbstractPreprocessingPipeline i
 
                 InputChange lastInputChange = dataEntry.get(dataEntry.size()-1);
                 sample.domHTML = lastInputChange.getDomSnapshot().outerHtml();
-                sample.baseURI = lastInputChange.getBaseURI();
+                sample.baseURI = lastInputChange.getBaseURI().toString();
             }
 
             if(sample.baseURI == null || sample.domHTML == null){

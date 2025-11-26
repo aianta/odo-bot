@@ -73,16 +73,9 @@ public class Neo4JUtils {
     }
 
 
-    /**
-     * A wrapper method for {@link #processMind2WebDataEntry(String, String, String)} to simplify processing {@link Type}s.
-     * @param type
-     */
-    public void processType(Type type, String website){
-        processMind2WebDataEntry(type.getTargetElementXpath(), type.getActionId(), website);
-    }
 
     /**
-     * A wrapper method for {@link #processDataEntry(String, String, String)} to simplify processing {@link DataEntry}s.
+     * A wrapper method for {@link #processDataEntry(String, String, String, String)} to simplify processing {@link DataEntry}s.
      * @param timeline
      * @param dataEntry
      */
@@ -90,17 +83,20 @@ public class Neo4JUtils {
         var index = timeline.indexOf(dataEntry);
         var entityTimelineId = timeline.getId().toString()+"#"+index;
 
+        log.info("DataEntry:\n{}", dataEntry.toJson().encodePrettily());
+        log.info("{}", dataEntry.lastChange().getBasePath());
+
         if(dataEntry.lastChange() instanceof TinymceEvent){
-            processDataEntry(dataEntry.xpath(), ((TinymceEvent) dataEntry.lastChange()).getEditorId(), entityTimelineId);
+            processDataEntry(dataEntry.xpath(), ((TinymceEvent) dataEntry.lastChange()).getEditorId(), entityTimelineId, dataEntry.lastChange().getBasePath());
         }else{
-            processDataEntry(dataEntry.xpath(), null, entityTimelineId);
+            processDataEntry(dataEntry.xpath(), null, entityTimelineId,  dataEntry.lastChange().getBasePath());
         }
 
 
     }
 
     /**
-     * A wrapper method for {@link #processCheckboxEvent(String, String)} to simplify processing {@link CheckboxEvent}s.
+     * A wrapper method for {@link #processCheckboxEvent(String, String, String)} to simplify processing {@link CheckboxEvent}s.
      * @param timeline
      * @param checkboxEvent
      */
@@ -108,14 +104,14 @@ public class Neo4JUtils {
         var index = timeline.indexOf(checkboxEvent);
         var entityTimelineId = timeline.getId().toString()+"#"+index;
 
-        processCheckboxEvent(checkboxEvent.xpath(), entityTimelineId);
+        processCheckboxEvent(checkboxEvent.xpath(), entityTimelineId, checkboxEvent.getBasePath());
     }
 
     public void processRadioButtonEvent(Timeline timeline, RadioButtonEvent radioButtonEvent){
         var index = timeline.indexOf(radioButtonEvent);
         var entityTimelineId = timeline.getId().toString()+"#"+index;
 
-        processRadioButtonEvent(radioButtonEvent.getXpath(), entityTimelineId, radioButtonEvent.getRadioGroup(), radioButtonEvent.getOptions());
+        processRadioButtonEvent(radioButtonEvent.getXpath(), entityTimelineId, radioButtonEvent.getRadioGroup(), radioButtonEvent.getOptions(), radioButtonEvent.getBasePath());
     }
 
 
@@ -162,21 +158,14 @@ public class Neo4JUtils {
         return processNode(eventId, LocationNode.class, existingLocationNodeSupplier, newLocationNodeSupplier, queryFunction);
     }
 
-    /**
-     * A wrapper method for {@link #processSelectOption(String, String)} to simplify processing {@link SelectOption}
-     * @param selectOption
-     */
-    public void processSelectOption(SelectOption selectOption){
-        processSelectOption(selectOption.getTargetElementXpath(), selectOption.getActionId());
+
+    public void processSelectOptionWithWebsite(SelectOption selectOption, String website){
+        processSelectOptionWithWebsite(selectOption.getTargetElementXpath(), selectOption.getActionId(), website);
     }
 
-    public void processSelectOption(SelectOption selectOption, String website){
-        processSelectOption(selectOption.getTargetElementXpath(), selectOption.getActionId(), website);
-    }
-
-    public void processSelectOption(String xpath, String eventId, String website){
+    public void processSelectOptionWithWebsite(String xpath, String eventId, String website){
         //If a select option node for this event already exists in the database, this supplier will be used to retrieve it.
-        Supplier<SelectOptionNode> existingSelectOptionNodeSupplier = ()->getSelectOptionNode(xpath, website);
+        Supplier<SelectOptionNode> existingSelectOptionNodeSupplier = ()-> getSelectOptionNodeWithWebsite(xpath, website);
 
         //Invoke generic processing logic
         processNode(
@@ -227,10 +216,10 @@ public class Neo4JUtils {
         );
     }
 
-    public void processSelectOption(String xpath, String eventId){
+    public void processSelectOption(String xpath, String eventId, String basePath){
 
         //If a select option node for this event already exists in the database, this supplier will be used to retrieve it.
-        Supplier<SelectOptionNode> existingSelectOptionNodeSupplier = ()->getSelectOptionNode(xpath);
+        Supplier<SelectOptionNode> existingSelectOptionNodeSupplier = ()->getSelectOptionNode(xpath, basePath);
 
 
         //Invoke generic processing logic
@@ -342,32 +331,19 @@ public class Neo4JUtils {
                 queryFunction);
     }
 
-    public void processMind2WebDataEntry(String xpath, String eventId, String website){
-        //If a data entry node for this event already exists in the database, this supplier will be used to retrieve it.
-        Supplier<DataEntryNode> existingDataEntryNodeSupplier = ()->getDataEntryNode(xpath, website);
 
-        //Invoke generic processing logic.
-        processNode(
-                eventId,
-                DataEntryNode.class,
-                existingDataEntryNodeSupplier,
-                newDataEntryNodeSupplier(xpath, eventId, website),
-                processDataEntryNodeQueryFunction()
-        );
-    }
-
-    public void processRadioButtonEvent(String xpath, String eventId, String radioGroup, List<RadioButtonEvent.RadioButton> relatedElements){
+    public void processRadioButtonEvent(String xpath, String eventId, String radioGroup, List<RadioButtonEvent.RadioButton> relatedElements, String basePath){
 
         log.info("Processing RadioButtonEvent {} [xpath: {}, radioGroup: {}]", eventId, xpath, radioGroup);
 
         //If a radiobutton node for this event already exists in the database, this supplier will be used to retrieve it;
-        Supplier<RadioButtonNode> existingRadioButtonNodeSupplier = ()->getRadioButtonNode(xpath, radioGroup);
+        Supplier<RadioButtonNode> existingRadioButtonNodeSupplier = ()->getRadioButtonNode(xpath, radioGroup, basePath);
 
         RadioButtonNode node = existingRadioButtonNodeSupplier.get();
 
         if(node == null){ //Node cannot be found.
             //Create it.
-            node = newRadioButtonNodeSupplier(eventId, radioGroup, relatedElements).get();
+            node = newRadioButtonNodeSupplier(eventId, radioGroup, relatedElements, basePath).get();
         }else{
             //If the node was found, update its list of instances.
             node.getInstances().add(eventId);
@@ -377,7 +353,7 @@ public class Neo4JUtils {
         try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
 
             //Try and find the existing node in the database.
-            RadioButtonNode _existing = getRadioButtonNode(xpath, radioGroup);
+            RadioButtonNode _existing = getRadioButtonNode(xpath, radioGroup, basePath);
             if(_existing != null){
                 log.info("Updating existing RadioButtonNode");
 
@@ -398,6 +374,7 @@ public class Neo4JUtils {
                 //No existing node. Create one now.
                 HashMap<String, Object> props = new HashMap<>();
                 props.put("xpaths", node.getXpaths());
+                props.put("basePath", node.getBasePath());
                 props.put("id", node.getId().toString());
                 props.put("instances", node.getInstances());
                 props.put("radioGroup", node.getRadioGroup());
@@ -416,16 +393,16 @@ public class Neo4JUtils {
 
     }
 
-    public void processCheckboxEvent(String xpath, String eventId){
+    public void processCheckboxEvent(String xpath, String eventId, String basePath){
         //If a checkbox node for this event already exists in the database, this supplier will be used to retrieve it;
-        Supplier<CheckboxNode> existingCheckboxNodeSupplier = ()->getCheckboxNode(xpath);
+        Supplier<CheckboxNode> existingCheckboxNodeSupplier = ()->getCheckboxNode(xpath, basePath);
 
         //Invoke generic processing logic
         processNode(
                 eventId,
                 CheckboxNode.class,
                 existingCheckboxNodeSupplier,
-                newCheckboxNodeSupplier(xpath, eventId),
+                newCheckboxNodeSupplier(xpath, eventId, basePath),
                 processCheckboxNodeQueryFunction()
         );
 
@@ -438,37 +415,22 @@ public class Neo4JUtils {
      * @param editorId tinyMCE editor id, only defined if this data entry interaction originated from there.
      * @param eventId
      */
-    public void processDataEntry(String xpath, String editorId, String eventId){
+    public void processDataEntry(String xpath, String editorId, String eventId, String basePath){
 
         //If a data entry node for this event already exists in the database, this supplier will be used to retrieve it.
-        Supplier<DataEntryNode> existingDataEntryNodeSupplier = ()->getDataEntryNode(xpath);
+        Supplier<DataEntryNode> existingDataEntryNodeSupplier = ()->getDataEntryNode(xpath, basePath);
 
         //Invoke generic processing logic.
         processNode(
                 eventId,
                 DataEntryNode.class,
                 existingDataEntryNodeSupplier, //If a data entry node for this event already exists in the database, this supplier will be used to retrieve it.
-                newDataEntryNodeSupplier(xpath, editorId, eventId), //If no data entry node could be found, this supplier will be used to create one
+                newDataEntryNodeSupplier(xpath, editorId, eventId, basePath), //If no data entry node could be found, this supplier will be used to create one
                 processDataEntryNodeQueryFunction()//The update query used to update/merge the processed data entry node into the database.
         );
 
     }
 
-//    private Function<RadioButtonNode, Query> processRadioButtonNodeQueryFunction(){
-//
-//        return (radioButtonNode) -> {
-//          HashMap<String, Object> props = new HashMap<>();
-//          props.put("xpaths", radioButtonNode.getXpaths());
-//          props.put("id", radioButtonNode.getId().toString());
-//          props.put("instances", radioButtonNode.getInstances());
-//          props.put("radioGroup", radioButtonNode.getRadioGroup());
-//          props.put("relatedElements", radioButtonNode.getButtonsAsStrings());
-//
-//
-//            return makeGenericMergeQuery("RadioButtonNode", radioButtonNode, props, "xpath", radioButtonNode.getXpath(), "props", props);
-//        };
-//
-//    }
 
     private Function<CheckboxNode, Query> processCheckboxNodeQueryFunction(){
 
@@ -477,6 +439,7 @@ public class Neo4JUtils {
             props.put("xpath", checkboxNode.getXpath());
             props.put("id", checkboxNode.getId().toString());
             props.put("instances", checkboxNode.getInstances());
+            props.put("basePath", checkboxNode.getBasePath());
 
             return makeGenericMergeQuery("CheckboxNode", checkboxNode, props, "xpath", checkboxNode.getXpath(), "props", props);
         };
@@ -488,6 +451,7 @@ public class Neo4JUtils {
         Function<DataEntryNode, Query> queryFunction = (dataEntryNode)->{
             HashMap<String, Object> props = new HashMap<>();
             props.put("xpath", dataEntryNode.getXpath());
+            props.put("basePath", dataEntryNode.getBasePath());
             props.put("id", dataEntryNode.getId().toString());
             props.put("instances", dataEntryNode.getInstances());
 
@@ -495,21 +459,14 @@ public class Neo4JUtils {
                 props.put("editorId", dataEntryNode.getEditorId());
             }
 
-            return makeGenericMergeQuery("DataEntryNode", dataEntryNode, props, "xpath", dataEntryNode.getXpath(), "props", props);
+            return makeGenericMergeQuery("DataEntryNode", dataEntryNode, props, "xpath", dataEntryNode.getXpath(), "basePath", dataEntryNode.getBasePath(),  "props", props);
         };
 
         return queryFunction;
     }
 
-    private Supplier<CheckboxNode> newCheckboxNodeSupplier(String xpath, String eventId, String website){
-        return ()->{
-            CheckboxNode node = this.newCheckboxNodeSupplier(xpath, eventId).get();
-            node.setWebsite(website);
-            return node;
-        };
-    }
 
-    private Supplier<RadioButtonNode> newRadioButtonNodeSupplier(String eventId, String radioGroup, List<RadioButtonEvent.RadioButton> relatedElements){
+    private Supplier<RadioButtonNode> newRadioButtonNodeSupplier(String eventId, String radioGroup, List<RadioButtonEvent.RadioButton> relatedElements, String basePath){
         //If no radiobutton node could be found, this supplier will be used to create one.
         return ()->{
             RadioButtonNode node = new RadioButtonNode();
@@ -517,37 +474,32 @@ public class Neo4JUtils {
             node.setInstances(Set.of(eventId));
             node.setRadioGroup(radioGroup);
             node.setRadioButtons(relatedElements);
+            node.setBasePath(basePath);
             return node;
         };
 
     }
 
-    private Supplier<CheckboxNode> newCheckboxNodeSupplier(String xpath, String eventId){
+    private Supplier<CheckboxNode> newCheckboxNodeSupplier(String xpath, String eventId, String basePath){
         //If no checkbox node could be found, this supplier will be used to create one.
         return ()->{
             CheckboxNode node = new CheckboxNode();
             node.setId(UUID.randomUUID());
             node.setXpath(xpath);
+            node.setBasePath(basePath);
             node.setInstances(Set.of(eventId));
             return node;
         };
     }
 
-    private Supplier<DataEntryNode> newMind2WebDataEntryNodeSupplier (String xpath, String eventId, String website){
-        Supplier<DataEntryNode> newDataEntryNodeSupplier = ()->{
-            DataEntryNode node = this.newDataEntryNodeSupplier(xpath, null, eventId).get();
-            node.setWebsite(website);
-            return node;
-        };
-        return newDataEntryNodeSupplier;
-    }
 
-    private Supplier<DataEntryNode> newDataEntryNodeSupplier (String xpath, String editorId, String eventId){
+    private Supplier<DataEntryNode> newDataEntryNodeSupplier (String xpath, String editorId, String eventId, String basePath){
         //If no data entry node could be found, this supplier will be used to create one
         Supplier<DataEntryNode> newDataEntryNodeSupplier = ()->{
             DataEntryNode node = new DataEntryNode();
             node.setId(UUID.randomUUID());
             node.setXpath(xpath);
+            node.setBasePath(basePath);
             node.setInstances(Set.of(eventId));
 
             if (editorId != null) {
@@ -559,63 +511,35 @@ public class Neo4JUtils {
         return newDataEntryNodeSupplier;
     }
 
-    public void processClick(String clickText, String clickXpath, String eventId, String website){
+
+
+    public void processClick(String clickText, String clickXpath, String eventId, String basePath){
+
         //If a click node for this event already exists in the database, this supplier will be used to retrieve it.
-        Supplier<ClickNode> existingClickNodeSupplier = ()->getClickNode(clickXpath, clickText, website);
+        Supplier<ClickNode> existingClickNodeSupplier = ()->getClickNode(clickXpath, clickText, basePath);
 
         //Invoke generic processing logic.
         processNode(
                 eventId,
                 ClickNode.class,
                 existingClickNodeSupplier, //If a click node for this event already exists in the database, this supplier will be used to retrieve it.
-                newClickNodeSupplier(clickText, clickXpath, eventId, website), //If no click node could be found, this supplier will be used to create one
-                processClickQueryFunction()
-        );
-
-    }
-
-    public void processClick(String clickText, String clickXpath, String eventId){
-
-        //If a click node for this event already exists in the database, this supplier will be used to retrieve it.
-        Supplier<ClickNode> existingClickNodeSupplier = ()->getClickNode(clickXpath, clickText);
-
-        //Invoke generic processing logic.
-        processNode(
-                eventId,
-                ClickNode.class,
-                existingClickNodeSupplier, //If a click node for this event already exists in the database, this supplier will be used to retrieve it.
-                newClickNodeSupplier(clickText, clickXpath, eventId), //If no click node could be found, this supplier will be used to create one
+                newClickNodeSupplier(clickText, clickXpath, eventId, basePath), //If no click node could be found, this supplier will be used to create one
                 processClickQueryFunction()
         );
     }
 
-    /**
-     * Supplies new click nodes
-     * @param clickText
-     * @param clickXpath
-     * @param eventId
-     * @param website
-     * @return
-     */
-    private Supplier<ClickNode> newClickNodeSupplier(String clickText, String clickXpath, String eventId, String website){
-        Supplier<ClickNode> newClickNodeSupplier = ()->{
-            ClickNode clickNode = this.newClickNodeSupplier(clickText, clickXpath, eventId).get();
-            clickNode.setWebsite(website);
-            return clickNode;
-        };
-        return newClickNodeSupplier;
-    }
 
     /**
      *  Supplies new click nodes
      * @return
      */
-    private Supplier<ClickNode> newClickNodeSupplier(String clickText, String clickXpath, String eventId){
+    private Supplier<ClickNode> newClickNodeSupplier(String clickText, String clickXpath, String eventId, String basePath){
         Supplier<ClickNode> newClickNodeSupplier = ()->{
             ClickNode clickNode = new ClickNode();
             clickNode.setId(UUID.randomUUID());
             clickNode.setText(clickText);
             clickNode.setXpath(clickXpath);
+            clickNode.setBasePath(basePath);
             clickNode.setInstances(Set.of(eventId));
             return clickNode;
         };
@@ -630,6 +554,7 @@ public class Neo4JUtils {
         Function<ClickNode, Query> queryFunction = (clickNode)->{
             HashMap<String, Object> props = new HashMap<>();
             props.put("xpath", clickNode.getXpath());
+            props.put("basePath", clickNode.getBasePath());
             props.put("text", clickNode.getText());
             props.put("id", clickNode.getId().toString());
             props.put("instances", clickNode.getInstances());
@@ -665,7 +590,15 @@ public class Neo4JUtils {
                     .toArray(String[]::new); //Convert matching properties to a string array for use with makeSimpleNodeQuerySegment
             stmt = "MERGE "+ makeSimpleNodeQuerySegment("n", nodeLabel, stringProps) + " ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
             query = new Query(stmt, parameters(mapToKeysAndValues(map)));
-        }else{
+        }else if (node instanceof XpathAndBasePathNode){
+            props.put("basePath", ((XpathAndBasePathNode)node).getBasePath());
+            map.put("basePath", ((XpathAndBasePathNode)node).getBasePath());
+            String[] stringProps = map.keySet().stream()
+                    .filter(k->!k.equals("props")) //'props' should not be a property value, it is passed so we can use it in the parameters() call, and it represents node properties as a whole, but is not in fact a property 'props' with corresponding map value.
+                    .toArray(String[]::new); //Convert matching properties to a string array for use with makeSimpleNodeQuerySegment
+            stmt = "MERGE "+ makeSimpleNodeQuerySegment("n", nodeLabel, stringProps) + " ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
+            query = new Query(stmt, parameters(mapToKeysAndValues(map)));
+        } else{
             String [] stringProps = map.keySet().stream()
                     .filter(k->!k.equals("props")) //'props' should not be a property value, it is passed so we can use it in the parameters() call.
                     .toArray(String[]::new); //Convert matching properties to a string array for use with makeSimpleNodeQuerySegment
@@ -756,16 +689,7 @@ public class Neo4JUtils {
         return node;
     }
 
-    public void processClick(Click click){
-        String clickText = click.targetElement().ownText();
-        String xpath = click.getTargetElementXpath();
 
-        processClick(clickText, xpath, click.getActionId());
-    }
-
-    public void processClick(Click click, String website){
-        processClick(click.targetElement().ownText(), click.getTargetElementXpath(), click.getActionId(), website);
-    }
 
     public void processClickEvent(Timeline timeline, ClickEvent clickEvent){
         var index  = timeline.indexOf(clickEvent);
@@ -774,7 +698,7 @@ public class Neo4JUtils {
         String clickText = clickEvent.getTriggerElement() != null?clickEvent.getTriggerElement().ownText():"";
         String clickXpath = clickEvent.getXpath();
 
-        processClick(clickText, clickXpath, entityTimelineId);
+        processClick(clickText, clickXpath, entityTimelineId, clickEvent.getBasePath());
     }
 
     public void processEffect(Timeline timeline, Effect effect){
@@ -857,17 +781,17 @@ public class Neo4JUtils {
 
         if(operation instanceof Click){
             Click click = (Click) operation;
-            return getClickNode(click.getTargetElementXpath(), click.targetElement().ownText(), website);
+            return getClickNodeWithWebsite(click.getTargetElementXpath(), click.targetElement().ownText(), website);
         }
 
         if(operation instanceof Type){
             Type type = (Type) operation;
-            return getDataEntryNode(type.getTargetElementXpath(), website);
+            return getDataEntryNodeWithWebsite(type.getTargetElementXpath(), website);
         }
 
         if(operation instanceof SelectOption){
             SelectOption selectOption = (SelectOption) operation;
-            return getSelectOptionNode(selectOption.getTargetElementXpath(), website);
+            return getSelectOptionNodeWithWebsite(selectOption.getTargetElementXpath(), website);
         }
 
         if(operation instanceof Start){
@@ -883,27 +807,7 @@ public class Neo4JUtils {
 
     }
 
-    public NavNode resolveNavNode(Operation operation){
 
-        if(operation instanceof Click){
-            Click click = (Click) operation;
-            return getClickNode(click.getTargetElementXpath(), click.targetElement().ownText());
-        }
-
-        if(operation instanceof Type){
-            Type type = (Type) operation;
-            return getDataEntryNode(type.getTargetElementXpath());
-        }
-
-        if(operation instanceof SelectOption){
-            SelectOption selectOption = (SelectOption) operation;
-            return getSelectOptionNode(selectOption.getTargetElementXpath());
-        }
-
-        log.warn("Unrecognized Mind2Web event type!");
-        return null;
-
-    }
 
 
     public NavNode resolveNavNode(Timeline timeline, int index){
@@ -912,23 +816,23 @@ public class Neo4JUtils {
         TimelineEntity target = timeline.get(index);
         if (target instanceof ClickEvent){
             ClickEvent clickEvent = (ClickEvent)target;
-            return getClickNode(clickEvent.getXpath(), clickEvent.getTriggerElement() != null ? clickEvent.getTriggerElement().ownText():"");
+            return getClickNode(clickEvent.getXpath(), clickEvent.getTriggerElement() != null ? clickEvent.getTriggerElement().ownText():"", clickEvent.getBasePath());
         }
 
         if(target instanceof DataEntry){
             DataEntry dataEntry = (DataEntry) target;
-            return getDataEntryNode(dataEntry.xpath());
+            return getDataEntryNode(dataEntry.xpath(), dataEntry.lastChange().getBasePath());
         }
 
         if(target instanceof RadioButtonEvent){
             RadioButtonEvent radioButtonEvent = (RadioButtonEvent) target;
             log.info("RadioButtonNode with xpath: {}", radioButtonEvent.getXpath());
-            return getRadioButtonNode(radioButtonEvent.getXpath(), radioButtonEvent.getRadioGroup());
+            return getRadioButtonNode(radioButtonEvent.getXpath(), radioButtonEvent.getRadioGroup(), radioButtonEvent.getBasePath());
         }
 
         if(target instanceof CheckboxEvent){
             CheckboxEvent checkboxEvent = (CheckboxEvent) target;
-            return getCheckboxNode(checkboxEvent.xpath());
+            return getCheckboxNode(checkboxEvent.xpath(), checkboxEvent.getBasePath());
         }
 
         if(target instanceof NetworkEvent){
@@ -1158,14 +1062,14 @@ public class Neo4JUtils {
         return readNode(query, StartNode.class);
     }
 
-    private SelectOptionNode getSelectOptionNode(String xpath){
-        var stmt = "MATCH (n:SelectOptionNode {xpath:$xpath}) return n";
-        var query = new Query(stmt, parameters("xpath", xpath));
+    private SelectOptionNode getSelectOptionNode(String xpath, String basePath){
+        var stmt = makeSimplePropertyBasedMatchQueryString("SelectOptionNode", "xpath", "basePath");
+        var query = new Query(stmt, parameters("xpath", xpath, "basePath", basePath));
 
         return readNode(query, SelectOptionNode.class);
     }
 
-    private SelectOptionNode getSelectOptionNode(String xpath, String website){
+    private SelectOptionNode getSelectOptionNodeWithWebsite(String xpath, String website){
         var stmt = makeSimplePropertyBasedMatchQueryString("SelectOptionNode", "xpath", "website");
         var query = new Query(stmt, parameters("xpath", xpath, "website", website));
 
@@ -1174,44 +1078,44 @@ public class Neo4JUtils {
         return readNode(query, SelectOptionNode.class);
     }
 
-    private RadioButtonNode getRadioButtonNode(String xpath, String radioGroup){
-        var stmt = "MATCH (n:RadioButtonNode {radioGroup:$radioGroup}) WHERE $xpath IN n.xpaths return n";
-        var query = new Query(stmt, parameters("xpath", xpath, "radioGroup", radioGroup));
+    private RadioButtonNode getRadioButtonNode(String xpath, String radioGroup, String basePath){
+        var stmt = "MATCH (n:RadioButtonNode {radioGroup:$radioGroup, basePath:$basePath}) WHERE $xpath IN n.xpaths return n";
+        var query = new Query(stmt, parameters("xpath", xpath, "radioGroup", radioGroup, "basePath", basePath));
         return readNode(query, RadioButtonNode.class);
     }
 
-    private CheckboxNode getCheckboxNode(String xpath){
-        var stmt = "MATCH (n:CheckboxNode {xpath:$xpath}) return n;";
-        var query = new Query(stmt, parameters("xpath", xpath));
+    private CheckboxNode getCheckboxNode(String xpath, String basePath){
+        var stmt = makeSimplePropertyBasedMatchQueryString("CheckboxNode", "xpath", "basePath");
+        var query = new Query(stmt, parameters("xpath", xpath, "basePath", basePath));
         return readNode(query, CheckboxNode.class);
     }
 
-    private CheckboxNode getCheckboxNode(String xpath, String website){
+    private CheckboxNode getCheckboxNodeWithWebsite(String xpath, String website){
         var stmt = makeSimplePropertyBasedMatchQueryString("CheckboxNode", "xpath", "website");
         var query = new Query(stmt, parameters("xpath", xpath, "website", website));
         return readNode(query, CheckboxNode.class);
     }
 
-    private DataEntryNode getDataEntryNode(String xpath){
-        var stmt = "MATCH (n:DataEntryNode {xpath:$xpath}) return n";
-        var query = new Query(stmt, parameters("xpath", xpath));
+    private DataEntryNode getDataEntryNode(String xpath, String basePath){
+        var stmt =  makeSimplePropertyBasedMatchQueryString("DataEntryNode", "xpath", "basePath");
+        var query = new Query(stmt, parameters("xpath", xpath, "basePath", basePath));
         return readNode(query, DataEntryNode.class);
     }
 
-    private DataEntryNode getDataEntryNode(String xpath, String website){
+    private DataEntryNode getDataEntryNodeWithWebsite(String xpath, String website){
         var stmt = makeSimplePropertyBasedMatchQueryString("DataEntryNode", "xpath", "website");
         var query = new Query(stmt, parameters("xpath", xpath, "website", website));
         return readNode(query, DataEntryNode.class);
     }
 
-    private ClickNode getClickNode(String xpath, String text){
-        var stmt = "MATCH (n:ClickNode {xpath:$xpath, text:$text}) return n;";
-        var query = new Query(stmt, parameters("xpath", xpath, "text", text));
+    private ClickNode getClickNode(String xpath, String text, String basePath){
+        var stmt = makeSimplePropertyBasedMatchQueryString("ClickNode", "xpath", "text", "basePath");
+        var query = new Query(stmt, parameters("xpath", xpath, "text", text, "basePath", basePath));
         return readNode(query, ClickNode.class);
 
     }
 
-    private ClickNode getClickNode(String xpath, String text, String website){
+    private ClickNode getClickNodeWithWebsite(String xpath, String text, String website){
         var stmt = makeSimplePropertyBasedMatchQueryString("ClickNode", "xpath", "text", "website");
         var query = new Query(stmt, parameters("xpath", xpath, "text", text, "website", website));
         //log.info("getClickNode Query:\n{}\n{}", stmt, stmt.replaceAll("\\$xpath", "\""+xpath+"\"").replaceAll("\\$text", "\""+text+"\"").replaceAll("\\$website", "\""+website+"\""));

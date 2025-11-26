@@ -1,16 +1,15 @@
 package ca.ualberta.odobot.semanticflow.navmodel.nodes;
 
+import ca.ualberta.odobot.common.BasePathAndXpath;
 import ca.ualberta.odobot.semanticflow.model.RadioButtonEvent;
 import io.vertx.core.json.JsonObject;
 import org.neo4j.driver.Record;
 import org.neo4j.driver.types.Node;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
-public class RadioButtonNode extends NavNode{
+public class RadioButtonNode extends XpathAndBasePathNode {
 
 
     private String radioGroup;
@@ -35,7 +34,7 @@ public class RadioButtonNode extends NavNode{
     }
 
     public List<String> getXpaths(){
-        return radioButtons.stream().map(RadioButtonEvent.RadioButton::getXpath).toList();
+        return radioButtons.stream().map(RadioButtonEvent.RadioButton::getBasePathAndXpath).map(BasePathAndXpath::toString).toList();
     }
 
 

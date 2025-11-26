@@ -6,6 +6,10 @@ import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.time.ZonedDateTime;
 import java.util.UUID;
 
@@ -24,7 +28,7 @@ public abstract class AbstractArtifact {
     protected UUID id = UUID.randomUUID();
     private String htmlId; //HTML id if provided
     private String tag;
-    private String baseURI; // The absolute base URL of the document containing the node:  https://developer.mozilla.org/en-US/docs/Web/API/Node/baseURI
+    private URL baseURI; // The absolute base URL of the document containing the node:  https://developer.mozilla.org/en-US/docs/Web/API/Node/baseURI
 
     public JsonObject getSemanticArtifacts() {
         return semanticArtifacts;
@@ -91,12 +95,26 @@ public abstract class AbstractArtifact {
         return tag;
     }
 
-    public String getBaseURI() {
+    public URL getBaseURI() {
         return baseURI;
     }
 
-    public void setBaseURI(String baseURI) {
+    public String getBasePath(){
+        return baseURI.getPath().replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*");
+    }
+
+    public void setBaseURI(URL baseURI) {
         this.baseURI = baseURI;
+    }
+
+    public void setBaseURI(String baseURI) {
+
+        try {
+            this.baseURI = new URI(baseURI).toURL();
+        } catch (URISyntaxException | MalformedURLException e) {
+            log.error(e.getMessage(), e);
+        }
+
     }
 
     public void setTag(String tag) {

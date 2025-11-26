@@ -9,8 +9,6 @@ import ca.ualberta.odobot.semanticflow.mappers.impl.DomEffectMapper;
 import ca.ualberta.odobot.semanticflow.mappers.impl.InputChangeMapper;
 import ca.ualberta.odobot.semanticflow.mappers.impl.NetworkEventMapper;
 import ca.ualberta.odobot.semanticflow.model.*;
-import ca.ualberta.odobot.sqlite.impl.DbLogEntry;
-import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,7 +20,6 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
-import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
@@ -181,7 +178,10 @@ public class SemanticSequencer {
                             artifactConsumer.accept(clickEvent); //Invoke them with the newly processed artifact.
                         }
 
-
+                        if(clickEvent.getBaseURI() == null){
+                            log.info("baseURI is null!");
+                            log.info("{}", clickEvent.toJson().encodePrettily());
+                        }
                         log.info("handled CLICK");
 
                     }
@@ -216,6 +216,11 @@ public class SemanticSequencer {
                                 DataEntry newEntry = new DataEntry();
                                 newEntry.add(inputChange);
                                 line.add(newEntry);
+                                if(dataEntry.lastChange().getBaseURI() == null){
+                                    log.info("baseURI is null!");
+                                    log.info("{}", dataEntry.toJson().encodePrettily());
+                                    log.info("{}", event.encodePrettily());
+                                }
                             }
                         }
 
@@ -223,8 +228,15 @@ public class SemanticSequencer {
                             DataEntry dataEntry = new DataEntry();
                             dataEntry.add(inputChange);
                             line.add(dataEntry);
+
+                            if(dataEntry.lastChange().getBaseURI() == null){
+                                log.info("baseURI is null!");
+                                log.info("{}", dataEntry.toJson().encodePrettily());
+                                log.info("{}", event.encodePrettily());
+                            }
                         }
                         log.info("handled INPUT");
+
 
                     }
                 }
@@ -251,12 +263,24 @@ public class SemanticSequencer {
                                 newEntry.add(inputChange);
                                 line.add(newEntry);
                             }
+
+                            if(dataEntry.lastChange().getBaseURI() == null){
+                                log.info("baseURI is null!");
+                                log.info("{}", dataEntry.toJson().encodePrettily());
+                                log.info("{}", event.encodePrettily());
+                            }
                         }
 
                         if(line.last() == null || !(line.last() instanceof DataEntry)){
                             DataEntry dataEntry = new DataEntry();
                             dataEntry.add(inputChange);
                             line.add(dataEntry);
+
+                            if(dataEntry.lastChange().getBaseURI() == null){
+                                log.info("baseURI is null!");
+                                log.info("{}", dataEntry.toJson().encodePrettily());
+                                log.info("{}", event.encodePrettily());
+                            }
                         }
                         log.info("handled INPUT from TinyMCE");
 
@@ -301,7 +325,7 @@ public class SemanticSequencer {
                                 }
 
                                 String previousBasePath = new URL(effect.getBaseURIs().iterator().next()).getPath().replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*");;
-                                String currentBasePath = new URL(domEffect.getBaseURI()).getPath().replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*");;
+                                String currentBasePath = domEffect.getBaseURI().getPath().replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*");;
 
                                 if(previousBasePath.equals(currentBasePath)){
                                     effect.add(domEffect);
@@ -309,7 +333,7 @@ public class SemanticSequencer {
                                     //Handle URL change in the middle of a series of DOM Effects
                                     ApplicationLocationChange applicationLocationChange = new ApplicationLocationChange();
                                     applicationLocationChange.setFrom(new URL(effect.getBaseURIs().iterator().next()));
-                                    applicationLocationChange.setTo(new URL(domEffect.getBaseURI()));
+                                    applicationLocationChange.setTo(domEffect.getBaseURI());
 
                                     //Set the location change timestamp as the average between the current and last domEffect timestamps.
                                     long lastTimestamp = effect.get(effect.size()-1).getTimestamp().toInstant().toEpochMilli();
@@ -348,14 +372,14 @@ public class SemanticSequencer {
 
                                 if(line.last() instanceof ClickEvent){
                                     ClickEvent lastEntity = (ClickEvent) line.last();
-                                    lastURL = lastEntity.getBaseURI();
+                                    lastURL = lastEntity.getBaseURI().toString();
                                     lastBasePath = getNormalizedPath(lastURL);
                                 }
 
                                 //I don't think this one should ever be possible...
                                 if(line.last() instanceof DataEntry){
                                     DataEntry lastEntity = (DataEntry)line.last();
-                                    lastURL = lastEntity.lastChange().getBaseURI();
+                                    lastURL = lastEntity.lastChange().getBaseURI().toString();
                                     lastBasePath = getNormalizedPath(lastURL);
                                 }
 

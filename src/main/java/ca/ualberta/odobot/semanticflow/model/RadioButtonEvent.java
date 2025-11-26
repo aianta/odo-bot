@@ -1,5 +1,7 @@
 package ca.ualberta.odobot.semanticflow.model;
 
+import ca.ualberta.odobot.common.BasePathAndXpath;
+import ca.ualberta.odobot.common.Xpath;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
@@ -16,6 +18,7 @@ public class RadioButtonEvent extends InputChange implements TimelineEntity{
     private ArrayList<RadioButton> options = new ArrayList<RadioButton>();
 
     public static class RadioButton {
+        private String basePath;
         private String xpath;
         private String html;
         private boolean checked;
@@ -23,6 +26,7 @@ public class RadioButtonEvent extends InputChange implements TimelineEntity{
 
         public static RadioButton fromJson(JsonObject json){
             RadioButton result = new RadioButton(
+                    json.getString("basePath"),
                     json.getString("xpath"),
                     json.getString("html"),
                     json.getBoolean("checked"),
@@ -36,6 +40,27 @@ public class RadioButtonEvent extends InputChange implements TimelineEntity{
             this.html = html;
             this.checked = checked;
             this.value = value;
+        }
+
+        public RadioButton(String basePath, String xpath, String html, boolean checked, String value) {
+            this.basePath = basePath;
+            this.xpath = xpath;
+            this.html = html;
+            this.checked = checked;
+            this.value = value;
+        }
+
+        public BasePathAndXpath getBasePathAndXpath(){
+            return new BasePathAndXpath(getBasePath(), new Xpath(getXpath()));
+        }
+
+        public String getBasePath() {
+            return basePath;
+        }
+
+        public RadioButton setBasePath(String basePath) {
+            this.basePath = basePath;
+            return this;
         }
 
         public String getXpath() {
@@ -76,6 +101,7 @@ public class RadioButtonEvent extends InputChange implements TimelineEntity{
 
         public JsonObject toJson() {
             JsonObject result = new JsonObject()
+                    .put("basePath", basePath)
                     .put("xpath", xpath)
                     .put("html", html)
                     .put("checked", checked)
@@ -101,6 +127,11 @@ public class RadioButtonEvent extends InputChange implements TimelineEntity{
         return null;
     }
 
+    public void setBaseURI(String baseURI){
+        super.setBaseURI(baseURI);
+        this.options.forEach(option->option.setBasePath(getBasePath()));
+    }
+
     public ArrayList<RadioButton> getOptions() {
         return options;
     }
@@ -116,14 +147,11 @@ public class RadioButtonEvent extends InputChange implements TimelineEntity{
 
     public JsonObject toJson(){
         JsonObject result = new JsonObject()
+                .put("basePath", getBaseURI())
                 .put("xpath", getXpath())
                 .put("radioGroup", getRadioGroup())
                 .put("options", getOptions().stream().map(RadioButton::toJson)
                         .collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
-
-        if (getBaseURI() != null){
-            result.put("baseURI", getBaseURI());
-        }
 
         return result;
     }

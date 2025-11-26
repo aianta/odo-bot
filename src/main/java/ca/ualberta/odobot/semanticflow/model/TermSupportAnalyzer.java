@@ -167,7 +167,7 @@ public class TermSupportAnalyzer {
     }
 
     private double computeBaseURISupport(List<String> ngram) throws MalformedURLException {
-        String baseUri = nearestPreceedingClickEvent.getBaseURI();
+        String baseUri = nearestPreceedingClickEvent.getBaseURI().toString();
         String baseUriPath = new URL(baseUri).getPath();
         String [] baseUriSplit = baseUriPath.split("/");
         String baseUriInput = Arrays.stream(baseUriSplit).filter(part->!part.equals("*")).collect(StringBuilder::new, (sb,s)->sb.append(s + " "), StringBuilder::append).toString();
@@ -258,7 +258,7 @@ public class TermSupportAnalyzer {
                 supportDetails.put("preceedingClickEventExists", true);
 
                 //Accumulate support from baseURI
-                String baseURI = nearestPreceedingClickEvent.getBaseURI();
+                String baseURI = nearestPreceedingClickEvent.getBaseURI().toString();
                 supportDetails.put("baseUri", baseURI);
                 String baseUriPath = new URL(baseURI).getPath();
                 String [] basePathSplit = baseUriPath.split("/");

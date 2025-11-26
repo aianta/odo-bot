@@ -97,6 +97,7 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
 
             TimelineEntity entity = it.next();
 
+
             if(it.previousIndex() == 0){ //On the first entity of the timeline, get or create the location where the timeline starts.
                 neo4j.getOrCreateLocation(TimelineEntity.getLocationPath(entity), timeline);
             }
@@ -133,6 +134,8 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
             }
 
         }
+
+
 
 
         //Now do another pass to process effects.
