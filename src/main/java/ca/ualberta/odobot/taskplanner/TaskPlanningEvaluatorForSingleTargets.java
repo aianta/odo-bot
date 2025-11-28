@@ -58,29 +58,6 @@ public class TaskPlanningEvaluatorForSingleTargets implements Evaluator {
         Node endNode = path.endNode();
         String endNodeId = (String)endNode.getProperty("id");
 
-//        if(path.length() != lastPathLength){
-//            log.info("Evaluating paths of length: {}", path.length());
-//            lastPathLength = path.length();
-//
-//
-//            Iterator<Path> it = _paths.iterator();
-//            while (it.hasNext()){
-//                Path curr = it.next();
-//                if(numTargetsHit(curr, apiCalls) == 0){
-//                    it.remove();
-//                    continue;
-//                }
-//
-//                if(curr.length() < lastPathLength &&
-//                        !apiCalls.contains((String)curr.endNode().getProperty("id"))){
-//                    it.remove();
-//                }
-//            }
-//        }
-
-
-
-
 
         if(endNode.hasLabel(Label.label("DataEntryNode")) &&
                 !inputParameters.contains(endNodeId)){
@@ -90,10 +67,6 @@ public class TaskPlanningEvaluatorForSingleTargets implements Evaluator {
             return Evaluation.EXCLUDE_AND_PRUNE;
         }
 
-//        if(endNode.hasLabel(Label.label("APINode")) && !apiCalls.contains(endNodeId)){
-//            //Stop exploring paths which contain API nodes that do not appear in our set of potential target API nodes.
-//            return Evaluation.EXCLUDE_AND_PRUNE;
-//        }
         if(endNode.hasLabel(Label.label("APINode")) && apiCalls.contains(endNodeId)){
             _paths.add(path);
             log.info("Found path ending at target API Node...");
@@ -114,6 +87,9 @@ public class TaskPlanningEvaluatorForSingleTargets implements Evaluator {
         }
 
         _paths.add(path);
+        log.info("path: {}", path.toString());
+        log.info("_paths size: {}", _paths.size());
+
         //We're looking for the least number of API calls while still reaching the target API call.
         _paths.sort(Comparator.comparing(p->numAPICallsInPath((Path)p)));
 

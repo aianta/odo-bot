@@ -33,6 +33,7 @@ public class Neo4JUtils {
 
     public Neo4JUtils(String uri, String user, String password){
         driver = GraphDatabase.driver(uri, AuthTokens.basic(user,password));
+
     }
 
 
@@ -1597,9 +1598,9 @@ public class Neo4JUtils {
 
     }
 
-    public String getInputParameterId(String xpath){
-        String sQuery = "match (n:InputParameter) where n.xpath = $xpath return n.id;";
-        Query query = new Query(sQuery, parameters("xpath", xpath));
+    public String getInputParameterId(String label){
+        String sQuery = "match (n:InputParameter) where n.label = $label return n.id;";
+        Query query = new Query(sQuery, parameters("label", label));
 
         try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
             String id = session.executeRead(tx->{
@@ -1621,9 +1622,12 @@ public class Neo4JUtils {
         props.put("description", parameter.getString("description"));
         props.put("xpath", parameter.getString("xpath"));
 
-        var createParameterNodeStmt = "MERGE (n:InputParameter {xpath:$xpath}) ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
+        //TODO: Unclear how good of an idea it is to merge input parameters by their names directly, this probably needs more nuance. But merging by xpath no longer makes sense since the base path update anyways.
+//
+//        var createParameterNodeStmt = "MERGE (n:InputParameter {xpath:$xpath}) ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
+        var createParameterNodeStmt = "MERGE (n:InputParameter {label:$label}) ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
 
-        Query createParameterNodeQuery = new Query(createParameterNodeStmt, parameters("xpath", parameter.getString("xpath"), "props", props));
+        Query createParameterNodeQuery = new Query(createParameterNodeStmt, parameters("label", parameter.getString("label"), "props", props));
 
         var createRelantionshipStmt = """
                 MATCH (sourceNode {id:$sourceNodeId}), (parameterNode:InputParameter {id:$parameterNodeId})

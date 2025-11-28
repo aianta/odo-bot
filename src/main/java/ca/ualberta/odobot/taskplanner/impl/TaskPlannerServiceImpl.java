@@ -157,7 +157,7 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
                     .compose(chosenParameters->{
                         for(JsonObject entry: chosenParameters){
                             //Add the id of each associated data entry or checkbox node
-                            entry.put("id", neo4j.getInputParameterId(entry.getString("xpath")));
+                            entry.put("id", neo4j.getInputParameterId(entry.getString("label")));
                         }
                         return Future.succeededFuture(chosenParameters);
                     })

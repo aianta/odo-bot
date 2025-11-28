@@ -152,7 +152,8 @@ public class RequestManager {
 
                 tx = LogPreprocessor.graphDB.db.beginTx();
 
-                navPaths = LogPreprocessor.pathsConstructor.construct(tx, src.toString(), objectParameters, inputParameters, apiCalls);
+                //navPaths = LogPreprocessor.pathsConstructor.construct(tx, src.toString(), objectParameters, inputParameters, apiCalls);
+                navPaths = LogPreprocessor.pathsConstructor.constructV2(tx, src.toString(), objectParameters, inputParameters, apiCalls);
 
                 //First collect together our parameter mappings, we'll need this to generate semantically meaningful natural language descriptions of the different paths.
                 JsonArray parameters = request.getParameters().stream().map(ExecutionParameter::toJson).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
@@ -591,7 +592,10 @@ public class RequestManager {
 
                     tx.close(); //Close the previous graphdb transaction.
                     tx = LogPreprocessor.graphDB.db.beginTx();
-                    navPaths = LogPreprocessor.pathsConstructor.construct(tx, updatedStartingNode.get().toString(), request.getObjectParameters(), request.getInputParameters(), request.getApiCalls());
+
+                    //TODO - path planning/finding work
+                    //navPaths = LogPreprocessor.pathsConstructor.construct(tx, updatedStartingNode.get().toString(), request.getObjectParameters(), request.getInputParameters(), request.getApiCalls());
+                    navPaths = LogPreprocessor.pathsConstructor.constructV2(tx, updatedStartingNode.get().toString(), request.getObjectParameters(), request.getInputParameters(), request.getApiCalls());
                     request.addRecomputation();
 
                     log.info("Found {} paths after recomputation", navPaths.size());

@@ -10,7 +10,10 @@ import org.neo4j.graphdb.traversal.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.*;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 
@@ -25,6 +28,37 @@ public class NavPathsConstructor {
     public Map<String, String> globalParameterMap;
 
     private SqliteService sqliteService;
+
+    /**
+     * A predicate class which returns true if all the nodes in a path matching a given label and having an outgoing PARAM relationship, appear in a set of acceptable node ids.
+     */
+    private class DoesNotIncludeOtherParameters implements Predicate<Path> {
+
+        private Set<String> parameters;
+        private String nodeLabel;
+
+        public DoesNotIncludeOtherParameters(Set<String> parameters, String nodeLabel) {
+            this.parameters = parameters;
+            this.nodeLabel = nodeLabel;
+
+            log.info("{} nodes must be one of: {}", this.nodeLabel, this.parameters);
+        }
+
+        @Override
+        public boolean test(Path path) {
+
+            for (Node node : path.nodes()) {
+                if (node.hasLabel(Label.label(nodeLabel)) &&
+                        node.hasRelationship(Direction.OUTGOING, RelationshipType.withName("PARAM")) &&
+                        !parameters.contains((String) node.getProperty("id"))) {
+                    log.info("Path contained: [{}] {} ", this.nodeLabel, node.getProperty("id").toString());
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
 
     public NavPathsConstructor(GraphDB graphDB, SqliteService sqliteService){
         //this.db = graphDB.db;
@@ -137,6 +171,60 @@ public class NavPathsConstructor {
         return paths;
     }
 
+
+    private int numAPICallsInPath(Path p){
+        int count = 0;
+        for (Node curr : p.nodes()) {
+            if (curr.hasLabel(Label.label("APINode"))) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    public List<NavPath> constructV2(Transaction tx, String startingNodeId, Set<String> objectParameters, Set<String> inputParameters, Set<String> apiCalls){
+
+        //Assume single target API Call.
+        String targetNodeId = apiCalls.iterator().next();
+
+        //Setup path candidate predicates
+        Predicate<Path> onlySpecifiedInputParameters = new DoesNotIncludeOtherParameters(inputParameters, "DataEntryNode");
+        Predicate<Path> onlySpecifiedObjectParameters = new DoesNotIncludeOtherParameters(objectParameters, "CollapsedClickNode");
+
+
+        String findPathsQueryString = "MATCH p=(n)-[:NEXT*1..%s]->(m) WHERE n.id = \"%s\" AND m.id = \"%s\" return p;".formatted("2000", startingNodeId, targetNodeId);
+
+        log.info("{}", findPathsQueryString);
+
+        Instant start = Instant.now();
+        try(
+                Result candidatePaths = tx.execute(findPathsQueryString);
+                ResourceIterator<Path> it = candidatePaths.columnAs("p");){
+
+            Instant end = Instant.now();
+            log.info("Paths query took {}ms",  Duration.between(start, end).toMillis());
+
+            List<Path> _paths = it.stream()
+                    .filter(onlySpecifiedInputParameters)
+                    .filter(onlySpecifiedObjectParameters)
+                    .sorted(Comparator.comparing(this::numAPICallsInPath))
+                    .toList();
+
+            //_paths.sort(Comparator.comparing(this::numAPICallsInPath));
+
+            log.info("Found {} paths!", _paths.size());
+
+            //Convert to nav paths and return.
+            return _paths.stream().map(p->{
+                NavPath navPath = new NavPath();
+                navPath.setPath(p);
+                return navPath;
+            })
+            .limit(5) //Let's chill out a bit.
+            .collect(ArrayList::new, ArrayList::add, ArrayList::addAll);
+        }
+
+    }
 
     /**
      * For use in task query construction

@@ -41,7 +41,7 @@ public class CollapsedXpathAndBasePathNode extends CollapsedNode{
         Node result = super.createNode(tx);
 
         String [] propValue =  basePathsAndXpaths.stream().map(BasePathAndXpath::toString).collect(Collectors.toSet()).toArray(new String[0]);
-        log.info("{}", propValue);
+
 
         result.setProperty("xpaths", propValue);
 
