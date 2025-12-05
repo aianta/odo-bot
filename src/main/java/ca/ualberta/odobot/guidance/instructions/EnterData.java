@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.guidance.instructions;
 
+import io.vertx.core.json.JsonObject;
 import org.apache.commons.lang3.builder.HashCodeBuilder;
 
 public class EnterData extends XPathInstruction{
@@ -21,5 +22,16 @@ public class EnterData extends XPathInstruction{
         builder.append(data);
         builder.append(parameterId);
         return builder.toHashCode();
+    }
+
+    public JsonObject toJson(){
+        return super.toJson()
+                .put("action", "input")
+                .put("xpath", xpath)
+                .put("data", data);
+    }
+
+    public String toString(){
+        return "EnterData on Xpath " + xpath + " with data: " + data + " and parameterId: " + parameterId;
     }
 }

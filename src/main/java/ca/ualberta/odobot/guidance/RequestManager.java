@@ -42,6 +42,10 @@ public class RequestManager {
 
     private Transaction tx;
 
+    public List<NavPath> getNavPaths() {
+        return navPaths;
+    }
+
     public RequestManager(OdoClient client){
         this.client = client;
         this.client.setRequestManager(this);
@@ -334,46 +338,16 @@ public class RequestManager {
 
                 })
                 .map(instruction -> {
-                    if(instruction instanceof DoClick){
-                        DoClick doClick = (DoClick)instruction;
-                        return new JsonObject()
-                                .put("action", "click")
-                                .put("xpath", doClick.xpath);
-                    }
 
-                    if (instruction instanceof EnterDataTinymce){
-                        EnterDataTinymce enterDataTinymce = (EnterDataTinymce) instruction;
-                        return new JsonObject()
-                                .put("action", "input")
-                                .put("xpath", enterDataTinymce.xpath)
-                                .put("editorId", enterDataTinymce.editorId)
-                                .put("data", enterDataTinymce.data)
-                                ;
-
-                    }
-
-                    if(instruction instanceof EnterData){
-                        EnterData enterData = (EnterData) instruction;
-                        return new JsonObject()
-                                .put("action", "input")
-                                .put("xpath", enterData.xpath)
-                                .put("data", enterData.data)
-                                ;
-                    }
-
-                    if(instruction instanceof QueryDom){
-                        QueryDom queryDom = (QueryDom) instruction;
-                        return new JsonObject()
-                                .put("action", "queryDom")
-                                .put("xpath", queryDom.dynamicXPath.toJson())
-                                .put("parameterId", queryDom.parameterId);
-                    }
-
-
+                    //TODO: hmmmm, refactor this.
                     //Expect to return null for WaitForLocationChange and WaitForNetworkEvent instructions.
                     //This is because they do not entail sending any instructions to OdoX. Rather, they are instructions for the server
                     //to wait for the specified interactions to take place in the online timeline.
-                    return null;
+                    if(instruction instanceof WaitForLocationChange || instruction instanceof WaitForNetworkEvent){
+                        return null;
+                    }
+
+                    return instruction.toJson();
                 })
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList())
@@ -491,6 +465,8 @@ public class RequestManager {
             log.info("Observed {} with editor id: {}", entity.symbol(), observedEditorId);
         }
 
+        navPaths.stream().forEach(np->log.info("Last Instruction: {}", np.lastInstruction()));
+
         /**
          * Update the navPaths associated with this request.
          * Prune all paths whose last instruction was not followed by the user.
@@ -524,7 +500,8 @@ public class RequestManager {
                             return observedXPath.equals(alsoValidXpath);
                         }
 
-                        return observedXPath.equals(((XPathInstruction) lastInstruction).xpath);
+
+                        return observedXPath.equals(((XPathInstruction) lastInstruction).xpath) || lastInstruction.alternateXpaths().contains(observedPath);
                     }
 
                     if(lastInstruction instanceof DynamicXPathInstruction){

@@ -21,4 +21,8 @@ public class WaitForLocationChange extends Instruction{
         builder.append(this.path);
         return builder.toHashCode();
     }
+
+    public String toString(){
+        return "WaitForLocationChange{path=" + this.path + '}';
+    }
 }

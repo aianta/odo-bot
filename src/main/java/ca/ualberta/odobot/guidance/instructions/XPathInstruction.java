@@ -21,4 +21,8 @@ public class XPathInstruction extends Instruction {
         return builder.toHashCode();
     }
 
+    public String toString(){
+        return "Instruction with xpath: " + xpath;
+    }
+
 }

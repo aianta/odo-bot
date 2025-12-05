@@ -203,6 +203,8 @@ public class NavPath {
 
                 }
 
+                instruction.setSourceNodeId((String)node.getProperty("id"));
+
                 lastInstruction = instruction;
                 setLastInstructionNodeId((String)node.getProperty("id")); //Set this so we can keep track of which nodes have already been visited.
                 return instruction;

@@ -16,4 +16,8 @@ public class DynamicXPathInstruction extends Instruction {
     public int hashCode(){
         return dynamicXPath.hashCode();
     }
+
+    public String toString(){
+        return "Instruction with dynamicXpath: " + dynamicXPath.toString();
+    }
 }

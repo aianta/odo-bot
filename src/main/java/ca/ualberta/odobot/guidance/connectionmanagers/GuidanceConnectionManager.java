@@ -4,7 +4,9 @@ import ca.ualberta.odobot.guidance.GuidanceVerticle;
 import ca.ualberta.odobot.guidance.OdoClient;
 import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
 import ca.ualberta.odobot.guidance.execution.SchemaParameter;
+import ca.ualberta.odobot.guidance.instructions.Instruction;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
+import ca.ualberta.odobot.semanticflow.navmodel.NavPath;
 import ca.ualberta.odobot.snippet2xml.SemanticObject;
 import ca.ualberta.odobot.snippet2xml.Snippet2XMLVerticle;
 import io.vertx.core.Future;
@@ -24,7 +26,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
 
     public long timeoutTimer = -1l;
 
-    private static final long TIMEOUT = 600000l; //10 minutes
+    private static final long TIMEOUT = 6000000l; //100 minutes
 
     public GuidanceConnectionManager(OdoClient client){
         super(client);
@@ -44,6 +46,31 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
             case  "EXECUTION_RESULT":
                 activePromises.get("EXECUTION_RESULT").complete(message);
                 activePromises.remove("EXECUTION_RESULT");
+
+                break;
+            case "REGISTER_ALTERNATE_XPATH":
+                //During the execution of certain instructions, the exact xpath sent to OdoX by the server might differ from the one OdoX had to use to actually execute the instruction.
+                //When this happens, we add the new xpath OdoX used to the corresponding instruction so that the RequestManager#instructionWatcher can properly identify that the expected instruciton was executed.
+                //TODO: eventually, these new xpaths should be merged into the nav model.
+                String alternateXpath = message.getString("alternateXpath");
+                String sourceNodeId = message.getString("sourceNodeId");
+
+                log.info("Attempting to register alternate xpath: {} for sourceNodeId: {}", alternateXpath, sourceNodeId);
+                Optional<Instruction> _instruction = client.getRequestManager().getNavPaths().stream().map(NavPath::lastInstruction)
+                        .filter(lastInstruction -> lastInstruction.getSourceNodeId().equals(sourceNodeId))
+                        .findAny();
+
+                if(_instruction.isPresent()){
+                    _instruction.get().addAlternateXpath(alternateXpath);
+                    log.info("Successfully registered alternate xpath: {}", alternateXpath);
+                }
+
+                JsonObject confirmation = new JsonObject()
+                        .put("type", "ALTERNATE_XPATH_CONFIRMED")
+                        .put("source", SOURCE)
+                        .put("pathsRequestId", client.getRequestManager().getActiveExecutionRequest().getId().toString())
+                        .put("alternateXpath", alternateXpath); //Confirm which xpath was registered.
+                send(confirmation);
 
                 break;
         }

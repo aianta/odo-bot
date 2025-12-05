@@ -29,6 +29,38 @@ public class NavPathsConstructor {
 
     private SqliteService sqliteService;
 
+    private class IncludesAllParameters implements Predicate<Path>{
+        private Set<String> parameters;
+        private String nodeLabel;
+
+        public IncludesAllParameters(Set<String> parameters, String nodeLabel){
+            this.parameters = parameters;
+            this.nodeLabel = nodeLabel;
+
+
+        }
+
+        public boolean test(Path path){
+
+            Set<String> pathParameters = new HashSet<>();
+
+            for(Node node: path.nodes()){
+                if(node.hasLabel(Label.label(nodeLabel)) && node.hasRelationship(Direction.OUTGOING, RelationshipType.withName("PARAM"))){
+                    pathParameters.add((String)node.getProperty("id"));
+                }
+            }
+
+            for(String p: parameters){
+                if(!pathParameters.contains(p)){
+                    return false;
+                }
+            }
+
+            return true;
+
+        }
+    }
+
     /**
      * A predicate class which returns true if all the nodes in a path matching a given label and having an outgoing PARAM relationship, appear in a set of acceptable node ids.
      */
@@ -51,7 +83,7 @@ public class NavPathsConstructor {
                 if (node.hasLabel(Label.label(nodeLabel)) &&
                         node.hasRelationship(Direction.OUTGOING, RelationshipType.withName("PARAM")) &&
                         !parameters.contains((String) node.getProperty("id"))) {
-                    log.info("Path contained: [{}] {} ", this.nodeLabel, node.getProperty("id").toString());
+                    //log.info("Path contained: [{}] {} ", this.nodeLabel, node.getProperty("id").toString());
                     return false;
                 }
             }
@@ -172,6 +204,23 @@ public class NavPathsConstructor {
     }
 
 
+    private Integer numTargetsHit(Path path, Set<String> targetNodeIds){
+        return computeIncludedNodes(path, targetNodeIds).size();
+    }
+
+    private Set<String> computeIncludedNodes(Path path, Set<String> targetNodeIds){
+
+        Set<String> result = new HashSet<>();
+        path.nodes().forEach(node->{
+            var nodeId = (String)node.getProperty("id");
+            if(targetNodeIds.contains(nodeId)){
+                result.add(nodeId);
+            }
+        });
+
+        return result;
+    }
+
     private int numAPICallsInPath(Path p){
         int count = 0;
         for (Node curr : p.nodes()) {
@@ -192,7 +241,7 @@ public class NavPathsConstructor {
         Predicate<Path> onlySpecifiedObjectParameters = new DoesNotIncludeOtherParameters(objectParameters, "CollapsedClickNode");
 
 
-        String findPathsQueryString = "MATCH p=(n)-[:NEXT*1..%s]->(m) WHERE n.id = \"%s\" AND m.id = \"%s\" return p;".formatted("2000", startingNodeId, targetNodeId);
+        String findPathsQueryString = "MATCH p=(n)-[:NEXT*1..%s]->(m) WHERE n.id = \"%s\" AND m.id = \"%s\" return p limit %s;".formatted("2000", startingNodeId, targetNodeId, "5000");
 
         log.info("{}", findPathsQueryString);
 
@@ -207,12 +256,38 @@ public class NavPathsConstructor {
             List<Path> _paths = it.stream()
                     .filter(onlySpecifiedInputParameters)
                     .filter(onlySpecifiedObjectParameters)
+                    //.filter(new IncludesAllParameters(inputParameters, "CollapsedClickNode"))
                     .sorted(Comparator.comparing(this::numAPICallsInPath))
                     .toList();
+
+            OptionalInt minApiCallCount = _paths.stream().mapToInt(p->numTargetsHit(p, apiCalls)).min();
+            OptionalInt maxSchemaParams = _paths.stream().mapToInt(p->numTargetsHit(p, objectParameters)).max();
+            OptionalInt maxInputParams = _paths.stream().mapToInt(p->numTargetsHit(p, inputParameters)).max();
+
+            if(minApiCallCount.isPresent() && maxSchemaParams.isPresent() && maxInputParams.isPresent()){
+                log.info("Min API Calls: {}", minApiCallCount.getAsInt());
+                log.info("Max Schema Params: {}", maxSchemaParams.getAsInt());
+                log.info("Max Input Params: {}", maxInputParams.getAsInt());
+                List<Path> bestPaths = _paths.stream()
+                        //.filter(p->numTargetsHit(p, apiCalls) == minApiCallCount.getAsInt())
+                        .filter(p->numTargetsHit(p, objectParameters) == maxSchemaParams.getAsInt())
+                        //.filter(p->numTargetsHit(p, inputParameters) == maxInputParams.getAsInt())
+                        .toList();
+
+                log.info("Best Paths: {}", bestPaths.size());
+
+                if(!bestPaths.isEmpty()){
+                    _paths = bestPaths;
+                }
+            }
+
 
             //_paths.sort(Comparator.comparing(this::numAPICallsInPath));
 
             log.info("Found {} paths!", _paths.size());
+
+
+            //Optional<Path> pathWithMaxObjectParameters = _paths.stream().filter(new IncludesAllParameters(objectParameters, "CollapsedClickNode")).findAny();
 
             //Convert to nav paths and return.
             return _paths.stream().map(p->{

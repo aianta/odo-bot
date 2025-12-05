@@ -24,4 +24,8 @@ public class WaitForNetworkEvent extends Instruction{
         builder.append(this.path);
         return builder.toHashCode();
     }
+
+    public String toString(){
+        return "WaitForNetworkEvent{method=" + this.method + ", path=" + this.path + '}';
+    }
 }

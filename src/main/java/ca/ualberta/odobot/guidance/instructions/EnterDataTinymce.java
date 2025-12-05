@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.guidance.instructions;
 
+import io.vertx.core.json.JsonObject;
 import org.apache.commons.lang3.builder.HashCodeBuilder;
 
 public class EnterDataTinymce extends EnterData{
@@ -24,6 +25,18 @@ public class EnterDataTinymce extends EnterData{
         builder.append(editorId);
         builder.append(parameterId);
         return builder.toHashCode();
+    }
+
+    public JsonObject toJson(){
+        return super.toJson()
+                .put("action", "input")
+                .put("xpath", xpath)
+                .put("data", data)
+                .put("editorId", editorId);
+    }
+
+    public String toString(){
+        return "EnterDataTinyMCE on Xpath " + xpath + " with data: " + data + " and parameterId: " + parameterId + " and editorId: " + editorId;
     }
 
 }
