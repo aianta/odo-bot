@@ -29,6 +29,24 @@ public class NavPathsConstructor {
 
     private SqliteService sqliteService;
 
+    private class DoesNotIncludeNodes implements Predicate<Path> {
+        private Set<String> exclude; //Set of node ids to exclude from paths.
+
+        public DoesNotIncludeNodes(Set<String> exclude) {
+            this.exclude = exclude;
+        }
+
+        public boolean test(Path path){
+            for(Node node: path.nodes()){
+                if(exclude.contains((String)node.getProperty("id"))){
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
+
     private class IncludesAllParameters implements Predicate<Path>{
         private Set<String> parameters;
         private String nodeLabel;
@@ -231,14 +249,61 @@ public class NavPathsConstructor {
         return count;
     }
 
-    public List<NavPath> constructV2(Transaction tx, String startingNodeId, Set<String> objectParameters, Set<String> inputParameters, Set<String> apiCalls){
+    /**
+     * Constructs possible nav paths from starting node to the api call node, only including specified object and input parameter nodes and excluding any nodes whose ids are listed
+     * in the exclude set.
+     * @param tx a database transaction to use in computing the path.
+     * @param startingNodeId the id of the node from which the path starts.
+     * @param objectParameters the object parameters that are allowed to be used along the way.
+     * @param inputParameters the input parameters that are allowed to be used along the way.
+     * @param apiCalls Should be a set of a single node id that is the target node for the path.
+     * @param exclude set of Node ids to exclude.
+     * @return A list of nav paths from the starting node to the target node (api call). 
+     */
+    public List<NavPath> constructV2(Transaction tx, String startingNodeId, Set<String> objectParameters, Set<String> inputParameters, Set<String> apiCalls, Set<String> exclude){
 
-        //Assume single target API Call.
-        String targetNodeId = apiCalls.iterator().next();
+        return constructV2(tx, startingNodeId, objectParameters, inputParameters, apiCalls, List.of(
+                new DoesNotIncludeNodes(exclude),
+                new DoesNotIncludeOtherParameters(inputParameters, "DataEntryNode"),
+                new DoesNotIncludeOtherParameters(objectParameters, "CollapsedClickNode")
+        ));
+
+    }
+
+    /**
+     * Helper method that invokes the constructV2 method filtering paths to only include those which don't contain unspecified input or object parameters.
+     * @param tx
+     * @param startingNodeId
+     * @param objectParameters
+     * @param inputParameters
+     * @param apiCalls
+     * @return
+     */
+    public List<NavPath> constructV2(Transaction tx, String startingNodeId, Set<String> objectParameters, Set<String> inputParameters, Set<String> apiCalls){
 
         //Setup path candidate predicates
         Predicate<Path> onlySpecifiedInputParameters = new DoesNotIncludeOtherParameters(inputParameters, "DataEntryNode");
         Predicate<Path> onlySpecifiedObjectParameters = new DoesNotIncludeOtherParameters(objectParameters, "CollapsedClickNode");
+
+        return constructV2(tx, startingNodeId, objectParameters, inputParameters, apiCalls, List.of(onlySpecifiedInputParameters, onlySpecifiedObjectParameters));
+
+    }
+
+    public List<NavPath> constructV2(Transaction tx, String startingNodeId, Set<String> objectParameters, Set<String> inputParameters, Set<String> apiCalls, List<Predicate<Path>> filters){
+
+        //Produce a composite predicate from the filters.
+        Iterator<Predicate<Path>> filterIterator = filters.iterator();
+        Predicate<Path> composite = null;
+        while (filterIterator.hasNext()){
+            if(composite == null){
+                composite = filterIterator.next();
+            }else{
+                composite = composite.and(filterIterator.next());
+            }
+        }
+
+        //Assume single target API Call.
+        String targetNodeId = apiCalls.iterator().next();
 
 
         String findPathsQueryString = "MATCH p=(n)-[:NEXT*1..%s]->(m) WHERE n.id = \"%s\" AND m.id = \"%s\" return p limit %s;".formatted("2000", startingNodeId, targetNodeId, "5000");
@@ -254,8 +319,7 @@ public class NavPathsConstructor {
             log.info("Paths query took {}ms",  Duration.between(start, end).toMillis());
 
             List<Path> _paths = it.stream()
-                    .filter(onlySpecifiedInputParameters)
-                    .filter(onlySpecifiedObjectParameters)
+                    .filter(composite == null? (path)->true: composite) // If composite is null, no filters were provided. Don't filter anything if no filters were provided.
                     //.filter(new IncludesAllParameters(inputParameters, "CollapsedClickNode"))
                     .sorted(Comparator.comparing(this::numAPICallsInPath))
                     .toList();

@@ -397,6 +397,80 @@ public class RequestManager {
 
     }
 
+    public void recoverFromFailedNode(String failedNodeId){
+
+        Optional<NavPath> currentPath = client.getRequestManager().getNavPaths().stream().filter(navPath -> navPath.lastInstruction().getSourceNodeId().equals(failedNodeId)).findAny();
+        if(currentPath.isPresent()){
+
+            NavPath _currentPath = currentPath.get();
+
+            //Update the execution request, registering the failed node.
+            client.getRequestManager().getActiveExecutionRequest().addFailedNode(failedNodeId);
+
+            Optional<String> updatedStartingNodeId = _currentPath.getRecoverableStartingNodeId(failedNodeId);
+
+            //If we found a new node to recompute a path from, let's do so.
+            if(updatedStartingNodeId.isPresent()){
+
+                log.info("Possible recovery starting from node: {}",  updatedStartingNodeId.get());
+
+                ExecutionRequest request = client.getRequestManager().getActiveExecutionRequest();
+                request.getInputParameters().removeAll(request.getVisitedNodes());
+                request.getObjectParameters().removeAll(request.getVisitedNodes());
+                request.addFailedNode(failedNodeId);
+
+                tx.close(); //Close the previous graphDb transaction.
+                tx = LogPreprocessor.graphDB.db.beginTx(); // Open a new one
+
+                navPaths = LogPreprocessor.pathsConstructor.constructV2(tx, updatedStartingNodeId.get(), request.getObjectParameters(), request.getInputParameters(), request.getApiCalls(), request.getFailedNodes());
+                request.addRecomputation();
+
+                log.info("Found {} paths after recomputation", navPaths.size());
+                navPaths = List.of(navPaths.get(0));
+
+                NavPath.saveNavPath("./%s/%s-navpath-%d.txt".formatted("execution_events", evalId, request.getPathRecomputations()).replaceAll("\\|","-"), navPaths.get(0));
+
+                var targetNodeId = UUID.fromString(navPaths.get(0).getPath().endNode().getProperty("id").toString());
+                request.setTarget(targetNodeId);
+
+                JsonObject instruction =  buildExecutionInstruction(navPaths);
+
+                Node firstNode = navPaths.get(0).getPath().startNode();
+
+                /**
+                 * This method (getExecutionPath) is only called on to produce the first instruction for the execution.
+                 * If the chosen path begins with a LocationNode (which is common), then the first instruction would
+                 * be to wait for that location change. But since we likely just initialized our local context. There's
+                 * not going to be an application location change event.
+                 *
+                 * To deal with this, if the execution instruction is null, as would be the case for WaitFor type instructions
+                 * (because they don't send anything to OdoX, the instruction JSON is null), call buildExecutionInstruction again
+                 * to get the next instruction.
+                 *
+                 * TODO: refactor this. This method is doing too much. And this 'temporary fix' only adds to the complexity of the execution logic.
+                 */
+                if(instruction == null && (firstNode.hasLabel(Label.label("LocationNode")) || firstNode.hasLabel(Label.label("APINode")))) {
+                    instruction = buildExecutionInstruction(navPaths);
+                }
+
+                //We don't want to execute a previously executed instruction twice. So get the next instruction here.
+                //Basically, if we recovered from a DataEntry or Click node, the new path would first attempt to re-execute that instruction. So we want to skip that and move to the next instruction along the new path.
+                if(instruction.getString("sourceNodeId").equals(updatedStartingNodeId.get())){
+                    instruction = buildExecutionInstruction(navPaths);
+                }
+
+                if(instruction != null){
+                    client.getGuidanceConnectionManager().sendExecutionInstruction(instruction);
+                }else{
+                    log.error("Could not produce execution instruction for the re-computed path!");
+                }
+
+            }
+
+
+        }
+    }
+
     /**
      * This method checks if a given timeline entity matches an instruction that was given to the user. If so, it computes the next instruction
      * to give to the user.

@@ -33,6 +33,9 @@ public class ExecutionRequest {
 
     private List<ExecutionParameter> parameters;
 
+    //Nodes which represent instructions that have failed to execute.
+    private Set<String> failedNodes = new HashSet<>();
+
     private Set<String> objectParameters; //Resolved object parameters from the execution parameters above.
     private Set<String> inputParameters; //Resolved input parameters from the execution parameters above.
     private Set<String> apiCalls; //Resolved target node ids.
@@ -173,6 +176,20 @@ public class ExecutionRequest {
 
     public ExecutionRequest setTargetPath(String targetPath) {
         this.targetPath = targetPath;
+        return this;
+    }
+
+    public Set<String> getFailedNodes() {
+        return failedNodes;
+    }
+
+    public ExecutionRequest addFailedNode(String failedNodeId){
+        this.failedNodes.add(failedNodeId);
+        return this;
+    }
+
+    public ExecutionRequest setFailedNodes(Set<String> failedNodes) {
+        this.failedNodes = failedNodes;
         return this;
     }
 

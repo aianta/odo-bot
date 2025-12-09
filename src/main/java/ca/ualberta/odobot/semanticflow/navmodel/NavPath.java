@@ -140,6 +140,80 @@ public class NavPath {
         return null;
     }
 
+    /**
+     * Returns the id of the last node in the path from which one can attempt to compute a new execution path.
+     *
+     * There is no guarantee that such a node exists. For example, if the nodes before the failure point change the state of the application.
+     *
+     * @param failedNodeId the id of the node at which execution failed.
+     * @return the id of the node that can act as a starting node for a new path.
+     */
+    public Optional<String> getRecoverableStartingNodeId(String failedNodeId){
+
+        /**
+         * Compile a list of json objects summarizing: node Id, the numeber of out going edges of type NEXT, and the labels associated with the node.
+         */
+        List<JsonObject> pathInfo = new ArrayList<>();
+
+        path.nodes().forEach(node->{
+            JsonObject nodeInfo = new JsonObject()
+                    .put("id",node.getProperty("id"))
+                    .put("outDegreesOnNext", node.getDegree(RelationshipType.withName("NEXT"), Direction.OUTGOING));
+
+            JsonArray labels = new JsonArray();
+            node.getLabels().forEach(label -> labels.add(label.name()));
+            nodeInfo.put("labels",labels);
+
+            pathInfo.add(nodeInfo);
+        });
+
+        /**
+         * Find the node at which the failure occurred
+         */
+        ListIterator<JsonObject> cursor = pathInfo.listIterator();
+        while (cursor.hasNext()){
+            JsonObject curr = cursor.next();
+            if(curr.getString("id").equals(failedNodeId)){
+                break;
+            }
+            if(!cursor.hasNext() && !curr.getString("id").equals(failedNodeId)){
+                log.info("Could not find failed node id in path!");
+                return Optional.empty();
+            }
+        }
+
+        //Cursor should now be pointing to the node at which execution failed.
+        while (cursor.hasPrevious()){
+            JsonObject candidate = cursor.previous();
+
+            if(candidate.getString("id").equals(failedNodeId)){
+                continue;
+            }
+
+            JsonArray candidateLabels = candidate.getJsonArray("labels");
+
+            if((candidateLabels.contains("EffectNode") ||
+                candidateLabels.contains("ClickNode") ||
+                candidateLabels.contains("DataEntryNode") ||
+                candidateLabels.contains("CheckboxNode") ||
+                candidateLabels.contains("RadioButtonNode")
+            ) && (candidate.getInteger("outDegreesOnNext") > 1)){
+
+                log.info("Recovery Starting Node: {}", candidate.encodePrettily());
+
+                return Optional.of(candidate.getString("id"));
+            }
+
+            //If we come across one of these nodes we can't go back further because state has very likely changed.
+            if(candidateLabels.contains("LocationNode") || candidateLabels.contains("APINode")){
+                return Optional.empty();
+            }
+        }
+
+        return Optional.empty();
+
+    }
+
     public Instruction getExecutionInstruction(ExecutionRequest request){
         while (iterator.hasNext()){
             Node node = iterator.next();
