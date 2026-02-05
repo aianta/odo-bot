@@ -37,7 +37,7 @@ public class LogUIDomEffectMapper extends JsonMapper<DomEffect> {
         }
 
         if(result.getAction() == DomEffect.EffectType.ADD && !result.getXpath().startsWith("/html")){
-            log.warn("Got a DOM ADD event with a broken xpath? This is really bad, investigate this please. Anyways, skipping for now...");
+            //log.warn("Got a DOM ADD event with a broken xpath? This is really bad, investigate this please. Anyways, skipping for now...");
             return null;
         }
 

@@ -102,7 +102,7 @@ public class OnlineEventProcessor {
 
     public void process(JsonObject event){
         rawEvents.add(new JsonObject(event.encode()));
-        log.info("RAW EVENTS SIZE: {}", rawEvents.size());
+        //log.info("RAW EVENTS SIZE: {}", rawEvents.size());
         try{
 
 //            int _preprocessLineSize = line.size();
@@ -112,8 +112,7 @@ public class OnlineEventProcessor {
             String eventType = event.getString("eventType");
             String eventName = eventDetails.getString("name");
 
-            log.info("event type: {}", eventType);
-            log.info("event name: {}", eventName);
+            log.info("event type: {} - event name: {} - raw events size: {}", eventType, eventName, rawEvents.size());
 
             switch (eventType){
                 case "interactionEvent":

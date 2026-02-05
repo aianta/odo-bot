@@ -31,21 +31,22 @@ public class HTMLCleaningTools {
      */
     private static Safelist safelist = Safelist.relaxed()
             .addAttributes(":all","backend_node_id")
-            //.addAttributes(":all", "class")
+            .addAttributes(":all", "class")
             .addAttributes(":all", "id")
             .addAttributes(":all", "name")
+            //.addAttributes(":all", "src")
             .addAttributes(":all", "type")
             .addAttributes(":all", "disabled")
             .addAttributes(":all", "role")
-            //.addAttributes(":all", "alt")
+            .addAttributes(":all", "alt")
             .addAttributes(":all", "input_value")
             .addAttributes(":all", "value")
             .addAttributes(":all", "placeholder")
-            //.addAttributes(":all", "aria_label")
+            .addAttributes(":all", "aria_label")
             .addAttributes(":all", "title")
             .addAttributes(":all", "data_pw_testid_buckeye")
             .addAttributes(":all", "href")
-            .addTags("input", "footer", "fieldset", "textarea", "section", "button",
+            .addTags("input", "title", "footer", "fieldset", "textarea", "section", "button",
                     "btn", "label", "article", "form", "text", "html", "body","select",
                     "option", "svg", "circle", "rect", "line", "ellipse", "polygon", "polyline",
                     "path", "use",
@@ -68,7 +69,8 @@ public class HTMLCleaningTools {
                     "summary",
                     "address",
                     "ins",
-                    "ppc-content"
+                    "ppc-content",
+                    "iframe"
 
             );
 
@@ -136,7 +138,7 @@ public class HTMLCleaningTools {
         String result = null;
 
         result = input.replaceAll("\\\\n", ""); //get rid of any \n
-        result = result.replaceAll("iframe", "div"); //swap iframes with divs, otherwise we won't be able to comptue xpaths to element inside the iframe.
+        //result = result.replaceAll("iframe", "div"); //swap iframes with divs, otherwise we won't be able to comptue xpaths to element inside the iframe.
         result = result.replaceAll("\\\\\"", "\"");
         //result = stripSVGPaths(result);
 

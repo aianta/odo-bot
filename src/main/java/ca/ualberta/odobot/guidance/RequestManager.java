@@ -622,7 +622,7 @@ public class RequestManager {
 
         }else{
             //The observed event didn't match any of the events we'd expect to see along one of our current paths.
-            if (entity instanceof NetworkEvent || entity instanceof ApplicationLocationChange) {
+            if ( entity instanceof ApplicationLocationChange) {
                 //And the unmatched entity is a network or location change, then we re-compute paths to our target node.
                 log.info("Observed an unexpected network event or an application location change!");
 

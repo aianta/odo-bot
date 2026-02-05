@@ -186,6 +186,7 @@ public class NavPath {
         while (cursor.hasPrevious()){
             JsonObject candidate = cursor.previous();
 
+            //Don't start from the failed node.
             if(candidate.getString("id").equals(failedNodeId)){
                 continue;
             }
@@ -279,8 +280,23 @@ public class NavPath {
 
                 instruction.setSourceNodeId((String)node.getProperty("id"));
 
+
+
+                /**
+                 * In the trajectories/traces there sometimes are data entries during which dom effects occurred. This results in graph structures in the model where DE_1 -> E -> DE_1.
+                 * DE_1 is the same data entry, the model simply describes that some dom effects may take place while you type/enter data.
+                 *
+                 * During execution, we play back this path, but doing so exactly would result in sending DE_1 to OdoX twice. Therefore to prevent that, we check to see if the instruction we're returning
+                 * is identical to our last instruction, and if so, we compute the next one.
+                 */
+
+                if(instruction.equals(lastInstruction)){
+                    return getExecutionInstruction(request);
+                }
+
                 lastInstruction = instruction;
                 setLastInstructionNodeId((String)node.getProperty("id")); //Set this so we can keep track of which nodes have already been visited.
+
                 return instruction;
 
             }

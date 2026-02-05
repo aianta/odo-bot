@@ -1,6 +1,7 @@
 package ca.ualberta.odobot;
 
 
+import ca.ualberta.odobot.cleaner.CleanerVerticle;
 import ca.ualberta.odobot.common.ConfigurableVerticle;
 import ca.ualberta.odobot.dataentry2label.DataEntry2LabelVerticle;
 import ca.ualberta.odobot.explorer.ExplorerVerticle;
@@ -114,6 +115,11 @@ public class MainVerticle extends ConfigurableVerticle {
         if(_config.getBoolean("TaskPlanner")){
             TaskPlannerVerticle taskPlannerVerticle = new TaskPlannerVerticle();
             vertx.deployVerticle(taskPlannerVerticle);
+        }
+
+        if(_config.getBoolean("CleanerService")){
+            CleanerVerticle cleanerVerticle = new CleanerVerticle();
+            vertx.deployVerticle(cleanerVerticle);
         }
 
         return Completable.complete();
