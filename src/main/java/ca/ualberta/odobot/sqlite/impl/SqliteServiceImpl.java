@@ -52,6 +52,7 @@ public class SqliteServiceImpl implements SqliteService {
         createDataEntryAnnotationTable();
         createTaskParameterTable();
         createTaskTable();
+        createDOMSnapshotTable();
     }
 
 
@@ -387,6 +388,18 @@ public class SqliteServiceImpl implements SqliteService {
         });
 
         return promise.future();
+    }
+
+    public Future<Void> saveDOMSnapshot(String id, String snapshot, String baseUri, String srcIndex){
+        String sql = """
+                INSERT INTO dom_snapshots(
+                    id, snapshot, base_uri, src_index
+                ) VALUES (?, ?, ?, ?);
+                """;
+
+        Tuple params = Tuple.of(id, snapshot, baseUri, srcIndex);
+
+        return executeParameterizedQuery(sql, params);
     }
 
     public Future<Void> saveTrainingMaterial(JsonObject json){
@@ -1016,6 +1029,17 @@ public class SqliteServiceImpl implements SqliteService {
                 parameter TEXT NOT NULL
             )
         """);
+    }
+
+    private Future<Void> createDOMSnapshotTable(){
+        return createTable("""
+                CREATE TABLE IF NOT EXISTS dom_snapshots (
+                    id text not null primary key,
+                    snapshot text not null, 
+                    base_uri text,
+                    src_index text
+                );
+                """);
     }
 
     private Future<Void> createDynamicXPathTable(){

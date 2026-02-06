@@ -100,5 +100,7 @@ public interface SqliteService {
 
     Future<JsonArray> selectLogs(long timestampMilli, long range);
 
+    Future<Void> saveDOMSnapshot(String id, String snapshot, String baseUri, String srcIndex);
+
 
 }
