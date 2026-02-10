@@ -1,0 +1,2 @@
+@io.vertx.codegen.annotations.ModuleGen(groupPackage = "ca.ualberta.odobot.modelconstruction.statelabeling", name="statelabeling", useFutures = true)
+package ca.ualberta.odobot.modelconstruction.statelabeling;

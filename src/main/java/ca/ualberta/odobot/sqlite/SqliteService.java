@@ -102,5 +102,7 @@ public interface SqliteService {
 
     Future<Void> saveDOMSnapshot(String id, String snapshot, String baseUri, String srcIndex);
 
+    Future<List<JsonObject>> getDomSnapshots(Set<String> ids);
+
 
 }

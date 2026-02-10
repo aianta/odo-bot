@@ -366,6 +366,43 @@ public class SqliteServiceImpl implements SqliteService {
         return promise.future();
     }
 
+    public Future<List<JsonObject>> getDomSnapshots(Set<String> ids){
+        Promise<List<JsonObject>> promise = Promise.promise();
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("(");
+        Iterator<String> it = ids.iterator();
+        while(it.hasNext()){
+            sb.append("'" + it.next() + "'");
+            if(it.hasNext()){
+                sb.append(", ");
+            }
+        }
+        sb.append(")");
+
+        String sql = """
+                SELECT * FROM dom_snapshots WHERE id in %s;
+                """.formatted(sb.toString());
+
+        pool.preparedQuery(sql)
+                .execute()
+                .onFailure(err->log.error(err.getMessage(),err))
+        .onSuccess(data -> {
+            List<JsonObject> result = new ArrayList<>();
+            data.forEach(row->{
+               result.add(new JsonObject()
+                       .put("id", row.getString("id"))
+                       .put("snapshot", row.getString("snapshot"))
+                       .put("base_uri", row.getString("base_uri"))
+                       .put("src_index", row.getString("src_index"))
+               );
+            });
+            promise.complete(result);
+        });
+
+        return promise.future();
+    }
+
     public Future<JsonArray> loadTrainingMaterialsForDataset(String dataset){
         Promise<JsonArray> promise = Promise.promise();
 

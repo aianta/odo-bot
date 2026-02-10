@@ -3,8 +3,10 @@ package ca.ualberta.odobot.modelconstruction;
 import ca.ualberta.odobot.modelconstruction.impl.TagAndAttributeStrategy;
 import ca.ualberta.odobot.common.HttpServiceVerticle;
 import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
+import ca.ualberta.odobot.modelconstruction.statelabeling.StateLabelingService;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import io.reactivex.rxjava3.core.Completable;
+import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
 import io.vertx.core.eventbus.DeliveryOptions;
 import io.vertx.core.http.HttpMethod;
@@ -22,6 +24,7 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.function.BiFunction;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.ELASTICSEARCH_SERVICE_ADDRESS;
 import static ca.ualberta.odobot.logpreprocessor.Constants.SQLITE_SERVICE_ADDRESS;
@@ -35,18 +38,20 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
 
     @Override
     public String serviceName() {
-        return "CleanerService";
+        return "ModelConstructionService";
     }
 
     @Override
     public String configFilePath() {
-        return "config/cleaner.yaml";
+        return "config/model-construction.yaml";
     }
 
     public static SqliteService sqliteService;
     public static ElasticsearchService elasticsearchService;
+    public static StateLabelingService stateLabelingService;
 
-    private static final String ODO_LSH_HOST = "172.29.71.50";
+    private static String ODO_LSH_HOST = "172.29.71.50";
+    private int ODO_LSH_PORT = 5000;
 
     private WebClient webClient;
 
@@ -54,8 +59,13 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
 
     @Override
     public Completable onStart() {
+        super.onStart().subscribe();
 
-        super.onStart();
+        //Override odo LSH host from config file.
+        ODO_LSH_HOST = _config.getString("odoLshHost");
+        ODO_LSH_PORT = Integer.parseInt(_config.getString("odoLshPort"));
+
+
 
         WebClientOptions webClientOptions = new WebClientOptions()
                 .setUserAgent("OdoBot");
@@ -72,11 +82,18 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
 
         cleanerService = CleanerService.create(vertx.getDelegate(), _config, new TagAndAttributeStrategy());
 
+        stateLabelingService = StateLabelingService.create(vertx.getDelegate(), _config);
+
+
         api.route().method(HttpMethod.GET).path("/sampleDOMSnapshot").handler(this::sampleDOMSnapshot);
         api.route().method(HttpMethod.POST).path("/clean").handler(this::clean);
         api.route().method(HttpMethod.POST).path("/nodeLinks").handler(this::nodeLinks);
         api.route().method(HttpMethod.GET).path("/buildStateClusters").handler(this::buildStateClusters);
         api.route().method(HttpMethod.GET).path("/loadDOMSnapshots").handler(this::loadDOMSnapshots);
+        api.route().method(HttpMethod.GET).path("/labelStateClusters")
+                .handler(this::buildStateClusters)
+                .handler(this::getClustering)
+                .handler(this::getClusterSnapshots);
 
         return Completable.complete();
 
@@ -125,6 +142,105 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                 });
     }
 
+//    private void makeClusterLabels(RoutingContext rc){
+//        log.info("Making cluster labels!");
+//        Map<String, List<JsonObject>> clusterSnapshots = rc.get("clusterSnapshots");
+//
+//        List<Future<JsonObject>> futures = new ArrayList<>();
+//        clusterSnapshots.forEach((clusterId, snapshots) -> {
+//            futures.add(
+//                    stateLabelingService.generateStateLabeling(clusterId, snapshots)
+//                            .onFailure(err->log.error(err.getMessage(), err))
+//                            .onSuccess(result->log.info("Cluster {} -> {}", clusterId, result.getString("label")))
+//            );
+//        });
+//
+//        Future.all(futures).onSuccess(results->{
+//            List<JsonObject> clusterLabels = results.result().list();
+//
+//            rc.response().setStatusCode(200).end(clusterLabels.stream()
+//                            .map(o->(JsonObject)o)
+//                    .collect(JsonArray::new, JsonArray::add, JsonArray::addAll ).encodePrettily());
+//        });
+//
+//    }
+
+    private void getClusterSnapshots(RoutingContext rc){
+        log.info("Fetching relevant snapshots from sqlite...");
+        Map<String, Set<String>> clusterMap = rc.get("clusterMap");
+
+        try{
+            JsonArray results = new JsonArray();
+            BiFunction<String, Set<String>, Future<JsonObject>> func = (clusterId, documentIds)->{
+                return sqliteService.getDomSnapshots(documentIds)
+                        .compose(snapshots->stateLabelingService.generateStateLabeling(clusterId, snapshots))
+                        .onFailure(err->log.error(err.getMessage(), err))
+                        .onSuccess(result-> {
+                            log.info("Cluster {} -> {}", clusterId, result.getString("label"));
+                            results.add(result);
+                        });
+            };
+
+            Iterator<Map.Entry<String, Set<String>>> clusterIterator = clusterMap.entrySet().iterator();
+            Future<JsonObject> f = null;
+
+            do{
+                Map.Entry<String, Set<String>> entry = clusterIterator.next();
+                if (f == null){
+                    f = func.apply(entry.getKey(), entry.getValue());
+                }else{
+                    f.compose(done->func.apply(entry.getKey(), entry.getValue()));
+                }
+            }while (clusterIterator.hasNext());
+
+            f.onFailure(err->log.error("Error making labels"))
+                    .onSuccess(done->{
+                        log.info("Done making labels!");
+                        rc.response().setStatusCode(200).end(results.encodePrettily());
+                    });
+        }catch (Exception e){
+            log.error(e.getMessage(),e);
+        }
+
+
+
+
+    }
+
+    private void getClustering(RoutingContext rc){
+        String lshId = rc.get("lshId").toString();
+
+        log.info("Fetching clustering information from LSH: {}", lshId);
+        webClient.get(ODO_LSH_PORT, ODO_LSH_HOST, "/minhashLSH/%s/clustering".formatted(lshId)).send()
+                .onFailure(err->log.error(err.getMessage(), err))
+                .compose(response->Future.succeededFuture(response.bodyAsJsonObject()))
+                .onSuccess(response->{
+
+                        JsonObject clusters = response.getJsonObject("clusters");
+                        Map<String, Set<String>> clusterMap = new HashMap<>();
+                        clusters.forEach(entry->{
+                            if(entry.getKey() != "-1"){ //Ignore the noise cluster produced by DBSCAN
+                                /**
+                                 * Cluster map contains <cluster label> : [list of ids..]
+                                 * "1" -> ["696aa802acc7a9e8a7a4a4c0", "696aa802acc7a9e8a7a4a4cc"]
+                                 */
+                                clusterMap.put(entry.getKey(), ((JsonArray)entry.getValue()).stream()
+                                        .map(o->(JsonObject)o)
+                                        .map(o->o.getString("id"))
+                                        .collect(Collectors.toSet())
+                                );
+
+                                rc.put("clusterMap", clusterMap);
+                                rc.next();
+
+                            }
+                        });
+
+
+                })
+        ;
+    }
+
     private void buildStateClusters(RoutingContext rc){
 
         String sourceIndex = rc.queryParam("srcIndex").get(0);
@@ -133,7 +249,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
 
         //Create an LSH model for clustering the DOMSnapshots.
         webClient
-                .post(5000, ODO_LSH_HOST, "/minhashLSH")
+                .post(ODO_LSH_PORT, ODO_LSH_HOST, "/minhashLSH")
                 .sendJson(new JsonObject()
                         .put("threshold", 0.9)
                         .put("name", lshName)
@@ -143,7 +259,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                 .onSuccess(response->{
                     String lshId = response.getString("id");
                     log.info("New LSH created with id {}", lshId);
-
+                    rc.put("lshId", lshId);
                     //Register an eventbus listener to process the documents/events from elasticsearch.
                     String eventBusAddress = "%s-hashingProcessor".formatted(lshId);
 
@@ -159,7 +275,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                                         nodeLinks.put("id", event.getString("mongo_id"));
                                         nodeLinks.put("baseURI", baseURI==null?"-":baseURI);
 
-                                        return webClient.put(5000, ODO_LSH_HOST, "/minhashLSH/" + lshId)
+                                        return webClient.put(ODO_LSH_PORT, ODO_LSH_HOST, "/minhashLSH/" + lshId)
                                                 .sendJson(new JsonArray().add(nodeLinks));
                                     });
 
@@ -171,6 +287,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                             .onSuccess(done->{
                                 log.info("Done processing events, unregistering event bus listener!");
                                 eventBusListener.getDelegate().unregister();
+                                rc.next();
                             });
 
 

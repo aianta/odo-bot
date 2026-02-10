@@ -40,8 +40,12 @@ public abstract class AbstractOpenAIStrategy {
         ChatCompletionsOptions options = new ChatCompletionsOptions(chatMessages);
         options.setN(1); //Only generate one choice
         options.setTemperature(config.getDouble("temperature"));
-        options.setTopP(config.getDouble("topP"));
-        options.setMaxTokens(config.getInteger("maxTokens"));
+        if( config.containsKey("topP")){
+            options.setTopP(config.getDouble("topP"));
+        }
+        if(config.containsKey("maxTokens")){
+            options.setMaxTokens(config.getInteger("maxTokens"));
+        }
 
         ChatCompletions chatCompletions = client.getChatCompletions(model, options);
 
