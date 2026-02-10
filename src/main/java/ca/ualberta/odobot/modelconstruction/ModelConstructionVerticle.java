@@ -1,19 +1,18 @@
-package ca.ualberta.odobot.cleaner;
+package ca.ualberta.odobot.modelconstruction;
 
-import ca.ualberta.odobot.cleaner.impl.TagAndAttributeStrategy;
+import ca.ualberta.odobot.modelconstruction.impl.TagAndAttributeStrategy;
 import ca.ualberta.odobot.common.HttpServiceVerticle;
 import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.Future;
-import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.DeliveryOptions;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
-import io.vertx.ext.web.client.HttpResponse;
 import io.vertx.ext.web.client.WebClient;
 import io.vertx.ext.web.client.WebClientOptions;
+import io.vertx.rxjava3.core.eventbus.MessageConsumer;
 import io.vertx.rxjava3.ext.web.RoutingContext;
 
 import io.vertx.serviceproxy.ServiceProxyBuilder;
@@ -22,7 +21,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.function.BiFunction;
-import java.util.function.Supplier;
+import java.util.function.Predicate;
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.ELASTICSEARCH_SERVICE_ADDRESS;
 import static ca.ualberta.odobot.logpreprocessor.Constants.SQLITE_SERVICE_ADDRESS;
@@ -30,9 +29,9 @@ import static ca.ualberta.odobot.logpreprocessor.Constants.SQLITE_SERVICE_ADDRES
 /**
  * Exposes HTML cleaning functionality.
  */
-public class CleanerVerticle extends HttpServiceVerticle {
+public class ModelConstructionVerticle extends HttpServiceVerticle {
 
-    private static final Logger log = LoggerFactory.getLogger(CleanerVerticle.class);
+    private static final Logger log = LoggerFactory.getLogger(ModelConstructionVerticle.class);
 
     @Override
     public String serviceName() {
@@ -77,9 +76,53 @@ public class CleanerVerticle extends HttpServiceVerticle {
         api.route().method(HttpMethod.POST).path("/clean").handler(this::clean);
         api.route().method(HttpMethod.POST).path("/nodeLinks").handler(this::nodeLinks);
         api.route().method(HttpMethod.GET).path("/buildStateClusters").handler(this::buildStateClusters);
+        api.route().method(HttpMethod.GET).path("/loadDOMSnapshots").handler(this::loadDOMSnapshots);
 
         return Completable.complete();
 
+    }
+
+    private Predicate<JsonObject> stateClusteringEventFilter(){
+        return (event)->
+             event.containsKey("eventDetails_domSnapshot") &&
+                    event.getString("eventDetails_name") != null &&
+                    event.containsKey("eventDetails_name") &&
+                    !event.getString("eventDetails_name").equals("NETWORK_EVENT") &&
+                    !event.getString("eventDetails_name").equals("DOM_EFFECT");
+
+    }
+
+    private void loadDOMSnapshots(RoutingContext rc){
+        String sourceIndex = rc.queryParam("srcIndex").get(0);
+
+        String eventBusAddress = UUID.randomUUID().toString();
+        MessageConsumer messageConsumer = vertx.eventBus().consumer(eventBusAddress, msg->{
+            JsonObject event = (JsonObject) msg.body();
+            if(stateClusteringEventFilter().test(event)){
+
+                JsonObject domSnapshotData = new JsonObject(event.getString("eventDetails_domSnapshot"));
+                String baseURI = event.containsKey("eventDetails_element")?new JsonObject(event.getString("eventDetails_element")).getString("baseURI"):null;
+
+                cleanerService.cleanHTML(domSnapshotData.getString("outerHTML"))
+                        .onSuccess(cleanedHTML->{
+                            sqliteService.saveDOMSnapshot(
+                                    event.getString("mongo_id"),
+                                    cleanedHTML,
+                                    baseURI,
+                                    sourceIndex
+
+                            )
+                                    .onSuccess(done->log.info("Saved {} to Sqlite", event.getString("mongo_id")))
+                                    .onFailure(err->log.error("Error saving DOMSnapshot to SQLite. " + err.getMessage(), err ));
+                        });
+            }
+        });
+
+        elasticsearchService.processEvents(sourceIndex, eventBusAddress)
+                .onFailure(err->log.error(err.getMessage(), err))
+                .onSuccess(done->{
+                    messageConsumer.getDelegate().unregister();
+                });
     }
 
     private void buildStateClusters(RoutingContext rc){
@@ -88,101 +131,47 @@ public class CleanerVerticle extends HttpServiceVerticle {
         String lshName = rc.queryParam("targetLSH").get(0);
         Set<String> exclude = Set.of("NETWORK_EVENT", "DOM_EFFECT");
 
-
-        elasticsearchService.fetchAll(sourceIndex)
+        //Create an LSH model for clustering the DOMSnapshots.
+        webClient
+                .post(5000, ODO_LSH_HOST, "/minhashLSH")
+                .sendJson(new JsonObject()
+                        .put("threshold", 0.9)
+                        .put("name", lshName)
+                        .put("num_perm", 256)
+                ).compose(response->Future.succeededFuture(response.bodyAsJsonObject()))
                 .onFailure(err->log.error(err.getMessage(),err))
-                .onSuccess(events->{
+                .onSuccess(response->{
+                    String lshId = response.getString("id");
+                    log.info("New LSH created with id {}", lshId);
 
-                    log.info(events.iterator().next().encodePrettily());
+                    //Register an eventbus listener to process the documents/events from elasticsearch.
+                    String eventBusAddress = "%s-hashingProcessor".formatted(lshId);
 
-
-
-                    List<JsonObject> selectedEvents = new ArrayList<>();
-
-                    for (JsonObject event : events) {
-                        if (event.containsKey("eventDetails_domSnapshot") &&
-                                event.getString("eventDetails_name") != null &&
-                                event.containsKey("eventDetails_name") &&
-                                !event.getString("eventDetails_name").equals("NETWORK_EVENT") &&
-                                !event.getString("eventDetails_name").equals("DOM_EFFECT")){
+                    MessageConsumer eventBusListener = vertx.eventBus().consumer(eventBusAddress, msg->{
+                        JsonObject event = (JsonObject) msg.body();
+                        if(stateClusteringEventFilter().test(event)){
 
                             JsonObject domSnapshotData = new JsonObject(event.getString("eventDetails_domSnapshot"));
                             String baseURI = event.containsKey("eventDetails_element")?new JsonObject(event.getString("eventDetails_element")).getString("baseURI"):null;
 
-//                            cleanerService.cleanHTML(domSnapshotData.getString("outerHTML"))
-//                                    .onSuccess(cleanedHTML->{
-//                                        sqliteService.saveDOMSnapshot(
-//                                                event.getString("mongo_id"),
-//                                                cleanedHTML,
-//                                                baseURI,
-//                                                sourceIndex
-//
-//                                        )
-//                                                .onSuccess(done->log.info("Saved {} to Sqlite", event.getString("mongo_id")))
-//                                                .onFailure(err->log.error("Error saving DOMSnapshot to SQLite. " + err.getMessage(), err ));
-//                                    });
+                            cleanerService.toNodeLinks(domSnapshotData.getString("outerHTML"))
+                                    .compose(nodeLinks->{
+                                        nodeLinks.put("id", event.getString("mongo_id"));
+                                        nodeLinks.put("baseURI", baseURI==null?"-":baseURI);
 
-
-
-                            selectedEvents.add(event);
-
+                                        return webClient.put(5000, ODO_LSH_HOST, "/minhashLSH/" + lshId)
+                                                .sendJson(new JsonArray().add(nodeLinks));
+                                    });
 
                         }
-                    }
-
-//                    Collections.shuffle(selectedEvents);
-//                    final List<JsonObject> _selectedEvents = selectedEvents.subList(0, 100);
-                    final List<JsonObject> _selectedEvents = selectedEvents;
-
-                    webClient
-                            .post(5000, ODO_LSH_HOST, "/minhashLSH")
-                            .sendJson(new JsonObject()
-                                    .put("threshold", 0.9)
-                                    .put("name", lshName)
-                                    .put("num_perm", 256)
-                            ).compose(response->Future.succeededFuture(response.bodyAsJsonObject()))
-                            .onFailure(err->log.error(err.getMessage(),err))
-                            .onSuccess(response->{
-
-                                String lshId = response.getString("id");
-                                log.info("New LSH created with id {}", lshId);
-                                Future f = null;
-                                Iterator<JsonObject> it =  _selectedEvents.iterator();
-                                do {
-                                    JsonObject e = it.next();
-                                    JsonObject ds = new JsonObject(e.getString("eventDetails_domSnapshot"));
-
-                                    BiFunction<JsonObject,JsonObject,Future> futureSupplier = (_event, _domSnapshot)->{
-                                        return cleanerService.toNodeLinks(_domSnapshot.getString("outerHTML"))
-                                                .compose(nodeLinks->{
-                                                    nodeLinks.put("id", _event.getString("mongo_id"));
-
-                                                    String baseURI = _event.containsKey("eventDetails_element")?new JsonObject(_event.getString("eventDetails_element")).getString("baseURI"):null;
-                                                    nodeLinks.put("baseURI", baseURI == null?"-":baseURI);
-
-
-                                                    return webClient.put(5000, ODO_LSH_HOST, "/minhashLSH/" + lshId)
-                                                            .sendJson(new JsonArray().add(nodeLinks));
-                                                });
-                                    };
-
-                                    if (f == null){
-                                        f = futureSupplier.apply(e, ds);
-                                    }else{
-                                        f = f.compose(done->futureSupplier.apply(e, ds));
-                                    }
-
-
-                                }while(it.hasNext());
-
-                                f.onSuccess(done->{
-                                    log.info("Done computing hash signatures for all DOMSnapshots.");
-                                    rc.response().setStatusCode(200).end();
-                                });
                     });
 
-
-
+                    elasticsearchService.processEvents(sourceIndex, eventBusAddress)
+                            .onFailure(err->log.error(err.getMessage(), err))
+                            .onSuccess(done->{
+                                log.info("Done processing events, unregistering event bus listener!");
+                                eventBusListener.getDelegate().unregister();
+                            });
 
 
                 });

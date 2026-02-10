@@ -1,4 +1,4 @@
-package ca.ualberta.odobot.cleaner.impl.visitors;
+package ca.ualberta.odobot.modelconstruction.impl.visitors;
 
 import org.jsoup.nodes.Element;
 import org.jsoup.nodes.Node;

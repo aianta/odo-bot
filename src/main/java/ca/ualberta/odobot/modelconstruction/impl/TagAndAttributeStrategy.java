@@ -1,8 +1,8 @@
-package ca.ualberta.odobot.cleaner.impl;
+package ca.ualberta.odobot.modelconstruction.impl;
 
-import ca.ualberta.odobot.cleaner.CleaningStrategy;
-import ca.ualberta.odobot.cleaner.impl.visitors.BlankRemovingVisitor;
-import ca.ualberta.odobot.cleaner.impl.visitors.NodeLinksVisitor;
+import ca.ualberta.odobot.modelconstruction.CleaningStrategy;
+import ca.ualberta.odobot.modelconstruction.impl.visitors.BlankRemovingVisitor;
+import ca.ualberta.odobot.modelconstruction.impl.visitors.NodeLinksVisitor;
 import ca.ualberta.odobot.mind2web.HTMLCleaningTools;
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;

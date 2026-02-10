@@ -56,6 +56,7 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
     private RestClient restClient;
     private ElasticsearchTransport transport;
     private ElasticsearchClient client;
+    private Vertx vertx;
 
     public ElasticsearchServiceImpl(Vertx vertx, String host, int port, SnippetExtractorService snippetExtractorService){
         this.snippetExtractorService = snippetExtractorService;
@@ -63,7 +64,7 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
         restClient = RestClient.builder(new HttpHost(host, port)).build();
         transport = new RestClientTransport(restClient, new JacksonJsonpMapper());
         client = new ElasticsearchClient(transport);
-
+        this.vertx = vertx;
         executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(6);
 
     }
@@ -148,6 +149,27 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
         return promise.future();
     }
 
+
+    public Future<Void> processEvents(String index, String targetEventBusAddress){
+
+        Promise<Void> promise = Promise.promise();
+
+        promise.future()
+                .onFailure(err->log.error(err.getMessage(), err))
+                .onComplete(data->log.info("Streaming of documents from elasticsearch index {} complete!", index));
+
+        ProcessEventsTask task = new ProcessEventsTask.Builder()
+                .index(index)
+                .promise(promise)
+                .client(client)
+                //Relay events as they are retrieved over the event bus
+                .eventConsumer(event->vertx.eventBus().send(targetEventBusAddress, event))
+                .build();
+
+        executor.execute(task);
+        return promise.future();
+    }
+
     /**
      * See {@link #fetchAndSortAll(String, JsonArray)}
      */
@@ -185,6 +207,8 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
 
         return promise.future();
     }
+
+
 
 
     public Future<Map<String, List<JsonObject>>> fetchMultipleFlightEvents(String index, List<String> flightIdentifiers, String flightIdentifierField, JsonArray sortOptions){

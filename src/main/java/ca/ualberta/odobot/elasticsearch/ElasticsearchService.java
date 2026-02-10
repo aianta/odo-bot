@@ -29,6 +29,14 @@ public interface ElasticsearchService {
     }
 
     /**
+     * Request documents from an elasticsearch index and stream them over the eventbus at the specified address.
+     * @param index the elasticsearch index from which to retrieve documents/events.
+     * @param targetEventBusAddress the event bus address where JsonObjects representing documents/events will be sent.
+     * @return
+     */
+    Future<Void> processEvents(String index, String targetEventBusAddress);
+
+    /**
      * Return all indices matching the given pattern.
      * @param pattern
      * @return

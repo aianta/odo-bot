@@ -1,9 +1,8 @@
-package ca.ualberta.odobot.cleaner.impl.visitors;
+package ca.ualberta.odobot.modelconstruction.impl.visitors;
 
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.jsoup.nodes.Node;
-import org.jsoup.nodes.TextNode;
 import org.jsoup.select.NodeVisitor;
 
 import java.util.*;

@@ -1,7 +1,7 @@
 package ca.ualberta.odobot;
 
 
-import ca.ualberta.odobot.cleaner.CleanerVerticle;
+import ca.ualberta.odobot.modelconstruction.ModelConstructionVerticle;
 import ca.ualberta.odobot.common.ConfigurableVerticle;
 import ca.ualberta.odobot.dataentry2label.DataEntry2LabelVerticle;
 import ca.ualberta.odobot.explorer.ExplorerVerticle;
@@ -16,7 +16,6 @@ import ca.ualberta.odobot.web.OdoSightSupport;
 import ca.ualberta.odobot.web.TimelineWebApp;
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.DeploymentOptions;
-import io.vertx.rxjava3.core.AbstractVerticle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -117,9 +116,9 @@ public class MainVerticle extends ConfigurableVerticle {
             vertx.deployVerticle(taskPlannerVerticle);
         }
 
-        if(_config.getBoolean("CleanerService")){
-            CleanerVerticle cleanerVerticle = new CleanerVerticle();
-            vertx.deployVerticle(cleanerVerticle);
+        if(_config.getBoolean("ModelConstruction")){
+            ModelConstructionVerticle modelConstructionVerticle = new ModelConstructionVerticle();
+            vertx.deployVerticle(modelConstructionVerticle);
         }
 
         return Completable.complete();

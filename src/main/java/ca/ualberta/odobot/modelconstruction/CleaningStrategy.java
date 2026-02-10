@@ -1,4 +1,4 @@
-package ca.ualberta.odobot.cleaner;
+package ca.ualberta.odobot.modelconstruction;
 
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;

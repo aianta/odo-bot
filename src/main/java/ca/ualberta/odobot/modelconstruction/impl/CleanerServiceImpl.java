@@ -1,7 +1,7 @@
-package ca.ualberta.odobot.cleaner.impl;
+package ca.ualberta.odobot.modelconstruction.impl;
 
-import ca.ualberta.odobot.cleaner.CleanerService;
-import ca.ualberta.odobot.cleaner.CleaningStrategy;
+import ca.ualberta.odobot.modelconstruction.CleanerService;
+import ca.ualberta.odobot.modelconstruction.CleaningStrategy;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
