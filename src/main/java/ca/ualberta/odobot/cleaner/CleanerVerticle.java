@@ -21,6 +21,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.function.BiFunction;
+import java.util.function.Supplier;
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.ELASTICSEARCH_SERVICE_ADDRESS;
 import static ca.ualberta.odobot.logpreprocessor.Constants.SQLITE_SERVICE_ADDRESS;
@@ -128,10 +130,14 @@ public class CleanerVerticle extends HttpServiceVerticle {
                         }
                     }
 
+//                    Collections.shuffle(selectedEvents);
+//                    final List<JsonObject> _selectedEvents = selectedEvents.subList(0, 100);
+                    final List<JsonObject> _selectedEvents = selectedEvents;
+
                     webClient
                             .post(5000, ODO_LSH_HOST, "/minhashLSH")
                             .sendJson(new JsonObject()
-                                    .put("threshold", 0.2)
+                                    .put("threshold", 0.9)
                                     .put("name", lshName)
                                     .put("num_perm", 256)
                             ).compose(response->Future.succeededFuture(response.bodyAsJsonObject()))
@@ -141,25 +147,29 @@ public class CleanerVerticle extends HttpServiceVerticle {
                                 String lshId = response.getString("id");
                                 log.info("New LSH created with id {}", lshId);
                                 Future f = null;
-                                Iterator<JsonObject> it =  selectedEvents.iterator();
+                                Iterator<JsonObject> it =  _selectedEvents.iterator();
                                 do {
-                                    JsonObject _event = it.next();
-                                    JsonObject _domSnapshot = new JsonObject(_event.getString("eventDetails_domSnapshot"));
+                                    JsonObject e = it.next();
+                                    JsonObject ds = new JsonObject(e.getString("eventDetails_domSnapshot"));
 
-                                    if (f == null){
-                                        f = cleanerService.toNodeLinks(_domSnapshot.getString("outerHTML"))
+                                    BiFunction<JsonObject,JsonObject,Future> futureSupplier = (_event, _domSnapshot)->{
+                                        return cleanerService.toNodeLinks(_domSnapshot.getString("outerHTML"))
                                                 .compose(nodeLinks->{
                                                     nodeLinks.put("id", _event.getString("mongo_id"));
+
+                                                    String baseURI = _event.containsKey("eventDetails_element")?new JsonObject(_event.getString("eventDetails_element")).getString("baseURI"):null;
+                                                    nodeLinks.put("baseURI", baseURI == null?"-":baseURI);
+
 
                                                     return webClient.put(5000, ODO_LSH_HOST, "/minhashLSH/" + lshId)
                                                             .sendJson(new JsonArray().add(nodeLinks));
                                                 });
+                                    };
+
+                                    if (f == null){
+                                        f = futureSupplier.apply(e, ds);
                                     }else{
-                                        f = f.compose(done->cleanerService.toNodeLinks(_domSnapshot.getString("outerHTML")).compose(nodeLinks->{
-                                            nodeLinks.put("id", _event.getString("mongo_id"));
-                                            return webClient.put(5000, ODO_LSH_HOST,"/minhashLSH/" + lshId)
-                                                    .sendJson(new JsonArray().add(nodeLinks));
-                                        }));
+                                        f = f.compose(done->futureSupplier.apply(e, ds));
                                     }
 
 

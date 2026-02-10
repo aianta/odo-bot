@@ -54,7 +54,29 @@ public class TagAndAttributeStrategy implements CleaningStrategy {
         }
 
         if (node instanceof TextNode){
-            return ((TextNode) node).text();
+            TextNode textNode = (TextNode) node;
+
+            if (textNode.isBlank()){
+                return "BLANK";
+            }
+
+            try{
+                int i = Integer.parseInt(textNode.text());
+                return "NUMERIC";
+
+            }catch (NumberFormatException e){
+                if(textNode.text().length() > 300){
+                    return "LONG_TEXT";
+                }else{
+                    return "SHORT_TEXT";
+                }
+            }
+
+
+
+
+
+
         }
 
 

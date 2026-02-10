@@ -30,8 +30,8 @@ public class HTMLCleaningTools {
      * Define JSoup Safelist for cleaning.
      */
     private static Safelist safelist = Safelist.relaxed()
-            .addAttributes(":all","backend_node_id")
-            .addAttributes(":all", "class")
+            //.addAttributes(":all","backend_node_id")
+            //.addAttributes(":all", "class")
             .addAttributes(":all", "id")
             .addAttributes(":all", "name")
             //.addAttributes(":all", "src")
@@ -44,13 +44,13 @@ public class HTMLCleaningTools {
             .addAttributes(":all", "placeholder")
             .addAttributes(":all", "aria_label")
             .addAttributes(":all", "title")
-            .addAttributes(":all", "data_pw_testid_buckeye")
+            //.addAttributes(":all", "data_pw_testid_buckeye")
             .addAttributes(":all", "href")
             .addTags("input", "title", "footer", "fieldset", "textarea", "section", "button",
                     "btn", "label", "article", "form", "text", "html", "body","select",
                     "option", "svg", "circle", "rect", "line", "ellipse", "polygon", "polyline",
                     "path", "use",
-                    "adc-button", //what even is this?,
+                    //"adc-button", //what even is this?,
                     "small",
                     "legend",
                     "dt",
@@ -58,7 +58,7 @@ public class HTMLCleaningTools {
                     "hp-search-widget-tab",
                     "hp-input-button",
                     "abbr",
-                    "fsw-airport-item",
+                    //"fsw-airport-item",
                     "em",
                     "dropdown-option",
                     "select-label",
