@@ -26,8 +26,8 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
     }
 
     @Override
-    public Future<JsonObject> generateStateLabeling(String clusterId, List<JsonObject> snapshots) {
-
+    public JsonObject generateStateLabeling(String clusterId, List<JsonObject> snapshots) {
+        log.info("Generating a natural language label for clusterId {}", clusterId);
         try{
             JsonObject result = new JsonObject()
                     .put("clusterId", clusterId)
@@ -36,10 +36,10 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
             //TODO: validation
 
 
-            return Future.succeededFuture(result);
+            return result;
         }catch (Exception ex){
             log.error(ex.getMessage(), ex);
-            return Future.failedFuture(ex);
+            return null;
         }
     }
 

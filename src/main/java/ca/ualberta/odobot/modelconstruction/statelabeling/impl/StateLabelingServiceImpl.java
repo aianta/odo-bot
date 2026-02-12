@@ -26,6 +26,8 @@ public class StateLabelingServiceImpl implements StateLabelingService {
 
     @Override
     public Future<JsonObject> generateStateLabeling(String clusterId, List<JsonObject> snapshots) {
-        return strategy.generateStateLabeling(clusterId, snapshots);
+        return vertx.executeBlocking(()->{
+            return strategy.generateStateLabeling(clusterId, snapshots);
+        });
     }
 }

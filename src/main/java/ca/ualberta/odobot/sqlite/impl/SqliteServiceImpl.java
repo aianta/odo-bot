@@ -1,5 +1,7 @@
 package ca.ualberta.odobot.sqlite.impl;
 
+import ca.ualberta.odobot.common.NormalizeURL;
+import ca.ualberta.odobot.common.Utils;
 import ca.ualberta.odobot.semanticflow.model.StateSample;
 import ca.ualberta.odobot.semanticflow.model.TrainingMaterials;
 import ca.ualberta.odobot.semanticflow.navmodel.DynamicXPath;
@@ -19,6 +21,7 @@ import io.vertx.sqlclient.Tuple;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.MalformedURLException;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -368,6 +371,7 @@ public class SqliteServiceImpl implements SqliteService {
 
     public Future<List<JsonObject>> getDomSnapshots(Set<String> ids){
         Promise<List<JsonObject>> promise = Promise.promise();
+        List<JsonObject> result = new ArrayList<>(); //List to store retrieved documents
 
         StringBuilder sb = new StringBuilder();
         sb.append("(");
@@ -388,15 +392,29 @@ public class SqliteServiceImpl implements SqliteService {
                 .execute()
                 .onFailure(err->log.error(err.getMessage(),err))
         .onSuccess(data -> {
-            List<JsonObject> result = new ArrayList<>();
+
             data.forEach(row->{
                result.add(new JsonObject()
                        .put("id", row.getString("id"))
                        .put("snapshot", row.getString("snapshot"))
                        .put("base_uri", row.getString("base_uri"))
+                       .put("normalized_base_uri", row.getString("normalized_base_uri"))
                        .put("src_index", row.getString("src_index"))
                );
             });
+
+            if(result.size() != ids.size()){
+                List<String> missingDocuments = new ArrayList<>();
+                ids.forEach(id->{
+                    Optional<JsonObject> correspondingDocument = result.stream().filter(item->item.getString("id").equals(id)).findFirst();
+                    if(correspondingDocument.isEmpty()){
+                        missingDocuments.add(id);
+                    }
+                });
+
+                promise.fail("Failed to find the following documents in sqlite: " + missingDocuments);
+            }
+
             promise.complete(result);
         });
 
@@ -430,11 +448,12 @@ public class SqliteServiceImpl implements SqliteService {
     public Future<Void> saveDOMSnapshot(String id, String snapshot, String baseUri, String srcIndex){
         String sql = """
                 INSERT INTO dom_snapshots(
-                    id, snapshot, base_uri, src_index
-                ) VALUES (?, ?, ?, ?);
+                    id, snapshot, base_uri, normalized_base_uri, src_index
+                ) VALUES (?, ?, ?, ? ,?);
                 """;
+        String normalizedUri = Utils.normalizeBaseUriV2(baseUri);;
 
-        Tuple params = Tuple.of(id, snapshot, baseUri, srcIndex);
+        Tuple params = Tuple.of(id, snapshot, baseUri, normalizedUri, srcIndex);
 
         return executeParameterizedQuery(sql, params);
     }
@@ -1074,6 +1093,7 @@ public class SqliteServiceImpl implements SqliteService {
                     id text not null primary key,
                     snapshot text not null, 
                     base_uri text,
+                    normalized_base_uri text,
                     src_index text
                 );
                 """);

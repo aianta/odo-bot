@@ -1,3 +1,15 @@
 host: 0.0.0.0
 port: 8055
+odoLshHost: "172.29.71.50"
+odoLshPort: 5000
 apiPathPrefix: "/api/*"
+openAI:
+  secretKey: "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"
+  model: "gpt-5-mini-2025-08-07"
+  generateStateClusterLabel:
+    maxSnapshots: 3
+    maxAttempts: 3
+    systemPrompt: |
+      Below are some sample HTML documents which have been identified as structurally similar. They represent a logical state/page of a web application. Your task is to produce a short meaningful natural language label for the general application state. The labels should be generalized, avoid labels that make direct references to specific content on the page. 
+      For example "Edit Introduction to Psychology 101 Page" would be a bad label since it is specific to the 'Introduction to Psychology 101' page. A better label would be 'Edit Page'.
+      Your output should be the general application state label and nothing else.

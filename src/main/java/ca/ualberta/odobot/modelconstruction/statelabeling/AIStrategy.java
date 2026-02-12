@@ -8,6 +8,6 @@ import java.util.List;
 public interface AIStrategy {
 
 
-    Future<JsonObject> generateStateLabeling(String clusterId, List<JsonObject> snapshots);
+    JsonObject generateStateLabeling(String clusterId, List<JsonObject> snapshots);
 
 }

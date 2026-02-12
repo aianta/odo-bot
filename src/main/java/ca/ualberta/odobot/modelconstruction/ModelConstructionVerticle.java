@@ -89,6 +89,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
         api.route().method(HttpMethod.POST).path("/clean").handler(this::clean);
         api.route().method(HttpMethod.POST).path("/nodeLinks").handler(this::nodeLinks);
         api.route().method(HttpMethod.GET).path("/buildStateClusters").handler(this::buildStateClusters);
+        api.route().method(HttpMethod.GET).path("/buildStateClustersInBatch").handler(this::buildStateClustersInBatch);
         api.route().method(HttpMethod.GET).path("/loadDOMSnapshots").handler(this::loadDOMSnapshots);
         api.route().method(HttpMethod.GET).path("/labelStateClusters")
                 .handler(this::buildStateClusters)
@@ -139,6 +140,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                 .onFailure(err->log.error(err.getMessage(), err))
                 .onSuccess(done->{
                     messageConsumer.getDelegate().unregister();
+                    rc.getDelegate().response().setStatusCode(200).end();
                 });
     }
 
@@ -170,34 +172,43 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
         Map<String, Set<String>> clusterMap = rc.get("clusterMap");
 
         try{
-            JsonArray results = new JsonArray();
+            List<JsonObject> results = new ArrayList<>();
+
+            //Define a function that given a cluster Id and a set of document ids, retrieves the HTML for those documents from sqlite and produces a label for the cluster.
             BiFunction<String, Set<String>, Future<JsonObject>> func = (clusterId, documentIds)->{
                 return sqliteService.getDomSnapshots(documentIds)
                         .compose(snapshots->stateLabelingService.generateStateLabeling(clusterId, snapshots))
-                        .onFailure(err->log.error(err.getMessage(), err))
-                        .onSuccess(result-> {
-                            log.info("Cluster {} -> {}", clusterId, result.getString("label"));
-                            results.add(result);
-                        });
+                        .onFailure(err->log.error(err.getMessage(), err));
             };
+
+            clusterMap.forEach((key, value) -> log.info("{} - {}", key, value));
 
             Iterator<Map.Entry<String, Set<String>>> clusterIterator = clusterMap.entrySet().iterator();
             Future<JsonObject> f = null;
 
-            do{
+            while (clusterIterator.hasNext()){
                 Map.Entry<String, Set<String>> entry = clusterIterator.next();
+                log.info("{} - {}", entry.getKey(), entry.getValue());
                 if (f == null){
-                    f = func.apply(entry.getKey(), entry.getValue());
-                }else{
-                    f.compose(done->func.apply(entry.getKey(), entry.getValue()));
-                }
-            }while (clusterIterator.hasNext());
-
-            f.onFailure(err->log.error("Error making labels"))
-                    .onSuccess(done->{
-                        log.info("Done making labels!");
-                        rc.response().setStatusCode(200).end(results.encodePrettily());
+                    f = func.apply(entry.getKey(), entry.getValue()).compose(result->{
+                        results.add(result);
+                        return Future.succeededFuture();
                     });
+                }else{
+                    f = f.compose(done->func.apply(entry.getKey(), entry.getValue()).compose(result->{
+                        results.add(result);
+                        return Future.succeededFuture();
+                    }));
+                }
+
+            }
+
+            f.onFailure(err->log.error(err.getMessage(), err))
+                    .onSuccess(done->{
+                        log.info("Done creating cluster labels.");
+                        rc.getDelegate().response().setStatusCode(200).end(results.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encodePrettily());
+                    });
+
         }catch (Exception e){
             log.error(e.getMessage(),e);
         }
@@ -221,39 +232,127 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                         clusters.forEach(entry->{
                             if(entry.getKey() != "-1"){ //Ignore the noise cluster produced by DBSCAN
                                 /**
-                                 * Cluster map contains <cluster label> : [list of ids..]
-                                 * "1" -> ["696aa802acc7a9e8a7a4a4c0", "696aa802acc7a9e8a7a4a4cc"]
+                                 * Cluster map contains <clusterId > : [list of document ids in the cluster..]
+                                 * "1" -> ["696aa802acc7a9e8a7a4a4c0", "696aa802acc7a9e8a7a4a4cc", ...]
                                  */
                                 clusterMap.put(entry.getKey(), ((JsonArray)entry.getValue()).stream()
                                         .map(o->(JsonObject)o)
                                         .map(o->o.getString("id"))
                                         .collect(Collectors.toSet())
                                 );
-
-                                rc.put("clusterMap", clusterMap);
-                                rc.next();
-
                             }
                         });
+
+                    rc.put("clusterMap", clusterMap);
+                    rc.next();
 
 
                 })
         ;
     }
 
+    /**
+     * like {@link #buildStateClusters(RoutingContext)} but pulls all documents into memory first. This allows a more controlled insertion into odo-LSH
+     * @param rc
+     */
+    private void buildStateClustersInBatch(RoutingContext rc){
+        String sourceIndex = rc.queryParam("srcIndex").get(0);
+        String lshName = rc.queryParam("targetLSH").get(0);
+        double threshold = rc.queryParam("threshold").isEmpty()?0.5:Double.parseDouble(rc.queryParam("threshold").get(0));
+        int numPerm = rc.queryParam("numPerm").isEmpty()?256:Integer.parseInt(rc.queryParam("numPerm").get(0));
+        int maxDocuments = rc.queryParam("maxDocuments").isEmpty()?-1:Integer.parseInt(rc.queryParam("maxDocuments").get(0));
+        elasticsearchService.fetchAll(sourceIndex)
+                .onFailure(err->log.error(err.getMessage(),err))
+                .onSuccess(events->{
+
+                    log.info(events.iterator().next().encodePrettily());
+
+
+
+                    List<JsonObject> selectedEvents = new ArrayList<>();
+
+                    for (JsonObject event : events) {
+                        if (stateClusteringEventFilter().test(event)) {
+
+                            selectedEvents.add(event);
+                        }
+                    }
+
+                    if(maxDocuments != -1 && selectedEvents.size() > maxDocuments){
+                        selectedEvents = selectedEvents.subList(0, maxDocuments);
+                    }
+                    final List<JsonObject> _selectedEvents = selectedEvents;
+
+                    webClient
+                            .post(5000, ODO_LSH_HOST, "/minhashLSH")
+                            .sendJson(new JsonObject()
+                                    .put("threshold", threshold)
+                                    .put("name", lshName)
+                                    .put("num_perm", numPerm)
+                            ).compose(response->Future.succeededFuture(response.bodyAsJsonObject()))
+                            .onFailure(err->log.error(err.getMessage(),err))
+                            .onSuccess(response->{
+
+                                String lshId = response.getString("id");
+                                log.info("New LSH created with id {}", lshId);
+                                Future f = null;
+                                Iterator<JsonObject> it =  _selectedEvents.iterator();
+                                do {
+                                    JsonObject e = it.next();
+                                    JsonObject ds = new JsonObject(e.getString("eventDetails_domSnapshot"));
+
+                                    BiFunction<JsonObject,JsonObject,Future> futureSupplier = (_event, _domSnapshot)->{
+                                        return cleanerService.toNodeLinks(_domSnapshot.getString("outerHTML"))
+                                                .compose(nodeLinks->{
+                                                    nodeLinks.put("id", _event.getString("mongo_id"));
+
+                                                    String baseURI = _event.containsKey("eventDetails_element")?new JsonObject(_event.getString("eventDetails_element")).getString("baseURI"):null;
+                                                    nodeLinks.put("baseURI", baseURI == null?"-":baseURI);
+
+
+                                                    return webClient.put(5000, ODO_LSH_HOST, "/minhashLSH/" + lshId)
+                                                            .sendJson(new JsonArray().add(nodeLinks));
+                                                });
+                                    };
+
+                                    if (f == null){
+                                        f = futureSupplier.apply(e, ds);
+                                    }else{
+                                        f = f.compose(done->futureSupplier.apply(e, ds));
+                                    }
+
+
+                                }while(it.hasNext());
+
+                                f.onSuccess(done->{
+                                    log.info("Done computing hash signatures for all DOMSnapshots.");
+                                    rc.response().setStatusCode(200).end();
+                                });
+                            });
+
+
+
+
+
+                });
+
+    }
+
     private void buildStateClusters(RoutingContext rc){
 
         String sourceIndex = rc.queryParam("srcIndex").get(0);
         String lshName = rc.queryParam("targetLSH").get(0);
-        Set<String> exclude = Set.of("NETWORK_EVENT", "DOM_EFFECT");
+        double threshold = rc.queryParam("threshold").isEmpty()?0.5:Double.parseDouble(rc.queryParam("threshold").get(0));
+        int numPerm = rc.queryParam("numPerm").isEmpty()?256:Integer.parseInt(rc.queryParam("numPerm").get(0));
+
 
         //Create an LSH model for clustering the DOMSnapshots.
         webClient
                 .post(ODO_LSH_PORT, ODO_LSH_HOST, "/minhashLSH")
                 .sendJson(new JsonObject()
-                        .put("threshold", 0.9)
+                        .put("threshold", threshold)
                         .put("name", lshName)
-                        .put("num_perm", 256)
+                        .put("num_perm", numPerm)
                 ).compose(response->Future.succeededFuture(response.bodyAsJsonObject()))
                 .onFailure(err->log.error(err.getMessage(),err))
                 .onSuccess(response->{
