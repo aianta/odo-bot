@@ -42,6 +42,7 @@ public class ProcessEventsTask extends AbstractElasticsearchTask implements Runn
     protected SortOptions esSortOptions;
     protected String flightIdentifier;
     protected String flightIdentifierField;
+    protected int limit;
 
     private int streamedDocumentCount = 0;
 
@@ -64,6 +65,7 @@ public class ProcessEventsTask extends AbstractElasticsearchTask implements Runn
         protected String flightIdentifierField;
         protected Predicate<JsonObject> eventFilter;
         protected Consumer<JsonObject> eventConsumer;
+        private int limit = -1;
 
         public Builder client(ElasticsearchClient client){
             this.client = client;
@@ -72,6 +74,11 @@ public class ProcessEventsTask extends AbstractElasticsearchTask implements Runn
 
         public Builder promise(Promise<Void> promise){
             this.promise = promise;
+            return this;
+        }
+
+        public Builder limit(int limit){
+            this.limit = limit;
             return this;
         }
 
@@ -136,6 +143,10 @@ public class ProcessEventsTask extends AbstractElasticsearchTask implements Runn
                 this.promise = Promise.promise();
             }
 
+            if (this.flightIdentifier != null && limit != -1){
+                log.warn("Limit option is not supported when flight identifier is specified!");
+            }
+
             if (this.flightIdentifierField != null && !this.flightIdentifierField.endsWith("keyword")){
                 log.warn("Flight identifier field {} does not end with '.keyword'...", this.flightIdentifierField);
             }
@@ -158,7 +169,7 @@ public class ProcessEventsTask extends AbstractElasticsearchTask implements Runn
         this.flightIdentifierField = builder.flightIdentifierField;
         this.eventFilter = builder.eventFilter;
         this.eventConsumer = builder.eventConsumer;
-
+        this.limit = builder.limit;
         esSortOptions = processSortOptions(this.sortOptions);
     }
 
@@ -243,8 +254,15 @@ public class ProcessEventsTask extends AbstractElasticsearchTask implements Runn
                         if(eventFilter.test(result)){
                             streamedDocumentCount++;
                             eventConsumer.accept(result);
+                            if (limit != -1 && streamedDocumentCount > limit){
+                                break;
+                            }
                         }
                         sortInfo = curr.sort();
+                    }
+
+                    if (limit != -1 && streamedDocumentCount > limit){
+                        break;
                     }
 
                     //SearchRequest nextRequest = fetchAllRequest(search.pitId(), keepAliveValue, options, sortInfo);

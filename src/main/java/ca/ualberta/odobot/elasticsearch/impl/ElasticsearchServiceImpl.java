@@ -149,8 +149,11 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
         return promise.future();
     }
 
-
     public Future<Void> processEvents(String index, String targetEventBusAddress){
+        return processEventsWithLimit(index, -1, targetEventBusAddress);
+    }
+
+    public Future<Void> processEventsWithLimit(String index, int limit, String targetEventBusAddress){
 
         Promise<Void> promise = Promise.promise();
 
@@ -174,7 +177,13 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
      * See {@link #fetchAndSortAll(String, JsonArray)}
      */
     public Future<List<JsonObject>> fetchAll(String index){
-        return fetchAndSortAll(index, null);
+        return fetchAndSortAllWithLimit(index, null, -1);
+    }
+
+    public Future<List<JsonObject>> fetchAllWithLimit(String index, int limit){return fetchAndSortAllWithLimit(index, null, limit);}
+
+    public Future<List<JsonObject>> fetchAndSortAll(String index, JsonArray sortOptions){
+        return fetchAndSortAllWithLimit(index, sortOptions, -1);
     }
 
     /**
@@ -190,7 +199,7 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
      * @return A list of all available documents from that index.
      */
     @Override
-    public Future<List<JsonObject>> fetchAndSortAll(String index, JsonArray sortOptions) {
+    public Future<List<JsonObject>> fetchAndSortAllWithLimit(String index, JsonArray sortOptions, int limit) {
         //Do this in a separate thread so vertx event loop doesn't get blocked.
         Promise<List<JsonObject>> promise = Promise.promise();
 
@@ -199,7 +208,7 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
                 .onFailure(err->log.error(err.getMessage(), err))
                 .onComplete(data->log.info("got data back from thread!"));
 
-        FetchAllTask task = new FetchAllTask(promise, client, index, sortOptions);
+        FetchAllTask task = new FetchAllTask(promise, client, index, sortOptions, limit);
         Thread thread = new Thread(task);
         thread.start();
 

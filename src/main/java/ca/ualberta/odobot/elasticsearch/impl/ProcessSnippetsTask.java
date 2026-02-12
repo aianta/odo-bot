@@ -36,7 +36,7 @@ public class ProcessSnippetsTask extends FetchAllTask{
     }
 
     public ProcessSnippetsTask(Promise<List<JsonObject>> promise, ElasticsearchClient client, String index, JsonArray sortOptions, SnippetExtractorService snippetExtractorService) {
-        super(promise, client, index, sortOptions);
+        super(promise, client, index, sortOptions, -1);
         this.snippetExtractorService = snippetExtractorService;
     }
 

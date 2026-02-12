@@ -39,7 +39,7 @@ public class FetchAllTask implements Runnable{
     protected String flightIdentifier;
 
     protected String flightIdentifierField;
-
+    protected int limit;
     /**
      * Constructor used to create a FetchAllTask object that retrieves all documents (events) for a given flight/trace from its parent index.
      * @param promise the promise to complete once all documents have been retrieved.
@@ -68,11 +68,12 @@ public class FetchAllTask implements Runnable{
      * @param index the index whose documents are to be retrieved.
      * @param sortOptions Options regarding the sort order of the returned documents. Json array of elasticsearch sort options (see: https://www.elastic.co/guide/en/elasticsearch/reference/current/sort-search-results.html)
      */
-    public  FetchAllTask(Promise<List<JsonObject>> promise, ElasticsearchClient client, String index, JsonArray sortOptions){
+    public  FetchAllTask(Promise<List<JsonObject>> promise, ElasticsearchClient client, String index, JsonArray sortOptions, int limit){
         this.promise = promise;
         this.index = index;
         this.sortOptions = sortOptions;
         this.client = client;
+        this.limit = limit;
 
         //Construct SortOptions from JsonArray
         esSortOptions = processSortOptions(sortOptions);
@@ -168,7 +169,14 @@ public class FetchAllTask implements Runnable{
                         }
 
                         results.add(result); //Add the index of the document to our result
+                        if(limit != -1 && results.size() > limit){
+                            break;
+                        }
                         sortInfo = curr.sort();
+                    }
+
+                    if(limit != -1 && results.size() > limit){
+                        break;
                     }
 
                     //SearchRequest nextRequest = fetchAllRequest(search.pitId(), keepAliveValue, options, sortInfo);
@@ -265,7 +273,6 @@ public class FetchAllTask implements Runnable{
         //Build request
         SearchRequest.Builder requestBuilder = commonRequestBuilder(pitId, keepAliveValue)
                 .query(q->q.matchAll(v->v.withJson(new StringReader("{}"))));
-
 
         return handleSorting(requestBuilder, sortOptions, sortInfo);
     }

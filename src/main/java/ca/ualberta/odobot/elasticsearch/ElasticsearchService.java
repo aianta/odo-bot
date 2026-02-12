@@ -36,6 +36,8 @@ public interface ElasticsearchService {
      */
     Future<Void> processEvents(String index, String targetEventBusAddress);
 
+    Future<Void> processEventsWithLimit(String index, int limit, String targetEventBusAddress);
+
     /**
      * Return all indices matching the given pattern.
      * @param pattern
@@ -60,12 +62,15 @@ public interface ElasticsearchService {
      */
     Future<List<JsonObject>> fetchAll(String index);
 
+    Future<List<JsonObject>> fetchAllWithLimit(String index, int limit);
 
     /**
      * Old method originally used to retrieve events for flights/traces when each flight/trace had a dedicated index in elasticsearch. This design lead to
      * oversharding and was not scalable for larger datasets.
      */
     Future<List<JsonObject>> fetchAndSortAll(String index, JsonArray sortOptions);
+
+    Future<List<JsonObject>> fetchAndSortAllWithLimit(String index, JsonArray sortOptions, int limit);
 
     /**
      * Deprecated: Vertx does not like returning maps over service proxies. Would have to debug this before it can be used again properly.

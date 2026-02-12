@@ -10,6 +10,7 @@ import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
 import io.vertx.core.eventbus.DeliveryOptions;
 import io.vertx.core.http.HttpMethod;
+import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.client.WebClient;
@@ -18,6 +19,9 @@ import io.vertx.rxjava3.core.eventbus.MessageConsumer;
 import io.vertx.rxjava3.ext.web.RoutingContext;
 
 import io.vertx.serviceproxy.ServiceProxyBuilder;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -26,6 +30,7 @@ import java.util.function.BiFunction;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import static ca.ualberta.odobot.common.Predicates.stateClusteringEventFilter;
 import static ca.ualberta.odobot.logpreprocessor.Constants.ELASTICSEARCH_SERVICE_ADDRESS;
 import static ca.ualberta.odobot.logpreprocessor.Constants.SQLITE_SERVICE_ADDRESS;
 
@@ -80,7 +85,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                 .setAddress(ELASTICSEARCH_SERVICE_ADDRESS)
                 .build(ElasticsearchService.class);
 
-        cleanerService = CleanerService.create(vertx.getDelegate(), _config, new TagAndAttributeStrategy());
+        cleanerService = CleanerService.create(vertx.getDelegate(), _config, new TagAndAttributeStrategy(vertx.getDelegate()));
 
         stateLabelingService = StateLabelingService.create(vertx.getDelegate(), _config);
 
@@ -91,6 +96,12 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
         api.route().method(HttpMethod.GET).path("/buildStateClusters").handler(this::buildStateClusters);
         api.route().method(HttpMethod.GET).path("/buildStateClustersInBatch").handler(this::buildStateClustersInBatch);
         api.route().method(HttpMethod.GET).path("/loadDOMSnapshots").handler(this::loadDOMSnapshots);
+        api.route().method(HttpMethod.GET).path("/resolveClusteredNodes")
+                .handler(this::buildStateClustersInBatch)
+                .handler(this::getNodeClustering)
+                .handler(this::getNodeClusteringDocument)
+                .handler(this::resolveClusterNodes)
+        ;
         api.route().method(HttpMethod.GET).path("/labelStateClusters")
                 .handler(this::buildStateClusters)
                 .handler(this::getClustering)
@@ -100,15 +111,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
 
     }
 
-    private Predicate<JsonObject> stateClusteringEventFilter(){
-        return (event)->
-             event.containsKey("eventDetails_domSnapshot") &&
-                    event.getString("eventDetails_name") != null &&
-                    event.containsKey("eventDetails_name") &&
-                    !event.getString("eventDetails_name").equals("NETWORK_EVENT") &&
-                    !event.getString("eventDetails_name").equals("DOM_EFFECT");
 
-    }
 
     private void loadDOMSnapshots(RoutingContext rc){
         String sourceIndex = rc.queryParam("srcIndex").get(0);
@@ -144,28 +147,6 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                 });
     }
 
-//    private void makeClusterLabels(RoutingContext rc){
-//        log.info("Making cluster labels!");
-//        Map<String, List<JsonObject>> clusterSnapshots = rc.get("clusterSnapshots");
-//
-//        List<Future<JsonObject>> futures = new ArrayList<>();
-//        clusterSnapshots.forEach((clusterId, snapshots) -> {
-//            futures.add(
-//                    stateLabelingService.generateStateLabeling(clusterId, snapshots)
-//                            .onFailure(err->log.error(err.getMessage(), err))
-//                            .onSuccess(result->log.info("Cluster {} -> {}", clusterId, result.getString("label")))
-//            );
-//        });
-//
-//        Future.all(futures).onSuccess(results->{
-//            List<JsonObject> clusterLabels = results.result().list();
-//
-//            rc.response().setStatusCode(200).end(clusterLabels.stream()
-//                            .map(o->(JsonObject)o)
-//                    .collect(JsonArray::new, JsonArray::add, JsonArray::addAll ).encodePrettily());
-//        });
-//
-//    }
 
     private void getClusterSnapshots(RoutingContext rc){
         log.info("Fetching relevant snapshots from sqlite...");
@@ -218,6 +199,84 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
 
     }
 
+    private void resolveClusterNodes(RoutingContext rc){
+        JsonObject result = new JsonObject();
+
+        Map<String, List<JsonObject>> clusterMap = rc.get("clusterMap");
+        Document document = rc.get("document");
+
+        Iterator<Map.Entry<String, List<JsonObject>>> it =  clusterMap.entrySet().iterator();
+        while (it.hasNext()){
+            Map.Entry<String, List<JsonObject>> cluster = it.next();
+
+            //Filter out cluster items that don't have a robustXpath (IE: text nodes, #root, etc)
+            JsonArray processedClusterItems = cluster.getValue().stream().filter(entry->entry.containsKey("robustXpath"))
+                    .map(item->{
+                        String robustXpath = item.getString("robustXpath");
+                        Element element = document.selectXpath(robustXpath).get(0);
+                        return element.html();
+                    })
+                    .filter(html->!html.isEmpty())
+                    .collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+
+            if (!processedClusterItems.isEmpty()){
+                result.put(cluster.getKey(), processedClusterItems);
+            }
+        }
+
+        rc.getDelegate().response().setStatusCode(200).end(result.encodePrettily());
+
+    }
+
+
+    private void getNodeClusteringDocument(RoutingContext rc){
+        Map<String, List<JsonObject>> clusterMap = rc.get("clusterMap");
+
+        if(clusterMap != null && clusterMap.size() > 0){
+            Optional<Map.Entry<String, List<JsonObject>>> itemOptional =  clusterMap.entrySet().stream().filter(entry->entry.getValue().size()>0).findFirst();
+            if(itemOptional.isPresent()){
+                JsonObject clusterItem = itemOptional.get().getValue().get(0);
+                String documentId = clusterItem.getString("id").split("_")[0];
+                sqliteService.getDomSnapshots(Set.of(documentId))
+                        .compose(docs->Future.succeededFuture(docs.get(0)))
+                        .onSuccess(domSnapshot->{
+
+                            String html = domSnapshot.getString("snapshot");
+                            Document document = Jsoup.parse(html);
+                            rc.put("document", document);
+                            rc.put("snapshot", domSnapshot);
+                            rc.next();
+                        });
+            }
+        }
+
+    }
+
+    private void getNodeClustering(RoutingContext rc){
+        String lshId = rc.get("lshId").toString();
+
+        log.info("Fetching node clustering from LSH: {}",lshId);
+        webClient.get(ODO_LSH_PORT, ODO_LSH_HOST, "/minhashLSH/%s/clustering".formatted(lshId)).send()
+                .onFailure(err->log.error(err.getMessage(), err))
+                .compose(response->Future.succeededFuture(response.bodyAsJsonObject()))
+                .onSuccess(response->{
+                    JsonObject clusters = response.getJsonObject("clusters");
+                    Map<String, List<JsonObject>> clusterMap = new HashMap<>();
+                    clusters.forEach(entry->{
+                        if(!entry.getKey().equals("-1")){
+                            clusterMap.put(entry.getKey(), ((JsonArray)entry.getValue()).stream()
+                                    .map(o->(JsonObject)o)
+                                    .collect(Collectors.toList())
+                            );
+                        }
+                    });
+
+                    rc.put("clusterMap", clusterMap);
+                    rc.next();
+                })
+        ;
+    }
+
     private void getClustering(RoutingContext rc){
         String lshId = rc.get("lshId").toString();
 
@@ -230,7 +289,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                         JsonObject clusters = response.getJsonObject("clusters");
                         Map<String, Set<String>> clusterMap = new HashMap<>();
                         clusters.forEach(entry->{
-                            if(entry.getKey() != "-1"){ //Ignore the noise cluster produced by DBSCAN
+                            if(!entry.getKey().equals("-1")){ //Ignore the noise cluster produced by DBSCAN
                                 /**
                                  * Cluster map contains <clusterId > : [list of document ids in the cluster..]
                                  * "1" -> ["696aa802acc7a9e8a7a4a4c0", "696aa802acc7a9e8a7a4a4cc", ...]
@@ -295,6 +354,8 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
 
                                 String lshId = response.getString("id");
                                 log.info("New LSH created with id {}", lshId);
+                                rc.put("lshId", lshId);
+
                                 Future f = null;
                                 Iterator<JsonObject> it =  _selectedEvents.iterator();
                                 do {
@@ -325,8 +386,10 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                                 }while(it.hasNext());
 
                                 f.onSuccess(done->{
-                                    log.info("Done computing hash signatures for all DOMSnapshots.");
-                                    rc.response().setStatusCode(200).end();
+                                    log.info("Populated {} LSH model", lshId);
+
+                                    rc.next();
+
                                 });
                             });
 

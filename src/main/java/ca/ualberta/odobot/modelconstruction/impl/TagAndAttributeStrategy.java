@@ -5,6 +5,7 @@ import ca.ualberta.odobot.modelconstruction.impl.visitors.BlankRemovingVisitor;
 import ca.ualberta.odobot.modelconstruction.impl.visitors.NodeLinksVisitor;
 import ca.ualberta.odobot.mind2web.HTMLCleaningTools;
 import io.vertx.core.Future;
+import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.*;
@@ -19,6 +20,11 @@ import java.util.Map;
 public class TagAndAttributeStrategy implements CleaningStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(TagAndAttributeStrategy.class);
+
+    private Vertx vertx;
+    public TagAndAttributeStrategy(Vertx vertx) {
+        this.vertx = vertx;
+    }
 
     /**
      * Converts a DOM node to a node label to be used in a graph.
@@ -118,9 +124,11 @@ public class TagAndAttributeStrategy implements CleaningStrategy {
         LabelingVisitor labelingVisitor = new LabelingVisitor();
         doc.traverse(labelingVisitor);
 
-        NodeLinksVisitor nodeLinksVisitor = new NodeLinksVisitor(this::nodeToLabel, labelingVisitor.nodeMap, labelingVisitor.nodeIndex );
+        NodeLinksVisitor nodeLinksVisitor = new NodeLinksVisitor(this::nodeToLabel, labelingVisitor.nodeMap, labelingVisitor.nodeIndex, doc, vertx );
         doc.traverse(nodeLinksVisitor);
 
-        return Future.succeededFuture(nodeLinksVisitor.getGraphObject());
+        return nodeLinksVisitor.getGraphObject();
+
+
     }
 }
