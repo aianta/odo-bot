@@ -92,14 +92,14 @@ public class TagAndAttributeStrategy implements CleaningStrategy {
 
     //
     private class LabelingVisitor implements NodeVisitor {
-        private static int COUNTER = 0;
+        private int counter = 0;
         public Map<Integer, Node> nodeMap = new HashMap<Integer, Node>();
         public Map<Node, Integer> nodeIndex = new HashMap<>();
         @Override
         public void head(Node node, int i) {
-            nodeMap.put(COUNTER, node);
-            nodeIndex.put(node, COUNTER);
-            COUNTER++;
+            nodeMap.put(counter, node);
+            nodeIndex.put(node, counter);
+            counter++;
         }
 
     }

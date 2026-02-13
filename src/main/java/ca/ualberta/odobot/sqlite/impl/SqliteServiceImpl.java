@@ -56,6 +56,8 @@ public class SqliteServiceImpl implements SqliteService {
         createTaskParameterTable();
         createTaskTable();
         createDOMSnapshotTable();
+        createCommonSubstructureContainerTable();
+        createCommonSubstructureTable();
     }
 
 
@@ -910,6 +912,39 @@ public class SqliteServiceImpl implements SqliteService {
         return promise.future();
     }
 
+    public Future<Void> saveCommonSubstructureContainer(JsonObject item){
+        String sql = """
+                INSERT INTO common_substructure_containers (
+                    snapshot_id, cluster_id, html, robust_xpath
+                ) VALUES (?, ?, ?, ?);
+                """;
+        Tuple params = Tuple.of(
+                item.getString("snapshotId"),
+                item.getString("clusterId"),
+                item.getString("parentHtml"),
+                item.getString("parentXpath")
+        );
+
+        return executeParameterizedQuery(sql, params);
+    }
+
+    public Future<Void> saveCommonSubstructure(JsonObject item){
+        String sql = """
+                INSERT INTO common_substructures ( 
+                    snapshot_id, cluster_id, node_id, robust_xpath, html
+                ) VALUES (?,?,?,?,?);
+                """;
+        Tuple params = Tuple.of(
+                item.getString("snapshotId"),
+                item.getString("clusterId"),
+                item.getString("nodeId"),
+                item.getString("robustXpath"),
+                item.getString("html")
+        );
+
+        return executeParameterizedQuery(sql, params);
+    }
+
     private Future<Void> saveExemplar(TrainingExemplar exemplar){
 
         String sql = """
@@ -968,6 +1003,31 @@ public class SqliteServiceImpl implements SqliteService {
 
     }
 
+
+    private Future<Void> createCommonSubstructureTable(){
+        return createTable("""
+                CREATE TABLE IF NOT EXISTS common_substructures(
+                    snapshot_id text,
+                    cluster_id text,
+                    node_id text,
+                    robust_xpath text,
+                    html text,
+                    primary key(snapshot_id, node_id)
+                )
+                """);
+    }
+
+    private Future<Void> createCommonSubstructureContainerTable(){
+        return createTable("""
+                CREATE TABLE IF NOT EXISTS common_substructure_containers(
+                    snapshot_id text,
+                    cluster_id text,
+                    html text,
+                    robust_xpath text,
+                    primary key (snapshot_id, cluster_id)
+                )
+                """);
+    }
 
     private Future<Void> createDataEntryAnnotationTable(){
         return createTable("""

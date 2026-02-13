@@ -44,7 +44,7 @@ public class NodeLinksVisitor implements NodeVisitor {
         this.vertx = vertx;
 
         if (executor == null) {
-            executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(12);
+            executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(6);
         }
     }
 

@@ -80,6 +80,10 @@ public interface SqliteService {
 
     Future<Void> saveSnippet(String snippet, String xpathId, String type, String sourceHTML, String baseURI);
 
+    Future<Void> saveCommonSubstructure(JsonObject data);
+
+    Future<Void> saveCommonSubstructureContainer(JsonObject data);
+
     Future<Snippet> getSnippetById(String id);
 
     /**
