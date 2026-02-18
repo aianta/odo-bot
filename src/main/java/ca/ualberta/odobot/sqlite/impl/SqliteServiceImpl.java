@@ -58,6 +58,7 @@ public class SqliteServiceImpl implements SqliteService {
         createDOMSnapshotTable();
         createCommonSubstructureContainerTable();
         createCommonSubstructureTable();
+        createClusteringsTable();
     }
 
 
@@ -912,13 +913,45 @@ public class SqliteServiceImpl implements SqliteService {
         return promise.future();
     }
 
-    public Future<Void> saveCommonSubstructureContainer(JsonObject item){
+    public Future<Set<String>> getMinedSnapshotIds(String clusteringId){
+        Promise<Set<String>> promise = Promise.promise();
+        String sql = """
+                SELECT DISTINCT snapshot_id FROM common_substructures WHERE clustering_id = ?;
+                """;
+        pool.preparedQuery(sql).execute(Tuple.of(clusteringId))
+                .onSuccess(result->{
+                    Set<String> snapshotIds = new HashSet<>();
+                    result.forEach(row->snapshotIds.add(row.getString("snapshot_id")));
+                    promise.complete(snapshotIds);
+                });
+        return promise.future();
+    }
+
+    public Future<Void> saveClusteringInfo(String clusteringId, double threshold, int numPerm, double eps, int minSamples){
+        String sql = """
+                INSERT INTO clusterings(
+                    clustering_id, minhash_threshold, minhash_num_permutations, dbscan_eps, dbscan_min_samples
+                ) VALUES (?,?,?,?,?);
+                """;
+
+        Tuple params = Tuple.of(
+                clusteringId,
+                threshold,
+                numPerm,
+                eps,
+                minSamples
+        );
+        return executeParameterizedQuery(sql, params);
+    }
+
+    public Future<Void> saveCommonSubstructureContainer(String clusteringId, JsonObject item){
         String sql = """
                 INSERT INTO common_substructure_containers (
-                    snapshot_id, cluster_id, html, robust_xpath
-                ) VALUES (?, ?, ?, ?);
+                    clustering_id, snapshot_id, cluster_id, html, robust_xpath
+                ) VALUES (?, ?, ?, ?, ?);
                 """;
         Tuple params = Tuple.of(
+                clusteringId,
                 item.getString("snapshotId"),
                 item.getString("clusterId"),
                 item.getString("parentHtml"),
@@ -928,13 +961,14 @@ public class SqliteServiceImpl implements SqliteService {
         return executeParameterizedQuery(sql, params);
     }
 
-    public Future<Void> saveCommonSubstructure(JsonObject item){
+    public Future<Void> saveCommonSubstructure(String clusteringId, JsonObject item){
         String sql = """
                 INSERT INTO common_substructures ( 
-                    snapshot_id, cluster_id, node_id, robust_xpath, html
-                ) VALUES (?,?,?,?,?);
+                    clustering_id, snapshot_id, cluster_id, node_id, robust_xpath, html
+                ) VALUES (?,?,?,?,?,?);
                 """;
         Tuple params = Tuple.of(
+                clusteringId,
                 item.getString("snapshotId"),
                 item.getString("clusterId"),
                 item.getString("nodeId"),
@@ -1004,15 +1038,28 @@ public class SqliteServiceImpl implements SqliteService {
     }
 
 
+    private Future<Void> createClusteringsTable(){
+        return createTable( """
+                CREATE TABLE IF NOT EXISTS clusterings (
+                    clustering_id text primary key,
+                    minhash_threshold real, 
+                    minhash_num_permutations integer,
+                    dbscan_eps real,
+                    dbscan_min_samples integer
+                    )
+        """);
+    }
+
     private Future<Void> createCommonSubstructureTable(){
         return createTable("""
                 CREATE TABLE IF NOT EXISTS common_substructures(
+                    clustering_id text,
                     snapshot_id text,
                     cluster_id text,
                     node_id text,
                     robust_xpath text,
                     html text,
-                    primary key(snapshot_id, node_id)
+                    primary key(clustering_id, snapshot_id, node_id)
                 )
                 """);
     }
@@ -1020,11 +1067,12 @@ public class SqliteServiceImpl implements SqliteService {
     private Future<Void> createCommonSubstructureContainerTable(){
         return createTable("""
                 CREATE TABLE IF NOT EXISTS common_substructure_containers(
+                    clustering_id text,
                     snapshot_id text,
                     cluster_id text,
                     html text,
                     robust_xpath text,
-                    primary key (snapshot_id, cluster_id)
+                    primary key (clustering_id, snapshot_id, cluster_id)
                 )
                 """);
     }

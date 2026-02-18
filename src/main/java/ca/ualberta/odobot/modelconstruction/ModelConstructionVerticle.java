@@ -33,6 +33,7 @@ import java.util.stream.Collectors;
 import static ca.ualberta.odobot.common.Predicates.stateClusteringEventFilter;
 import static ca.ualberta.odobot.logpreprocessor.Constants.ELASTICSEARCH_SERVICE_ADDRESS;
 import static ca.ualberta.odobot.logpreprocessor.Constants.SQLITE_SERVICE_ADDRESS;
+import static ca.ualberta.odobot.semanticflow.Utils.computeXpathNoRoot;
 
 /**
  * Exposes HTML cleaning functionality.
@@ -394,12 +395,27 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
     private void mineCommonDOMSubstructures(RoutingContext rc){
         String sourceIndex = rc.queryParam("srcIndex").get(0);
 
+        //Minhash LSH parameters
         double threshold = rc.queryParam("threshold").isEmpty()?0.5:Double.parseDouble(rc.queryParam("threshold").get(0));
         int numPerm = rc.queryParam("numPerm").isEmpty()?256:Integer.parseInt(rc.queryParam("numPerm").get(0));
 
-        elasticsearchService.fetchAll(sourceIndex)
+        //DBSCAN parameters
+        double eps = rc.queryParam("eps").isEmpty()?0.9:Double.parseDouble(rc.queryParam("eps").get(0));
+        int minSamples = rc.queryParam("minSamples").isEmpty()?2:Integer.parseInt(rc.queryParam("minSamples").get(0));
+
+        String clusteringId = rc.queryParam("clusteringId").isEmpty()?UUID.randomUUID().toString():rc.queryParam("clusteringId").get(0);
+
+        Future.all(
+                sqliteService.getMinedSnapshotIds(clusteringId), //Get any existing progress towards mining common sub-structures for this clustering. Facilitates resuming interrupted mining.
+                elasticsearchService.fetchAll(sourceIndex), //Fetch the trajectory events containing DOMSnapshots for mining.
+                sqliteService.saveClusteringInfo(clusteringId, threshold, numPerm, eps, minSamples) //Save the parameters used for this clustering.
+        )
+
                 .onFailure(err->log.error(err.getMessage(),err))
-                .onSuccess(events->{
+                .onSuccess(compositeFuture->{
+
+                    Set<String> minedSnapshotIds = compositeFuture.resultAt(0);
+                    List<JsonObject> events = compositeFuture.resultAt(1);
 
                     log.info(events.iterator().next().encodePrettily());
 
@@ -408,7 +424,8 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                     List<JsonObject> selectedEvents = new ArrayList<>();
 
                     for (JsonObject event : events) {
-                        if (stateClusteringEventFilter().test(event)) {
+                        if (stateClusteringEventFilter().test(event) &&
+                                !minedSnapshotIds.contains(event.getString("mongo_id"))) { //Skip snapshots that we've already mined.
 
                             selectedEvents.add(event);
                         }
@@ -425,9 +442,9 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                         String snapshotHtml = domSnapshot.getString("outerHTML");
 
                         if (f == null){
-                            f = mineCommonSubstructures(snapshotId, baseURI, snapshotHtml, threshold, numPerm, it.previousIndex()+1, selectedEvents.size());
+                            f = mineCommonSubstructures(clusteringId, snapshotId, baseURI, snapshotHtml, threshold, numPerm, eps,  minSamples);
                         }else{
-                            f = f.compose(done->mineCommonSubstructures(snapshotId, baseURI, snapshotHtml, threshold, numPerm, it.previousIndex()+1, selectedEvents.size()));
+                            f = f.compose(done->mineCommonSubstructures(clusteringId, snapshotId, baseURI, snapshotHtml, threshold, numPerm, eps, minSamples));
                         }
                     }
 
@@ -444,10 +461,11 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
 
     }
 
-    private Future<Void> mineCommonSubstructures(String snapshotId, String baseURI, String snapshotHtml, double threshold, int numPerm, int taskIndex, int totalTasks){
+    private Future<Void> mineCommonSubstructures(String clusteringId, String snapshotId, String baseURI, String snapshotHtml, double threshold, int numPerm, double dbscanEps, int dbscanMinSamples){
         return Future.all(
                         cleanerService.cleanHTML(snapshotHtml), //Get cleaned HTML snapshot
-                        makeMinhashLSHForSnapshotNodes(snapshotId, baseURI, snapshotHtml, threshold, numPerm).compose(this::getNodeClustering)
+                        makeMinhashLSHForSnapshotNodes(snapshotId, baseURI, snapshotHtml, threshold, numPerm)
+                                .compose(lshId->getNodeClustering(lshId, Double.toString(dbscanEps), Integer.toString(dbscanMinSamples)))
                 )
                 .onFailure(err->log.error(err.getMessage(),err))
                 .compose(compositeFuture->{
@@ -464,16 +482,16 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                             .map(candidate->{
 
                                 List<Future<Void>> persistenceFutures = new ArrayList<>();
-                                persistenceFutures.add(sqliteService.saveCommonSubstructureContainer(candidate));
+                                persistenceFutures.add(sqliteService.saveCommonSubstructureContainer(clusteringId, candidate));
                                 persistenceFutures.addAll(candidate.getJsonArray("items").stream()
                                         .map(o->(JsonObject)o)
-                                        .map(substructure->sqliteService.saveCommonSubstructure(substructure))
+                                        .map(substructure->sqliteService.saveCommonSubstructure(clusteringId, substructure))
                                         .toList());
 
                                 return Future.all(persistenceFutures);
                             })
                             .collect(Collectors.toList())).compose(done->{
-                                log.info("Finished mining common substructures from {}/{} DOMSnapshots", taskIndex, totalTasks);
+                                log.info("Finished mining common substructures for clustering {} with DOMSnapshot {} - {} ", clusteringId, snapshotId, baseURI);
                                 return Future.succeededFuture();
                     });
 
@@ -526,18 +544,27 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                             .put("clusterId",  cluster.getKey())
                             .put("nodeId", item.getString("id").split("_")[1])
                             .put("robustXpath", robustXpath)
-                            .put("html", element.html());
+                            .put("html", element.outerHtml());
                 }).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
 
         if(!clusterItems.isEmpty() && parents.size() == 1){
             Element parentElement = parents.iterator().next();
 
-            return vertx.getDelegate().executeBlocking(()->robulaPlus.getRobustXPath(parentElement, document))
+            return vertx.getDelegate().executeBlocking(()->{
+                    try{
+                        return computeXpathNoRoot(parentElement);
+                        //return robulaPlus.getRobustXPath(parentElement, document);
+                    }catch (IllegalStateException e){
+                        return null;
+                    }catch(IllegalArgumentException e){
+                        return null;
+                    }
+                    })
                     .compose(parentXpath->{
                         JsonObject annotationCandidate = new JsonObject()
                                 .put("snapshotId", snapshotId)
                                 .put("clusterId", cluster.getKey())
-                                .put("parentXpath", parentXpath)
+                                .put("parentXpath", parentXpath != null? parentXpath : "null")
                                 .put("parentHtml", parentElement.outerHtml())
                                 .put("items", clusterItems);
 
@@ -548,9 +575,12 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
         }
     }
 
-    private Future<Map<String, List<JsonObject>>> getNodeClustering(String lshId){
+    private Future<Map<String, List<JsonObject>>> getNodeClustering(String lshId, String dbscanEPS, String dbscanMinSamples ){
         log.info("Fetching node clustering from LSH: {}",lshId);
-        return webClient.get(ODO_LSH_PORT, ODO_LSH_HOST, "/minhashLSH/%s/clustering".formatted(lshId)).send()
+        return webClient.get(ODO_LSH_PORT, ODO_LSH_HOST, "/minhashLSH/%s/clustering".formatted(lshId))
+                .addQueryParam("eps", dbscanEPS)
+                .addQueryParam("min_samples", dbscanMinSamples)
+                .send()
                 .onFailure(err->log.error(err.getMessage(), err))
                 .compose(response->Future.succeededFuture(response.bodyAsJsonObject()))
                 .compose(response->{

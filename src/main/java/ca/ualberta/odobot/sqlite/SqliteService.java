@@ -80,9 +80,13 @@ public interface SqliteService {
 
     Future<Void> saveSnippet(String snippet, String xpathId, String type, String sourceHTML, String baseURI);
 
-    Future<Void> saveCommonSubstructure(JsonObject data);
+    Future<Void> saveCommonSubstructure(String clusteringId, JsonObject data);
 
-    Future<Void> saveCommonSubstructureContainer(JsonObject data);
+    Future<Void> saveCommonSubstructureContainer(String clusteringId, JsonObject data);
+
+    Future<Set<String>> getMinedSnapshotIds(String clusteringId);
+
+    Future<Void> saveClusteringInfo(String clusteringId, double threshold, int numPerm, double eps, int minSamples);
 
     Future<Snippet> getSnippetById(String id);
 

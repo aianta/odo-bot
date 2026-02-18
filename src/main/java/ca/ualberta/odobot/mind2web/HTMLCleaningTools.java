@@ -70,7 +70,8 @@ public class HTMLCleaningTools {
                     "address",
                     "ins",
                     "ppc-content",
-                    "iframe"
+                    "iframe",
+                    "a"
 
             );
 

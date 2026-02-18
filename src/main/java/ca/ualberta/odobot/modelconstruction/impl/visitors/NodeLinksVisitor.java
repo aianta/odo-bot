@@ -13,12 +13,17 @@ import org.jsoup.select.NodeVisitor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.text.DecimalFormat;
+import java.time.Instant;
 import java.util.*;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.*;
 import java.util.function.Function;
 
+import static ca.ualberta.odobot.semanticflow.Utils.computeXpathNoRoot;
+
 public class NodeLinksVisitor implements NodeVisitor {
+
+    private static final Logger log = LoggerFactory.getLogger(NodeLinksVisitor.class);
 
     private static ThreadPoolExecutor executor;
 
@@ -57,22 +62,57 @@ public class NodeLinksVisitor implements NodeVisitor {
         private Document document;
         private RobulaPlus robulaPlus = new RobulaPlus();
         private Promise<String> promise = Promise.promise();
+        private Instant start;
+
+        private static final List<Long> computeTimes = new ArrayList<>();
 
         public ComputeRobustXpathTask(Element element, Document document){
             this.document = document;
             this.element = element;
         }
 
+        public long maxExecutionTime(){
+            return computeTimes.stream().mapToLong(l->l).max().orElse(0);
+        }
+
+        public double averageExecutionTime(){
+            DecimalFormat df = new DecimalFormat("#.##");
+            double meanTime = computeTimes.stream().mapToLong(l->l).average().getAsDouble();
+            return Double.valueOf(df.format(meanTime));
+        }
+
+        //For debugging
+        private long executionTime(){
+            Instant now = Instant.now();
+            return now.toEpochMilli() - start.toEpochMilli();
+        }
+
+        private void recordComputeTime(long time){
+            computeTimes.add(time);
+            if(computeTimes.size() > 1000){
+                computeTimes.remove(0);
+            }
+        }
+
         @Override
         public void run() {
+            start = Instant.now();
             try{
                 String robustXpath = robulaPlus.getRobustXPath(element, document);
-                log.info("Computed Robust Xpath: {}", robustXpath);
+                long thisTime = executionTime();
+                recordComputeTime(thisTime);
+                log.info("[Execution time| This: {}ms | Mean: {}ms | Max:{}ms] Computed Robust Xpath: {}", thisTime, averageExecutionTime(), maxExecutionTime(), robustXpath);
                 promise.complete(robustXpath);
             }catch (IllegalStateException e){
                 promise.complete(null);
+                recordComputeTime(executionTime());
+            }catch(IllegalArgumentException e){
+                promise.complete(null);
+                recordComputeTime(executionTime());
             }
         }
+
+        public Promise<String> promise() {return promise;}
 
         public Future<String> future(){
             return promise.future();
@@ -86,16 +126,68 @@ public class NodeLinksVisitor implements NodeVisitor {
         colorMap.put(currNodeNumber, currNodeColor);
 
         if (node instanceof Element){
-
-            ComputeRobustXpathTask task = new ComputeRobustXpathTask((Element) node, document);
-            robustXpathFutures.add(task.future().compose(robustXpath ->{
-                if (robustXpath != null){
-                    robulaMap.put(currNodeNumber, robustXpath);
+            Element element = (Element) node;
+            try{
+                String xpath = computeXpathNoRoot(element);
+                if (element.equals(document.selectXpath(xpath).get(0))) {
+                    robulaMap.put(currNodeNumber, xpath);
                 }
-                return Future.succeededFuture();
-            } ));
+            }catch (Exception e){
+                //Not a big deal if we fail on some small number of elements
+                //log.warn(e.getMessage(), e);
+            }
 
-            executor.execute(task);
+
+//            ComputeRobustXpathTask task = new ComputeRobustXpathTask((Element) node, document);
+//            robustXpathFutures.add(task.future().compose(robustXpath ->{
+//                if (robustXpath != null && document.selectXpath(robustXpath).get(0).equals((Element) node)){
+//                    robulaMap.put(currNodeNumber, robustXpath);
+//                }
+//
+//                if(robustXpath != null && !document.selectXpath(robustXpath).get(0).equals((Element) node)){
+//                    log.error("Robula Error! Could not find element using robust xpath! {}", robustXpath);
+//                }
+//                return Future.succeededFuture();
+//            } ));
+//
+//            /**
+//             * On certain DOM Snapshots it has been observed that computing a robust xpath takes an enormous amount of time.
+//             * TODO: investigate this.
+//             * In the meantime timeout on long running tasks.
+//             */
+//            vertx.executeBlocking(() -> {
+//                java.util.concurrent.Future threadFuture = executor.submit(task);
+//                try {
+//                    threadFuture.get(500, TimeUnit.MILLISECONDS); //Don't spend a crazy amount of time trying for robust xpaths here...
+//                } catch (InterruptedException e) {
+//                    task.promise().tryComplete();
+//
+//                } catch (ExecutionException e) {
+//                    log.error(e.getMessage(), e);
+//                    task.promise().tryComplete();
+//
+//                } catch (TimeoutException e) {
+//                    Element element = (Element) node;
+//                    String xpath = computeXpathNoRoot(element);
+//                    if (element.equals(document.selectXpath(xpath).get(0))) {
+//                        robulaMap.put(currNodeNumber, xpath);
+//                    } else {
+//                        log.error("Xpath error! Could not find element using xpath: {}", xpath);
+//                    }
+//                    ;
+//
+//                    log.info("Computing Robust Xpath timed out, instead using: {}", xpath);
+//
+//                    threadFuture.cancel(true);
+//                    task.promise().tryComplete();
+//
+//                }
+//                        return null;
+//                    }).onFailure(err->log.error(err.getMessage(), err))
+//                    .onSuccess(done->{
+//                //NOP
+//            });
+
 
         }
 
@@ -106,22 +198,34 @@ public class NodeLinksVisitor implements NodeVisitor {
 
     public Future<JsonObject> getGraphObject(){
 
+        return Future.succeededFuture(new JsonObject()
+                .put("nodes", colorMap.entrySet().stream().map(nodeEntry->{
+                    JsonObject nodeJson =  new JsonObject()
+                            .put("id", nodeEntry.getKey().toString())
+                            .put("color",  colorMap.get(nodeEntry.getKey()));
+                    if(robulaMap.containsKey(nodeEntry.getKey())){
+                        nodeJson.put("robustXpath", robulaMap.get(nodeEntry.getKey()));
+                    }
+                    return nodeJson;
+                }).collect(JsonArray::new, JsonArray::add, JsonArray::addAll))
+                .put("links", links));
+
         //Wait for all robust xpaths to be finish computation
-        return Future.all(robustXpathFutures).compose(done -> {
-
-            return Future.succeededFuture(new JsonObject()
-                    .put("nodes", colorMap.entrySet().stream().map(nodeEntry->{
-                        JsonObject nodeJson =  new JsonObject()
-                                .put("id", nodeEntry.getKey().toString())
-                                .put("color",  colorMap.get(nodeEntry.getKey()));
-                        if(robulaMap.containsKey(nodeEntry.getKey())){
-                            nodeJson.put("robustXpath", robulaMap.get(nodeEntry.getKey()));
-                        }
-                        return nodeJson;
-                    }).collect(JsonArray::new, JsonArray::add, JsonArray::addAll))
-                    .put("links", links));
-
-        });
+//        return Future.all(robustXpathFutures).compose(done -> {
+//
+//            return Future.succeededFuture(new JsonObject()
+//                    .put("nodes", colorMap.entrySet().stream().map(nodeEntry->{
+//                        JsonObject nodeJson =  new JsonObject()
+//                                .put("id", nodeEntry.getKey().toString())
+//                                .put("color",  colorMap.get(nodeEntry.getKey()));
+//                        if(robulaMap.containsKey(nodeEntry.getKey())){
+//                            nodeJson.put("robustXpath", robulaMap.get(nodeEntry.getKey()));
+//                        }
+//                        return nodeJson;
+//                    }).collect(JsonArray::new, JsonArray::add, JsonArray::addAll))
+//                    .put("links", links));
+//
+//        });
 
 
 
