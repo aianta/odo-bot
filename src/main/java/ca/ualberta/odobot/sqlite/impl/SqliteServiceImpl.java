@@ -1288,7 +1288,7 @@ public class SqliteServiceImpl implements SqliteService {
 
     private Future<Void> executeParameterizedQuery(String sql, Tuple parameters){
         Promise<Void> promise = Promise.promise();
-        return executeParameterizedQuery(promise, sql, parameters, genericErrorHandler(promise));
+        return executeParameterizedQuery(promise, sql, parameters, genericErrorHandlerWithBusyRetry(promise, sql, parameters));
     }
 
     /**
@@ -1327,10 +1327,27 @@ public class SqliteServiceImpl implements SqliteService {
         };
     }
 
+
+
     private Handler<Throwable> genericErrorHandler(Promise promise){
         return (err)->{
             log.error(err.getMessage(),err);
             promise.fail(err.getCause());
+        };
+    }
+
+    private Handler<Throwable> genericErrorHandlerWithBusyRetry(Promise promise, String sql, Tuple parameters){
+        return (err)->{
+            if(err.getMessage().contains("SQLITE_BUSY")){
+                log.warn("SQLITE_BUSY, retrying after 3s");
+                vertx.setTimer(3000, timerId->{
+                    log.info("Retrying SQLite operation...");
+                    executeParameterizedQuery(promise, sql, parameters, genericErrorHandlerWithBusyRetry(promise, sql, parameters));
+                });
+            }else{
+                log.error(err.getMessage(), err);
+                promise.fail(err.getCause());
+            }
         };
     }
 

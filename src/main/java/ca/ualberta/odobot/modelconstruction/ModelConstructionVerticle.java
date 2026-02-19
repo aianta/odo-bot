@@ -371,6 +371,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                                 nodeLinks.put("baseURI", baseURI);
 
                                 return webClient.put(ODO_LSH_PORT, ODO_LSH_HOST, "/minhashLSH/" + lshId)
+                                        .addQueryParam("minhash_perm", Integer.toString(numPerm))
                                         .sendJson(new JsonArray().add(nodeLinks));
                             })
                             .onFailure(err->{
@@ -404,12 +405,23 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
         int minSamples = rc.queryParam("minSamples").isEmpty()?2:Integer.parseInt(rc.queryParam("minSamples").get(0));
 
         String clusteringId = rc.queryParam("clusteringId").isEmpty()?UUID.randomUUID().toString():rc.queryParam("clusteringId").get(0);
+        List<Future<?>> todo = List.of();
+        if(!rc.queryParam("clusteringId").isEmpty()){
+            //If the clustering id is prespecified, we don't need to save the clustering info to the database as it will already exist.
+            todo = List.of(
+                    sqliteService.getMinedSnapshotIds(clusteringId),
+                    elasticsearchService.fetchAll(sourceIndex)
+            );
+        }else{
+            todo = List.of(
+                    sqliteService.getMinedSnapshotIds(clusteringId), //Get any existing progress towards mining common sub-structures for this clustering. Facilitates resuming interrupted mining.
+                    elasticsearchService.fetchAll(sourceIndex), //Fetch the trajectory events containing DOMSnapshots for mining.
+                    sqliteService.saveClusteringInfo(clusteringId, threshold, numPerm, eps, minSamples) //Save the parameters used for this clustering.
+            );
+        }
 
-        Future.all(
-                sqliteService.getMinedSnapshotIds(clusteringId), //Get any existing progress towards mining common sub-structures for this clustering. Facilitates resuming interrupted mining.
-                elasticsearchService.fetchAll(sourceIndex), //Fetch the trajectory events containing DOMSnapshots for mining.
-                sqliteService.saveClusteringInfo(clusteringId, threshold, numPerm, eps, minSamples) //Save the parameters used for this clustering.
-        )
+
+        Future.all(todo)
 
                 .onFailure(err->log.error(err.getMessage(),err))
                 .onSuccess(compositeFuture->{
@@ -502,6 +514,10 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
         List<JsonObject> annotationCandidates = new  ArrayList<>();
 
         Iterator<Map.Entry<String, List<JsonObject>>> it = clusterMap.entrySet().iterator();
+
+        if(clusterMap.isEmpty()){ //Handle case where no cluster were detected.
+            return Future.succeededFuture(annotationCandidates);
+        }
 
         Future<JsonObject> f = null;
         while (it.hasNext()) {
