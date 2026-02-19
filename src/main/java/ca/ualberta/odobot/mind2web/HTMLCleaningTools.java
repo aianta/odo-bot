@@ -30,46 +30,25 @@ public class HTMLCleaningTools {
      * Define JSoup Safelist for cleaning.
      */
     private static Safelist safelist = Safelist.relaxed()
-            //.addAttributes(":all","backend_node_id")
-            //.addAttributes(":all", "class")
+            .removeTags("br")
             .addAttributes(":all", "id")
             .addAttributes(":all", "name")
-            //.addAttributes(":all", "src")
+            .addAttributes(":all", "data-cid")
             .addAttributes(":all", "type")
             .addAttributes(":all", "disabled")
             .addAttributes(":all", "role")
-            .addAttributes(":all", "alt")
-            .addAttributes(":all", "input_value")
-            .addAttributes(":all", "value")
+            //.addAttributes(":all", "alt")
+            //.addAttributes(":all", "value")
             .addAttributes(":all", "placeholder")
-            .addAttributes(":all", "aria_label")
             .addAttributes(":all", "title")
-            //.addAttributes(":all", "data_pw_testid_buckeye")
             .addAttributes(":all", "href")
             .addTags("input", "title", "footer", "fieldset", "textarea", "section", "button",
-                    "btn", "label", "article", "form", "text", "html", "body","select",
+                    "btn", "label",  "form", "text", "html", "body","select",
                     "option", "svg", "circle", "rect", "line", "ellipse", "polygon", "polyline",
                     "path", "use",
-                    //"adc-button", //what even is this?,
                     "small",
-                    "legend",
-                    "dt",
-                    "ngb-highlight",
-                    "hp-search-widget-tab",
-                    "hp-input-button",
-                    "abbr",
-                    //"fsw-airport-item",
-                    "em",
-                    "dropdown-option",
-                    "select-label",
-                    "ry-spinner",
                     "img",
                     "strong",
-                    "mat-pseudo-checkbox",
-                    "summary",
-                    "address",
-                    "ins",
-                    "ppc-content",
                     "iframe",
                     "a"
 

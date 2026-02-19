@@ -7,6 +7,7 @@ import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 import ca.ualberta.odobot.modelconstruction.statelabeling.StateLabelingService;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import io.reactivex.rxjava3.core.Completable;
+import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.eventbus.DeliveryOptions;
@@ -23,6 +24,8 @@ import io.vertx.serviceproxy.ServiceProxyBuilder;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
+import org.jsoup.nodes.Node;
+import org.jsoup.select.NodeVisitor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -126,18 +129,21 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                 JsonObject domSnapshotData = new JsonObject(event.getString("eventDetails_domSnapshot"));
                 String baseURI = event.containsKey("eventDetails_element")?new JsonObject(event.getString("eventDetails_element")).getString("baseURI"):null;
 
-                cleanerService.cleanHTML(domSnapshotData.getString("outerHTML"))
-                        .onSuccess(cleanedHTML->{
-                            sqliteService.saveDOMSnapshot(
+                catalogHTMLAttributes(domSnapshotData.getString("outerHTML"))
+                        .compose(done->cleanerService.cleanHTML(domSnapshotData.getString("outerHTML")))
+
+                        .compose(cleanedHTML->{
+                            return sqliteService.saveDOMSnapshot(
                                     event.getString("mongo_id"),
                                     cleanedHTML,
                                     baseURI,
                                     sourceIndex
 
-                            )
-                                    .onSuccess(done->log.info("Saved {} to Sqlite", event.getString("mongo_id")))
-                                    .onFailure(err->log.error("Error saving DOMSnapshot to SQLite. " + err.getMessage(), err ));
-                        });
+                            );
+
+                        })
+                        .onSuccess(done->log.info("Saved {} to Sqlite", event.getString("mongo_id")))
+                        .onFailure(err->log.error("Error saving DOMSnapshot to SQLite. " + err.getMessage(), err ));;
             }
         });
 
@@ -147,6 +153,32 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                     messageConsumer.getDelegate().unregister();
                     rc.getDelegate().response().setStatusCode(200).end();
                 });
+    }
+
+    //Save all the HTML attributes from an HTML document to sqlite
+    private Future<Void> catalogHTMLAttributes(String html){
+        Document document = Jsoup.parse(html);
+        List<Future<Void>> attributeFutures = new ArrayList<>();
+
+         class AttributeHarvester implements NodeVisitor{
+             public List<JsonArray> attributeData = new ArrayList<>();
+             @Override
+             public void head(Node node, int i) {
+                 if(node instanceof Element){
+                     Element element = (Element) node;
+                     element.attributes().forEach(attribute -> {
+                         attributeData.add(List.of(element.tagName(),attribute.getKey(), attribute.getValue() ).stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll) );
+                     });
+
+                 }
+             }
+         }
+
+        AttributeHarvester attributeHarvester = new AttributeHarvester();
+        document.traverse(attributeHarvester);
+
+
+        return sqliteService.saveHTMLAttributes(attributeHarvester.attributeData);
     }
 
 

@@ -12,6 +12,7 @@ import ca.ualberta.odobot.sqlite.LogParser;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import ca.ualberta.odobot.taskgenerator.canvas.CanvasTask;
 import io.vertx.core.*;
+import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.jdbcclient.JDBCPool;
@@ -23,6 +24,7 @@ import org.slf4j.LoggerFactory;
 
 import java.net.MalformedURLException;
 import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.SQLITE_CONNECTION_STRING;
@@ -59,6 +61,7 @@ public class SqliteServiceImpl implements SqliteService {
         createCommonSubstructureContainerTable();
         createCommonSubstructureTable();
         createClusteringsTable();
+        createHTMLAttributeTable();
     }
 
 
@@ -961,6 +964,47 @@ public class SqliteServiceImpl implements SqliteService {
         return executeParameterizedQuery(sql, params);
     }
 
+    public Future<Void> saveHTMLAttributes(List<JsonArray> data){
+        String sql = """
+                INSERT INTO html_attributes(
+                    tag, attribute, value
+                ) VALUES 
+                """;
+
+        StringBuilder sb = new StringBuilder();
+        Iterator<JsonArray> it = data.iterator();
+        while (it.hasNext()){
+            JsonArray entry = it.next();
+            String tag = entry.getString(0);
+            tag = tag == null?"null":tag;
+            String attribute = entry.getString(1);
+            attribute = attribute == null?"null":attribute;
+            String value = entry.getString(2);
+            value = value == null?"null":value;
+            value = value.replaceAll("'", "''");
+            sb.append("('" + tag + "','" + attribute + "','" + value + "')");
+            if(it.hasNext()){
+                sb.append(",");
+            }
+        }
+        sb.append(";");
+
+        sql += sb.toString();
+
+        return executeQuery(sql);
+
+    }
+
+    public Future<Void> saveHTMLAttribute(String tag, String attribute, String value){
+        String sql = """
+                INSERT INTO html_attributes(
+                    tag, attribute, value
+                    ) VALUES (?, ?, ?);
+                """;
+        Tuple params = Tuple.of(tag, attribute, value);
+        return executeParameterizedQuery(sql, params);
+    }
+
     public Future<Void> saveCommonSubstructure(String clusteringId, JsonObject item){
         String sql = """
                 INSERT INTO common_substructures ( 
@@ -1037,6 +1081,16 @@ public class SqliteServiceImpl implements SqliteService {
 
     }
 
+
+    private Future<Void> createHTMLAttributeTable(){
+        return createTable("""
+                CREATE TABLE IF NOT EXISTS html_attributes (
+                    tag text,
+                    attribute text,
+                    value text
+                )
+                """);
+    }
 
     private Future<Void> createClusteringsTable(){
         return createTable( """
@@ -1285,6 +1339,10 @@ public class SqliteServiceImpl implements SqliteService {
         return promise.future();
     }
 
+    private Future<Void> executeQuery(String sql){
+        Promise<Void> promise = Promise.promise();
+        return executeQuery(promise, sql, genericErrorHandlerWithBusyRetry(promise, sql, null));
+    }
 
     private Future<Void> executeParameterizedQuery(String sql, Tuple parameters){
         Promise<Void> promise = Promise.promise();
@@ -1339,16 +1397,31 @@ public class SqliteServiceImpl implements SqliteService {
     private Handler<Throwable> genericErrorHandlerWithBusyRetry(Promise promise, String sql, Tuple parameters){
         return (err)->{
             if(err.getMessage().contains("SQLITE_BUSY")){
-                log.warn("SQLITE_BUSY, retrying after 3s");
-                vertx.setTimer(3000, timerId->{
+
+                int variation = 3000 + ThreadLocalRandom.current().nextInt(1, 2001);
+                log.warn("SQLITE_BUSY, retrying after {}ms", variation);
+                vertx.setTimer(variation, timerId->{
                     log.info("Retrying SQLite operation...");
-                    executeParameterizedQuery(promise, sql, parameters, genericErrorHandlerWithBusyRetry(promise, sql, parameters));
+                    if(parameters != null){
+                        executeParameterizedQuery(promise, sql, parameters, genericErrorHandlerWithBusyRetry(promise, sql, parameters));
+                    }else{
+                        executeQuery(promise, sql, genericErrorHandlerWithBusyRetry(promise, sql, null));
+                    }
                 });
             }else{
                 log.error(err.getMessage(), err);
+                log.error("ProblemSQL: \n{}", sql);
                 promise.fail(err.getCause());
+
             }
         };
+    }
+
+    private Future<Void> executeQuery(Promise promise, String sql, Handler<Throwable> errHandler){
+        pool.preparedQuery(sql).execute()
+                .onSuccess(done->promise.complete())
+                .onFailure(errHandler);
+        return promise.future();
     }
 
     private Future<Void> executeParameterizedQuery(Promise promise, String sql, Tuple parameters, Handler<Throwable> errHandler){

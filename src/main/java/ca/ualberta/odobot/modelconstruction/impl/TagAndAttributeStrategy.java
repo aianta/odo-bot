@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.modelconstruction.impl;
 
+import ca.ualberta.odobot.common.Utils;
 import ca.ualberta.odobot.modelconstruction.CleaningStrategy;
 import ca.ualberta.odobot.modelconstruction.impl.visitors.BlankRemovingVisitor;
 import ca.ualberta.odobot.modelconstruction.impl.visitors.NodeLinksVisitor;
@@ -13,9 +14,8 @@ import org.jsoup.select.NodeVisitor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
+import java.util.*;
+import java.util.function.Function;
 
 public class TagAndAttributeStrategy implements CleaningStrategy {
 
@@ -24,7 +24,13 @@ public class TagAndAttributeStrategy implements CleaningStrategy {
     private Vertx vertx;
     public TagAndAttributeStrategy(Vertx vertx) {
         this.vertx = vertx;
+        attributesWhoseValuesMustBeProcessed.put("href", (value)-> Utils.normalizeBaseUriV2(value));
     }
+
+    //Certain attribute values are very likely to be content specific
+    //Useful for attribute who's presence is still meaningful.
+    private Set<String> attributesWhoseValuesMustBeExcluded = Set.of("title", "id", "name", "href");
+    private Map<String, Function<String,String>> attributesWhoseValuesMustBeProcessed = new HashMap<>();
 
     /**
      * Converts a DOM node to a node label to be used in a graph.
@@ -46,9 +52,17 @@ public class TagAndAttributeStrategy implements CleaningStrategy {
                 while (attrIt.hasNext()){
                     Attribute attr = attrIt.next();
                     sb.append(attr.getKey());
-                    sb.append("='");
-                    sb.append(attr.getValue());
-                    sb.append("'");
+                    if(!attributesWhoseValuesMustBeExcluded.contains(attr.getKey())){
+                        sb.append("='");
+
+                        if(attributesWhoseValuesMustBeProcessed.containsKey(attr.getKey())){
+                            sb.append(attributesWhoseValuesMustBeProcessed.get(attr.getKey()).apply(attr.getValue()));
+                        }else{
+                            sb.append(attr.getValue());
+                        }
+
+                        sb.append("'");
+                    }
                     if(attrIt.hasNext()){
                         sb.append(" ");
                     }
@@ -89,6 +103,45 @@ public class TagAndAttributeStrategy implements CleaningStrategy {
         return null;
     }
 
+    private class PruningVisitor implements NodeVisitor {
+
+
+        @Override
+        public void head(Node node, int i) {
+            Set<String> tagsToKeep = Set.of("img", "input", "i", "svg", "btn", "button", "iframe", "textarea");
+            if (node instanceof Element){
+                Element element = (Element) node;
+                if(!element.hasText() && //If the element and its children have no text
+                        !tagsAreInChildren(element, tagsToKeep) && //And the element does not contain tags marked as toKeep
+                        !tagsToKeep.contains(element.tagName())){ //And the element itself isn't a tag to keep.
+                    element.remove();
+                }
+            }
+
+        }
+
+        private boolean tagsAreInChildren(Node node, Set<String> tags){
+
+            List<Node> childrenToCheck = new ArrayList<>();
+            node.childNodes().forEach(childrenToCheck::add);
+
+            for (int i = 0; i < childrenToCheck.size(); i++) {
+                Node child = childrenToCheck.get(i);
+                if(child instanceof Element){
+                    Element childElement = (Element) child;
+                    if(tags.contains(childElement.tagName())){
+                        return true;
+                    }
+                    childrenToCheck.addAll(child.childNodes());
+                }
+            }
+
+
+
+            return false;
+
+        }
+    }
 
     //
     private class LabelingVisitor implements NodeVisitor {
@@ -109,8 +162,14 @@ public class TagAndAttributeStrategy implements CleaningStrategy {
         String html = HTMLCleaningTools.clean(input);
 
         Document doc = Jsoup.parse(html);
+
+        //Execute visitors that modify the DOM before the labeling visitor
         doc.traverse(new BlankRemovingVisitor());
+        doc.traverse(new PruningVisitor());
+
+        //Execute after DOM modifications have been made.
         doc.traverse(new LabelingVisitor());
+
 
 
         return Future.succeededFuture(doc.outerHtml());
@@ -121,6 +180,9 @@ public class TagAndAttributeStrategy implements CleaningStrategy {
 
         Document doc = Jsoup.parse(html);
         doc.traverse(new BlankRemovingVisitor());
+        doc.traverse(new PruningVisitor());
+
+
         LabelingVisitor labelingVisitor = new LabelingVisitor();
         doc.traverse(labelingVisitor);
 

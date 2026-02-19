@@ -90,6 +90,10 @@ public interface SqliteService {
 
     Future<Snippet> getSnippetById(String id);
 
+    Future<Void> saveHTMLAttributes(List<JsonArray> data);
+
+    Future<Void> saveHTMLAttribute(String tag, String attribute, String value);
+
     /**
      * Returns the list of {@link ca.ualberta.odobot.sqlite.impl.TrainingExemplar} in json form
      * that belong to the training dataset with the specified name.
