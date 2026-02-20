@@ -4,6 +4,7 @@ import ca.ualberta.odobot.common.RobulaPlus;
 import ca.ualberta.odobot.modelconstruction.impl.TagAndAttributeStrategy;
 import ca.ualberta.odobot.common.HttpServiceVerticle;
 import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
+import ca.ualberta.odobot.modelconstruction.impl.visitors.LabelingNodeVisitor;
 import ca.ualberta.odobot.modelconstruction.statelabeling.StateLabelingService;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import io.reactivex.rxjava3.core.Completable;
@@ -509,17 +510,40 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
         return Future.all(
                         cleanerService.cleanHTML(snapshotHtml), //Get cleaned HTML snapshot
                         makeMinhashLSHForSnapshotNodes(snapshotId, baseURI, snapshotHtml, threshold, numPerm)
-                                .compose(lshId->getNodeClustering(lshId, Double.toString(dbscanEps), Integer.toString(dbscanMinSamples)))
                 )
                 .onFailure(err->log.error(err.getMessage(),err))
                 .compose(compositeFuture->{
                     String cleanedSnapshotHTML = (String) compositeFuture.list().get(0);
-                    Map<String, List<JsonObject>> clusterMap = (Map<String, List<JsonObject>>) compositeFuture.list().get(1);
+                    String lshId = (String) compositeFuture.list().get(1);
 
-                    Document snapshotDocument = Jsoup.parse(cleanedSnapshotHTML);
+                    return Future.all(
+                            getNodeClustering(lshId, Double.toString(dbscanEps), Integer.toString(dbscanMinSamples)),
+                            Future.succeededFuture(cleanedSnapshotHTML),
+                            Future.succeededFuture(lshId)
+                    );
 
-                    return processNodeClusters(clusterMap, snapshotId, snapshotDocument);
-                }).compose(annotationCandidates->{
+                })
+                .compose(compositeFuture -> {
+                    Map<String, List<JsonObject>> clusterMap = (Map<String, List<JsonObject>>) compositeFuture.list().get(0);
+
+                    Document snapshotDocument = Jsoup.parse((String) compositeFuture.list().get(1));
+
+                    String lshId = (String) compositeFuture.list().get(2);
+
+                    return Future.all(
+                            processNodeClusters(clusterMap, snapshotId, snapshotDocument),
+                            Future.succeededFuture(lshId)
+                    );
+
+
+                })
+                .compose(compositeFuture->{
+
+                    List<JsonObject> annotationCandidates = (List<JsonObject>) compositeFuture.list().get(0);
+                    String lshId = (String) compositeFuture.list().get(1);
+
+                    JsonArray parentIds = annotationCandidates.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+
                     log.info("Saving extracted substructures for snapshot: {} - {}", snapshotId, baseURI );
                     //Save all our work to SQLite
                     return Future.all(annotationCandidates.stream()
@@ -534,7 +558,20 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
 
                                 return Future.all(persistenceFutures);
                             })
-                            .collect(Collectors.toList())).compose(done->{
+                            .collect(Collectors.toList()))
+                            //Tell OdoLSH to persist the parent nodes into redis
+                            .compose(done->{
+
+
+                                return webClient.post(ODO_LSH_PORT, ODO_LSH_HOST, "/minhashLSH/" + lshId + "/fingerprints")
+                                        .sendJson(parentIds)
+                                        .onFailure(err->log.error(err.getMessage(),err))
+
+                                ;
+
+                            })
+
+                            .compose(done->{
                                 log.info("Finished mining common substructures for clustering {} with DOMSnapshot {} - {} ", clusteringId, snapshotId, baseURI);
                                 return Future.succeededFuture();
                     });
@@ -544,6 +581,9 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
 
     private Future<List<JsonObject>> processNodeClusters(Map<String, List<JsonObject>> clusterMap, String snapshotId, Document document){
         List<JsonObject> annotationCandidates = new  ArrayList<>();
+
+        TagAndAttributeStrategy.LabelingVisitor labelingNodeVisitor = new TagAndAttributeStrategy.LabelingVisitor();
+        document.traverse(labelingNodeVisitor);
 
         Iterator<Map.Entry<String, List<JsonObject>>> it = clusterMap.entrySet().iterator();
 
@@ -571,6 +611,17 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                 annotationCandidates.add(finalCandidate);
             }
 
+            //Resolve parent node ids.
+            Iterator<JsonObject> candidateIterator = annotationCandidates.iterator();
+            while (candidateIterator.hasNext()) {
+                JsonObject candidate = candidateIterator.next();
+                Element parentElement = document.selectXpath(candidate.getString("parentXpath")).get(0);
+                int parentIndex = labelingNodeVisitor.nodeIndex.get(parentElement);
+                candidate.put("parentIndex", parentIndex);
+                candidate.put("parentId", candidate.getString("snapshotId") + "_"+ parentIndex);
+            }
+
+
             return Future.succeededFuture(annotationCandidates);
         });
 
@@ -591,12 +642,14 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                             .put("snapshotId", snapshotId )
                             .put("clusterId",  cluster.getKey())
                             .put("nodeId", item.getString("id").split("_")[1])
+                            .put("fullNodeId", item.getString("id"))
                             .put("robustXpath", robustXpath)
                             .put("html", element.outerHtml());
                 }).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
 
         if(!clusterItems.isEmpty() && parents.size() == 1){
             Element parentElement = parents.iterator().next();
+
 
             return vertx.getDelegate().executeBlocking(()->{
                     try{

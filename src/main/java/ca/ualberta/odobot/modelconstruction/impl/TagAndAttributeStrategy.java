@@ -144,7 +144,7 @@ public class TagAndAttributeStrategy implements CleaningStrategy {
     }
 
     //
-    private class LabelingVisitor implements NodeVisitor {
+    public static class LabelingVisitor implements NodeVisitor {
         private int counter = 0;
         public Map<Integer, Node> nodeMap = new HashMap<Integer, Node>();
         public Map<Node, Integer> nodeIndex = new HashMap<>();
