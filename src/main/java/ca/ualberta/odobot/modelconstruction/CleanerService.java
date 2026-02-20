@@ -26,4 +26,7 @@ public interface CleanerService {
      * @return A JSON object in node-links format representing the cleaned DOM graph.
      */
     Future<JsonObject> toNodeLinks(String input);
+
+
+    Future<JsonObject> toElementAnnotationQuery(String html, String targetElementXpath);
 }

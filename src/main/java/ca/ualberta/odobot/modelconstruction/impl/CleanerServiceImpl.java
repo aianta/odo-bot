@@ -34,5 +34,9 @@ public class CleanerServiceImpl implements CleanerService {
         return cleaningStrategy.toNodeLinks(input);
     }
 
+    public Future<JsonObject> toElementAnnotationQuery(String snapshotHTML, String elementXpath){
+        return cleaningStrategy.toElementAnnotationQuery(snapshotHTML,  elementXpath);
+    }
+
 
 }

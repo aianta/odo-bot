@@ -8,4 +8,6 @@ public interface CleaningStrategy {
     public Future<String> cleanHTML(String input);
 
     public Future<JsonObject> toNodeLinks(String input);
+
+    public Future<JsonObject> toElementAnnotationQuery(String html, String targetElementXpath);
 }

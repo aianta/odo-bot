@@ -37,6 +37,7 @@ public class HTMLCleaningTools {
             .addAttributes(":all", "type")
             .addAttributes(":all", "disabled")
             .addAttributes(":all", "role")
+            .addAttributes(":all", "_odo_bot_taint")
             //.addAttributes(":all", "alt")
             //.addAttributes(":all", "value")
             .addAttributes(":all", "placeholder")
@@ -50,6 +51,7 @@ public class HTMLCleaningTools {
                     "img",
                     "strong",
                     "iframe",
+                    "aside",
                     "a"
 
             );

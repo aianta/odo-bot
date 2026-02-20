@@ -1,6 +1,8 @@
 package ca.ualberta.odobot.modelconstruction;
 
+import ca.ualberta.odobot.common.Predicates;
 import ca.ualberta.odobot.common.RobulaPlus;
+import ca.ualberta.odobot.common.Utils;
 import ca.ualberta.odobot.modelconstruction.impl.TagAndAttributeStrategy;
 import ca.ualberta.odobot.common.HttpServiceVerticle;
 import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
@@ -101,6 +103,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
         api.route().method(HttpMethod.POST).path("/nodeLinks").handler(this::nodeLinks);
         api.route().method(HttpMethod.GET).path("/buildStateClusters").handler(this::buildStateClusters);
         api.route().method(HttpMethod.GET).path("/mineCommonSubstructures").handler(this::mineCommonDOMSubstructures);
+        api.route().method(HttpMethod.GET).path("/computeAnnotations").handler(this::computeAnnotations);
         api.route().method(HttpMethod.GET).path("/loadDOMSnapshots").handler(this::loadDOMSnapshots);
         api.route().method(HttpMethod.GET).path("/resolveClusteredNodes")
                 .handler(this::mineCommonDOMSubstructures)
@@ -114,6 +117,121 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                 .handler(this::getClusterSnapshots);
 
         return Completable.complete();
+
+    }
+
+
+    private void computeAnnotations(RoutingContext rc) {
+        String sourceIndex = rc.request().getParam("srcIndex");
+        int numPerm = rc.queryParam("numPerm").isEmpty()?512:Integer.parseInt(rc.queryParam("numPerm").get(0));
+
+        elasticsearchService.fetchAll(sourceIndex)
+                .compose(events->
+                        //Filter out everything but click events
+                        Future.succeededFuture(events.stream().filter(Predicates.annotationEventFilter()).toList()))
+                .onFailure(err->log.error(err.getMessage(), err))
+                .onSuccess(clickEvents->{
+                        JsonArray results = new JsonArray();
+                        Iterator<JsonObject> it = clickEvents.iterator();
+                        Future<JsonObject> f = null;
+                        while (it.hasNext()) {
+                            JsonObject clickEvent = it.next();
+
+                            JsonObject domSnapshotData = new JsonObject(clickEvent.getString("eventDetails_domSnapshot"));
+                            String snapshotHTML = domSnapshotData.getString("outerHTML");
+                            String targetElementXpath = clickEvent.getString("eventDetails_xpath");
+                            String baseURI = clickEvent.containsKey("eventDetails_element")?new JsonObject(clickEvent.getString("eventDetails_element")).getString("baseURI"):null;
+
+                            if (f == null){
+                                f = cleanerService.toElementAnnotationQuery(snapshotHTML, targetElementXpath).compose(request->{
+                                    request.put("baseURI", baseURI);
+                                    return Future.succeededFuture(request);
+                                }).compose(request->{
+                                    return webClient.post(ODO_LSH_PORT, ODO_LSH_HOST, "/minhashLSH/query")
+                                            .addQueryParam("minhash_perm", Integer.toString(numPerm))
+                                            .sendJson(request)
+                                            .onFailure(err->log.error(err.getMessage(), err))
+                                            .compose(response->Future.succeededFuture(response.bodyAsJsonObject()));
+                                }).compose(result->{
+                                    results.add(result);
+                                    return Future.succeededFuture(result);
+                                });
+                            }else{
+                                f = f.compose(done->{
+                                    return cleanerService.toElementAnnotationQuery(snapshotHTML, targetElementXpath).compose(request->{
+                                        request.put("baseURI", baseURI);
+                                        return Future.succeededFuture(request);
+                                    }).compose(request->{
+                                        return webClient.post(ODO_LSH_PORT, ODO_LSH_HOST, "/minhashLSH/query")
+                                                .addQueryParam("minhash_perm", Integer.toString(numPerm))
+                                                .sendJson(request)
+                                                .onFailure(err->log.error(err.getMessage(), err))
+                                                .compose(response->Future.succeededFuture(response.bodyAsJsonObject()));
+                                    }).compose(result->{
+                                        results.add(result);
+                                        return Future.succeededFuture(result);
+                                    });
+                                });
+                            }
+                        }
+
+                        f.onSuccess(done->{
+                            rc.response().setStatusCode(200).end(results.encodePrettily());
+                        })
+                                .onFailure(err->log.error(err.getMessage(), err));
+
+//                        Future.all(clickEvents.stream()
+//                                .map(clickEvent->{
+//
+//                                    //Process the DOMSnapshot into node-links format
+//                                    //Identify the target element
+//                                    //Send everything to OdoLSH for querying
+//                                    JsonObject domSnapshotData = new JsonObject(clickEvent.getString("eventDetails_domSnapshot"));
+//                                    String snapshotHTML = domSnapshotData.getString("outerHTML");
+//                                    String targetElementXpath = clickEvent.getString("eventDetails_xpath");
+//                                    String baseURI = clickEvent.containsKey("eventDetails_element")?new JsonObject(clickEvent.getString("eventDetails_element")).getString("baseURI"):null;
+//
+//                                    return cleanerService.toElementAnnotationQuery(snapshotHTML, targetElementXpath)
+//                                            .compose(request->{
+//                                                request.put("baseURI", baseURI );
+//                                                return Future.succeededFuture(request);
+//                                            });
+//
+//                                })
+//                                .toList())
+//                                .compose(annotationRequests->{
+//
+//
+//
+//                                    return Future.all(
+//                                    annotationRequests.list().stream()
+//                                            .map(o->(JsonObject)o)
+//                                            .map(request->{
+//
+//                                                return webClient.post(ODO_LSH_PORT, ODO_LSH_HOST, "/minhashLSH/query")
+//                                                        .addQueryParam("minhash_perm", Integer.toString(numPerm))
+//                                                        .sendJson(request)
+//                                                        .onFailure(err->log.error(err.getMessage(), err))
+//                                                        .compose(response->Future.succeededFuture(response.bodyAsJsonObject()));
+//
+//                                            }).toList());
+//
+//                                })
+//                                .onFailure(err->log.error(err.getMessage(), err))
+//                                .onSuccess(annotations->{
+//                                    JsonArray result = annotations.list().stream().map(o->(JsonObject)o).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+//
+//
+//                                })
+//                        ;
+
+
+
+
+                        }
+                )
+
+        ;
 
     }
 

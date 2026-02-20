@@ -1,12 +1,14 @@
 package ca.ualberta.odobot.modelconstruction.impl;
 
 import ca.ualberta.odobot.common.Utils;
+import ca.ualberta.odobot.common.Xpath;
 import ca.ualberta.odobot.modelconstruction.CleaningStrategy;
 import ca.ualberta.odobot.modelconstruction.impl.visitors.BlankRemovingVisitor;
 import ca.ualberta.odobot.modelconstruction.impl.visitors.NodeLinksVisitor;
 import ca.ualberta.odobot.mind2web.HTMLCleaningTools;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.*;
@@ -16,6 +18,8 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.function.Function;
+
+import static ca.ualberta.odobot.semanticflow.Utils.computeXpathNoRoot;
 
 public class TagAndAttributeStrategy implements CleaningStrategy {
 
@@ -31,6 +35,7 @@ public class TagAndAttributeStrategy implements CleaningStrategy {
     //Useful for attribute who's presence is still meaningful.
     private Set<String> attributesWhoseValuesMustBeExcluded = Set.of("title", "id", "name", "href");
     private Map<String, Function<String,String>> attributesWhoseValuesMustBeProcessed = new HashMap<>();
+    private Set<String> attributesToExclude = Set.of("vid", "_odo_bot_taint");
 
     /**
      * Converts a DOM node to a node label to be used in a graph.
@@ -48,7 +53,7 @@ public class TagAndAttributeStrategy implements CleaningStrategy {
             if(element.attributesSize() > 1){
                 sb.append(" ");
 
-                Iterator<Attribute> attrIt = element.attributes().asList().stream().filter(attribute -> !attribute.getKey().equals("vid")).toList().iterator();
+                Iterator<Attribute> attrIt = element.attributes().asList().stream().filter(attribute -> !attributesToExclude.contains(attribute.getKey())).toList().iterator();
                 while (attrIt.hasNext()){
                     Attribute attr = attrIt.next();
                     sb.append(attr.getKey());
@@ -190,6 +195,57 @@ public class TagAndAttributeStrategy implements CleaningStrategy {
         doc.traverse(nodeLinksVisitor);
 
         return nodeLinksVisitor.getGraphObject();
+
+
+    }
+
+    public Future<JsonObject> toElementAnnotationQuery(String html, String targetElementXpath) {
+        targetElementXpath = Xpath.truncateXpath(targetElementXpath);
+        log.info("targetElementXpath: {}",  targetElementXpath );
+        Document doc = Jsoup.parse(html);
+        Element targetElement = doc.selectXpath(targetElementXpath).first();
+        String targetElementOriginalHTML = targetElement.outerHtml();
+        String taintValue = UUID.randomUUID().toString();
+        targetElement.attr("_odo_bot_taint", taintValue);
+
+        String taintedHtml = HTMLCleaningTools.clean(doc.outerHtml());
+
+        doc = Jsoup.parse(taintedHtml);
+
+
+        doc.traverse(new BlankRemovingVisitor());
+        doc.traverse(new PruningVisitor());
+        LabelingVisitor labelingVisitor = new LabelingVisitor();
+        doc.traverse(labelingVisitor);
+
+        NodeLinksVisitor nodeLinksVisitor = new NodeLinksVisitor(this::nodeToLabel, labelingVisitor.nodeMap, labelingVisitor.nodeIndex, doc, vertx);
+        doc.traverse(nodeLinksVisitor);
+
+        String targetNodeXpath = "//*[@_odo_bot_taint='%s']".formatted(taintValue);
+        Element _targetElement = doc.selectXpath(targetNodeXpath).first();
+        //This may be different from the original because we do pruning during the cleaning process.
+        String cleanedTargetElementXpath = computeXpathNoRoot(_targetElement);
+
+        JsonArray queryNodes =  new JsonArray();
+
+        Element curr =  _targetElement;
+        while (curr != null) {
+            queryNodes.add(labelingVisitor.nodeIndex.get(curr));
+            curr = curr.parent();
+        }
+
+        String finalTargetElementXpath = targetElementXpath;
+        return nodeLinksVisitor.getGraphObject()
+                .compose(nodeLinks->{
+                    return Future.succeededFuture(
+                    nodeLinks.put("queryNodes", queryNodes)
+                            .put("targetElementHTML", targetElementOriginalHTML )
+                            .put("targetElementCleanedHTML", _targetElement.outerHtml())
+                            .put("targetElementXpath", finalTargetElementXpath)
+                            .put("cleanedHTMLTargetElementXpath", cleanedTargetElementXpath)
+                    );
+        });
+
 
 
     }
