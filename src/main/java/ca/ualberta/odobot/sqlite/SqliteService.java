@@ -92,6 +92,14 @@ public interface SqliteService {
 
     Future<Void> saveHTMLAttributes(List<JsonArray> data);
 
+    Future<Void> saveNormalizedLink(String normalizedHref, String label);
+
+    Future<List<String>> getDistinctHrefValues();
+
+    Future<Set<String>> getNormalizedHrefsByLabel(String label);
+
+    Future<String> getLabelByNormalizedHref(String href);
+
     Future<Void> saveHTMLAttribute(String tag, String attribute, String value);
 
     /**

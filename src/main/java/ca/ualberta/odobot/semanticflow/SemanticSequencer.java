@@ -9,6 +9,7 @@ import ca.ualberta.odobot.semanticflow.mappers.impl.DomEffectMapper;
 import ca.ualberta.odobot.semanticflow.mappers.impl.InputChangeMapper;
 import ca.ualberta.odobot.semanticflow.mappers.impl.NetworkEventMapper;
 import ca.ualberta.odobot.semanticflow.model.*;
+import ca.ualberta.odobot.sqlite.SqliteService;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,6 +54,12 @@ public class SemanticSequencer {
      */
     private Consumer<AbstractArtifact> artifactConsumer;
 
+
+    public SemanticSequencer(){};
+
+    public SemanticSequencer(SqliteService sqliteService){
+        this.clickEventMapper = new ClickEventMapper(sqliteService);
+    }
 
     /**
      * Allows caller to specify a consuming function to invoke whenever an {@link AbstractArtifact} is mapped as part of the sequencing process.

@@ -19,7 +19,11 @@ public class NavNode {
         }
 
         out.setId(UUID.fromString(node.get("id").asString()));
-        out.setInstances(node.get("instances").asList().stream().map(o->(String)o).collect(Collectors.toSet()));
+
+        if(!node.get("instances").isNull()){
+            out.setInstances(node.get("instances").asList().stream().map(o->(String)o).collect(Collectors.toSet()));
+        }
+
 
         return out;
     }

@@ -3,9 +3,7 @@ package ca.ualberta.odobot.logpreprocessor.impl;
 import ca.ualberta.odobot.extractors.SemanticArtifactExtractor;
 import ca.ualberta.odobot.semanticflow.SemanticSequencer;
 import ca.ualberta.odobot.semanticflow.model.*;
-import ca.ualberta.odobot.semanticflow.navmodel.nodes.LocationNode;
-import ca.ualberta.odobot.semanticflow.navmodel.nodes.NavNode;
-import ca.ualberta.odobot.semanticflow.navmodel.nodes.RadioButtonNode;
+import ca.ualberta.odobot.semanticflow.navmodel.nodes.*;
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.core.Vertx;
@@ -29,7 +27,9 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
     }
 
     public Future<Timeline> makeTimeline(String flightName, List<JsonObject> events){
-        SemanticSequencer sequencer = new SemanticSequencer();
+        log.info("{} events in trajectory {}", events.size(), flightName);
+
+        SemanticSequencer sequencer = new SemanticSequencer(sqliteService);
 //        sequencer.setNetworkEventFilter(networkEvent -> !networkEvent.getMethod().toLowerCase().equals("get") && //Exclude get requests
 //                !networkEvent.getPath().equals("/api/v*/users/*/colors/course_*") //Exclude color API calls which are sometimes triggered automatically.
 //        );
@@ -104,8 +104,16 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
 
 
             if(entity instanceof ClickEvent){
+                ClickEvent clickEvent = (ClickEvent) entity;
                 clickEventCount++;
-                neo4j.processClickEvent(timeline, (ClickEvent) entity);
+                ClickNode clickNode = neo4j.processClickEvent(timeline, clickEvent);
+
+                if(clickEvent.getResourceAnnotation() != null){
+                    //If this click has a resource annotation, ensure an appropriate resource parameter node is created to represent it.
+                    ResourceParameterNode resourceParameterNode = neo4j.processResourceParameter(clickEvent.getResourceAnnotation());
+                    neo4j.connect(clickNode, resourceParameterNode, "PARAM");
+                }
+
             }
 
             if(entity instanceof CheckboxEvent){
@@ -204,7 +212,7 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
                 neo4j.bind(a, b);
             }
         }else{
-            throw new RuntimeException("Timeline size is too small!");
+            throw new RuntimeException("Timeline size is too small! Timeline: %s".formatted(timeline.size()));
         }
 
 

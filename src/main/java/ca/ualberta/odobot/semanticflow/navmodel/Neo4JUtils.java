@@ -514,13 +514,13 @@ public class Neo4JUtils {
 
 
 
-    public void processClick(String clickText, String clickXpath, String eventId, String basePath){
+    public ClickNode processClick(String clickText, String clickXpath, String eventId, String basePath){
 
         //If a click node for this event already exists in the database, this supplier will be used to retrieve it.
         Supplier<ClickNode> existingClickNodeSupplier = ()->getClickNode(clickXpath, clickText, basePath);
 
         //Invoke generic processing logic.
-        processNode(
+        return processNode(
                 eventId,
                 ClickNode.class,
                 existingClickNodeSupplier, //If a click node for this event already exists in the database, this supplier will be used to retrieve it.
@@ -529,6 +529,15 @@ public class Neo4JUtils {
         );
     }
 
+    private Supplier<ResourceParameterNode> newResourceParameterNodeSupplier(String resourceName){
+        Supplier<ResourceParameterNode> newResourceParameterNodeSupplier = ()->{
+            ResourceParameterNode node = new ResourceParameterNode();
+            node.setName(resourceName);
+            node.setId(UUID.randomUUID());
+            return node;
+        };
+        return newResourceParameterNodeSupplier;
+    }
 
     /**
      *  Supplies new click nodes
@@ -671,7 +680,7 @@ public class Neo4JUtils {
         if(node == null){ //Node cannot be found
             //Create it
             node = newNodeSupplier.get();
-        }else{
+        }else if(eventId != null){
             //If the node was found, update its list of instances.
             node.getInstances().add(eventId);
         }
@@ -692,14 +701,14 @@ public class Neo4JUtils {
 
 
 
-    public void processClickEvent(Timeline timeline, ClickEvent clickEvent){
+    public ClickNode processClickEvent(Timeline timeline, ClickEvent clickEvent){
         var index  = timeline.indexOf(clickEvent);
         var entityTimelineId = timeline.getId().toString()+"#"+index;
 
         String clickText = clickEvent.getTriggerElement() != null?clickEvent.getTriggerElement().ownText():"";
         String clickXpath = clickEvent.getXpath();
 
-        processClick(clickText, clickXpath, entityTimelineId, clickEvent.getBasePath());
+        return processClick(clickText, clickXpath, entityTimelineId, clickEvent.getBasePath());
     }
 
     public void processEffect(Timeline timeline, Effect effect){
@@ -1023,8 +1032,33 @@ public class Neo4JUtils {
 
     }
 
-    public void bind(NavNode a, NavNode b){
-        var stmt = "MATCH (a {id:$aId}), (b {id:$bId}) MERGE (a)-[:NEXT]->(b);";
+    private Function<ResourceParameterNode, Query> processResourceParameterQueryFunction(){
+        Function<ResourceParameterNode, Query> queryFunction = (node)->{
+            HashMap<String,Object> props = new HashMap<>();
+            props.put("name", node.getName());
+            props.put("id", node.getId().toString());
+
+            return makeGenericMergeQuery("ResourceParameterNode", node, props, "name", node.getName(), "props", props);
+        };
+
+        return queryFunction;
+    }
+
+    public ResourceParameterNode processResourceParameter(String resourceName){
+
+        Supplier<ResourceParameterNode> existingResourceParameterNodeSupplier = ()->getResourceParameter(resourceName);
+
+        return processNode(
+                null,
+                ResourceParameterNode.class,
+                existingResourceParameterNodeSupplier,
+                newResourceParameterNodeSupplier(resourceName),
+                processResourceParameterQueryFunction()
+        );
+    }
+
+    public void connect(NavNode a, NavNode b, String relationshipName){
+        var stmt = "MATCH (a {id:$aId}), (b {id:$bId}) MERGE (a)-[:%s]->(b);".formatted(relationshipName.toUpperCase());
         var query = new Query(stmt, parameters("aId", a.getId().toString(), "bId", b.getId().toString()));
         try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
 
@@ -1033,6 +1067,10 @@ public class Neo4JUtils {
                 return 0;
             });
         }
+    }
+
+    public void bind(NavNode a, NavNode b){
+        connect(a,b,"NEXT");
     }
 
 
@@ -1107,6 +1145,12 @@ public class Neo4JUtils {
         var stmt = makeSimplePropertyBasedMatchQueryString("DataEntryNode", "xpath", "website");
         var query = new Query(stmt, parameters("xpath", xpath, "website", website));
         return readNode(query, DataEntryNode.class);
+    }
+
+    private ResourceParameterNode getResourceParameter(String resourceName){
+        var stmt = makeSimplePropertyBasedMatchQueryString("ResourceParameterNode", "name");
+        var query = new Query(stmt, parameters("name", resourceName));
+        return readNode(query, ResourceParameterNode.class);
     }
 
     private ClickNode getClickNode(String xpath, String text, String basePath){
@@ -1558,6 +1602,8 @@ public class Neo4JUtils {
 
         }
     }
+
+
 
     public UUID addSchemaParameter(SemanticSchema schema, String nodeId){
 

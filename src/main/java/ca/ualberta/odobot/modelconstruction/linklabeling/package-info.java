@@ -1,0 +1,2 @@
+@io.vertx.codegen.annotations.ModuleGen(groupPackage = "ca.ualberta.odobot.modelconstruction.linklabeling", name="linklabeling", useFutures = true)
+package ca.ualberta.odobot.modelconstruction.linklabeling;

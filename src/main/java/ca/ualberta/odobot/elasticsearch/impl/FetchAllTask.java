@@ -39,7 +39,7 @@ public class FetchAllTask implements Runnable{
     protected String flightIdentifier;
 
     protected String flightIdentifierField;
-    protected int limit;
+    protected int limit =-1;
     /**
      * Constructor used to create a FetchAllTask object that retrieves all documents (events) for a given flight/trace from its parent index.
      * @param promise the promise to complete once all documents have been retrieved.

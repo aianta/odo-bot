@@ -26,11 +26,25 @@ public class ClickEvent extends AbstractArtifact implements TimelineEntity {
    private Document minimumDomTree; //A pruned DOM coning strictly the parents that contain the trigger element and their parents, leading up to the root.
     private InteractionType type;
 
+    private String resourceAnnotation;
+
+    public String getResourceAnnotation() {
+        return resourceAnnotation;
+    }
+
+    public ClickEvent setResourceAnnotation(String resourceAnnotation) {
+        this.resourceAnnotation = resourceAnnotation;
+        return this;
+    }
 
     public JsonObject toJson(){
+        JsonObject json =  new JsonObject();
+        json.put("xpath", getXpath());
+        if(getResourceAnnotation() != null){
+            json.put("resourceAnnotation", resourceAnnotation);
+        }
 
-        return new JsonObject()
-                .put("xpath", getXpath());
+        return json;
     }
 
     @Override

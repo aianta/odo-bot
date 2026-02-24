@@ -7,6 +7,7 @@ import ca.ualberta.odobot.modelconstruction.impl.TagAndAttributeStrategy;
 import ca.ualberta.odobot.common.HttpServiceVerticle;
 import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 import ca.ualberta.odobot.modelconstruction.impl.visitors.LabelingNodeVisitor;
+import ca.ualberta.odobot.modelconstruction.linklabeling.LinkLabelingService;
 import ca.ualberta.odobot.modelconstruction.statelabeling.StateLabelingService;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import io.reactivex.rxjava3.core.Completable;
@@ -61,6 +62,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
     public static SqliteService sqliteService;
     public static ElasticsearchService elasticsearchService;
     public static StateLabelingService stateLabelingService;
+    public static LinkLabelingService linkLabelingService;
 
     private static String ODO_LSH_HOST = "172.29.71.50";
     private int ODO_LSH_PORT = 5000;
@@ -87,6 +89,9 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
         //Init SQLite Service Proxy
         sqliteService = SqliteService.createProxy(vertx.getDelegate(), SQLITE_SERVICE_ADDRESS);
 
+        //Init Link Labeling service
+        linkLabelingService = LinkLabelingService.create(_config);
+
         //Init ElasticSearch Service Proxy
         elasticsearchService =  new ServiceProxyBuilder(vertx.getDelegate())
                 .setOptions(new DeliveryOptions().setSendTimeout(300000))
@@ -105,6 +110,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
         api.route().method(HttpMethod.GET).path("/mineCommonSubstructures").handler(this::mineCommonDOMSubstructures);
         api.route().method(HttpMethod.GET).path("/computeAnnotations").handler(this::computeAnnotations);
         api.route().method(HttpMethod.GET).path("/loadDOMSnapshots").handler(this::loadDOMSnapshots);
+        api.route().method(HttpMethod.GET).path("/processHrefs").handler(this::processHrefs);
         api.route().method(HttpMethod.GET).path("/resolveClusteredNodes")
                 .handler(this::mineCommonDOMSubstructures)
                 .handler(this::getNodeClustering)
@@ -349,6 +355,47 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
 
 
 
+
+    }
+
+    private void processHrefs(RoutingContext rc){
+
+        sqliteService.getDistinctHrefValues()
+                .onSuccess(hrefs->{
+
+                    Future.all(
+                            hrefs.stream()
+                                    .peek(href->log.info("{}", href))
+                                    .filter(href->!href.contains("#") && !href.contains("?") && !href.contains("{") && !href.contains("%") && !href.contains("javascript") &&  !href.isBlank())
+                                    .map(href->{
+                                        String normalizedHref = Utils.normalizeBaseUri(href);
+                                        return linkLabelingService.labelLink(href, normalizedHref)
+                                                .compose(result->{
+                                                    if(result.containsKey("type")){
+                                                        return sqliteService.saveNormalizedLink(result.getString("normalizedHref"), result.getString("type"));
+                                                    }else{
+                                                        return Future.succeededFuture();
+                                                    }
+                                                })
+                                                ;
+                                    }).toList()
+
+                    ).onFailure(err->log.error(err.getMessage(), err))
+                                    .onSuccess(done->{
+                                        log.info("Done processing hrefs, saving results");
+                                        rc.getDelegate().response().setStatusCode(200).end();
+
+
+
+
+                                    });
+
+
+
+
+
+                })
+                .onFailure(err->log.error(err.getMessage(), err));
 
     }
 

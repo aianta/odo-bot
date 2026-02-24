@@ -62,6 +62,7 @@ public class SqliteServiceImpl implements SqliteService {
         createCommonSubstructureTable();
         createClusteringsTable();
         createHTMLAttributeTable();
+        createNormalizedLinksTable();
     }
 
 
@@ -1023,6 +1024,38 @@ public class SqliteServiceImpl implements SqliteService {
         return executeParameterizedQuery(sql, params);
     }
 
+    public Future<List<String>> getDistinctHrefValues(){
+        Promise<List<String>> promise = Promise.promise();
+        String sql = """
+                Select * from html_attributes where tag = "a" and attribute = "href" group by value;
+                """;
+
+        pool.preparedQuery(sql).execute()
+                .onFailure(err->promise.fail(err))
+                .onSuccess(rows->{
+                    List<String> results = new ArrayList<>();
+                    rows.forEach(row->{
+                        results.add(row.getString("value"));
+                    });
+
+                    promise.complete(results);
+                });
+        return promise.future();
+    }
+
+    public Future<Void> saveNormalizedLink(String normalizedHref, String label){
+        Promise<Void> promise = Promise.promise();
+        String sql = """
+                INSERT INTO normalized_links (
+                    normalized_href, label) VALUES (?, ?)
+                    ON CONFLICT (normalized_href) DO UPDATE SET label = ?;
+                    ;
+                """;
+
+        Tuple params = Tuple.of(normalizedHref, label, label);
+        return executeParameterizedQuery(promise, sql, params, ignoreUniqueConstraintViolationErrorHandler(promise));
+    }
+
     private Future<Void> saveExemplar(TrainingExemplar exemplar){
 
         String sql = """
@@ -1079,6 +1112,43 @@ public class SqliteServiceImpl implements SqliteService {
         
         return executeParameterizedQuery(sql, params);
 
+    }
+
+    public Future<String> getLabelByNormalizedHref(String href){
+        Promise<String> promise = Promise.promise();
+        String sql = """
+                SELECT label from normalized_links where normalized_href = ? limit 1;
+                """;
+        pool.preparedQuery(sql).execute(Tuple.of(href))
+                .onFailure(err->promise.fail(err))
+                .onSuccess(rows->{
+                    if(rows.size() == 0){
+                        promise.fail("No label found");
+                    }else{
+                        promise.complete(rows.iterator().next().getString("label"));
+                    }
+                });
+        return promise.future();
+    }
+
+    public Future<Set<String>> getNormalizedHrefsByLabel(String label){
+        Promise<Set<String>> promise = Promise.promise();
+
+        String sql = """
+                SELECT normalized_href from normalized_links where label = ?;
+                """;
+
+        pool.preparedQuery(sql)
+                .execute(Tuple.of(label))
+                .onFailure(err->promise.fail(err))
+        .onSuccess(rows->{
+            Set<String> results = new HashSet<>();
+                rows.forEach(row->results.add(row.getString("normalized_href")));
+                promise.complete(results);
+        })
+        ;
+
+        return promise.future();
     }
 
 
@@ -1323,6 +1393,14 @@ public class SqliteServiceImpl implements SqliteService {
             """);
     }
 
+    private Future<Void> createNormalizedLinksTable(){
+        return createTable("""
+                CREATE TABLE IF NOT EXISTS normalized_links(
+                    normalized_href text primary key,
+                    label text);
+                """);
+    }
+
     private Future<Void> createTable(String sql){
 
         Promise<Void> promise = Promise.promise();
@@ -1359,7 +1437,7 @@ public class SqliteServiceImpl implements SqliteService {
      */
     private Handler<Throwable> ignoreUniqueConstraintViolationErrorHandler(Promise promise){
         return (err)->{
-            if(err.getMessage().contains("A UNIQUE constraint failed")){
+            if(err.getMessage().contains("A UNIQUE constraint failed") || err.getMessage().contains("UNIQUE constraint failed")){
                 promise.complete();
             }else{
                 log.error(err.getMessage(), err);

@@ -11,6 +11,8 @@ public class Utils {
         return baseUri.replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*");
     }
 
+
+
     public static String normalizeBaseUriV2(String baseUri){
         final URL url;
         try {

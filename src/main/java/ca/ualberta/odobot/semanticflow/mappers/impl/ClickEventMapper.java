@@ -1,13 +1,15 @@
 package ca.ualberta.odobot.semanticflow.mappers.impl;
 
+import ca.ualberta.odobot.common.Utils;
 import ca.ualberta.odobot.semanticflow.mappers.JsonMapper;
 import ca.ualberta.odobot.semanticflow.model.ClickEvent;
 import ca.ualberta.odobot.semanticflow.model.InteractionType;
+import ca.ualberta.odobot.sqlite.SqliteService;
 import io.vertx.core.json.JsonObject;
+import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.swing.text.Element;
 
 /**
  * {@link ClickEventMapper} contains all the logic necessary to produce a {@link ca.ualberta.odobot.semanticflow.model.ClickEvent}
@@ -24,6 +26,13 @@ public class ClickEventMapper extends JsonMapper<ClickEvent> {
     private static final String ELEMENT_BASEURI_FIELD = "baseURI";
     private static final String ELEMENT_ID_FIELD = "id";
 
+    private SqliteService sqliteService;
+
+    public ClickEventMapper(){}
+
+    public ClickEventMapper(SqliteService sqliteService) {
+        this.sqliteService = sqliteService;
+    }
 
     @Override
     public ClickEvent map(JsonObject event) {
@@ -37,6 +46,16 @@ public class ClickEventMapper extends JsonMapper<ClickEvent> {
         result.setHtmlId(element.getString(ELEMENT_ID_FIELD));
         result.setTriggerElement(getDOMSnapshot(event).selectXpath(result.getXpath()).first());
         result.setType(InteractionType.CLICK);
+
+        //Note: assess annotation after result.setXpath so that the raw xpath can be processed/truncated first.
+        Element triggerElement = result.getTriggerElement();
+        if(sqliteService != null && triggerElement != null && triggerElement.tagName().equals("a")){
+            String href =  triggerElement.attr("href");
+            String normalizedHref = Utils.normalizeBaseUri(href);
+            //TODO: the whole map method should probably return a Future<ClickEvent>
+            sqliteService.getLabelByNormalizedHref(normalizedHref)
+                    .onSuccess(result::setResourceAnnotation);
+        }
 
         return result;
     }
