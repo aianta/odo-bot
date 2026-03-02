@@ -1487,7 +1487,7 @@ public class Neo4JUtils {
     public Set<String> getParameterAssociatedNodes(String parameterNodeId){
 
         String sQuery = """
-                match (n)<-[:PARAM]-(m) WHERE (n:InputParameter OR n:SchemaParameter) AND n.id = $id RETURN m.id;
+                match (n)<-[:PARAM]-(m) WHERE (n:InputParameter OR n:SchemaParameter OR n:ResourceParameter) AND n.id = $id RETURN m.id;
                 """;
 
         Query query = new Query(sQuery, parameters("id", parameterNodeId));
@@ -1501,6 +1501,26 @@ public class Neo4JUtils {
             return ids;
         }
 
+    }
+
+    public String getNodeIdByResourceParameterName(String name){
+        log.info("Fetching ResourceParameterNode with name: {}", name);
+        String sQuery = "match (n:ResourceParameterNode) where n.name = $name return n.id";
+        Query query = new Query(sQuery, parameters("name", name));
+
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+            String id = session.executeRead(tx->{
+                var result = tx.run(query);
+                if(result.hasNext()){
+                    return result.single().get(0).asString();
+                }else{
+                    return null;
+                }
+
+            });
+
+            return id;
+        }
     }
 
     public String getNodeIdBySchemaName(String name){

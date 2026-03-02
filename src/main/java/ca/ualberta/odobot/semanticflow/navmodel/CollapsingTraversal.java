@@ -79,8 +79,10 @@ public class CollapsingTraversal {
         Node endingAnchor = tx.getNodeByElementId(collapse.endingAnchor().elementId);
 
         List<Node> collapsedNodes = new ArrayList<>();
+        Map<Node, List<Node>> collapsedNodeParameters = new HashMap<>();
 
         while (mergeIt.hasNext()){
+            List<Node> resourceParameters = new ArrayList<>();
 
             List<CollapsingEvaluator.PathElement> mergeList = mergeIt.next();
             Set<Node> nodeSet = new HashSet<>();
@@ -104,11 +106,23 @@ public class CollapsingTraversal {
             nodeSet.forEach(n->sb.append(String.format("%s", n.getElementId())));
             log.info("Collapsing [{}] into a single node {}!", sb.toString(), collapsedNode.id().toString());
 
+            //Find any parameters associated with these nodes and save them so we can re-attach them to the collapsed node later.
+            nodeSet.forEach(node->{
+                var paramResult = tx.execute("MATCH (n)-[:PARAM]->(m) WHERE elementId(n) = '%s' return m".formatted(node.getElementId()));
+                if(paramResult.hasNext()){
+                    ResourceIterator<Node> params = paramResult.columnAs("m");
+                    params.stream().forEach(resourceParameters::add);
+                }
+            });
+
+
             //Delete the nodes in the node set.
             nodeSet.forEach(node ->tx.execute("MATCH (n) WHERE elementId(n) = '%s' detach delete n".formatted(node.getElementId())));
 
             //Create the collapsed node
             Node replacement = collapsedNode.createNode(tx);
+
+            collapsedNodeParameters.put(replacement, resourceParameters);
 
             collapsedNodes.add(replacement);
         }
@@ -128,6 +142,22 @@ public class CollapsingTraversal {
             }else{
                 //Otherwise create an edge from the last node to the current node.
                 tx.execute(query.formatted(lastNode.getElementId(), curr.getElementId()));
+            }
+
+            //If this node had resource parameters, re-attach them as well.
+            if(collapsedNodeParameters.containsKey(curr)){
+                for(Node param:  collapsedNodeParameters.get(curr)){
+
+                    //Check if a :PARAM type relationship between this node and the target parameter already exist...
+                    if(!curr.hasRelationship(Direction.OUTGOING,RelationshipType.withName("PARAM")) ){
+
+                        //Only create one if not.
+                        var parameterAttachmentQuery = "MATCH (n), (m) WHERE elementId(n) = '%s' and elementId(m) = '%s' CREATE (n)-[:PARAM]->(m);".formatted(curr.getElementId(), param.getElementId());
+                        tx.execute(parameterAttachmentQuery);
+                    }
+
+                }
+
             }
 
             lastNode = curr;

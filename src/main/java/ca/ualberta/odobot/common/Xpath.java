@@ -15,6 +15,7 @@ public class Xpath {
     }
 
     static Set<String> terminalElements = Set.of("/a", "/btn", "button", "svg");
+    static Set<String> topPriorityElements = Set.of("/a");
 
     public static String truncateXpath(String xpath){
 
@@ -22,6 +23,15 @@ public class Xpath {
             if (xpath.lastIndexOf(element) != -1){
                 var trimmed = xpath.substring(0, xpath.lastIndexOf(element) + element.length());
                 var remainder = xpath.substring(trimmed.length()).split("/")[0];
+
+                var newXpath = trimmed + remainder;
+
+                //If an anchor tag is in the xpath, trim to it.
+                if(newXpath.lastIndexOf("/a") != -1){
+                    trimmed = newXpath.substring(0, newXpath.lastIndexOf("/a") + "/a".length());
+                    remainder = newXpath.substring(trimmed.length()).split("/")[0];
+                }
+
                 return trimmed + remainder;
             }
         }

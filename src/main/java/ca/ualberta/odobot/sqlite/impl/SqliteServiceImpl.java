@@ -1131,6 +1131,27 @@ public class SqliteServiceImpl implements SqliteService {
         return promise.future();
     }
 
+    public Future<Set<String>> getResourceParameterLabels(){
+        log.info("Fetching Resource Parameter Labels");
+        Promise<Set<String>> promise = Promise.promise();
+
+        String sql = """
+                SELECT DISTINCT label from normalized_links where label IS NOT NULL;
+                """;
+
+        pool.preparedQuery(sql)
+                .execute()
+                .onFailure(err->promise.fail(err))
+                .onSuccess(rows->{
+                    Set<String> result = new HashSet<>();
+                    rows.forEach(row -> result.add(row.getString("label")));
+
+                    promise.complete(result);
+                });
+
+        return promise.future();
+    }
+
     public Future<Set<String>> getNormalizedHrefsByLabel(String label){
         Promise<Set<String>> promise = Promise.promise();
 

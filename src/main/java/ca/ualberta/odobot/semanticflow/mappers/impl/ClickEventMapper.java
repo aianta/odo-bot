@@ -52,6 +52,7 @@ public class ClickEventMapper extends JsonMapper<ClickEvent> {
         if(sqliteService != null && triggerElement != null && triggerElement.tagName().equals("a")){
             String href =  triggerElement.attr("href");
             String normalizedHref = Utils.normalizeBaseUri(href);
+            log.info("normalized href: {}", normalizedHref);
             //TODO: the whole map method should probably return a Future<ClickEvent>
             sqliteService.getLabelByNormalizedHref(normalizedHref)
                     .onSuccess(result::setResourceAnnotation);

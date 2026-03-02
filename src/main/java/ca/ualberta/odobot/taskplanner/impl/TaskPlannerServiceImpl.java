@@ -53,22 +53,23 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
     }
 
     public Future<JsonObject> taskQueryConstruction(JsonObject task){
-
+        log.info("Performing Task Query Construction");
         String taskDescription = task.getString("task");
 
         return Future.all(
                 //Resolve input parameter mappings for the task.
                 this.getInputParameterMappings(taskDescription),
-                //Resolve object parameter mappings for the task.
-                this.getRelevantObjectParameters(taskDescription),
+                //Resolve resource parameter mappings for the task.
+                this.getRelevantResourceParameters(taskDescription),
                 //Resolve target API calls for the task.
                 this.getRelevantAPICalls(taskDescription)
-        ).onFailure(err->log.error(err.getMessage(), err)).compose(compositeFuture -> {
+        ).onFailure(err->log.error(err.getMessage(), err))
+                .compose(compositeFuture -> {
 
             try{
                 //Extract the results from the composite future.
                 List<JsonObject> inputParameterMappings = compositeFuture.resultAt(0);
-                List<JsonObject> objectParameters = compositeFuture.resultAt(1);
+                List<JsonObject> resourceParameters = compositeFuture.resultAt(1);
                 List<JsonObject> apiCalls = compositeFuture.resultAt(2);
 
                 JsonObject result =  new JsonObject();
@@ -88,12 +89,13 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
 
                 //Add schema/object parameters
                 parameters.addAll(
-                        objectParameters.stream()
+                        resourceParameters.stream()
                                 .map(objectParam->{
                                     JsonObject _param = new JsonObject()
                                             .put("id", objectParam.getString("id"))
-                                            .put("type", "SchemaParameter")
-                                            .put("query", objectParam.getString("query"));
+                                            .put("type", "ResourceParameter")
+                                            .put("query", objectParam.getString("query"))
+                                            .put("name", objectParam.getString("name"));
                                     return _param;
                                 }).collect(JsonArray::new, JsonArray::add, JsonArray::addAll)
                 );
@@ -109,6 +111,29 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
 
         });
 
+    }
+
+    public Future<List<JsonObject>> getRelevantResourceParameters(String taskDescription){
+        log.info("getRelevantResourceParameters");
+        return vertx.<List<JsonObject>>executeBlocking(blocking->{
+            sqlite.getResourceParameterLabels()
+                    .compose(labels->this.strategy.getTaskResourceParameters(taskDescription, labels.stream().toList()))
+                    //Resolve node ids for identified resource parameters.
+                    .compose(mapping->{
+                        List<JsonObject> finalMapping = new ArrayList<>();
+                        for(JsonObject param: mapping){
+                            String parameterNodeId = neo4j.getNodeIdByResourceParameterName(param.getString("name"));
+                            if(parameterNodeId != null){
+                                param.put("id", parameterNodeId);
+                                finalMapping.add(param);
+                            }
+
+                        }
+                        return Future.succeededFuture(finalMapping);
+                    })
+                    .onSuccess(blocking::complete)
+                    .onFailure(blocking::fail);
+        });
     }
 
     @Override

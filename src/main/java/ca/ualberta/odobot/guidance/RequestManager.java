@@ -2,7 +2,6 @@ package ca.ualberta.odobot.guidance;
 
 import ca.ualberta.odobot.guidance.execution.ExecutionParameter;
 import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
-import ca.ualberta.odobot.guidance.execution.InputParameter;
 import ca.ualberta.odobot.guidance.instructions.*;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import ca.ualberta.odobot.semanticflow.model.*;
@@ -19,7 +18,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
-import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 public class RequestManager {
@@ -142,8 +140,8 @@ public class RequestManager {
                         .map(p->LogPreprocessor.neo4j.getParameterAssociatedNodes(p.getNodeId().toString()))
                         .collect(HashSet::new, HashSet::addAll, HashSet::addAll);
 
-                Set<String> objectParameters = request.getParameters().stream()
-                        .filter(p->p.getType().equals(ExecutionParameter.ParameterType.SchemaParameter))
+                Set<String> resourceParameters = request.getParameters().stream()
+                        .filter(p->p.getType().equals(ExecutionParameter.ParameterType.ResourceParameter))
                         .map(p->LogPreprocessor.neo4j.getParameterAssociatedNodes(p.getNodeId().toString()))
                         .collect(HashSet::new, HashSet::addAll,HashSet::addAll);
 
@@ -152,12 +150,12 @@ public class RequestManager {
                 //Save these for later if we need to re-compute paths for this request.
                 request.setApiCalls(apiCalls);
                 request.setInputParameters(inputParameters);
-                request.setObjectParameters(objectParameters);
+                request.setResourceParameters(resourceParameters);
 
                 tx = LogPreprocessor.graphDB.db.beginTx();
 
-                //navPaths = LogPreprocessor.pathsConstructor.construct(tx, src.toString(), objectParameters, inputParameters, apiCalls);
-                navPaths = LogPreprocessor.pathsConstructor.constructV2(tx, src.toString(), objectParameters, inputParameters, apiCalls);
+                //navPaths = LogPreprocessor.pathsConstructor.construct(tx, src.toString(), resourceParameters, inputParameters, apiCalls);
+                navPaths = LogPreprocessor.pathsConstructor.constructV2(tx, src.toString(), resourceParameters, inputParameters, apiCalls);
 
                 //First collect together our parameter mappings, we'll need this to generate semantically meaningful natural language descriptions of the different paths.
                 JsonArray parameters = request.getParameters().stream().map(ExecutionParameter::toJson).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
@@ -416,13 +414,13 @@ public class RequestManager {
 
                 ExecutionRequest request = client.getRequestManager().getActiveExecutionRequest();
                 request.getInputParameters().removeAll(request.getVisitedNodes());
-                request.getObjectParameters().removeAll(request.getVisitedNodes());
+                request.getResourceParameters().removeAll(request.getVisitedNodes());
                 request.addFailedNode(failedNodeId);
 
                 tx.close(); //Close the previous graphDb transaction.
                 tx = LogPreprocessor.graphDB.db.beginTx(); // Open a new one
 
-                navPaths = LogPreprocessor.pathsConstructor.constructV2(tx, updatedStartingNodeId.get(), request.getObjectParameters(), request.getInputParameters(), request.getApiCalls(), request.getFailedNodes());
+                navPaths = LogPreprocessor.pathsConstructor.constructV2(tx, updatedStartingNodeId.get(), request.getResourceParameters(), request.getInputParameters(), request.getApiCalls(), request.getFailedNodes());
                 request.addRecomputation();
 
                 log.info("Found {} paths after recomputation", navPaths.size());
@@ -639,14 +637,14 @@ public class RequestManager {
 
                     ExecutionRequest request = getActiveExecutionRequest();
                     request.getInputParameters().removeAll(request.getVisitedNodes());
-                    request.getObjectParameters().removeAll(request.getVisitedNodes());
+                    request.getResourceParameters().removeAll(request.getVisitedNodes());
 
                     tx.close(); //Close the previous graphdb transaction.
                     tx = LogPreprocessor.graphDB.db.beginTx();
 
                     //TODO - path planning/finding work
                     //navPaths = LogPreprocessor.pathsConstructor.construct(tx, updatedStartingNode.get().toString(), request.getObjectParameters(), request.getInputParameters(), request.getApiCalls());
-                    navPaths = LogPreprocessor.pathsConstructor.constructV2(tx, updatedStartingNode.get().toString(), request.getObjectParameters(), request.getInputParameters(), request.getApiCalls());
+                    navPaths = LogPreprocessor.pathsConstructor.constructV2(tx, updatedStartingNode.get().toString(), request.getResourceParameters(), request.getInputParameters(), request.getApiCalls());
                     request.addRecomputation();
 
                     log.info("Found {} paths after recomputation", navPaths.size());

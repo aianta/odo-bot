@@ -36,6 +36,18 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
     }
 
 
+    private Predicate<String> isNumber = (input)->{
+        log.info("Validating input: {}", input);
+        try{
+            Integer.parseInt(input);
+            log.info("Input is fine");
+            return true;
+        }catch (NumberFormatException e){
+            log.info("Input is not fine");
+            return false;
+        }
+    };
+
     @Override
     public Future<JsonObject> makeSchema(List<Snippet> snippets) {
 
@@ -109,20 +121,29 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         }
     }
 
+    public Future<JsonObject> pickResourceParameterValue(List<JsonObject> options, String query){
+        //Only validator we need is one that makes sure the output is a valid integer.
+        List<Predicate<String>> validators = List.of(isNumber);
+
+        Optional<String> pickedValue = pickResourceParameter(options, query, validators);
+
+        if(pickedValue.isPresent()){
+            Integer index = Integer.parseInt(pickedValue.get());
+            //Subtract 1 from the picked option to get the correct index into the options array
+            return Future.succeededFuture(options.get(index-1));
+        }
+
+        return Future.failedFuture("Failed to pick a resource parameter option from the list!");
+    }
+
+    public Optional<String> pickResourceParameter(List<JsonObject> options, String query, List<Predicate<String>> validators){
+        return generateWithValidation(()->pickResourceParameter(options, query), validators, config.getJsonObject("pickResourceParameterValue").getInteger("maxAttempts"));
+    }
+
     public Future<SemanticObject> pickParameterValue(List<SemanticObject> options, String query){
 
         //Only validator we need is one that makes sure that the output is a valid integer.
-        List<Predicate<String>> validators = List.of((input)->{
-            log.info("Validating input: {}", input);
-            try{
-                Integer.parseInt(input);
-                log.info("Input is fine");
-                return true;
-            }catch (NumberFormatException e){
-                log.info("Input is not fine");
-                return false;
-            }
-        });
+        List<Predicate<String>> validators = List.of(isNumber);
 
         Optional<String> pickedValue = pickParameter(options, query, validators);
         if(pickedValue.isPresent()){
@@ -327,6 +348,31 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
     }
     private Optional<String> generateXMLObject(Snippet snippet, SemanticSchema schema, List<Predicate<String>> validators){
         return generateWithValidation(()->generateXMLObject(snippet.getSnippet(), schema.getSchema()), validators, config.getJsonObject("generateXMLObject").getInteger("maxAttempts"));
+    }
+
+    private String pickResourceParameter(List<JsonObject> options, String query){
+        List<ChatRequestMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(new ChatRequestUserMessage(config.getJsonObject("pickResourceParameterValue").getString("systemPrompt")));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("Query:\n");
+        sb.append(query + "\n");
+        sb.append("Options:\n");
+
+        List<String> optionStrings = options.stream().map(o->o.getString("html")).toList();
+        ListIterator<String> it = optionStrings.listIterator();
+        while (it.hasNext()){
+            String option =  it.next();
+            sb.append((it.previousIndex()+1) + ".\n" + option + "\n");
+        }
+        sb.append("\n");
+
+        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+
+        log.info("Pick Resource Parameter prompt:\n{}", sb.toString());
+
+        return executeChatCompletion(chatMessages);
+
     }
 
     private String pickParameter(List<SemanticObject> options, String query){

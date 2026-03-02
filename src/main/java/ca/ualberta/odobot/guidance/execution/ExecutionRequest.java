@@ -36,7 +36,7 @@ public class ExecutionRequest {
     //Nodes which represent instructions that have failed to execute.
     private Set<String> failedNodes = new HashSet<>();
 
-    private Set<String> objectParameters; //Resolved object parameters from the execution parameters above.
+    private Set<String> resourceParameters; //Resolved object parameters from the execution parameters above.
     private Set<String> inputParameters; //Resolved input parameters from the execution parameters above.
     private Set<String> apiCalls; //Resolved target node ids.
 
@@ -193,12 +193,12 @@ public class ExecutionRequest {
         return this;
     }
 
-    public Set<String> getObjectParameters() {
-        return objectParameters;
+    public Set<String> getResourceParameters() {
+        return resourceParameters;
     }
 
-    public ExecutionRequest setObjectParameters(Set<String> objectParameters) {
-        this.objectParameters = objectParameters;
+    public ExecutionRequest setResourceParameters(Set<String> resourceParameters) {
+        this.resourceParameters = resourceParameters;
         return this;
     }
 

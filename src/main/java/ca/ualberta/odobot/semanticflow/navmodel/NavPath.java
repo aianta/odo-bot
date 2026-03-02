@@ -223,15 +223,17 @@ public class NavPath {
                 Instruction instruction = null;
 
                 //Handle collapsed nodes
-                if(node.hasLabel(Label.label("CollapsedClickNode")) ||
-                        node.hasLabel(Label.label("CollapsedDataEntryNode")) ||
-                        node.hasLabel(Label.label("CollapsedCheckboxNode"))
-                ){
-                    QueryDom _instruction = new QueryDom();
-                    _instruction.dynamicXPath = nodeToDynamicXPath(node);
-                    _instruction.parameterId = LogPreprocessor.neo4j.getAssociatedParameterId((String)node.getProperty("id")); //This is going to cause problems for any collapsed click node or data entry node that doesn't have a schema parameter...
-                    instruction = _instruction;
-                }else{
+//                if(node.hasLabel(Label.label("CollapsedClickNode")) ||
+//                        node.hasLabel(Label.label("CollapsedDataEntryNode")) ||
+//                        node.hasLabel(Label.label("CollapsedCheckboxNode"))
+//                ){
+////                    QueryDom _instruction = new QueryDom();
+////                    _instruction.dynamicXPath = nodeToDynamicXPath(node);
+////                    _instruction.parameterId = LogPreprocessor.neo4j.getAssociatedParameterId((String)node.getProperty("id")); //This is going to cause problems for any collapsed click node or data entry node that doesn't have a schema parameter...
+////                    instruction = _instruction;
+//                    GetDOMSnapshot _instruction = new GetDOMSnapshot();
+//                    _instruction.parameterId =
+//                }else{
 
                     if(node.hasLabel(Label.label("APINode"))){
                         WaitForNetworkEvent _instruction = new WaitForNetworkEvent();
@@ -271,12 +273,24 @@ public class NavPath {
                     }
 
                     if(node.hasLabel(Label.label("ClickNode"))){
-                        DoClick _instruction = new DoClick();
-                        _instruction.xpath = nodeToXPath(node);
-                        instruction = _instruction;
+
+                        if(node.hasRelationship(Direction.OUTGOING, RelationshipType.withName("PARAM"))){
+                            Relationship r = node.getSingleRelationship(RelationshipType.withName("PARAM"), Direction.OUTGOING);
+                            Node parameterNode = r.getEndNode();
+
+                            GetDOMSnapshot _instruction = new GetDOMSnapshot();
+                            _instruction.parameterName = parameterNode.getProperty("name").toString();
+                            instruction = _instruction;
+                        }else{
+                            DoClick _instruction = new DoClick();
+                            _instruction.xpath = nodeToXPath(node);
+                            instruction = _instruction;
+                        };
+
+
                     }
 
-                }
+                //}
 
                 instruction.setSourceNodeId((String)node.getProperty("id"));
 

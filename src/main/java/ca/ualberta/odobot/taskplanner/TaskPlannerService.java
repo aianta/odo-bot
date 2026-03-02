@@ -44,6 +44,8 @@ public interface TaskPlannerService {
 
     Future<List<JsonObject>> getRelevantObjectParameters(String taskDescription);
 
+    Future<List<JsonObject>> getRelevantResourceParameters(String taskDescription);
+
     Future<List<JsonObject>> getInputParameterMappings(String taskDescription);
 
     Future<List<JsonObject>> getRelevantAPICalls(String taskDescription);

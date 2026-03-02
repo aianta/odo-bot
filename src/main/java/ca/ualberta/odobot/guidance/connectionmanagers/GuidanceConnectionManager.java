@@ -1,22 +1,30 @@
 package ca.ualberta.odobot.guidance.connectionmanagers;
 
+import ca.ualberta.odobot.common.Utils;
 import ca.ualberta.odobot.guidance.GuidanceVerticle;
 import ca.ualberta.odobot.guidance.OdoClient;
 import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
+import ca.ualberta.odobot.guidance.execution.ResourceParameter;
 import ca.ualberta.odobot.guidance.execution.SchemaParameter;
 import ca.ualberta.odobot.guidance.instructions.Instruction;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import ca.ualberta.odobot.semanticflow.navmodel.NavPath;
 import ca.ualberta.odobot.snippet2xml.SemanticObject;
+import ca.ualberta.odobot.snippet2xml.Snippet2XMLService;
 import ca.ualberta.odobot.snippet2xml.Snippet2XMLVerticle;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.json.JsonObject;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.stream.Collectors;
+
+import static ca.ualberta.odobot.semanticflow.Utils.computeXpathNoRoot;
 
 public class GuidanceConnectionManager extends AbstractConnectionManager implements ConnectionManager {
 
@@ -148,6 +156,83 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                 .mergeIn(instruction);
 
         Promise<JsonObject> promise = Promise.promise();
+
+        if(executionRequest.getString("action").equals("getDOMSnapshot")){
+            //GetDOMSnapshot is an instruction that returns a snapshot of the current DOM from OdoX.
+            //We send this instruction to resolve resource parameters. When we have a click instruction that is meant to click on a particular kind of resource
+            //we first get the DOM snapshot and find all <a> tags linking to that kind of resource on the page. Each such <a> tag is an option for the LLM to consider in the context
+            //of the task being executed.
+            promise.future().onSuccess(response->{
+                String domSnapshot = response.getString("domSnapshot");
+                String sourceNodeId = response.getString("sourceNodeId");
+
+                Snippet2XMLVerticle.sqliteService.getNormalizedHrefsByLabel(executionRequest.getString("parameterName"))
+                        .compose(labelHrefs -> {
+
+                            //labelHrefs are a set of normalized href values that correspond with this parameter label.
+                            //So our next job is to identify all <a> tags whose 'href' attribute values, after normalization match any of the hrefs in the set labelHrefs.
+                            Document document = Jsoup.parse(domSnapshot);
+
+                            List<Element> options = new ArrayList<>();
+
+                            document.selectXpath("//a")
+                                    .stream()
+                                    .filter(aTag -> aTag.hasAttr("href"))
+                                    .forEach(aTag->{
+                                String normalizedHref = Utils.normalizeBaseUri(aTag.attr("href"));
+
+                                if(labelHrefs.contains(normalizedHref)){
+                                    options.add(aTag);
+                                }
+                            });
+
+                            List<JsonObject> optionsData = options.stream()
+                                    .map(element-> new JsonObject()
+                                                .put("html", element.outerHtml())
+                                                .put("xpath", computeXpathNoRoot(element))
+                                    ).toList();
+
+                            ExecutionRequest request = client.getRequestManager().getActiveExecutionRequest();
+
+                            return Future.all(
+                                    Snippet2XMLVerticle.snippet2XML.pickResourceParameterValue(optionsData, ((ResourceParameter)request.getParameter(executionRequest.getString("parameterId"))).getQuery()),
+                                    Future.succeededFuture(document)
+                            );
+
+
+
+
+                        }).onSuccess(compositeFuture->{
+
+                            JsonObject pickedValue = (JsonObject) compositeFuture.list().get(0);
+                            Document document = (Document) compositeFuture.list().get(1);
+
+
+                            Element selectedOption = document.selectXpath(pickedValue.getString("xpath")).get(0);
+                            String selectedOptionXpath = pickedValue.getString("xpath");
+
+                            JsonObject clickRequest = new JsonObject()
+                                    .put("type", "EXECUTE")
+                                    .put("source", SOURCE)
+                                    .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString())
+                                    .put("action", "click")
+                                    .put("xpath", selectedOptionXpath)
+                                    .put("sourceNodeId", sourceNodeId);
+
+                            activePromises.put("EXECUTION_RESULT", Promise.promise());
+                            try {
+                                Thread.sleep(1000);
+                            }catch (InterruptedException e){
+                                throw new RuntimeException(e);
+                            }
+                            send(clickRequest);
+                        })
+                        .onFailure(err->{
+                            log.error("Error while handling getDOMSnapshot");
+                            log.error(err.getMessage(), err);
+                        });
+            });
+        }
 
         if(executionRequest.getString("action").equals("queryDom")){
             //queryDom requests will respond with a bunch of HTML elements, from which we need to pick one to convert to a click action.

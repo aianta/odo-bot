@@ -283,13 +283,13 @@ public class NavPathsConstructor {
 
         //Setup path candidate predicates
         Predicate<Path> onlySpecifiedInputParameters = new DoesNotIncludeOtherParameters(inputParameters, "DataEntryNode");
-        Predicate<Path> onlySpecifiedObjectParameters = new DoesNotIncludeOtherParameters(objectParameters, "CollapsedClickNode");
+        //Predicate<Path> onlySpecifiedObjectParameters = new DoesNotIncludeOtherParameters(objectParameters, "CollapsedClickNode");
 
-        return constructV2(tx, startingNodeId, objectParameters, inputParameters, apiCalls, List.of(onlySpecifiedInputParameters, onlySpecifiedObjectParameters));
+        return constructV2(tx, startingNodeId, objectParameters, inputParameters, apiCalls, List.of(onlySpecifiedInputParameters));
 
     }
 
-    public List<NavPath> constructV2(Transaction tx, String startingNodeId, Set<String> objectParameters, Set<String> inputParameters, Set<String> apiCalls, List<Predicate<Path>> filters){
+    public List<NavPath> constructV2(Transaction tx, String startingNodeId, Set<String> resourceParameters, Set<String> inputParameters, Set<String> apiCalls, List<Predicate<Path>> filters){
 
         //Produce a composite predicate from the filters.
         Iterator<Predicate<Path>> filterIterator = filters.iterator();
@@ -325,16 +325,16 @@ public class NavPathsConstructor {
                     .toList();
 
             OptionalInt minApiCallCount = _paths.stream().mapToInt(p->numTargetsHit(p, apiCalls)).min();
-            OptionalInt maxSchemaParams = _paths.stream().mapToInt(p->numTargetsHit(p, objectParameters)).max();
+            OptionalInt maxResourceParams = _paths.stream().mapToInt(p->numTargetsHit(p, resourceParameters)).max();
             OptionalInt maxInputParams = _paths.stream().mapToInt(p->numTargetsHit(p, inputParameters)).max();
 
-            if(minApiCallCount.isPresent() && maxSchemaParams.isPresent() && maxInputParams.isPresent()){
+            if(minApiCallCount.isPresent() && maxResourceParams.isPresent() && maxInputParams.isPresent()){
                 log.info("Min API Calls: {}", minApiCallCount.getAsInt());
-                log.info("Max Schema Params: {}", maxSchemaParams.getAsInt());
+                log.info("Max Schema Params: {}", maxResourceParams.getAsInt());
                 log.info("Max Input Params: {}", maxInputParams.getAsInt());
                 List<Path> bestPaths = _paths.stream()
                         //.filter(p->numTargetsHit(p, apiCalls) == minApiCallCount.getAsInt())
-                        .filter(p->numTargetsHit(p, objectParameters) == maxSchemaParams.getAsInt())
+                        .filter(p->numTargetsHit(p, resourceParameters) == maxResourceParams.getAsInt())
                         //.filter(p->numTargetsHit(p, inputParameters) == maxInputParams.getAsInt())
                         .toList();
 
@@ -351,7 +351,7 @@ public class NavPathsConstructor {
             log.info("Found {} paths!", _paths.size());
 
 
-            //Optional<Path> pathWithMaxObjectParameters = _paths.stream().filter(new IncludesAllParameters(objectParameters, "CollapsedClickNode")).findAny();
+            //Optional<Path> pathWithMaxObjectParameters = _paths.stream().filter(new IncludesAllParameters(resourceParameters, "CollapsedClickNode")).findAny();
 
             //Convert to nav paths and return.
             return _paths.stream().map(p->{

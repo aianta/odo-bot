@@ -124,5 +124,6 @@ public interface SqliteService {
 
     Future<List<JsonObject>> getDomSnapshots(Set<String> ids);
 
+    Future<Set<String>> getResourceParameterLabels();
 
 }

@@ -218,6 +218,85 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         return extractJSONFromResponse(executeChatCompletion(chatMessages));
     }
 
+    public Future<List<JsonObject>> getTaskResourceParameters(String taskDescription, List<String> options){
+        log.info("Getting resource parameters from task description:\n{}", taskDescription);
+
+        Optional<String> result = generateWithValidation(()->_getTaskResourceParameters(taskDescription, options),
+                List.of(
+                        (output)->{
+                            try{
+                                JsonArray array = new JsonArray(output);
+                                return true;
+                            }catch (DecodeException e){
+                                return false;
+                            }
+                        }
+                ), config.getJsonObject("getRelevantResourceParameters").getInteger("maxAttempts")
+                );
+
+        if(result.isPresent()){
+            JsonArray output = new JsonArray(result.get());
+            log.info("{}", output.encodePrettily());
+
+            List<JsonObject> mappedResourceParameters = output.stream()
+                    .map(o->(JsonArray)o)
+                    .map(entry->{
+                        //Exclude Mappings to null
+                        if(entry.getValue(1) == null){
+                            return null;
+                        }
+
+                        String chosenOption = options.stream().filter(option->option.equals(entry.getString(0))).findFirst().get();
+                        if(chosenOption == null){
+                            return null;
+                        }
+
+                        JsonObject returnValue = new JsonObject()
+                                .put("name", entry.getString(0))
+                                .put("query", entry.getString(1));
+
+                        return returnValue;
+                    })
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList());
+
+            log.info("Mapped Resource Parameters:\n");
+            mappedResourceParameters.forEach(mappedParameter->{
+                log.info("{}\n", mappedParameter.encodePrettily());
+            });
+
+
+
+            return Future.succeededFuture(mappedResourceParameters);
+        }
+
+        return Future.failedFuture("Failed to get the resource parameters for the task description!");
+    }
+
+    private String _getTaskResourceParameters(String taskDescription, List<String> options){
+
+        List<ChatRequestMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(new ChatRequestSystemMessage(config.getJsonObject("getRelevantResourceParameters").getString("systemPrompt")));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("\n");
+        ListIterator<String> it = options.listIterator();
+        while (it.hasNext()){
+            String curr = it.next();
+            sb.append((it.previousIndex() + 1) + ". " + curr + "\n");
+        }
+        sb.append("\n");
+        sb.append("Task Description:\n");
+        sb.append(taskDescription + "\n");
+
+        log.info("\n{}", sb.toString());
+
+        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+
+        return extractJSONFromResponse(executeChatCompletion(chatMessages));
+
+    }
+
     @Override
     public Future<List<JsonObject>> getTaskSchemas(String taskDescription, List<SemanticSchema> options) {
 

@@ -11,7 +11,7 @@ public class ExecutionParameter {
     private static final Logger log = LoggerFactory.getLogger(ExecutionParameter.class);
 
     public enum ParameterType{
-        InputParameter, SchemaParameter
+        InputParameter, SchemaParameter, ResourceParameter
     }
 
     public JsonObject toJson(){
@@ -26,6 +26,11 @@ public class ExecutionParameter {
             case SchemaParameter ->{
                 result.put("type", "SchemaParameter");
                 result.put("query", ((SchemaParameter)this).getQuery());
+            }
+            case ResourceParameter ->{
+                result.put("type", "ResourceParameter");
+                result.put("query", ((ResourceParameter)this).getQuery());
+                result.put("name", ((ResourceParameter)this).getName());
             }
             default -> log.error("Unrecognized parameter type!");
         }
@@ -47,6 +52,13 @@ public class ExecutionParameter {
                 SchemaParameter param = new SchemaParameter();
                 param.setType(ParameterType.SchemaParameter);
                 param.setQuery(json.getString("query"));
+                yield param;
+            }
+            case "ResourceParameter" ->{
+                ResourceParameter param = new ResourceParameter();
+                param.setType(ParameterType.ResourceParameter);
+                param.setQuery(json.getString("query"));
+                param.setName(json.getString("name"));
                 yield param;
             }
             default -> {

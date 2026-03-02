@@ -88,5 +88,13 @@ public class Snippet2XMLServiceImpl implements Snippet2XMLService {
         });
     }
 
+    public Future<JsonObject> pickResourceParameterValue(List<JsonObject>options, String query){
+        return vertx.executeBlocking(blocking->{
+            this.strategy.pickResourceParameterValue(options, query)
+                    .onSuccess(blocking::complete)
+                    .onFailure(blocking::fail);
+        });
+    }
+
 
 }
