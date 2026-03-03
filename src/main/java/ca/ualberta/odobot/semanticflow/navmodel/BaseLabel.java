@@ -14,7 +14,8 @@ public enum BaseLabel{
     LOCATION_NODE("LocationNode"),
     RADIO_BUTTON_NODE("RadioButtonNode"),
     CHECKBOX_NODE("CheckboxNode"),
-    API_NODE("APINode");
+    API_NODE("APINode"),
+    GRAPHQL_NODE("GraphQLNode"),;
 
     public String label;
 

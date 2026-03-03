@@ -125,7 +125,12 @@ public class Neo4JUtils {
         var index = timeline.indexOf(networkEvent);
         var entityTimelineId = timeline.getId().toString()+"#"+index;
 
-        processNetworkEvent(entityTimelineId, networkEvent.getPath(), networkEvent.getMethod());
+        Optional<String> graphQLOperation = networkEvent.getGraphQLOperationName();
+        if(graphQLOperation.isPresent()){
+            processNetworkEvent(entityTimelineId, networkEvent.getPath(), networkEvent.getMethod(), graphQLOperation.get());
+        }else{
+            processNetworkEvent(entityTimelineId, networkEvent.getPath(), networkEvent.getMethod());
+        }
     }
 
     public LocationNode processLocation(String eventId, String path){
@@ -292,6 +297,46 @@ public class Neo4JUtils {
         };
 
         return queryFunction;
+    }
+
+    public void processNetworkEvent(String eventId, String networkEventPath, String networkEventMethod, String graphQLOperationName){
+        //If a GraphQL node for this event already exists in the database, this supplier will be used to retrieve it.
+        Supplier<GraphQLNode> existingGraphQLNodeSupplier = ()->getGraphQLNode(networkEventPath, networkEventMethod, graphQLOperationName);
+
+        //If no GraphQL node could be found, this supplier will be used to create one.
+        Supplier<GraphQLNode> newGraphQLNodeSupplier = ()->{
+            GraphQLNode node = new GraphQLNode();
+            node.setId(UUID.randomUUID());
+            node.setPath(networkEventPath);
+            node.setOperationName(graphQLOperationName);
+            node.setMethod(networkEventMethod);
+            node.setInstances(Set.of(eventId));
+            return node;
+        };
+
+        //The update query used to update/merge the processed GraphQL node into the database.
+        Function<GraphQLNode, Query> queryFunction = (graphQLNode)->{
+            HashMap<String, Object> props = new HashMap<>();
+            props.put("id", graphQLNode.getId().toString());
+            props.put("instances", graphQLNode.getInstances());
+            props.put("operationName", graphQLNode.getOperationName());
+            props.put("path", graphQLNode.getPath());
+            props.put("method", graphQLNode.getMethod());
+
+            var stmt = "MERGE (n:GraphQLNode {path: $path, method: $method, operationName: $operationName}) ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
+            var query = new Query(stmt, parameters("path", graphQLNode.getPath(), "method", graphQLNode.getMethod(), "operationName", graphQLNode.getOperationName(), "props", props));
+
+            return query;
+        };
+
+        //Invoke generic processing logic
+        processNode(
+                eventId,
+                GraphQLNode.class,
+                existingGraphQLNodeSupplier,
+                newGraphQLNodeSupplier,
+                queryFunction
+        );
     }
 
     public void processNetworkEvent(String eventId, String networkEventPath, String networkEventMethod){
@@ -701,6 +746,7 @@ public class Neo4JUtils {
 
 
 
+
     public ClickNode processClickEvent(Timeline timeline, ClickEvent clickEvent){
         var index  = timeline.indexOf(clickEvent);
         var entityTimelineId = timeline.getId().toString()+"#"+index;
@@ -847,6 +893,12 @@ public class Neo4JUtils {
 
         if(target instanceof NetworkEvent){
             NetworkEvent networkEvent = (NetworkEvent) target;
+
+            Optional<String> graphQL = networkEvent.getGraphQLOperationName();
+            if(graphQL.isPresent()){
+                return getGraphQLNode(networkEvent.getPath(), networkEvent.getMethod(), graphQL.get());
+            }
+
             return getAPINode(networkEvent.getPath(), networkEvent.getMethod());
         }
 
@@ -1073,6 +1125,12 @@ public class Neo4JUtils {
         connect(a,b,"NEXT");
     }
 
+    private GraphQLNode getGraphQLNode(String path, String method, String operationName){
+        var stmt = "MATCH (n:GraphQLNode {path:$path, method:$method, operationName:$operationName}) return n;";
+        var query = new Query(stmt, parameters("path", path, "method", method, "operationName", operationName));
+
+        return readNode(query, GraphQLNode.class);
+    }
 
     private APINode getAPINode(String path, String method){
         var stmt = "MATCH (n:APINode {path:$path, method:$method}) return n;";

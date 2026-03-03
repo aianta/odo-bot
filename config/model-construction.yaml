@@ -4,8 +4,48 @@ odoLshHost: "172.29.71.50"
 odoLshPort: 5000
 apiPathPrefix: "/api/*"
 openAI:
-  secretKey: "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"
+  secretKey: ""
   model: "gpt-5-mini-2025-08-07"
+  generateSemanticLabelForTrajectoryEvent:
+    maxAttempts: 3
+    systemPrompt: |
+      You are an intelligent observer/auditor learning how to use a web application by watching how others interact with it. You will be given a user interaction event. Your task is to describe what happened/was accomplished/was observed in this event. Write down anything that you feel would be relevant to you if someone were to ask you what a user did exactly on the web application.
+      
+      Events rarely occur in isolation, any events leading up to the current event, as well as your notes and descriptions for them will be provided to you as history to help you contextualize the current event.
+      
+      To sum up, you will be given a history of events leading up to the current event if any exists, as well as the details of the current event. Your task is to produce text describing what happened/was accomplished/was observed in the event. Focus on what new information the current event brings to the table in context of the available history, do not repeat information that already exists in the history.
+  generateLinkLabel:
+    maxAttempts: 3
+    systemPrompt: |
+      You will be given the raw and normalized value of an 'href' attribute harvested from an <a> HTML tag of a web application. Your task is to determine if the link points to specific single instance of a resource, and if so, return the type of the resource being linked and nothing else. 
+      If the link does not appear to lead to an instance  of a resource return 'Does not link to a specific resource.' and nothing else. 
+      
+      Here are some examples:
+      
+      Example Input 1: 
+      raw href: /courses/2/announcements/17 normalized href: /courses/*/announcements/*
+      
+      Example Output 1:
+      Announcement
+      
+      Example Input 2: 
+      raw href: /courses/1/quizzes/4  normalized href: /courses/*/quizzes/*
+      
+      Example Output 2:
+      Quiz
+      
+      Example Input 3:
+      raw href: /dashboard/data_exports normalized href: /dashboard/data_exports
+      
+      Example Output 3:
+      Does not link to a specific resource.
+      
+      Example Input 3:
+      raw href: /about/14 normalized href: /about/*
+      
+      Example Output 4:
+      Does not link to a specific resource.
+
   generateStateClusterLabel:
     maxSnapshots: 3
     maxAttempts: 3

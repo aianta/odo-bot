@@ -10,6 +10,7 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Optional;
 
 public class NetworkEvent extends AbstractArtifact implements TimelineEntity, FixedPoint{
 
@@ -81,6 +82,13 @@ public class NetworkEvent extends AbstractArtifact implements TimelineEntity, Fi
         this.type = type;
     }
 
+    public Optional<String> getGraphQLOperationName(){
+        if(requestObject == null || !getMethod().equals("POST") || !getPath().contains("api/graphql")){
+            return Optional.empty();
+        }
+
+        return Optional.of(requestObject.getString("operationName"));
+    }
 
     public int getRequestId() {
         return requestId;
