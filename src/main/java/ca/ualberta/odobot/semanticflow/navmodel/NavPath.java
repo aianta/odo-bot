@@ -280,6 +280,7 @@ public class NavPath {
 
                             GetDOMSnapshot _instruction = new GetDOMSnapshot();
                             _instruction.parameterName = parameterNode.getProperty("name").toString();
+                            _instruction.parameterId = parameterNode.getProperty("id").toString();
                             instruction = _instruction;
                         }else{
                             DoClick _instruction = new DoClick();
@@ -323,80 +324,31 @@ public class NavPath {
         return null;
     }
 
-    public Instruction getInstruction(){
-
-
-        while (iterator.hasNext()){
-            Node node = iterator.next();
-
-            if(instructionNodePredicate.test(node)){
-                Instruction instruction = null;
-
-
-                if(node.hasLabel(Label.label("CollapsedClickNode")) ||
-                        node.hasLabel(Label.label("CollapsedDataEntryNode"))
-                ){
-                    DynamicXPathInstruction dynamicXPathInstruction = new DynamicXPathInstruction();
-                    dynamicXPathInstruction.dynamicXPath = nodeToDynamicXPath(node);
-                    instruction = dynamicXPathInstruction;
-                }else{
-                    XPathInstruction xPathInstruction = new XPathInstruction();
-                    xPathInstruction.xpath = nodeToXPath(node);
-                    instruction = xPathInstruction;
-                }
-
-                lastInstruction = instruction;
-                setLastInstructionNodeId((String)node.getProperty("id")); //Set this so we can keep track of which nodes have already been visited.
-                return instruction;
-            }
-        }
-
-        log.warn("No valid instruction nodes left in path {}!", id.toString());
-        lastInstruction = null;
-        return null;
-    }
-
-
-//    public JsonObject getInstruction(){
-//        JsonObject result = new JsonObject()
-//                .put("id", id.toString());
-//
-//        while (iterator.hasNext()){
-//            Node node = iterator.next();
-//
-//            if(instructionNodePredicate.test(node)){
-//                JsonObject instruction = null;
-//
-//                if(node.hasLabel(Label.label("CollapsedClickNode")) ||
-//                        node.hasLabel(Label.label("CollapsedDataEntryNode"))
-//                ){
-//                    instruction = makeInstructionFromCollapsedNode(node);
-//                }else{
-//                    instruction = makeInstructionFromNode(node);
-//                }
-//
-//                result.mergeIn(makeInstructionFromNode(node));
-//                return result;
-//            }
-//        }
-//
-//        log.warn("No valid instruction nodes left in path {}!", id.toString());
-//        return null;
-//
-//    }
-
-    private JsonObject makeInstructionFromNode(Node n){
-        JsonObject result = new JsonObject()
-                .put("xpath", (String)n.getProperty("xpath"));
-
-        return result;
-    }
 
     private String nodeToXPath(Node n){
         if(!n.hasProperty("xpath")){
-            log.error("Node does not have xpath property!");
-            throw new RuntimeException("Node does not have xpaths property!");
+
+            if(!n.hasProperty("xpaths")){
+                log.error("Node does not have xpath property!");
+                throw new RuntimeException("Node does not have xpaths property!");
+            }else{
+                String[] xpaths = (String[]) n.getProperty("xpaths");
+                if(xpaths.length > 0){
+                    /**
+                     * Xpaths values are stored in the following format:
+                     * ["<baseURI>,<xpath>", ...]
+                     */
+
+                    return xpaths[0].split(",")[1];
+                }else{
+                    log.error("Node's xpaths property contains no xpaths!");
+                }
+            }
+
+
         }
+
+
 
         return (String)n.getProperty("xpath");
     }
@@ -420,19 +372,7 @@ public class NavPath {
 
     }
 
-    private JsonObject makeInstructionFromCollapsedNode(Node n){
-        JsonObject result = new JsonObject();
 
-        if(!n.hasProperty("xpaths")){
-            log.error("Node does not have xpaths property!");
-            throw new RuntimeException("Node does not have xpaths property!");
-        }
-
-        String [] xpaths = (String[]) n.getProperty("xpaths");
-        result.put("xpath", findDynamicXPath(xpaths).toJson());
-
-        return result;
-    }
 
 
     public String getLastInstructionNodeId() {
@@ -542,32 +482,6 @@ public class NavPath {
 
 
 
-
-//        length = 2;
-//
-//        while (length < first.length()){
-//
-//            final int _length = length;
-//
-//            if(Arrays.stream(xpaths).allMatch(example->example.substring(example.length()-_length).equals(first.substring(first.length()-_length)))){
-//                length++;
-//            }else {
-//                break;
-//            }
-//        }
-//
-//        final int MATCHING_SUFFIX_LENGTH = length;
-//        log.info("Matching suffix length was: {}", MATCHING_SUFFIX_LENGTH);
-//        String suffix = Arrays.stream(xpaths).map(s->{
-//            String slice = s.substring(s.length()-MATCHING_SUFFIX_LENGTH);
-//            if(!slice.contains("/")){
-//                throw new RuntimeException("Suffix doesn't contain any forward slashes, how'd you manage that? Suffix: " + slice);
-//            }
-//            slice = slice.substring(slice.indexOf("/"));
-//            return slice;
-//        }).peek(s->System.out.println(s))
-//                .findFirst()
-//                .get();
 
         log.info("Prefix: {} SuffixPattern: {}", prefix, suffixPattern.pattern());
         String tagString = first.substring(prefix.length());
@@ -693,10 +607,6 @@ public class NavPath {
                     btnText = (String) curr.getProperty("text");
                 }
 
-                //If we're dealing with collapsed click
-//                if(curr.hasProperty("texts") && ((List<String>)curr.getProperty("texts")).size() == 1){
-//                    btnText = ((List<String>)curr.getProperty("texts")).get(0);
-//                }
 
 
                 //If the text property of the button isn't blank.

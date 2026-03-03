@@ -158,11 +158,20 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
         Promise<JsonObject> promise = Promise.promise();
 
         if(executionRequest.getString("action").equals("getDOMSnapshot")){
+            log.info("Configuring handling for getDOMSnapshot instruction.");
+
             //GetDOMSnapshot is an instruction that returns a snapshot of the current DOM from OdoX.
             //We send this instruction to resolve resource parameters. When we have a click instruction that is meant to click on a particular kind of resource
             //we first get the DOM snapshot and find all <a> tags linking to that kind of resource on the page. Each such <a> tag is an option for the LLM to consider in the context
             //of the task being executed.
-            promise.future().onSuccess(response->{
+            promise.future()
+                    .onFailure(err->{
+                        log.error("Error while handling getDOMSnapshot instruction result.");
+                        log.error(err.getMessage(), err);
+                    })
+                    .onSuccess(response->{
+                log.info("Handling getDOMSnapshot result");
+
                 String domSnapshot = response.getString("domSnapshot");
                 String sourceNodeId = response.getString("sourceNodeId");
 

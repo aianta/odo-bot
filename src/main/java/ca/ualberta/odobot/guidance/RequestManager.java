@@ -586,6 +586,13 @@ public class RequestManager {
                         return dynamicXPathInstruction.dynamicXPath.matches(observedXPath) || dynamicXPathInstruction.dynamicXPath.stillMatches(observedXPath);
                     }
 
+                    if(lastInstruction instanceof GetDOMSnapshot){
+                        //TODO: Verify that the observed click's href matches one of the normalized hrefs for the Resource parameter label.
+                        //For now, this allows any subsequent click event to validate against the GetDOMSnapshot instruction.
+                        //return observedPath != null;
+                        return true;
+                    }
+
                     if(lastInstruction instanceof WaitForLocationChange){
                         return ((WaitForLocationChange) lastInstruction).path.equals(observedPath);
                     }

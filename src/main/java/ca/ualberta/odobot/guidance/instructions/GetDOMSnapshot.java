@@ -7,7 +7,8 @@ public class GetDOMSnapshot extends Instruction{
 
 
     public String parameterName;
-
+    public String parameterId;
+    public String normalizedHref;
 
 
     @Override
@@ -37,6 +38,7 @@ public class GetDOMSnapshot extends Instruction{
         JsonObject json = super.toJson();
         json.put("action", "getDOMSnapshot");
         json.put("parameterName", parameterName);
+        json.put("parameterId", parameterId);
         return json;
     }
 }
