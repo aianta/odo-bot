@@ -235,10 +235,13 @@ public class NavPath {
 //                    _instruction.parameterId =
 //                }else{
 
-                    if(node.hasLabel(Label.label("APINode"))){
+                    if(node.hasLabel(Label.label("APINode")) || node.hasLabel(Label.label("GraphQLNode"))){
                         WaitForNetworkEvent _instruction = new WaitForNetworkEvent();
                         _instruction.method = (String) node.getProperty("method");
                         _instruction.path = (String) node.getProperty("path");
+                        if(node.hasProperty("operationName")){
+                            _instruction.operationName = (String) node.getProperty("operationName");
+                        }
                         instruction = _instruction;
                     }
 

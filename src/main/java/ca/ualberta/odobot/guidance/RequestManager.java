@@ -490,6 +490,7 @@ public class RequestManager {
         String editorId = null; //Defined when an instruction is a data entry into tinyMCE.
         String path = null;
         String method = null;
+        String operationName = null;
 
         if(entity instanceof DataEntry){
             DataEntry dataEntry = (DataEntry) entity;
@@ -514,6 +515,11 @@ public class RequestManager {
             NetworkEvent networkEvent = (NetworkEvent) entity;
             path = networkEvent.getPath();
             method = networkEvent.getMethod();
+
+            Optional<String> opName = networkEvent.getGraphQLOperationName();
+            if(opName.isPresent()){
+                operationName = opName.get();
+            }
         }
 
         if(entity instanceof ApplicationLocationChange){
@@ -523,11 +529,16 @@ public class RequestManager {
 
         final String observedXPath = xpath;
         final String observedPath = path;
+        final String observedOperationName = operationName;
         final String observedMethod = method;
         final String observedEditorId = editorId;
 
         if(observedXPath != null){
             log.info("Observed {} on xpath: {}", entity.symbol(), observedXPath);
+        }
+
+        if(observedOperationName != null){
+            log.info("Observed {} with operation name: {}", entity.symbol(), observedOperationName);
         }
 
         if(observedPath != null){
@@ -609,6 +620,12 @@ public class RequestManager {
                     }
 
                     if(lastInstruction instanceof WaitForNetworkEvent){
+                        WaitForNetworkEvent  waitForNetworkEvent = (WaitForNetworkEvent) lastInstruction;
+                        //Handle graphQLNode case
+                        if (waitForNetworkEvent.operationName != null) {
+                            return waitForNetworkEvent.operationName.equals(observedOperationName);
+                        }
+
                         return ((WaitForNetworkEvent) lastInstruction).path.equals(observedPath) && ((WaitForNetworkEvent) lastInstruction).method.equals(observedMethod);
                     }
 
