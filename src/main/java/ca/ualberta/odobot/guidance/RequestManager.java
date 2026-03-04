@@ -18,6 +18,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 public class RequestManager {
@@ -381,10 +382,26 @@ public class RequestManager {
         NetworkEvent apiCall = (NetworkEvent) entity; //Note: When we set up this watcher we ensure it only receives network events.
 
 
-        if(
-                apiCall.getMethod().toLowerCase().equals(activeExecutionRequest.getTargetMethod().toLowerCase()) && //If the method matches
-                        apiCall.getPath().equals(activeExecutionRequest.getTargetPath())
-        ){
+
+        //Define conditions under which the observed network event matches the target of the execution request.
+        Predicate<NetworkEvent> networkEventMatchesTarget = (networkEvent)->{
+            //Handle the case where the target is a graphQL operation
+            Optional<String> graphQL = networkEvent.getGraphQLOperationName();
+            if(graphQL.isPresent() && activeExecutionRequest.getTargetOperationName() != null && activeExecutionRequest.getTargetOperationName().equals(graphQL.get())){
+                return true;
+            }else if (activeExecutionRequest.getTargetOperationName() == null){
+                //Handle the case where the target is a 'normal' API call.
+                return networkEvent.getMethod().toLowerCase().equals(activeExecutionRequest.getTargetMethod().toLowerCase()) && //If the method matches
+                        networkEvent.getPath().equals(activeExecutionRequest.getTargetPath());
+            }
+
+            return false;
+        };
+
+        if(networkEventMatchesTarget.test(apiCall)){
+
+
+
             client.getGuidanceConnectionManager().notifyPathComplete();
             client.getEventConnectionManager().notifyPathComplete();
 

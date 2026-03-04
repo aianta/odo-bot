@@ -44,6 +44,11 @@ public class ExecutionRequest {
 
     private String targetMethod;
     private String targetPath;
+    private String targetOperationName;
+
+    public String getTargetOperationName() {
+        return targetOperationName;
+    }
 
     public String getTaskDescription() {
         return taskDescription;
@@ -76,7 +81,7 @@ public class ExecutionRequest {
 
         //Fetch identifying properties of the target node.
         try(Transaction tx = LogPreprocessor.graphDB.db.beginTx();
-            Result result = tx.execute("match (n:APINode) where n.id = '%s' return n limit 1".formatted(target.toString()));
+            Result result = tx.execute("match (n) where n.id = '%s' return n limit 1".formatted(target.toString()));
             ResourceIterator<Node> resultIt = result.columnAs("n");
         ){
             Node _targetNode = resultIt.next();
@@ -86,6 +91,11 @@ public class ExecutionRequest {
 
             this.targetMethod = (String)_targetNode.getProperty("method");
             this.targetPath = (String)_targetNode.getProperty("path");
+
+            if(_targetNode.hasProperty("operationName")){
+                this.targetOperationName = (String)_targetNode.getProperty("operationName");
+            }
+
         };
 
         return this;
