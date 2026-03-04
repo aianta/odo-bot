@@ -7,6 +7,7 @@ import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
+import io.vertx.core.eventbus.DeliveryOptions;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.DecodeException;
@@ -18,6 +19,7 @@ import io.vertx.rxjava3.ext.web.Router;
 import io.vertx.rxjava3.ext.web.RoutingContext;
 import io.vertx.rxjava3.ext.web.handler.BodyHandler;
 import io.vertx.rxjava3.ext.web.handler.LoggerHandler;
+import io.vertx.serviceproxy.ServiceProxyBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -62,7 +64,10 @@ public class ExplorerVerticle extends HttpServiceVerticle {
         try{
 
             //Init task planner service proxy
-            taskPlannerService = TaskPlannerService.createProxy(vertx.getDelegate(), TASK_PLANNER_SERVICE_ADDRESS);
+            ServiceProxyBuilder taskplannerServiceProxyBuilder = new ServiceProxyBuilder(vertx.getDelegate())
+                    .setAddress(TASK_PLANNER_SERVICE_ADDRESS)
+                    .setOptions(new DeliveryOptions().setSendTimeout(3600000)); //1hr timeout - sometimes chat completions take a hot second.
+            taskPlannerService = taskplannerServiceProxyBuilder.build(TaskPlannerService.class);
 
             api.route(HttpMethod.POST, "/explore").handler(this::exploreValidationHandler);
             api.route(HttpMethod.POST, "/explore").handler(this::exploreHandler);

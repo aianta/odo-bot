@@ -137,6 +137,8 @@ public class ExecutionRequest {
     }
 
     public ExecutionRequest setParameters(List<ExecutionParameter> parameters) {
+        log.info("Execution Request Parameters:");
+        parameters.forEach(parameter -> log.info(parameter.toJson().encodePrettily()));
         this.parameters = parameters;
         return this;
     }

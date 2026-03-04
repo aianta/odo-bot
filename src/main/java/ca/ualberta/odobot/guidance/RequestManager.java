@@ -141,9 +141,14 @@ public class RequestManager {
                         .collect(HashSet::new, HashSet::addAll, HashSet::addAll);
 
                 Set<String> resourceParameters = request.getParameters().stream()
+                        .peek(param->log.info("[1]Parameter: {}", param.toJson().encodePrettily() ))
                         .filter(p->p.getType().equals(ExecutionParameter.ParameterType.ResourceParameter))
+                        .peek(param->log.info("[2]Parameter: {}", param.toJson().encodePrettily() ))
                         .map(p->LogPreprocessor.neo4j.getParameterAssociatedNodes(p.getNodeId().toString()))
+                        .peek(param->log.info("[3]Parameter Id: {}", param ))
                         .collect(HashSet::new, HashSet::addAll,HashSet::addAll);
+
+                log.info("Resource Parameter Set in getExecutionPath: {}", resourceParameters.toString());
 
                 Set<String> apiCalls = request.getTargets();
 
@@ -573,7 +578,13 @@ public class RequestManager {
                         }
 
 
-                        return observedXPath.equals(((XPathInstruction) lastInstruction).xpath) || lastInstruction.alternateXpaths().contains(observedPath);
+                        log.info("There are {} alternate xpaths associated with the last instruction", lastInstruction.alternateXpaths().size());
+                        lastInstruction.alternateXpaths().forEach(alternateXpath->log.info("{}", alternateXpath));
+
+                        log.info("Expected outcome: {}", observedXPath.equals(((XPathInstruction) lastInstruction).xpath) || lastInstruction.alternateXpaths().contains(observedXPath));
+                        log.info("lastInstruction.alternateXpaths().contains(observedPath): {}", lastInstruction.alternateXpaths().contains(observedXPath));
+
+                        return observedXPath.equals(((XPathInstruction) lastInstruction).xpath) || lastInstruction.alternateXpaths().contains(observedXPath);
                     }
 
                     if(lastInstruction instanceof DynamicXPathInstruction){

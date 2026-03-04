@@ -141,6 +141,7 @@ public class EvaluateTask implements Runnable{
 
         if(agent == Agent.ODO_BOT_NL){
             return taskPlannerService.taskQueryConstruction(task)
+                    .onFailure(err->log.error(err.getMessage(), err))
                     .compose(definedTask->{
                         log.info("Got task definition from task query construction:\n{}", definedTask.encodePrettily());
                         saveTaskQueryConstructionResult("./%s/%s-task-query-construction-result.json".formatted("execution_events", definedTask.getString("_evalId")).replaceAll("\\|","-"), definedTask);
@@ -153,7 +154,8 @@ public class EvaluateTask implements Runnable{
 
                         JsonArray targets = definedTask.getJsonArray("targets");
                         executionRequest.setTargets(targets.stream()
-                                .map(o->(String)o)
+                                .map(o->(JsonObject)o)
+                                .map(o->o.getString("id"))
                                 .collect(Collectors.toSet())
                         );
 

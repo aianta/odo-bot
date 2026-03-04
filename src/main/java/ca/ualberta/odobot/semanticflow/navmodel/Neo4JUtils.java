@@ -1545,7 +1545,7 @@ public class Neo4JUtils {
     public Set<String> getParameterAssociatedNodes(String parameterNodeId){
 
         String sQuery = """
-                match (n)<-[:PARAM]-(m) WHERE (n:InputParameter OR n:SchemaParameter OR n:ResourceParameter) AND n.id = $id RETURN m.id;
+                match (n)<-[:PARAM]-(m) WHERE (n:InputParameter OR n:SchemaParameter OR n:ResourceParameterNode) AND n.id = $id RETURN m.id;
                 """;
 
         Query query = new Query(sQuery, parameters("id", parameterNodeId));
@@ -1640,6 +1640,14 @@ public class Neo4JUtils {
         Query query = new Query(sQuery);
 
         return readNodes(query, APINode.class);
+    }
+
+    public List<GraphQLNode> getAllGraphQLNodes(){
+        String sQuery = """
+                match (n:GraphQLNode) return n;
+                """;
+        Query query = new Query(sQuery);
+        return readNodes(query, GraphQLNode.class);
     }
 
     public List<String> getAllXpaths(){

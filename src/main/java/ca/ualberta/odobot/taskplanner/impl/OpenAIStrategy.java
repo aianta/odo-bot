@@ -115,7 +115,17 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         ListIterator<JsonObject> it = apiCalls.listIterator();
         while (it.hasNext()) {
             JsonObject curr = it.next();
-            sb.append((it.previousIndex() + 1) + ". " + curr.getString("method") + " - " + curr.getString("path") + "\n");
+            String genericEntry = (it.previousIndex() + 1) + ". [%s]";
+            String methodAndPath =  curr.getString("method") + " - " + curr.getString("path");
+
+            if(curr.containsKey("operationName")){
+                genericEntry = genericEntry.formatted("GraphQL");
+                sb.append(genericEntry + " " +  curr.getString("operationName") + "\n");
+            }else{
+                genericEntry = genericEntry.formatted("API");
+                sb.append(genericEntry + " " +  methodAndPath + "\n");
+            }
+
         }
         sb.append("\n");
         sb.append("Task Description:\n");
@@ -133,6 +143,7 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
     public Future<List<JsonObject>> getTaskInputParameterMappings(String taskDescription, List<JsonObject> dataEntryAnnotations){
 
         log.info("Getting input parameter mappings from task description:\n{}", taskDescription);
+
 
         Optional<String> result = generateWithValidation(()->_getTaskInputParameterMappings(taskDescription, dataEntryAnnotations),
                 //Validator attempts to parse output as JSON array

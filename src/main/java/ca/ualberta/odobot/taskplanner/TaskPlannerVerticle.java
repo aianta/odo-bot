@@ -72,6 +72,10 @@ public class TaskPlannerVerticle extends HttpServiceVerticle {
         return Completable.complete();
     }
 
+    @Deprecated
+    /**
+     * TODO: This method still uses the old schema parameter approach... update to resource params
+     */
     private void taskHandler(RoutingContext rc){
         String taskDescription = rc.body().asString();
 

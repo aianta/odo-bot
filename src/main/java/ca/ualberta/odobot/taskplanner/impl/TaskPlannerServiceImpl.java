@@ -63,19 +63,25 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
                 this.getRelevantResourceParameters(taskDescription),
                 //Resolve target API calls for the task.
                 this.getRelevantAPICalls(taskDescription)
-        ).onFailure(err->log.error(err.getMessage(), err))
+        ).onFailure(err->{
+            log.error("Error while performing task query construction");
+            log.error(err.getMessage(), err);
+                })
                 .compose(compositeFuture -> {
 
             try{
                 //Extract the results from the composite future.
+                log.info("Got input parameter mappings");
                 List<JsonObject> inputParameterMappings = compositeFuture.resultAt(0);
+                log.info("Got resource parameters mappings");
                 List<JsonObject> resourceParameters = compositeFuture.resultAt(1);
+                log.info("Got API call mappings");
                 List<JsonObject> apiCalls = compositeFuture.resultAt(2);
 
                 JsonObject result =  new JsonObject();
                 result.put("id", task.getString("id"));
                 result.put("userLocation", task.getString("userLocation"));
-                result.put("targets", apiCalls.stream().map(apiCall->apiCall.getString("id")).collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
+                result.put("targets", apiCalls.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
 
                 //Compute input parameters in task format for odobot.
                 JsonArray parameters = inputParameterMappings.stream()
@@ -103,6 +109,8 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
                 result.put("parameters", parameters);
                 result.put("_evalId", task.getString("_evalId"));
 
+                log.info("Completed task query construction!");
+
                 return Future.succeededFuture(result);
             }catch (Exception e){
                 log.error(e.getMessage(), e);
@@ -115,34 +123,30 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
 
     public Future<List<JsonObject>> getRelevantResourceParameters(String taskDescription){
         log.info("getRelevantResourceParameters");
-        return vertx.<List<JsonObject>>executeBlocking(blocking->{
-            sqlite.getResourceParameterLabels()
-                    .compose(labels->this.strategy.getTaskResourceParameters(taskDescription, labels.stream().toList()))
-                    //Resolve node ids for identified resource parameters.
-                    .compose(mapping->{
-                        List<JsonObject> finalMapping = new ArrayList<>();
-                        for(JsonObject param: mapping){
-                            String parameterNodeId = neo4j.getNodeIdByResourceParameterName(param.getString("name"));
-                            if(parameterNodeId != null){
-                                param.put("id", parameterNodeId);
-                                finalMapping.add(param);
-                            }
-
+        return sqlite.getResourceParameterLabels()
+                .compose(labels->this.strategy.getTaskResourceParameters(taskDescription, labels.stream().toList()))
+                //Resolve node ids for identified resource parameters.
+                .compose(mapping->{
+                    List<JsonObject> finalMapping = new ArrayList<>();
+                    for(JsonObject param: mapping){
+                        String parameterNodeId = neo4j.getNodeIdByResourceParameterName(param.getString("name"));
+                        if(parameterNodeId != null){
+                            param.put("id", parameterNodeId);
+                            finalMapping.add(param);
                         }
-                        return Future.succeededFuture(finalMapping);
-                    })
-                    .onSuccess(blocking::complete)
-                    .onFailure(blocking::fail);
-        });
+
+                    }
+                    return Future.succeededFuture(finalMapping);
+                });
     }
 
     @Override
     public Future<List<JsonObject>> getRelevantObjectParameters(String taskDescription) {
         //Execute in a separate thread.
-        return vertx.<List<JsonObject>>executeBlocking(blocking->{
+
 
             //Fetch the schemas/objects from sqlite
-            sqlite.getSemanticSchemas()
+            return sqlite.getSemanticSchemas()
                     .onFailure(err->log.error(err.getMessage(), err))
                     //Filter duplicates
                     .compose(schemas->{
@@ -165,18 +169,15 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
                             schema.put("id", neo4j.getNodeIdBySchemaName(schema.getString("name")));
                         }
                         return Future.succeededFuture(schemas);
-                    })
-                    .onSuccess(blocking::complete)
-                    .onFailure(blocking::fail)
-            ;
-        });
+                    });
+
 
     }
 
     @Override
     public Future<List<JsonObject>> getInputParameterMappings(String taskDescription) {
-        return vertx.<List<JsonObject>>executeBlocking(blocking->{
-            sqlite.getAllDataEntryAnnotations()
+
+            return sqlite.getAllDataEntryAnnotations()
                     .onFailure(err->log.error(err.getMessage(), err))
                     .compose(dataEntryAnnotations->this.strategy.getTaskInputParameterMappings(taskDescription, dataEntryAnnotations))
                     .compose(chosenParameters->{
@@ -185,16 +186,16 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
                             entry.put("id", neo4j.getInputParameterId(entry.getString("label")));
                         }
                         return Future.succeededFuture(chosenParameters);
-                    })
-                    .onSuccess(blocking::complete)
-                    .onFailure(blocking::fail);
-        });
+                    });
+
     }
 
     @Override
     public Future<List<JsonObject>> getRelevantAPICalls(String taskDescription) {
 
-        return vertx.<List<JsonObject>>executeBlocking(blocking->{
+
+
+
             List<JsonObject>  apiCalls = neo4j.getAllAPINodes()
                     .stream()
                     .map(apiNode -> new JsonObject()
@@ -203,10 +204,18 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
                             .put("id", apiNode.getId().toString())
                     ).collect(Collectors.toList());
 
-            this.strategy.getTaskAPICalls(taskDescription, apiCalls)
-                    .onSuccess(blocking::complete)
-                    .onFailure(blocking::fail);
-        });
+            apiCalls.addAll(
+                    neo4j.getAllGraphQLNodes().stream()
+                            .map(graphQLNode -> new JsonObject()
+                                    .put("method", graphQLNode.getMethod())
+                                    .put("path", graphQLNode.getPath())
+                                    .put("operationName", graphQLNode.getOperationName())
+                                    .put("id", graphQLNode.getId().toString())
+                            ).toList()
+            );
+
+            return this.strategy.getTaskAPICalls(taskDescription, apiCalls);
+
 
     }
 }

@@ -39,6 +39,6 @@ public class LabelTrajectoryTask extends AbstractOpenAIStrategy implements Runna
 
 
 
-
+        return null;
     }
 }

@@ -254,18 +254,18 @@ public class NavPathsConstructor {
      * in the exclude set.
      * @param tx a database transaction to use in computing the path.
      * @param startingNodeId the id of the node from which the path starts.
-     * @param objectParameters the object parameters that are allowed to be used along the way.
+     * @param resourceParameters the object parameters that are allowed to be used along the way.
      * @param inputParameters the input parameters that are allowed to be used along the way.
      * @param apiCalls Should be a set of a single node id that is the target node for the path.
      * @param exclude set of Node ids to exclude.
      * @return A list of nav paths from the starting node to the target node (api call). 
      */
-    public List<NavPath> constructV2(Transaction tx, String startingNodeId, Set<String> objectParameters, Set<String> inputParameters, Set<String> apiCalls, Set<String> exclude){
+    public List<NavPath> constructV2(Transaction tx, String startingNodeId, Set<String> resourceParameters, Set<String> inputParameters, Set<String> apiCalls, Set<String> exclude){
 
-        return constructV2(tx, startingNodeId, objectParameters, inputParameters, apiCalls, List.of(
+        return constructV2(tx, startingNodeId, resourceParameters, inputParameters, apiCalls, List.of(
                 new DoesNotIncludeNodes(exclude),
                 new DoesNotIncludeOtherParameters(inputParameters, "DataEntryNode"),
-                new DoesNotIncludeOtherParameters(objectParameters, "CollapsedClickNode")
+                new DoesNotIncludeOtherParameters(resourceParameters, "ClickNode")
         ));
 
     }
@@ -274,18 +274,18 @@ public class NavPathsConstructor {
      * Helper method that invokes the constructV2 method filtering paths to only include those which don't contain unspecified input or object parameters.
      * @param tx
      * @param startingNodeId
-     * @param objectParameters
+     * @param resourceParameters
      * @param inputParameters
      * @param apiCalls
      * @return
      */
-    public List<NavPath> constructV2(Transaction tx, String startingNodeId, Set<String> objectParameters, Set<String> inputParameters, Set<String> apiCalls){
+    public List<NavPath> constructV2(Transaction tx, String startingNodeId, Set<String> resourceParameters, Set<String> inputParameters, Set<String> apiCalls){
 
         //Setup path candidate predicates
         Predicate<Path> onlySpecifiedInputParameters = new DoesNotIncludeOtherParameters(inputParameters, "DataEntryNode");
-        //Predicate<Path> onlySpecifiedObjectParameters = new DoesNotIncludeOtherParameters(objectParameters, "CollapsedClickNode");
+        Predicate<Path> onlySpecifiedResourceParameters = new DoesNotIncludeOtherParameters(resourceParameters, "ClickNode");
 
-        return constructV2(tx, startingNodeId, objectParameters, inputParameters, apiCalls, List.of(onlySpecifiedInputParameters));
+        return constructV2(tx, startingNodeId, resourceParameters, inputParameters, apiCalls, List.of(onlySpecifiedInputParameters, onlySpecifiedResourceParameters));
 
     }
 

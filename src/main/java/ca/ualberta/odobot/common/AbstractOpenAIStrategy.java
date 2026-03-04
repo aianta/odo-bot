@@ -8,12 +8,15 @@ import com.azure.ai.openai.models.ChatCompletionsOptions;
 import com.azure.ai.openai.models.ChatRequestMessage;
 import com.azure.ai.openai.models.ChatResponseMessage;
 import com.azure.core.credential.KeyCredential;
+import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
@@ -21,6 +24,7 @@ public abstract class AbstractOpenAIStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractOpenAIStrategy.class);
 
+    private static final ThreadPoolExecutor executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(6);
     protected OpenAIClient client;
 
     protected JsonObject config;

@@ -113,7 +113,12 @@ public class MainVerticle extends ConfigurableVerticle {
 
         if(_config.getBoolean("TaskPlanner")){
             TaskPlannerVerticle taskPlannerVerticle = new TaskPlannerVerticle();
-            vertx.deployVerticle(taskPlannerVerticle);
+            vertx.deployVerticle(taskPlannerVerticle, new DeploymentOptions()
+                    .setWorkerPoolName("task-planner-pool")
+                    .setWorkerPoolSize(8)
+                    .setMaxWorkerExecuteTime(1)
+                    .setMaxWorkerExecuteTimeUnit(TimeUnit.HOURS)
+            );
         }
 
         if(_config.getBoolean("ModelConstruction")){
