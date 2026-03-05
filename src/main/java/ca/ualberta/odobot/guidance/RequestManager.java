@@ -133,8 +133,8 @@ public class RequestManager {
             //Handle Natural Language tasks
             if(request.getType() == ExecutionRequest.Type.NL){
                 log.info("Natural language task request");
-                //Resolve the parameter associated input and object nodes
-                //Basically the node IDs in the task definition correspond with the actual, Input and Schema parameter nodes.
+                //Resolve the parameter associated input and resource nodes
+                //Basically the node IDs in the task definition correspond with the actual, Input and Resource parameter nodes.
                 //What we actually want, are the ids of the nodes associated with those input and schema parameter nodes (as defined by the PARAM edge).
                 Set<String> inputParameters = request.getParameters().stream()
                         .filter(p->p.getType().equals(ExecutionParameter.ParameterType.InputParameter))
@@ -161,7 +161,8 @@ public class RequestManager {
                 tx = LogPreprocessor.graphDB.db.beginTx();
 
                 //navPaths = LogPreprocessor.pathsConstructor.construct(tx, src.toString(), resourceParameters, inputParameters, apiCalls);
-                navPaths = LogPreprocessor.pathsConstructor.constructV2(tx, src.toString(), resourceParameters, inputParameters, apiCalls);
+                //navPaths = LogPreprocessor.pathsConstructor.constructV2(tx, src.toString(), resourceParameters, inputParameters, apiCalls);
+                navPaths = LogPreprocessor.pathsConstructor.constructV3(tx, src.toString(), resourceParameters, inputParameters, apiCalls);
 
                 //First collect together our parameter mappings, we'll need this to generate semantically meaningful natural language descriptions of the different paths.
                 JsonArray parameters = request.getParameters().stream().map(ExecutionParameter::toJson).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
@@ -442,7 +443,8 @@ public class RequestManager {
                 tx.close(); //Close the previous graphDb transaction.
                 tx = LogPreprocessor.graphDB.db.beginTx(); // Open a new one
 
-                navPaths = LogPreprocessor.pathsConstructor.constructV2(tx, updatedStartingNodeId.get(), request.getResourceParameters(), request.getInputParameters(), request.getApiCalls(), request.getFailedNodes());
+                //navPaths = LogPreprocessor.pathsConstructor.constructV2(tx, updatedStartingNodeId.get(), request.getResourceParameters(), request.getInputParameters(), request.getApiCalls(), request.getFailedNodes());
+                navPaths = LogPreprocessor.pathsConstructor.constructV3(tx, updatedStartingNodeId.get(), request.getResourceParameters(), request.getInputParameters(), request.getApiCalls());
                 request.addRecomputation();
 
                 log.info("Found {} paths after recomputation", navPaths.size());
@@ -696,7 +698,8 @@ public class RequestManager {
 
                     //TODO - path planning/finding work
                     //navPaths = LogPreprocessor.pathsConstructor.construct(tx, updatedStartingNode.get().toString(), request.getObjectParameters(), request.getInputParameters(), request.getApiCalls());
-                    navPaths = LogPreprocessor.pathsConstructor.constructV2(tx, updatedStartingNode.get().toString(), request.getResourceParameters(), request.getInputParameters(), request.getApiCalls());
+                    //navPaths = LogPreprocessor.pathsConstructor.constructV2(tx, updatedStartingNode.get().toString(), request.getResourceParameters(), request.getInputParameters(), request.getApiCalls());
+                    navPaths = LogPreprocessor.pathsConstructor.constructV3(tx, updatedStartingNode.get().toString(), request.getResourceParameters(), request.getInputParameters(), request.getApiCalls());
                     request.addRecomputation();
 
                     log.info("Found {} paths after recomputation", navPaths.size());

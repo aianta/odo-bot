@@ -24,15 +24,15 @@ public class TaskPlanningEvaluatorForSingleTargets implements Evaluator {
     //UUIDs of related API call vertices. Essentially acting as a pool of potential target vertices.
     private Set<String> apiCalls;
 
-    private Set<String> objectParameters;
+    private Set<String> resourceParameters;
 
-    public TaskPlanningEvaluatorForSingleTargets(Set<String> inputParameters, Set<String> objectParameters, Set<String> apiCalls){
+    public TaskPlanningEvaluatorForSingleTargets(Set<String> inputParameters, Set<String> resourceParameters, Set<String> apiCalls){
         this.inputParameters = inputParameters;
         this.apiCalls = apiCalls;
-        this.objectParameters = objectParameters;
+        this.resourceParameters = resourceParameters;
 
         log.info("InputParameter Set: {} ", inputParameters );
-        log.info("SchemaParameter Set: {} ", objectParameters );
+        log.info("ResourceParameter Set: {} ", resourceParameters );
         log.info("apiCall Set: {}", apiCalls);
     }
 
@@ -80,7 +80,7 @@ public class TaskPlanningEvaluatorForSingleTargets implements Evaluator {
                 endNode.hasRelationship(Direction.OUTGOING, RelationshipType.withName("PARAM")) &&
                 //Compare object parameter node id to our set of object parameter nodes. NOTE: this is not the endNode, but rather the SchemaParameter node attached to the endNode.
                 //objectParameters.contains((String)endNode.getSingleRelationship(RelationshipType.withName("PARAM"), Direction.OUTGOING).getEndNode().getProperty("id"))
-                !objectParameters.contains(endNodeId)
+                !resourceParameters.contains(endNodeId)
         ){
             //Stop exploring paths which contain object parameters that are not referenced in the task description
             return Evaluation.EXCLUDE_AND_PRUNE;

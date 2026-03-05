@@ -100,6 +100,21 @@ public interface SqliteService {
 
     Future<String> getLabelByNormalizedHref(String href);
 
+    /**
+     * Returns the estimated distance (number of events) between a source and a target node in the nav model,
+     * based on the trajectories used to construct the model which contained both source and target nodes.
+     * @param srcNodeId
+     * @param tgtNodeId
+     * @return estimated distance between source and target nav node, OR null, if the two nodes were never observed in the same trajectory together.
+     */
+    Future<Double> getEstimatedNavModelDistance(String srcNodeId, String tgtNodeId);
+
+    Future<Void> saveEventNodeMapping(String eventId, String nodeId, int eventIndex, String trajectoryId);
+
+    Future<Void> mergeEventNodeMappings(Set<String> oldNodeIds, String newNodeId);
+
+    Future<Void> updateEventNodeMapping(String oldNodeId, String newNodeId);
+
     Future<Void> saveHTMLAttribute(String tag, String attribute, String value);
 
     /**

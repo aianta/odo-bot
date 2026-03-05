@@ -598,7 +598,7 @@ public class LogPreprocessor extends AbstractVerticle {
 
     private void testingCollapse(RoutingContext rc){
 
-        CollapsingTraversal collapsingTraversal = new CollapsingTraversal(graphDB);
+        CollapsingTraversal collapsingTraversal = new CollapsingTraversal(graphDB, sqliteService);
         List<Collapse> collapses = collapsingTraversal.doCollapsePass();
 
         log.info("Found {} collapsable patterns!", collapses.size());
@@ -609,7 +609,7 @@ public class LogPreprocessor extends AbstractVerticle {
 
     private void testingPostLocationEffectMerger(RoutingContext rc){
 
-        PostLocationEffectMerger merger = new PostLocationEffectMerger(graphDB);
+        PostLocationEffectMerger merger = new PostLocationEffectMerger(graphDB, sqliteService);
         merger.doPass();
 
 

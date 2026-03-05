@@ -3,8 +3,10 @@ package ca.ualberta.odobot.semanticflow.navmodel;
 import ca.ualberta.odobot.guidance.execution.ExecutionParameter;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import ca.ualberta.odobot.sqlite.SqliteService;
+import ca.ualberta.odobot.taskplanner.TaskParameterEvaluator;
 import ca.ualberta.odobot.taskplanner.TaskPlanningEvaluator;
 import ca.ualberta.odobot.taskplanner.TaskPlanningEvaluatorForSingleTargets;
+import ca.ualberta.odobot.taskplanner.TrajectoryDistanceBeamPathExpander;
 import org.neo4j.graphdb.*;
 import org.neo4j.graphdb.traversal.*;
 import org.slf4j.Logger;
@@ -270,6 +272,55 @@ public class NavPathsConstructor {
 
     }
 
+    public List<NavPath> constructV3(Transaction tx, String startingNodeId, Set<String> resourceParameters, Set<String> inputParameters, Set<String> apiCalls ){
+
+        if(apiCalls.size() != 1){
+            throw new RuntimeException("Cannot construct path to multiple different API call targets!");
+        }
+
+        String targetNodeId = apiCalls.iterator().next();
+        Node srcNode =  fetchNodeById(tx, startingNodeId);
+
+
+        log.info("Path construction starting from node: {}", startingNodeId);
+
+        TaskParameterEvaluator evaluator = new TaskParameterEvaluator(
+                targetNodeId,
+                inputParameters,
+                resourceParameters
+        );
+
+        TrajectoryDistanceBeamPathExpander pathExpander = new TrajectoryDistanceBeamPathExpander(
+                targetNodeId,
+                5
+        );
+
+        TraversalDescription traversal = tx.traversalDescription()
+                .breadthFirst()
+                .uniqueness(Uniqueness.NODE_PATH)
+                .expand(pathExpander)
+                .evaluator(evaluator);
+
+        Traverser traverser = traversal.traverse(srcNode);
+        Iterator<Path> it = traverser.iterator();
+
+        List<NavPath> paths = new ArrayList<>();
+        while (it.hasNext()){
+            NavPath navPath = new NavPath();
+            navPath.setPath(it.next());
+            paths.add(navPath);
+        }
+
+        //Close connection to SQLite that was used to compute the heuristic for path expansion.
+        pathExpander.cleanUp();
+
+        log.info("Found {} paths", paths.size());
+
+        return paths;
+
+
+    }
+
     /**
      * Helper method that invokes the constructV2 method filtering paths to only include those which don't contain unspecified input or object parameters.
      * @param tx
@@ -306,7 +357,7 @@ public class NavPathsConstructor {
         String targetNodeId = apiCalls.iterator().next();
 
 
-        String findPathsQueryString = "MATCH p=(n)-[:NEXT*1..%s]->(m) WHERE n.id = \"%s\" AND m.id = \"%s\" return p limit %s;".formatted("2000", startingNodeId, targetNodeId, "5000");
+        String findPathsQueryString = "MATCH p=(n)-[:NEXT*1..%s]->(m) WHERE n.id = \"%s\" AND m.id = \"%s\" return p limit %s;".formatted("2000", startingNodeId, targetNodeId, "50");
 
         log.info("{}", findPathsQueryString);
 

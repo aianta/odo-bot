@@ -1,6 +1,7 @@
 package ca.ualberta.odobot.semanticflow.navmodel;
 
 import ca.ualberta.odobot.semanticflow.navmodel.nodes.*;
+import ca.ualberta.odobot.sqlite.SqliteService;
 import org.neo4j.graphdb.*;
 import org.neo4j.graphdb.traversal.TraversalDescription;
 import org.neo4j.graphdb.traversal.Traverser;
@@ -9,6 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class CollapsingTraversal {
 
@@ -16,8 +18,11 @@ public class CollapsingTraversal {
 
     private final GraphDatabaseService db;
 
-    public CollapsingTraversal(GraphDB graphDB){
+    private final SqliteService sqliteService;
+
+    public CollapsingTraversal(GraphDB graphDB, SqliteService sqliteService ) {
         this.db = graphDB.db;
+        this.sqliteService = sqliteService;
     }
 
 
@@ -106,6 +111,8 @@ public class CollapsingTraversal {
             nodeSet.forEach(n->sb.append(String.format("%s", n.getElementId())));
             log.info("Collapsing [{}] into a single node {}!", sb.toString(), collapsedNode.id().toString());
 
+            Set<String> nodeSetIds = nodeSet.stream().map(n->(String)n.getProperty("id")).collect(Collectors.toSet());
+
             //Find any parameters associated with these nodes and save them so we can re-attach them to the collapsed node later.
             nodeSet.forEach(node->{
                 var paramResult = tx.execute("MATCH (n)-[:PARAM]->(m) WHERE elementId(n) = '%s' return m".formatted(node.getElementId()));
@@ -121,6 +128,9 @@ public class CollapsingTraversal {
 
             //Create the collapsed node
             Node replacement = collapsedNode.createNode(tx);
+
+            //Update the event-node index in sqlite with the new changes to the nav model structure.
+            sqliteService.mergeEventNodeMappings(nodeSetIds, (String)replacement.getProperty("id"));
 
             collapsedNodeParameters.put(replacement, resourceParameters);
 

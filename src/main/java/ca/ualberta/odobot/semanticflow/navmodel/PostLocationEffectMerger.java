@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.semanticflow.navmodel;
 
+import ca.ualberta.odobot.sqlite.SqliteService;
 import org.neo4j.graphdb.GraphDatabaseService;
 import org.neo4j.graphdb.Result;
 import org.neo4j.graphdb.Transaction;
@@ -16,9 +17,11 @@ public class PostLocationEffectMerger {
     private static final Logger log = LoggerFactory.getLogger(PostLocationEffectMerger.class);
 
     private final GraphDatabaseService db;
+    private final SqliteService sqliteService;
 
-    public PostLocationEffectMerger(GraphDB graphDB){
+    public PostLocationEffectMerger(GraphDB graphDB, SqliteService sqliteService) {
         this.db = graphDB.db;
+        this.sqliteService = sqliteService;
     }
 
     public void doPass(){
@@ -55,6 +58,8 @@ public class PostLocationEffectMerger {
                         Set<Node> outgoingNodes  = new HashSet<>();
                         Set<String> instances = new HashSet<>();
 
+                        Set<String> effectNodeIds = new HashSet<>();
+
                         effectNodes.forEach(effectNode->{
 
                             //Find all nodes with an incoming NEXT edge to this effect node.
@@ -76,6 +81,8 @@ public class PostLocationEffectMerger {
                             //Remove all relationships from this effect node
                             effectNode.getRelationships().forEach(relationship -> relationship.delete());
 
+                            effectNodeIds.add((String)effectNode.getProperty("id"));
+
                             //Remove the effect node
                             effectNode.delete();
 
@@ -88,6 +95,8 @@ public class PostLocationEffectMerger {
                         Node mergedEffectNode = tx.createNode(Label.label("EffectNode"), Label.label("CollapsedEffectNode"));
                         mergedEffectNode.setProperty("id", UUID.randomUUID().toString());
                         mergedEffectNode.setProperty("instances", instances.toArray(new String [0]));
+
+                        sqliteService.mergeEventNodeMappings(effectNodeIds, (String)mergedEffectNode.getProperty("id"));
 
                         //Stitch together the outgoing relationships
                         outgoingNodes.forEach(outNode->{

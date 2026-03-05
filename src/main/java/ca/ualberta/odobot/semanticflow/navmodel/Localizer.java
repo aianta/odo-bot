@@ -56,20 +56,21 @@ public class Localizer {
     private Map<DynamicXPath, UUID> buildDynamicXPathLocationIndex(){
 
         Map<DynamicXPath, UUID> index = new HashMap<>();
-
-        executeNodesQuery("match (n) where n:CollapsedClickNode or n:CollapsedDataEntryNode return n;", "n",
-                (node)->{
-
-                    //For debugging
-                    log.info("Node:");
-                    node.getLabels().forEach(label->log.info("\t{}", label.name()));
-                    node.getAllProperties().forEach((key,value)->log.info("\t{}:{}", key, value.toString()));
-
-                    DynamicXPathIndexEntry entry = buildDynamicXPathIndexEntry(node);
-                    index.put(entry.dynamicXPath(), entry.nodeId());
-                });
-
         return index;
+
+//        executeNodesQuery("match (n) where n:CollapsedClickNode or n:CollapsedDataEntryNode return n;", "n",
+//                (node)->{
+//
+//                    //For debugging
+//                    log.info("Node:");
+//                    node.getLabels().forEach(label->log.info("\t{}", label.name()));
+//                    node.getAllProperties().forEach((key,value)->log.info("\t{}:{}", key, value.toString()));
+//
+//                    DynamicXPathIndexEntry entry = buildDynamicXPathIndexEntry(node);
+//                    index.put(entry.dynamicXPath(), entry.nodeId());
+//                });
+//
+//        return index;
 
     }
 

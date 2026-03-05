@@ -63,6 +63,7 @@ public class SqliteServiceImpl implements SqliteService {
         createClusteringsTable();
         createHTMLAttributeTable();
         createNormalizedLinksTable();
+        createEventNodeIndexTable();
     }
 
 
@@ -1172,6 +1173,108 @@ public class SqliteServiceImpl implements SqliteService {
         return promise.future();
     }
 
+    public Future<Double> getEstimatedNavModelDistance(String srcNodeId, String tgtNodeId){
+        log.info("Estimating distance between {} and  {} based on observed trajectories",  srcNodeId, tgtNodeId);
+        Promise<Double> promise = Promise.promise();
+        String sql = """
+                WITH
+                     src_avg_index AS (
+                         SELECT avg(event_index_in_trajectory) as value from event_node_index where node_id = ? and trajectory_id 
+                            IN (
+                                SELECT trajectory_id from event_node_index where node_id = ? and trajectory_id 
+                                    IN (
+                                        SELECT trajectory_id from event_node_index where node_id = ?
+                                    )
+                            ) 
+                     ), 
+                     tgt_avg_index AS (
+                        SELECT avg(event_index_in_trajectory) as value from event_node_index where node_id = ? and trajectory_id 
+                        IN (
+                            SELECT trajectory_id from event_node_index where node_id = ? and trajectory_id 
+                                IN (
+                                    SELECT trajectory_id from event_node_index where node_id = ?
+                                )
+                        ) 
+                     )
+                    
+                    SELECT ABS(src_avg_index.value - tgt_avg_index.value) as distance FROM src_avg_index, tgt_avg_index;
+                """;
+
+        Tuple params = Tuple.of(srcNodeId, srcNodeId, tgtNodeId, tgtNodeId, srcNodeId, tgtNodeId);
+
+        pool.preparedQuery(sql).execute(params)
+                .onFailure(promise::fail)
+                .onSuccess(rows->{
+
+                    Row result = rows.iterator().next();
+
+                    Double distance = result.getDouble("distance");
+
+                    log.info("Estimated distance between {} and  {} was {}",  srcNodeId, tgtNodeId, distance);
+
+                    promise.complete(distance);
+
+                });
+
+        return promise.future();
+    }
+
+    public Future<Void> mergeEventNodeMappings(Set<String> oldNodeIds, String newNodeId){
+
+        StringBuilder sb = new StringBuilder();
+        Iterator<String> it = oldNodeIds.iterator();
+        while(it.hasNext()){
+            sb.append("'" +  it.next() + "'");
+            if(it.hasNext()){
+                sb.append(",");
+            }
+        }
+
+        String sql = """
+                UPDATE event_node_index
+                SET node_id = ? 
+                WHERE node_id IN (%s);
+                """.formatted(sb.toString());
+
+        return executeParameterizedQuery(sql, Tuple.of(newNodeId));
+    }
+
+    public Future<Void> updateEventNodeMapping(String oldNodeId,  String newNodeId){
+        String sql = """
+                UPDATE event_node_index 
+                SET node_id = ? 
+                WHERE node_id = ?;
+                """;
+
+        Tuple params = Tuple.of(newNodeId, oldNodeId);
+        return executeParameterizedQuery(sql, params);
+    }
+
+    public Future<Void> saveEventNodeMapping(String eventId, String nodeId, int eventIndex, String trajectoryId){
+        String sql = """
+                INSERT INTO event_node_index (
+                    event_id,
+                    node_id,
+                    event_index_in_trajectory,
+                    trajectory_id)
+                    VALUES (?,?,?,?);
+                """;
+
+        Tuple params = Tuple.of(eventId, nodeId, eventIndex, trajectoryId);
+
+        return executeParameterizedQuery(sql, params);
+    }
+
+    private Future<Void> createEventNodeIndexTable(){
+        return createTable("""
+                CREATE TABLE IF NOT EXISTS event_node_index (
+                    event_id text primary key,
+                    node_id text not null,
+                    event_index_in_trajectory integer not null,
+                    trajectory_id not null
+                    );
+                """);
+    }
 
     private Future<Void> createHTMLAttributeTable(){
         return createTable("""

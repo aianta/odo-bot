@@ -210,6 +210,17 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
                 log.info("b is {} at {}", next.symbol(), successorIt.previousIndex());
 
                 neo4j.bind(a, b);
+
+                int eventIndex = it.previousIndex();
+                String eventId = timeline.getId().toString() + "#" + eventIndex;
+                sqliteService.saveEventNodeMapping(eventId, a.getId().toString(), eventIndex, timeline.getId().toString());
+
+                //If there is no successor after this one, save the current successor as it is the last element in the trajectory/timeline
+                if(!successorIt.hasNext()){
+                    int lastEventIndex = successorIt.previousIndex();
+                    String lastEventId = timeline.getId().toString() + "#" + lastEventIndex;
+                    sqliteService.saveEventNodeMapping(lastEventId, b.getId().toString(), lastEventIndex, timeline.getId().toString());
+                }
             }
         }else{
             throw new RuntimeException("Timeline size is too small! Timeline: %s".formatted(timeline.size()));
