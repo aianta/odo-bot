@@ -126,7 +126,9 @@ public class Neo4JUtils {
         var entityTimelineId = timeline.getId().toString()+"#"+index;
 
         Optional<String> graphQLOperation = networkEvent.getGraphQLOperationName();
+
         if(graphQLOperation.isPresent()){
+            log.info("Processing [{}] {} - {} - {}", entityTimelineId, networkEvent.getPath(), networkEvent.getMethod(), graphQLOperation.get());
             processNetworkEvent(entityTimelineId, networkEvent.getPath(), networkEvent.getMethod(), graphQLOperation.get());
         }else{
             processNetworkEvent(entityTimelineId, networkEvent.getPath(), networkEvent.getMethod());
@@ -307,6 +309,7 @@ public class Neo4JUtils {
         Supplier<GraphQLNode> newGraphQLNodeSupplier = ()->{
             GraphQLNode node = new GraphQLNode();
             node.setId(UUID.randomUUID());
+            log.info("Setting path to {}", networkEventPath);
             node.setPath(networkEventPath);
             node.setOperationName(graphQLOperationName);
             node.setMethod(networkEventMethod);
@@ -322,6 +325,8 @@ public class Neo4JUtils {
             props.put("operationName", graphQLNode.getOperationName());
             props.put("path", graphQLNode.getPath());
             props.put("method", graphQLNode.getMethod());
+
+            log.info("path: {}", graphQLNode.getPath());
 
             var stmt = "MERGE (n:GraphQLNode {path: $path, method: $method, operationName: $operationName}) ON CREATE SET n = $props ON MATCH SET n = $props RETURN n;";
             var query = new Query(stmt, parameters("path", graphQLNode.getPath(), "method", graphQLNode.getMethod(), "operationName", graphQLNode.getOperationName(), "props", props));
@@ -883,6 +888,8 @@ public class Neo4JUtils {
         if(target instanceof RadioButtonEvent){
             RadioButtonEvent radioButtonEvent = (RadioButtonEvent) target;
             log.info("RadioButtonNode with xpath: {}", radioButtonEvent.getXpath());
+            log.info("RadioButtonNode with radio group: {}", radioButtonEvent.getRadioGroup());
+            log.info("RadioButtonNode with base path: {}", radioButtonEvent.getBasePath());
             return getRadioButtonNode(radioButtonEvent.getXpath(), radioButtonEvent.getRadioGroup(), radioButtonEvent.getBasePath());
         }
 
@@ -960,7 +967,10 @@ public class Neo4JUtils {
             stmt = "MATCH (a:DataEntryNode {id:$aId})-[:NEXT]->(e:EffectNode)";
         }
 
-        if(predecessor instanceof APINode){
+        //GraphQL Nodes are sub-classes of API Nodes
+        if(predecessor instanceof GraphQLNode){
+            stmt = "MATCH (a:GraphQLNode {id:$aId})-[:NEXT]->(e:EffectNode)";
+        }else if (predecessor instanceof APINode){
             stmt = "MATCH (a:APINode {id:$aId})-[:NEXT]->(e:EffectNode)";
         }
 
@@ -988,7 +998,10 @@ public class Neo4JUtils {
             stmt+="-[:NEXT]->(b:DataEntryNode {id:$bId}) RETURN e;";
         }
 
-        if(successor instanceof APINode){
+
+        if(successor instanceof GraphQLNode){
+            stmt += "-[:NEXT]->(b:GraphQLNode {id:$bId}) RETURN e;";
+        }else if (successor instanceof APINode){
             stmt += "-[:NEXT]->(b:APINode {id:$bId}) RETURN e;";
         }
 
@@ -1026,7 +1039,9 @@ public class Neo4JUtils {
             stmt = "MATCH (e:EffectNode)-[:NEXT]->(n:DataEntryNode {id:$id}) RETURN e;";
         }
 
-        if(successor instanceof APINode){
+        if(successor instanceof GraphQLNode){
+            stmt = "MATCH (e:EffectNode)-[:NEXT]->(n:GraphQLNode {id:$id}) RETURN e;";
+        }else if(successor instanceof APINode){
             stmt = "MATCH (e:EffectNode)-[:NEXT]->(n:APINode {id:$id}) RETURN e;";
         }
 
@@ -1064,7 +1079,9 @@ public class Neo4JUtils {
             stmt = "MATCH (n:DataEntryNode {id:$id})-[:NEXT]->(e:EffectNode) RETURN e;";
         }
 
-        if(predecessor instanceof APINode){
+        if(predecessor instanceof GraphQLNode){
+            stmt = "MATCH (n:GraphQLNode {id:$id})-[:NEXT]->(e:EffectNode) RETURN e;";
+        }else if(predecessor instanceof APINode){
             stmt = "MATCH (n:APINode {id:$id})-[:NEXT]->(e:EffectNode) RETURN e;";
         }
 
@@ -1177,7 +1194,7 @@ public class Neo4JUtils {
 
     private RadioButtonNode getRadioButtonNode(String xpath, String radioGroup, String basePath){
         var stmt = "MATCH (n:RadioButtonNode {radioGroup:$radioGroup, basePath:$basePath}) WHERE $xpath IN n.xpaths return n";
-        var query = new Query(stmt, parameters("xpath", xpath, "radioGroup", radioGroup, "basePath", basePath));
+        var query = new Query(stmt, parameters("xpath", basePath + "," + xpath, "radioGroup", radioGroup, "basePath", basePath));
         return readNode(query, RadioButtonNode.class);
     }
 

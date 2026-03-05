@@ -12,6 +12,8 @@ public class GraphQLNode extends APINode{
 
         GraphQLNode result = fromRecord(record, new GraphQLNode());
         result.setOperationName(n.get("operationName").asString());
+        result.setPath(n.get("path").asString());
+        result.setMethod(n.get("method").asString());
 
         return result;
     }
