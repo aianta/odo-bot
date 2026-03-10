@@ -79,10 +79,23 @@ public class DataEntry2LabelVerticle extends HttpServiceVerticle {
         api.route().method(HttpMethod.GET).path("/generateLabels")
                 .handler(this::generateDataEntryLabels);
 
+        api.route().method(HttpMethod.GET).path("/dedupeLabels")
+                        .handler(this::dedupeLabels);
+
         api.route().method(HttpMethod.GET).path("/annotateModel")
                 .handler(this::annotateModel);
 
         return Completable.complete();
+    }
+
+    private void dedupeLabels(RoutingContext rc){
+        sqliteService.getAllDataEntryAnnotations()
+                .compose(annotations->dataEntry2LabelService.standardizeLabels(annotations))
+                .onFailure(err->log.error(err.getMessage(),err))
+                .onSuccess(standardizedLabels->{
+                    rc.response().setStatusCode(200).end(standardizedLabels.encodePrettily());
+                })
+        ;
     }
 
     private void annotateModel(RoutingContext rc){

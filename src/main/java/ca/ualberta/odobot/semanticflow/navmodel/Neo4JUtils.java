@@ -1751,6 +1751,8 @@ public class Neo4JUtils {
         String sQuery = "match (n:InputParameter) where n.label = $label return n.id;";
         Query query = new Query(sQuery, parameters("label", label));
 
+        log.info("Getting input parameter id with label: {}", label);
+
         try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
             String id = session.executeRead(tx->{
                 var result = tx.run(query);

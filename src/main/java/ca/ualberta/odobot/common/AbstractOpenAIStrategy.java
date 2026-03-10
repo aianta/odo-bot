@@ -42,6 +42,7 @@ public abstract class AbstractOpenAIStrategy {
 
     protected String executeChatCompletion(List<ChatRequestMessage> chatMessages){
         ChatCompletionsOptions options = new ChatCompletionsOptions(chatMessages);
+
         options.setN(1); //Only generate one choice
         options.setTemperature(config.getDouble("temperature"));
         if( config.containsKey("topP")){

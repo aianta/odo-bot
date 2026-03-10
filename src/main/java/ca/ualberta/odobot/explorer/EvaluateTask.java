@@ -172,7 +172,7 @@ public class EvaluateTask implements Runnable{
 
         if(agent == Agent.ODO_BOT){
             executionRequest.setId(UUID.fromString(task.getString("id")));
-            executionRequest.setTarget(UUID.fromString(task.getString("target")));
+            executionRequest.setTarget(UUID.fromString(task.getJsonArray("targets").getJsonObject(0).getString("id")));
             executionRequest.setUserLocation(task.getString("userLocation"));
             executionRequest.setType(ExecutionRequest.Type.PREDEFINED);
 
@@ -181,6 +181,13 @@ public class EvaluateTask implements Runnable{
                     .map(o->(JsonObject)o)
                     .map(ExecutionParameter::fromJson)
                     .collect(Collectors.toList())
+            );
+
+            JsonArray targets = task.getJsonArray("targets");
+            executionRequest.setTargets(targets.stream()
+                    .map(o->(JsonObject)o)
+                    .map(o->o.getString("id"))
+                    .collect(Collectors.toSet())
             );
 
             return Future.succeededFuture(executionRequest);

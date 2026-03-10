@@ -266,7 +266,119 @@ public class RequestManager {
 
                 tx = LogPreprocessor.graphDB.db.beginTx();
 
-                navPaths = LogPreprocessor.pathsConstructor.construct(tx, src,tgt, request.getParameters());
+                //Resolve the parameter associated input and resource nodes
+                //Basically the node IDs in the task definition correspond with the actual, Input and Resource parameter nodes.
+                //What we actually want, are the ids of the nodes associated with those input and schema parameter nodes (as defined by the PARAM edge).
+                Set<String> inputParameters = request.getParameters().stream()
+                        .filter(p->p.getType().equals(ExecutionParameter.ParameterType.InputParameter))
+                        .map(p->LogPreprocessor.neo4j.getParameterAssociatedNodes(p.getNodeId().toString()))
+                        .collect(HashSet::new, HashSet::addAll, HashSet::addAll);
+
+                Set<String> resourceParameters = request.getParameters().stream()
+                        .peek(param->log.info("[1]Parameter: {}", param.toJson().encodePrettily() ))
+                        .filter(p->p.getType().equals(ExecutionParameter.ParameterType.ResourceParameter))
+                        .peek(param->log.info("[2]Parameter: {}", param.toJson().encodePrettily() ))
+                        .map(p->LogPreprocessor.neo4j.getParameterAssociatedNodes(p.getNodeId().toString()))
+                        .peek(param->log.info("[3]Parameter Id: {}", param ))
+                        .collect(HashSet::new, HashSet::addAll,HashSet::addAll);
+
+                Set<String> apiCalls = request.getTargets();
+
+                //Save these for later if we need to re-compute paths for this request.
+                request.setApiCalls(apiCalls);
+                request.setInputParameters(inputParameters);
+                request.setResourceParameters(resourceParameters);
+
+                navPaths = LogPreprocessor.pathsConstructor.constructV3(tx, src.toString(), resourceParameters, inputParameters, apiCalls);
+
+                //First collect together our parameter mappings, we'll need this to generate semantically meaningful natural language descriptions of the different paths.
+                JsonArray parameters = request.getParameters().stream().map(ExecutionParameter::toJson).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+
+                //Different nav paths only matter if they involve different interactions.
+                //We can determine if they actually have unique sets of interactions by converting them to natural language and ensuring the uniqueness of the output.
+                Set<String> uniqueNavPaths = new HashSet<>();
+                Iterator<NavPath> pathIt = navPaths.iterator();
+                while (pathIt.hasNext()){
+                    NavPath p = pathIt.next();
+                    JsonArray nlPath = p.toNaturalLanguage(parameters).stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+                    int prevSize = uniqueNavPaths.size();
+                    uniqueNavPaths.add(nlPath.encode());
+                    if(prevSize == uniqueNavPaths.size()){
+                        pathIt.remove();
+                    }
+                }
+
+                log.info("Found {} execution paths", navPaths.size());
+
+                if(navPaths.size() > 1){
+
+                    //Now we prompt the LLM to decide between the paths we were able to find. This is where/how the system decides between create/edit paths for example.
+
+
+                    //Create a JsonObject containing all the different path options.
+                    //Each entry in the object is going to be <navPathID> : <Natural language steps in JsonArray>
+                    JsonObject paths = new JsonObject();
+
+                    navPaths.forEach(navPath -> paths.put(navPath.getId().toString(), navPath.toNaturalLanguage(parameters).stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll)));
+                    return TaskPlannerVerticle.service.selectPath(paths, request.getTaskDescription())
+                            .onFailure(err->log.error(err.getMessage(), err))
+                            .compose(chosenPathId->{
+                                NavPath chosenPath = navPaths.stream().filter(navPath -> navPath.getId().equals(UUID.fromString(chosenPathId))).findFirst().get();
+                                navPaths = List.of(chosenPath);
+
+                                //Save the navPath for this request.
+                                NavPath.saveNavPath("./%s/%s-navpath.txt".formatted("execution_events", evalId).replaceAll("\\|","-"), chosenPath);
+
+                                /**
+                                 * We still need a target node so that the execution mechanism can determine when the task has been completed.
+                                 * All paths produced using the new path construction logic will end in an API node.
+                                 *
+                                 * I think, in practice, we ultimately end up following the first path's instructions. So the last node in the first path should effectively
+                                 * be our target node.
+                                 */
+                                var targetNodeId = UUID.fromString(chosenPath.getPath().endNode().getProperty("id").toString());
+                                _input.setTargetNode(targetNodeId.toString());
+                                request.setTarget(targetNodeId);
+
+                                JsonObject executionInstruction = buildExecutionInstruction(navPaths);
+                                if(executionInstruction == null){
+                                    /**
+                                     * This method (getExecutionPath) is only called on to produce the first instruction for the execution.
+                                     * If the chosen path begins with a LocationNode (which is common), then the first instruction would
+                                     * be to wait for that location change. But since we likely just initialized our local context. There's
+                                     * not going to be an application location change event.
+                                     *
+                                     * To deal with this, if the execution instruction is null, as would be the case for WaitFor type instructions
+                                     * (because they don't send anything to OdoX, the instruction JSON is null), call buildExecutionInstruction again
+                                     * to get the next instruction.
+                                     *
+                                     * TODO: refactor this. This method is doing too much. And this 'temporary fix' only adds to the complexity of the execution logic.
+                                     */
+                                    executionInstruction = buildExecutionInstruction(navPaths);
+                                }
+
+                                return Future.succeededFuture(executionInstruction);
+
+                            });
+                }
+
+
+
+                navPaths = List.of(navPaths.get(0)); //Only return/use the first path for execution. TODO: leveraging multiple paths + using them to fallback could be an interesting direction to explore.
+
+                //Save the navPath for this request.
+                NavPath.saveNavPath("./%s/%s-navpath.txt".formatted("execution_events", evalId).replaceAll("\\|","-"), navPaths.get(0));
+
+                /**
+                 * We still need a target node so that the execution mechanism can determine when the task has been completed.
+                 * All paths produced using the new path construction logic will end in an API node.
+                 *
+                 * I think, in practice, we ultimately end up following the first path's instructions. So the last node in the first path should effectively
+                 * be our target node.
+                 */
+                var targetNodeId = UUID.fromString(navPaths.get(0).getPath().endNode().getProperty("id").toString());
+                _input.setTargetNode(targetNodeId.toString());
+                request.setTarget(targetNodeId);
 
                 log.info("Found {} execution paths", navPaths.size());
 

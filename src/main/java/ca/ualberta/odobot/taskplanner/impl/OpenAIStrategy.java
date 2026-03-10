@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.taskplanner.impl;
 
+import ca.ualberta.odobot.common.AIOutputValidators;
 import ca.ualberta.odobot.common.AbstractOpenAIStrategy;
 import ca.ualberta.odobot.snippet2xml.SemanticSchema;
 import ca.ualberta.odobot.taskplanner.AIStrategy;
@@ -148,14 +149,7 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         Optional<String> result = generateWithValidation(()->_getTaskInputParameterMappings(taskDescription, dataEntryAnnotations),
                 //Validator attempts to parse output as JSON array
                 List.of(
-                        (output)->{
-                            try{
-                                JsonArray array = new JsonArray(output);
-                                return true;
-                            }catch (DecodeException e){
-                                return false;
-                            }
-                        }
+                        AIOutputValidators.isValidJsonArray()
                 ),
                 config.getJsonObject("getInputParameterMappings").getInteger("maxAttempts")
                 );
@@ -193,7 +187,7 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         return Future.failedFuture("Failed to get the input parameter mappings for the task description!");
     }
 
-    private String extractJSONFromResponse (String input){
+    public static String extractJSONFromResponse (String input){
         if(input.contains("```json")){
             Matcher matcher = jsonResponsePattern.matcher(input);
             if(matcher.find()){
