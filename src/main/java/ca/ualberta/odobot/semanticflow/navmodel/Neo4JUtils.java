@@ -1756,7 +1756,12 @@ public class Neo4JUtils {
         try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
             String id = session.executeRead(tx->{
                 var result = tx.run(query);
-                return result.single().get(0).asString();
+                if(result.hasNext()){
+                    return result.single().get(0).asString();
+                }else{
+                    return null;
+                }
+
             });
 
             return id;

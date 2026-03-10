@@ -105,7 +105,12 @@ public class EvaluateTask implements Runnable{
 
         log.info("Starting task {}", task.getString("_evalId"));
 
-        taskToExecutionRequest(task).onSuccess(executionRequest->{
+        taskToExecutionRequest(task)
+                .onFailure(err->{
+                    log.error(err.getMessage(), err);
+                    taskComplete();
+                })
+                .onSuccess(executionRequest->{
             Promise<Void> evaluationPromise = Promise.promise();
             evaluationPromise.future().onComplete((done)->this.taskComplete());
 
@@ -117,9 +122,14 @@ public class EvaluateTask implements Runnable{
 
     }
 
+    public void failTask(Throwable e){
+        cleanUp();
+        promise.tryFail(e);
+    }
+
     public void taskComplete(){
         cleanUp();
-        promise.complete();
+        promise.tryComplete();
     }
 
     public void cleanUp(){
@@ -141,7 +151,10 @@ public class EvaluateTask implements Runnable{
 
         if(agent == Agent.ODO_BOT_NL){
             return taskPlannerService.taskQueryConstruction(task)
-                    .onFailure(err->log.error(err.getMessage(), err))
+                    .onFailure(err->{
+                        log.error(err.getMessage(), err);
+                        taskComplete();
+                    })
                     .compose(definedTask->{
                         log.info("Got task definition from task query construction:\n{}", definedTask.encodePrettily());
                         saveTaskQueryConstructionResult("./%s/%s-task-query-construction-result.json".formatted("execution_events", definedTask.getString("_evalId")).replaceAll("\\|","-"), definedTask);

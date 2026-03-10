@@ -181,6 +181,10 @@ public class RequestManager {
                     }
                 }
 
+                if (navPaths.isEmpty()){
+                    getEvaluationComplete().tryFail("No paths for task execution.");
+                }
+
                 log.info("Found {} execution paths", navPaths.size());
                 if(navPaths.size() > 1){
 

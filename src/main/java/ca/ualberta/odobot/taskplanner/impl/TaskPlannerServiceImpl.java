@@ -182,8 +182,14 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
                     .compose(dataEntryAnnotations->this.strategy.getTaskInputParameterMappings(taskDescription, dataEntryAnnotations))
                     .compose(chosenParameters->{
                         for(JsonObject entry: chosenParameters){
-                            //Add the id of each associated data entry or checkbox node
-                            entry.put("id", neo4j.getInputParameterId(entry.getString("label")));
+                            var resolvedId = neo4j.getInputParameterId(entry.getString("label"));
+                            if (resolvedId != null){
+                                //Add the id of each associated data entry or checkbox node
+                                entry.put("id", resolvedId );
+                            }else{
+                                return Future.failedFuture("Failed to resolve id for parameter "+entry.getString("label"));
+                            }
+
                         }
                         return Future.succeededFuture(chosenParameters);
                     });
