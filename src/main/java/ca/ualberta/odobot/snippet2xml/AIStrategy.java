@@ -36,6 +36,8 @@ public interface AIStrategy {
 
     Future<SemanticObject> pickParameterValue(List<SemanticObject> options, String query);
 
+    Future<JsonObject> pickValue(List<JsonObject> options, String taskDescription);
+
     Future<JsonObject> pickResourceParameterValue(List<JsonObject> options, String query);
 
 }

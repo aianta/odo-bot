@@ -61,6 +61,8 @@ public class TrajectoryDistanceBeamPathExpander implements PathExpander {
             if (estimatedDistance != null) {
                 log.info("Estimated distance to target for node {} is {}", nextNodeId, estimatedDistance);
                 candidates.put(relationship, estimatedDistance);
+            }else{
+                log.info("No distance estimate from {} to {}", nextNodeId, targetNodeId );
             }
 
         }

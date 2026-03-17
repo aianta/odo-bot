@@ -231,8 +231,6 @@ public class NavPath {
 ////                    _instruction.dynamicXPath = nodeToDynamicXPath(node);
 ////                    _instruction.parameterId = LogPreprocessor.neo4j.getAssociatedParameterId((String)node.getProperty("id")); //This is going to cause problems for any collapsed click node or data entry node that doesn't have a schema parameter...
 ////                    instruction = _instruction;
-//                    GetDOMSnapshot _instruction = new GetDOMSnapshot();
-//                    _instruction.parameterId =
 //                }else{
 
                     if(node.hasLabel(Label.label("APINode")) || node.hasLabel(Label.label("GraphQLNode"))){
@@ -285,7 +283,12 @@ public class NavPath {
                             _instruction.parameterName = parameterNode.getProperty("name").toString();
                             _instruction.parameterId = parameterNode.getProperty("id").toString();
                             instruction = _instruction;
-                        }else{
+                        }else if (node.hasProperty("dynamicXpath")){
+                            DynamicXPath dxpath = DynamicXPath.fromJson(new JsonObject((String) node.getProperty("dynamicXpath")));
+                            QueryDom _instruction = new QueryDom();
+                            _instruction.dynamicXPath = dxpath;
+                            instruction = _instruction;
+                        }else {
                             DoClick _instruction = new DoClick();
                             _instruction.xpath = nodeToXPath(node);
                             instruction = _instruction;
@@ -364,6 +367,8 @@ public class NavPath {
         }
 
         String [] xpaths = (String[]) n.getProperty("xpaths");
+        String nodeId = (String)n.getProperty("id");
+        log.info("NodeId: {}", nodeId);
         Set<Xpath> uniqueXpaths = Arrays.stream(xpaths).map(BasePathAndXpath::fromString).map(BasePathAndXpath::getXpath).collect(Collectors.toSet());
         if(uniqueXpaths.size() > 1){
             return findDynamicXPath(uniqueXpaths.stream().map(Xpath::toString).collect(Collectors.toSet()).toArray(new String[0]));
@@ -424,6 +429,9 @@ public class NavPath {
         if(xpaths.length == 0){
             return null;
         }
+
+        log.info("Computing dynamic xpath from xpaths:");
+        Arrays.stream(xpaths).forEach(s->log.info("{}", s));
 
         //Prune any xpaths that go beyond svgs. For example .../svg/g/path becomes .../svg
         //TODO: these should probably be pruned way earlier...but whatever, we can do that later.
@@ -498,6 +506,9 @@ public class NavPath {
         log.info("tagString: {}", tagString);
 
         String tag = extractTag(tagString);
+        if(tag == null){
+            return null;
+        }
         log.info("tag: {}", tag);
 
         DynamicXPath dXpath = new DynamicXPath();
@@ -511,9 +522,16 @@ public class NavPath {
     }
 
     public static String extractTag(String input){
-        Matcher matcher = pattern.matcher(input);
-        matcher.find();
-        return matcher.group();
+        log.info("extracting tag from: {}", input);
+        try{
+            Matcher matcher = pattern.matcher(input);
+            matcher.find();
+            return matcher.group();
+        }catch (IllegalStateException e){
+            log.warn(e.getMessage(), e);
+            return null;
+        }
+
     }
 
     public String makeCypherQueryForNodes(){

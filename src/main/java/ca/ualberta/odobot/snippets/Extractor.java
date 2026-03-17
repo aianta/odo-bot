@@ -8,6 +8,7 @@ import ca.ualberta.odobot.semanticflow.navmodel.DynamicXPath;
 import ca.ualberta.odobot.semanticflow.navmodel.NavPath;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import io.reactivex.rxjava3.core.Completable;
+import io.vertx.core.AsyncResult;
 import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
 import io.vertx.core.eventbus.DeliveryOptions;
@@ -23,10 +24,7 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
-import org.neo4j.graphdb.Node;
-import org.neo4j.graphdb.ResourceIterator;
-import org.neo4j.graphdb.Result;
-import org.neo4j.graphdb.Transaction;
+import org.neo4j.graphdb.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -66,6 +64,13 @@ public class Extractor extends HttpServiceVerticle {
                 .setAddress(ELASTICSEARCH_SERVICE_ADDRESS)
                 .setOptions(new DeliveryOptions().setSendTimeout(3600000)); //1hr timeout
         elasticsearchService = elasticsearchServiceProxyBuilder.build(ElasticsearchService.class);
+
+
+        api.route().method(HttpMethod.GET).path("/computeDynamicXpaths").handler(this::getDynamicXpaths)
+                .handler(rc->{
+            Map<DynamicXPath, String[]> map = rc.get("dynamicXPaths");
+            rc.response().setStatusCode(200).end(map.keySet().stream().map(DynamicXPath::toJson).collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encodePrettily());
+        });
 
 
         api.route().method(HttpMethod.GET).path("/processSnippets").handler(this::getDynamicXpaths);
@@ -116,11 +121,31 @@ public class Extractor extends HttpServiceVerticle {
                 Node curr = it.next();
 
                 String[] instances = (String[])curr.getProperty("instances");
+                String nodeId = (String)curr.getProperty("id");
 
                 DynamicXPath dynamicXPath = NavPath.nodeToDynamicXPath(curr);
                 if (dynamicXPath != null){
                     dynamicXPaths.put(dynamicXPath, instances);
                     sqliteService.saveDynamicXpath(dynamicXPath.toJson(), dynamicXPath.toString(), (String)curr.getProperty("id") );
+
+                    //Only update the nav model iff this particular node has not been annotated with a resource parameter.
+                    if(!curr.hasRelationship(Direction.OUTGOING, RelationshipType.withName("PARAM"))){
+
+                        //Update node in nav
+                        var updateTx = LogPreprocessor.graphDB.db.beginTx();
+                        var updateQuery = "MATCH (n) where n.id ='%s' SET n.dynamicXpathId = '%s', n.dynamicXpath = '%s' return n;".formatted(nodeId, dynamicXPath.toString(), dynamicXPath.toJson().encodePrettily());
+                        log.info("update query: {}", updateQuery);
+                        try(Result updateResult = updateTx.execute(updateQuery);){
+                            updateTx.commit();
+                            updateTx.close();
+                        }
+                    }
+
+
+
+
+
+
                 }
 
             }

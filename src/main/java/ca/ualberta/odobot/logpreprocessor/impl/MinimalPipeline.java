@@ -173,19 +173,20 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
             ListIterator<TimelineEntity> successorIt = timeline.listIterator();
             successorIt.next();
 
+            /**
+             * Need to define these out side the scope of the while loop so that the final event/node in a timeline/trajectory
+             * can be saved in the event_node_index.
+             */
+            TimelineEntity curr = null;
+            TimelineEntity next = null;
+            NavNode a = null;
+            NavNode b = null;
 
             while (it.hasNext() && successorIt.hasNext()){
 
-                TimelineEntity curr = it.next();
-                TimelineEntity next = successorIt.next();
+                curr = it.next();
+                next = successorIt.next();
 
-//                while (curr instanceof Effect && it.hasNext()){
-//                    curr = it.next();
-//                }
-//
-//                while (next instanceof Effect && successorIt.hasNext()){
-//                    next = successorIt.next();
-//                }
 
                 if((curr instanceof Effect && it.previousIndex() == 0) || (next instanceof Effect && !successorIt.hasNext())){
                     continue; //Ignore effects at the start or end of timelines
@@ -203,8 +204,8 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
                     neo4j.bind(startingLocation, neo4j.resolveNavNode(timeline, it.previousIndex()));
                 }
 
-                NavNode a = neo4j.resolveNavNode(timeline, it.previousIndex());
-                NavNode b = neo4j.resolveNavNode(timeline, successorIt.previousIndex());
+                a = neo4j.resolveNavNode(timeline, it.previousIndex());
+                b = neo4j.resolveNavNode(timeline, successorIt.previousIndex());
 
                 log.info("a is {} at {}", curr.symbol(), it.previousIndex());
                 log.info("b is {} at {}", next.symbol(), successorIt.previousIndex());
@@ -214,17 +215,21 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
                 int eventIndex = it.previousIndex();
                 String eventId = timeline.getId().toString() + "#" + eventIndex;
                 sqliteService.saveEventNodeMapping(eventId, a.getId().toString(), eventIndex, timeline.getId().toString());
-
-                //If there is no successor after this one, save the current successor as it is the last element in the trajectory/timeline
-                if(!successorIt.hasNext()){
-                    int lastEventIndex = successorIt.previousIndex();
-                    String lastEventId = timeline.getId().toString() + "#" + lastEventIndex;
-                    sqliteService.saveEventNodeMapping(lastEventId, b.getId().toString(), lastEventIndex, timeline.getId().toString());
-                }
             }
+
+            //Save the mapping of the last event in the trajectory.
+            int eventIndex = it.previousIndex();
+            String eventId = timeline.getId().toString() + "#" + eventIndex;
+            sqliteService.saveEventNodeMapping(eventId, a.getId().toString(), eventIndex, timeline.getId().toString());
+
+            int lastEventIndex = successorIt.previousIndex();
+            String lastEventId = timeline.getId().toString() + "#" + lastEventIndex;
+            sqliteService.saveEventNodeMapping(lastEventId, b.getId().toString(), lastEventIndex, timeline.getId().toString());
         }else{
             throw new RuntimeException("Timeline size is too small! Timeline: %s".formatted(timeline.size()));
         }
+
+
 
 
         log.info("Processed {} clicks for nav model", clickEventCount);

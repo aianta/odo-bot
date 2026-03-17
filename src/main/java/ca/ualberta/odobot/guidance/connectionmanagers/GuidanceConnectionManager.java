@@ -251,61 +251,88 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                 List<JsonObject> queryResults = response.getJsonArray("queryResults").stream().map(o->(JsonObject)o).collect(Collectors.toList());
                 log.info("Last result: \n{}", queryResults.get(queryResults.size()-1).getString("html"));
 
-                String schemaId = LogPreprocessor.neo4j.getSchemaId(executionRequest.getString("parameterId"));
+                if(!executionRequest.containsKey("parameterId")){
+                    Snippet2XMLVerticle.snippet2XML.pickValue(queryResults, client.getRequestManager().getActiveExecutionRequest().getTaskDescription())
+                            .onSuccess(option->{
+                                log.info("Picked option: {}", option);
+                                JsonObject clickRequest = new JsonObject()
+                                        .put("type", "EXECUTE")
+                                        .put("source", SOURCE)
+                                        .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString())
+                                        .put("action", "click")
+                                        .put("xpath", option.getString("xpath"));
 
-                Snippet2XMLVerticle.sqliteService.getSemanticSchemaById(schemaId)
-                        .compose(schema -> {
-                           return Future.join(
-                                   queryResults.stream()
-                                           .map(html->Snippet2XMLVerticle.snippet2XML.getObjectFromHTMLIgnoreSchemaIssues(html.getString("html"), schema).compose(semanticObject -> {
-                                               return Future.succeededFuture(new JsonObject().put("semanticObject", semanticObject.toJson()).put("xpath", html.getString("xpath")));
-                                           }, err->Future.succeededFuture(null)))
-                                           .collect(Collectors.toList())
-                           );
-                        })
-                        .compose(compositeFuture -> {
-                            List<JsonObject> objects = compositeFuture.list().stream()
-                                    .filter(Objects::nonNull) //It's possible some html will fail to resolve to proper xml objects.
-                                    .map(o->(JsonObject)o).collect(Collectors.toList());
-
-                            Map<String, String> objectMap = new HashMap<>();
-                            objects.forEach(object->{
-                                SemanticObject semanticObject = new SemanticObject(object.getJsonObject("semanticObject"));
-                                objectMap.put(semanticObject.getObject(), object.getString("xpath"));
+                                activePromises.put("EXECUTION_RESULT", Promise.promise());
+                                try{
+                                    Thread.sleep(1000);
+                                }catch (InterruptedException e){
+                                    throw new RuntimeException(e);
+                                }
+                                send(clickRequest);
+                            })
+                            .onFailure(err->{
+                                log.error("Error while handling queryDom execution result!");
+                                log.error(err.getMessage(), err);
                             });
+                }else{
+                    String schemaId = LogPreprocessor.neo4j.getSchemaId(executionRequest.getString("parameterId"));
 
-                            List<SemanticObject> options = objects.stream().map(json->new SemanticObject(json.getJsonObject("semanticObject"))).collect(Collectors.toList());
+                    Snippet2XMLVerticle.sqliteService.getSemanticSchemaById(schemaId)
+                            .compose(schema -> {
+                                return Future.join(
+                                        queryResults.stream()
+                                                .map(html->Snippet2XMLVerticle.snippet2XML.getObjectFromHTMLIgnoreSchemaIssues(html.getString("html"), schema).compose(semanticObject -> {
+                                                    return Future.succeededFuture(new JsonObject().put("semanticObject", semanticObject.toJson()).put("xpath", html.getString("xpath")));
+                                                }, err->Future.succeededFuture(null)))
+                                                .collect(Collectors.toList())
+                                );
+                            })
+                            .compose(compositeFuture -> {
+                                List<JsonObject> objects = compositeFuture.list().stream()
+                                        .filter(Objects::nonNull) //It's possible some html will fail to resolve to proper xml objects.
+                                        .map(o->(JsonObject)o).collect(Collectors.toList());
 
-                            ExecutionRequest request = client.getRequestManager().getActiveExecutionRequest();
+                                Map<String, String> objectMap = new HashMap<>();
+                                objects.forEach(object->{
+                                    SemanticObject semanticObject = new SemanticObject(object.getJsonObject("semanticObject"));
+                                    objectMap.put(semanticObject.getObject(), object.getString("xpath"));
+                                });
 
-                            return Snippet2XMLVerticle.snippet2XML.pickParameterValue(options, ((SchemaParameter)request.getParameter(executionRequest.getString("parameterId"))).getQuery())
-                                    //Resolve the picked semantic object to its corresponding xpath...
-                                    .compose(semanticObject -> Future.succeededFuture(objectMap.get(semanticObject.getObject())))
-                                    ;
+                                List<SemanticObject> options = objects.stream().map(json->new SemanticObject(json.getJsonObject("semanticObject"))).collect(Collectors.toList());
 
-                        })
-                        .onSuccess(option->{
-                            log.info("Picked option: {}", option);
-                            JsonObject clickRequest = new JsonObject()
-                                    .put("type", "EXECUTE")
-                                    .put("source", SOURCE)
-                                    .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString())
-                                    .put("action", "click")
-                                    .put("xpath", option);
+                                ExecutionRequest request = client.getRequestManager().getActiveExecutionRequest();
 
-                            activePromises.put("EXECUTION_RESULT", Promise.promise());
-                            try{
-                                Thread.sleep(1000);
-                            }catch (InterruptedException e){
-                                throw new RuntimeException(e);
-                            }
-                            send(clickRequest);
-                        })
-                        .onFailure(err->{
-                            log.error("Error while handling queryDom execution result!");
-                            log.error(err.getMessage(), err);
-                        })
-                ;
+                                return Snippet2XMLVerticle.snippet2XML.pickParameterValue(options, ((SchemaParameter)request.getParameter(executionRequest.getString("parameterId"))).getQuery())
+                                        //Resolve the picked semantic object to its corresponding xpath...
+                                        .compose(semanticObject -> Future.succeededFuture(objectMap.get(semanticObject.getObject())))
+                                        ;
+
+                            })
+                            .onSuccess(option->{
+                                log.info("Picked option: {}", option);
+                                JsonObject clickRequest = new JsonObject()
+                                        .put("type", "EXECUTE")
+                                        .put("source", SOURCE)
+                                        .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString())
+                                        .put("action", "click")
+                                        .put("xpath", option);
+
+                                activePromises.put("EXECUTION_RESULT", Promise.promise());
+                                try{
+                                    Thread.sleep(1000);
+                                }catch (InterruptedException e){
+                                    throw new RuntimeException(e);
+                                }
+                                send(clickRequest);
+                            })
+                            .onFailure(err->{
+                                log.error("Error while handling queryDom execution result!");
+                                log.error(err.getMessage(), err);
+                            })
+                    ;
+                }
+
+
 
             });
 

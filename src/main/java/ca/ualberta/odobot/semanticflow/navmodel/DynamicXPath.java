@@ -40,6 +40,8 @@ public class DynamicXPath {
     public static DynamicXPath fromJson(JsonObject json){
         DynamicXPath result = new DynamicXPath();
 
+        log.info("Parsing DynamicXPath from Json Object: \n{}", json.encodePrettily());
+
         if(json.containsKey("prefix")){
             result.setPrefix(json.getString("prefix"));
         }else{
@@ -51,7 +53,9 @@ public class DynamicXPath {
         }
 
         if(json.containsKey("suffix")){
-            result.setKnownSuffixes(new JsonArray(json.getString("suffix")).stream().map(o->(String)o).collect(Collectors.toSet()));
+            result.setKnownSuffixes(json.getJsonArray("suffix").stream().map(o->(String)o).collect(Collectors.toSet()));
+
+//            result.setKnownSuffixes(new JsonArray(json.getString("suffix")).stream().map(o->(String)o).collect(Collectors.toSet()));
         }
 
         if(json.containsKey("dynamicTag")){

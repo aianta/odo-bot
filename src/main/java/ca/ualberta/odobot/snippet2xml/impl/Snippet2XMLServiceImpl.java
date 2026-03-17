@@ -79,6 +79,14 @@ public class Snippet2XMLServiceImpl implements Snippet2XMLService {
 
     }
 
+    public Future<JsonObject> pickValue(List<JsonObject> options, String taskDescription){
+        return vertx.executeBlocking(blocking->{
+            this.strategy.pickValue(options, taskDescription)
+                    .onSuccess(blocking::complete)
+                    .onFailure(blocking::fail);
+        });
+    }
+
     @Override
     public Future<SemanticObject> pickParameterValue(List<SemanticObject> options, String query) {
         return vertx.executeBlocking(blocking->{

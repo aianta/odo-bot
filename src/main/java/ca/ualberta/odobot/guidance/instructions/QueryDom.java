@@ -14,21 +14,35 @@ public class QueryDom extends DynamicXPathInstruction{
 
         QueryDom other = (QueryDom) o;
 
+        if(parameterId == null){
+            return other.parameterId == null && dynamicXPath.equals(other.dynamicXPath);
+        }
+
         return dynamicXPath.equals(other.dynamicXPath) && parameterId.equals(other.parameterId);
     }
 
     public int hashCode(){
         HashCodeBuilder builder = new HashCodeBuilder(81, 53);
         builder.append(dynamicXPath.hashCode());
-        builder.append(parameterId);
+        if(parameterId != null){
+            builder.append(parameterId);
+        }
+
         return builder.toHashCode();
     }
 
     public JsonObject toJson(){
-        return super.toJson()
-                .put("action", "queryDom")
-                .put("parameterId", this.parameterId)
-                //OdoX expects the dynamic xpath to be in the 'xpath' field.
-                .put("xpath", this.dynamicXPath.toJson());
+        JsonObject result =
+            super.toJson()
+            .put("action", "queryDom");
+
+        if(this.parameterId != null){
+            result.put("parameterId", this.parameterId);
+        }
+
+        //OdoX expects the dynamic xpath to be in the 'xpath' field.
+        result.put("xpath", this.dynamicXPath.toJson());
+
+        return result;
     }
 }

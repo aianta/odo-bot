@@ -121,6 +121,48 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         }
     }
 
+    public Future<JsonObject> pickValue(List<JsonObject> options, String taskDescription){
+        //Only validator we need is one that makes sure the output is a valid integer.
+        List<Predicate<String>> validators = List.of(isNumber);
+
+        Optional<String> pickedValue = pickValue(options, taskDescription, validators);
+
+        if(pickedValue.isPresent()){
+            Integer index = Integer.parseInt(pickedValue.get());
+            //Subtract 1 from picked value to get the correct index into the options array.
+            return Future.succeededFuture(options.get(index-1));
+        }
+
+        return Future.failedFuture("Failed to pick an option from the list!");
+    }
+
+    public Optional<String> pickValue(List<JsonObject> options, String taskDescription, List<Predicate<String>> validators){
+        return generateWithValidation(()->_pickValue(options, taskDescription), validators, config.getJsonObject("pickValue").getInteger("maxAttempts"));
+    }
+
+    public String _pickValue(List<JsonObject> options, String taskDescription){
+        List<ChatRequestMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(new ChatRequestSystemMessage(config.getJsonObject("pickValue").getString("systemPrompt")));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("Task Description: \n");
+        sb.append(taskDescription + "\n");
+        sb.append("Options:\n");
+
+        List<String> optionsStrings = options.stream().map(o -> o.getString("html")).toList();
+        ListIterator<String> it = optionsStrings.listIterator();
+        while (it.hasNext()){
+            String option = it.next();
+            sb.append((it.previousIndex()+1) + ".\n" + option + "\n");
+        }
+        sb.append("\n");
+
+        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+
+        log.info("Pick value prompt:\n{}", sb.toString());
+        return executeChatCompletion(chatMessages);
+    }
+
     public Future<JsonObject> pickResourceParameterValue(List<JsonObject> options, String query){
         //Only validator we need is one that makes sure the output is a valid integer.
         List<Predicate<String>> validators = List.of(isNumber);
