@@ -52,7 +52,8 @@ public class HTMLCleaningTools {
                     "strong",
                     "iframe",
                     "aside",
-                    "a"
+                    "a",
+                    "nav"
 
             );
 

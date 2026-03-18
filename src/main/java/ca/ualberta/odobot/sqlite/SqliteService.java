@@ -82,6 +82,8 @@ public interface SqliteService {
 
     Future<Void> saveCommonSubstructure(String clusteringId, JsonObject data);
 
+    Future<Set<JsonObject>> getUniqueCommonSubstructureContainers();
+
     Future<Void> saveCommonSubstructureContainer(String clusteringId, JsonObject data);
 
     Future<Set<String>> getMinedSnapshotIds(String clusteringId);

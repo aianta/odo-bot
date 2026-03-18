@@ -34,6 +34,7 @@ public class NodeLinksVisitor implements NodeVisitor {
     Map<Node, Integer> nodeIndex;
     Map<Integer, String> colorMap = new HashMap<>();
     Map<Integer, String> robulaMap = new HashMap<>();
+    Map<Integer, String> originalXpathMap = new HashMap<>();
     public NodeLinksVisitor(Function<Node, String> nodeToColorFunction) {}
     JsonArray links = new JsonArray();
     RobulaPlus robulaPlus = new RobulaPlus();
@@ -131,6 +132,11 @@ public class NodeLinksVisitor implements NodeVisitor {
                 String xpath = computeXpathNoRoot(element);
                 if (element.equals(document.selectXpath(xpath).get(0))) {
                     robulaMap.put(currNodeNumber, xpath);
+                    //If an original xpath has been saved for this element, keep track of it in the originalXpathMap
+                    if(element.hasAttr("oxp")){
+                        originalXpathMap.put(currNodeNumber, element.attr("oxp"));
+                    }
+
                 }
             }catch (Exception e){
                 //Not a big deal if we fail on some small number of elements
@@ -205,6 +211,9 @@ public class NodeLinksVisitor implements NodeVisitor {
                             .put("color",  colorMap.get(nodeEntry.getKey()));
                     if(robulaMap.containsKey(nodeEntry.getKey())){
                         nodeJson.put("robustXpath", robulaMap.get(nodeEntry.getKey()));
+                    }
+                    if(originalXpathMap.containsKey(nodeEntry.getKey())){
+                        nodeJson.put("oxp", originalXpathMap.get(nodeEntry.getKey()));
                     }
                     return nodeJson;
                 }).collect(JsonArray::new, JsonArray::add, JsonArray::addAll))

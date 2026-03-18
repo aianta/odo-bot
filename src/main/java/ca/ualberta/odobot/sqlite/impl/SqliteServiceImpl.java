@@ -1010,8 +1010,8 @@ public class SqliteServiceImpl implements SqliteService {
     public Future<Void> saveCommonSubstructure(String clusteringId, JsonObject item){
         String sql = """
                 INSERT INTO common_substructures ( 
-                    clustering_id, snapshot_id, cluster_id, node_id, robust_xpath, html
-                ) VALUES (?,?,?,?,?,?);
+                    clustering_id, snapshot_id, cluster_id, node_id, robust_xpath, html, original_xpath
+                ) VALUES (?,?,?,?,?,?,?);
                 """;
         Tuple params = Tuple.of(
                 clusteringId,
@@ -1019,10 +1019,36 @@ public class SqliteServiceImpl implements SqliteService {
                 item.getString("clusterId"),
                 item.getString("nodeId"),
                 item.getString("robustXpath"),
-                item.getString("html")
+                item.getString("html"),
+                item.getString("originalXpath")
         );
 
         return executeParameterizedQuery(sql, params);
+    }
+
+    public Future<Set<JsonObject>> getUniqueCommonSubstructureContainers(){
+        var sql = """
+                select html, original_xpath, dxpath_prefix, dxpath_dynamic_tag from common_substructures group by dxpath_prefix, dxpath_dynamic_tag
+                """;
+
+        Promise<Set<JsonObject>> promise = Promise.promise();
+        pool.preparedQuery(sql)
+                .execute()
+                .onFailure(promise::fail)
+                .onSuccess(resultSet->{
+                    Set<JsonObject> result = new HashSet<>();
+                    resultSet.forEach(row->{
+                        result.add(new JsonObject()
+                                .put("html", row.getString("html"))
+                                .put("original_xpath", row.getString("original_xpath"))
+                                .put("prefix",  row.getString("dxpath_prefix"))
+                                .put("dynamic_tag", row.getString("dxpath_dynamic_tag"))
+                        );
+                    });
+                    promise.complete(result);
+                });
+
+        return promise.future();
     }
 
     public Future<List<String>> getDistinctHrefValues(){
@@ -1299,14 +1325,79 @@ public class SqliteServiceImpl implements SqliteService {
     }
 
     private Future<Void> createCommonSubstructureTable(){
+
+        /**
+         * Common substructure table that automatically computes dxpath prefixes and dynamic tags.
+         *
+         *
+         * See: https://stackoverflow.com/questions/21388820/how-to-get-the-last-index-of-a-substring-in-sqlite
+         *
+         * For logic details as well as my own notes in:
+         * thoughts 2026/March 18 - Annotation System based on common-substructures
+         */
+
         return createTable("""
-                CREATE TABLE IF NOT EXISTS common_substructures(
+                CREATE TABLE common_substructures(
                     clustering_id text,
                     snapshot_id text,
                     cluster_id text,
                     node_id text,
                     robust_xpath text,
                     html text,
+                    original_xpath text,
+                    dxpath_dynamic_tag TEXT GENERATED ALWAYS AS (
+                        substr(
+                    
+                        replace(
+                            original_xpath, rtrim(
+                                original_xpath, replace(
+                                    original_xpath, '/',''
+                                    )
+                                ),
+                                ''
+                                )
+                            , 1, 
+                            
+                            case 
+                            when instr(		replace(
+                            original_xpath, rtrim(
+                                original_xpath, replace(
+                                    original_xpath, '/',''
+                                    )
+                                ),
+                                ''
+                                )
+                            , '[') = 0 then length(
+                                    replace(
+                            original_xpath, rtrim(
+                                original_xpath, replace(
+                                    original_xpath, '/',''
+                                    )
+                                ),
+                                ''
+                                )
+                            ) else instr(		replace(
+                            original_xpath, rtrim(
+                                original_xpath, replace(
+                                    original_xpath, '/',''
+                                    )
+                                ),
+                                ''
+                                )
+                            , '[')-1
+                            END
+                        
+                        )) VIRTUAL,
+                	dxpath_prefix TEXT GENERATED ALWAYS AS (
+                		substr(
+                			rtrim(
+                				original_xpath, replace(original_xpath, '/','')
+                			), 1, length(
+                				rtrim(
+                					original_xpath, replace(original_xpath, '/','')
+                				)
+                			) - 1) 
+                	) VIRTUAL,
                     primary key(clustering_id, snapshot_id, node_id)
                 )
                 """);

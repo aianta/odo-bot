@@ -3,6 +3,7 @@ package ca.ualberta.odobot.modelconstruction;
 import ca.ualberta.odobot.common.Predicates;
 import ca.ualberta.odobot.common.RobulaPlus;
 import ca.ualberta.odobot.common.Utils;
+import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import ca.ualberta.odobot.modelconstruction.impl.TagAndAttributeStrategy;
 import ca.ualberta.odobot.common.HttpServiceVerticle;
 import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
@@ -28,8 +29,10 @@ import io.vertx.serviceproxy.ServiceProxyBuilder;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
-import org.jsoup.nodes.Node;
+
 import org.jsoup.select.NodeVisitor;
+import org.neo4j.graphdb.Node;
+import org.neo4j.graphdb.ResourceIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -64,7 +67,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
     public static StateLabelingService stateLabelingService;
     public static LinkLabelingService linkLabelingService;
 
-    private static String ODO_LSH_HOST = "172.29.71.50";
+    private static String ODO_LSH_HOST = "172.26.130.231";
     private int ODO_LSH_PORT = 5000;
 
     private WebClient webClient;
@@ -111,6 +114,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
         api.route().method(HttpMethod.GET).path("/computeAnnotations").handler(this::computeAnnotations);
         api.route().method(HttpMethod.GET).path("/loadDOMSnapshots").handler(this::loadDOMSnapshots);
         api.route().method(HttpMethod.GET).path("/processHrefs").handler(this::processHrefs);
+        api.route().method(HttpMethod.GET).path("/detectDxpaths").handler(this::detectDxpaths);
         api.route().method(HttpMethod.GET).path("/resolveClusteredNodes")
                 .handler(this::mineCommonDOMSubstructures)
                 .handler(this::getNodeClustering)
@@ -288,7 +292,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
          class AttributeHarvester implements NodeVisitor{
              public List<JsonArray> attributeData = new ArrayList<>();
              @Override
-             public void head(Node node, int i) {
+             public void head(org.jsoup.nodes.Node node, int i) {
                  if(node instanceof Element){
                      Element element = (Element) node;
                      element.attributes().forEach(attribute -> {
@@ -297,6 +301,8 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
 
                  }
              }
+
+
          }
 
         AttributeHarvester attributeHarvester = new AttributeHarvester();
@@ -355,6 +361,114 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
 
 
 
+
+    }
+
+    private void detectDxpaths(RoutingContext rc){
+
+        sqliteService.getUniqueCommonSubstructureContainers()
+                .compose(containers->{
+
+                    JsonObject matches = new JsonObject();
+
+                    try(var tx =  LogPreprocessor.graphDB.db.beginTx();
+                        var result = tx.execute("MATCH (n:ClickNode) return n;");
+                        ResourceIterator<Node> it = result.columnAs("n");
+                    ){
+
+                        while (it.hasNext()) {
+                            org.neo4j.graphdb.Node node = it.next();
+                            String nodeId = node.getProperty("id").toString();
+
+                            Set<String> xpaths = new HashSet<>();
+
+                            //Get xpath from regular click nodes
+                            if(node.hasProperty("xpath")){
+                                String xpath = "/";
+                                xpath += node.getProperty("xpath");
+                                xpaths.add(xpath);
+                            }
+
+                            //Get xpaths from collapsed click nodes
+                            if(node.hasProperty("xpaths")){
+                                String [] _xpaths = (String[]) node.getProperty("xpaths");
+
+                                /**
+                                 * Xpaths values are stored in the following format:
+                                 * ["<baseURI>,<xpath>", ...]
+                                 */
+                                if(_xpaths.length > 0){
+                                    xpaths = Arrays.stream(_xpaths)
+                                            .map(entry->entry.split(",")[1])
+                                            .map(entry->"/"+entry)
+                                            .collect(Collectors.toSet());
+
+                                }
+                            }
+
+                            Set<String> prefixes = containers.stream()
+                                    .map(item->item.getString("prefix") + "/" + item.getString("dynamic_tag"))
+                                    .collect(Collectors.toSet());
+
+                            for(String xpath: xpaths){
+                                for(String prefix: prefixes){
+                                    if(xpath.startsWith(prefix)){
+
+                                        if(matches.containsKey(nodeId)){
+                                            JsonObject nodeMatches = matches.getJsonObject(nodeId);
+                                            if(!nodeMatches.getJsonArray("model_xpaths").stream()
+                                                    .map(String.class::cast)
+                                                    .collect(Collectors.toSet()).contains(xpath)){
+                                                nodeMatches.getJsonArray("model_xpaths").add(xpath);
+                                            };
+                                            if(!nodeMatches.getJsonArray("matched_prefixes").stream()
+                                                    .map(String.class::cast)
+                                                    .collect(Collectors.toSet()).contains(prefix)
+                                            ){
+                                                nodeMatches.getJsonArray("matched_prefixes").add(prefix);
+                                            }
+
+                                        }else{
+                                            JsonObject nodeMatches = new JsonObject();
+                                            nodeMatches.put("id", nodeId)
+                                                    .put("model_xpaths", new JsonArray().add(xpath))
+                                                    .put("matched_prefixes", new JsonArray().add(prefix));
+                                            matches.put(nodeId, nodeMatches);
+
+                                        }
+
+
+                                    }
+                                }
+                            }
+                        }
+
+
+
+                    }
+
+                    return Future.succeededFuture(matches);
+                }).compose(matches->{
+                    //Let's compute a nice little cypher query for convenience.
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("MATCH (n) WHERE n.id IN [");
+                    Iterator<Map.Entry<String,Object>> it = matches.stream().iterator();
+                    while (it.hasNext()){
+                        sb.append("'%s'".formatted(it.next().getKey()));
+                        if(it.hasNext()){
+                            sb.append(", ");
+                        }
+                    }
+                    sb.append("] return n;");
+
+                    matches.put("cypherQuery", sb.toString());
+                    return Future.succeededFuture(matches);
+                })
+
+                .onFailure(err->log.error(err.getMessage(), err))
+        .onSuccess(matches->rc.getDelegate().response().setStatusCode(200).end(matches.encodePrettily()));
+
+        ;
 
     }
 
@@ -799,6 +913,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                 .filter(entry->entry.containsKey("robustXpath"))
                 .map(item->{
                     String robustXpath = item.getString("robustXpath");
+                    String originalXpath = item.getString("oxp");
                     Element element = document.selectXpath(robustXpath).get(0);
                     if(element.hasParent()){
                         parents.add(element.parent());
@@ -809,6 +924,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                             .put("nodeId", item.getString("id").split("_")[1])
                             .put("fullNodeId", item.getString("id"))
                             .put("robustXpath", robustXpath)
+                            .put("originalXpath", originalXpath)
                             .put("html", element.outerHtml());
                 }).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
 

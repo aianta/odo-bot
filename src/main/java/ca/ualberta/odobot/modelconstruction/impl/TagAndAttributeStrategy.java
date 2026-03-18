@@ -6,6 +6,7 @@ import ca.ualberta.odobot.modelconstruction.CleaningStrategy;
 import ca.ualberta.odobot.modelconstruction.impl.visitors.BlankRemovingVisitor;
 import ca.ualberta.odobot.modelconstruction.impl.visitors.NodeLinksVisitor;
 import ca.ualberta.odobot.mind2web.HTMLCleaningTools;
+import ca.ualberta.odobot.modelconstruction.impl.visitors.XpathSnapshotVisitor;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonArray;
@@ -35,7 +36,7 @@ public class TagAndAttributeStrategy implements CleaningStrategy {
     //Useful for attribute who's presence is still meaningful.
     private Set<String> attributesWhoseValuesMustBeExcluded = Set.of("title", "id", "name", "href");
     private Map<String, Function<String,String>> attributesWhoseValuesMustBeProcessed = new HashMap<>();
-    private Set<String> attributesToExclude = Set.of("vid", "_odo_bot_taint");
+    private Set<String> attributesToExclude = Set.of("vid", "_odo_bot_taint", "oxp");
 
     /**
      * Converts a DOM node to a node label to be used in a graph.
@@ -184,6 +185,7 @@ public class TagAndAttributeStrategy implements CleaningStrategy {
         String html = HTMLCleaningTools.clean(input);
 
         Document doc = Jsoup.parse(html);
+        doc.traverse(new XpathSnapshotVisitor());
         doc.traverse(new BlankRemovingVisitor());
         doc.traverse(new PruningVisitor());
 
