@@ -1,11 +1,17 @@
 package ca.ualberta.odobot.guidance.instructions;
 
+import ca.ualberta.odobot.semanticflow.navmodel.DynamicXPath;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.apache.commons.lang3.builder.HashCodeBuilder;
+
+import java.util.HashSet;
+import java.util.Set;
 
 public class QueryDom extends DynamicXPathInstruction{
 
     public String parameterId;
+    public Set<DynamicXPath> dynamicXPaths = new HashSet<DynamicXPath>();
 
     public boolean equals(Object o){
         if(!(o instanceof QueryDom)){
@@ -18,14 +24,32 @@ public class QueryDom extends DynamicXPathInstruction{
             return other.parameterId == null && dynamicXPath.equals(other.dynamicXPath);
         }
 
+        if(dynamicXPaths != null && !dynamicXPaths.isEmpty()){
+
+            return dynamicXPaths.size() == other.dynamicXPaths.size() &&
+                    other.dynamicXPaths.containsAll(dynamicXPaths);
+
+        }
+
         return dynamicXPath.equals(other.dynamicXPath) && parameterId.equals(other.parameterId);
     }
 
     public int hashCode(){
         HashCodeBuilder builder = new HashCodeBuilder(81, 53);
-        builder.append(dynamicXPath.hashCode());
+
+        if(dynamicXPath != null){
+            builder.append(dynamicXPath.hashCode());
+        }
+
         if(parameterId != null){
             builder.append(parameterId);
+        }
+
+
+        if(dynamicXPaths != null && !dynamicXPaths.isEmpty()){
+            for(DynamicXPath dXpath : dynamicXPaths){
+                builder.append(dXpath.hashCode());
+            }
         }
 
         return builder.toHashCode();
@@ -41,7 +65,14 @@ public class QueryDom extends DynamicXPathInstruction{
         }
 
         //OdoX expects the dynamic xpath to be in the 'xpath' field.
-        result.put("xpath", this.dynamicXPath.toJson());
+        if(this.dynamicXPaths != null && !dynamicXPaths.isEmpty()){
+            result.put("xpath", dynamicXPaths.stream()
+                    .map(DynamicXPath::toJson)
+                    .collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
+        }else{
+            result.put("xpath", this.dynamicXPath.toJson());
+        }
+
 
         return result;
     }

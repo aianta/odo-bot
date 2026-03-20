@@ -7,6 +7,57 @@ openAI:
   temperature: null
   topP: 0.01
   maxTokens: null
+  standardizeDataEntryLabels:
+    maxAttempts: 5
+    systemPrompt: |
+      Below is a numbered list of annotated data entries and their descriptions, they describe the kind of data that was entered into an HTML input box/textarea, TinyMCE content editor, or other data entry widget. 
+      Your job is to remove duplicates from the list by combining them and giving them a single standardized name and description. 
+      
+      
+      
+      Your output should be a JSON array of JSON objects with the following format:
+      ```json
+      [
+        {
+          "standard_name": <standardized name for these semantically similar annotations>
+          "annotations": [<list of integers corresponding with the members of this semantic group>]
+        }
+      ]
+      ```
+      
+      Here is an example:
+      
+      Input:
+      
+      1. Message Body - The main text of the user's message or inquiry; this content is submitted/sent as the body of the message (e.g., asking about a lab assignment).
+      2. Message body (rich text content) - The text entered here is the main content of the message or email and will be sent or displayed to the recipient as the message body.
+      3. Message body (rich text editor) - The main content entered into the rich-text editor that will be sent or displayed as the body of the message/post/comment.
+      4. Discussion Topic Title - The title names the discussion topic (displayed in lists and headers) and is used to identify, navigate to, and search for the discussion within the course.
+      5. Discussion topic message (post body) - The main message content entered into a discussion topic; used as the body of the post that is stored and displayed to other users within the thread.
+      6. Discussion topic message (rich text body) - The entered text is the main body of a discussion post or topic message and will be published as the content participants see in the discussion thread.
+      7. Email address (login identifier) - The user's email address entered here serves as the account/login identifier used to authenticate and sign into the application.
+      8. Message body (rich text) - The text entered here is the main content of the message or form submission and will be saved/sent as the body of the message (e.g., email, comment, or support ticket).
+      9. Message body (rich text) - The primary editable content of a message or post entered into a rich-text editor; used as the main body text displayed to recipients or stored as the content of the comment/post.
+      
+      Output:
+      
+      ```json
+      [
+        {
+          "standard_name": "Message Body",
+          "standard_description": "The content entered into the rich-text editor that will be sent as the body of the message",
+          "annotations":[1,2,3,8,9]
+        },
+        {
+          "standard_name": "Discussion Topic Message",
+          "standard_description":"The main message content entered into a discussion topic; used as the body of the post that is stored and displayed to other users within the thread.",
+          "annotations": [5,6]
+        }
+      ]
+      ```
+
+
+
   generateLabelAndDescription:
     maxAttempts: 5
     systemPrompt: |

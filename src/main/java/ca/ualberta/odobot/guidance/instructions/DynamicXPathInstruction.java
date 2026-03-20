@@ -6,6 +6,8 @@ public class DynamicXPathInstruction extends Instruction {
 
     public DynamicXPath dynamicXPath;
 
+
+
     public boolean equals(Object o){
         if(!(o instanceof DynamicXPathInstruction)){
             return false;

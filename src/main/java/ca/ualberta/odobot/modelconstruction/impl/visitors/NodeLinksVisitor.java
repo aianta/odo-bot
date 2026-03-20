@@ -135,6 +135,7 @@ public class NodeLinksVisitor implements NodeVisitor {
                     //If an original xpath has been saved for this element, keep track of it in the originalXpathMap
                     if(element.hasAttr("oxp")){
                         originalXpathMap.put(currNodeNumber, element.attr("oxp"));
+
                     }
 
                 }

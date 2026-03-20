@@ -1,6 +1,6 @@
 host: 0.0.0.0
 port: 8055
-odoLshHost: "172.29.71.50"
+odoLshHost: "127.0.0.1"
 odoLshPort: 5000
 apiPathPrefix: "/api/*"
 openAI:
@@ -42,7 +42,7 @@ openAI:
       
       Example Input 3:
       raw href: /about/14 normalized href: /about/*
-      
+        
       Example Output 4:
       Does not link to a specific resource.
 

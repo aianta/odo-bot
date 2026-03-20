@@ -237,6 +237,9 @@ public class DynamicXPath {
         }
 
         if(suffix != null || knownSuffixes != null){
+            if(suffix != null && knownSuffixes.isEmpty()){
+                knownSuffixes.add(suffix);
+            }
             result.put("suffix", knownSuffixes.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
         }
 

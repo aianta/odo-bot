@@ -38,6 +38,7 @@ public class HTMLCleaningTools {
             .addAttributes(":all", "disabled")
             .addAttributes(":all", "role")
             .addAttributes(":all", "_odo_bot_taint")
+            .addAttributes(":all", "oxp")
             //.addAttributes(":all", "alt")
             //.addAttributes(":all", "value")
             .addAttributes(":all", "placeholder")
@@ -117,6 +118,39 @@ public class HTMLCleaningTools {
         return result;
     }
 
+    public static String stringPreClean(String input){
+        String result = null;
+
+        result = input.replaceAll("\\\\n", ""); //get rid of any \n
+        //result = result.replaceAll("iframe", "div"); //swap iframes with divs, otherwise we won't be able to comptue xpaths to element inside the iframe.
+        result = result.replaceAll("\\\\\"", "\"");
+        //result = stripSVGPaths(result);
+        return result;
+    }
+
+
+    public static String clean(Document preCleanDocument){
+        String result = null;
+        Element htmlElement = preCleanDocument.root().firstElementChild();
+
+        assert htmlElement.tagName().toLowerCase().equals("html");
+
+        String htmlBackendNodeId = htmlElement.attr("backend_node_id");
+        String htmlBuckEye = htmlElement.attr("data_pw_testid_buckeye");
+
+        result = Jsoup.clean(result,"", safelist, new Document.OutputSettings().charset("UTF-8"));
+
+        /**
+         * The JSoup Clean mechanism produces/works on body content.
+         * https://jsoup.org/apidocs/org/jsoup/safety/Cleaner.html
+         *
+         * So we have to rewrap everything in an <html></html>
+         */
+        result = "%s%s</html>".formatted(makeHTMLTagString(htmlBackendNodeId, htmlBuckEye), result);
+
+        return result;
+    }
+
     public static String clean(String input){
         String result = null;
 
@@ -130,6 +164,7 @@ public class HTMLCleaningTools {
          * attributes off the <html> tag if they exist because JSoup's clean mechanism only works from the body tag onwards...
          */
         Document preCleanDocument = Jsoup.parse(result);
+
         Element htmlElement = preCleanDocument.root().firstElementChild();
 
         assert htmlElement.tagName().toLowerCase().equals("html");

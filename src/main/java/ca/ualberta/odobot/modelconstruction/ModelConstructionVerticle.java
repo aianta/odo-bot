@@ -4,20 +4,22 @@ import ca.ualberta.odobot.common.Predicates;
 import ca.ualberta.odobot.common.RobulaPlus;
 import ca.ualberta.odobot.common.Utils;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
+import ca.ualberta.odobot.mind2web.HTMLCleaningTools;
 import ca.ualberta.odobot.modelconstruction.impl.TagAndAttributeStrategy;
 import ca.ualberta.odobot.common.HttpServiceVerticle;
 import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
-import ca.ualberta.odobot.modelconstruction.impl.visitors.LabelingNodeVisitor;
+
+import ca.ualberta.odobot.modelconstruction.impl.visitors.BlankRemovingVisitor;
+import ca.ualberta.odobot.modelconstruction.impl.visitors.XpathSnapshotVisitor;
 import ca.ualberta.odobot.modelconstruction.linklabeling.LinkLabelingService;
 import ca.ualberta.odobot.modelconstruction.statelabeling.StateLabelingService;
+import ca.ualberta.odobot.semanticflow.navmodel.DynamicXPath;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import io.reactivex.rxjava3.core.Completable;
-import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.eventbus.DeliveryOptions;
 import io.vertx.core.http.HttpMethod;
-import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import io.vertx.ext.web.client.WebClient;
@@ -30,6 +32,7 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 
+import org.jsoup.select.Elements;
 import org.jsoup.select.NodeVisitor;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.ResourceIterator;
@@ -259,12 +262,13 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                 String baseURI = event.containsKey("eventDetails_element")?new JsonObject(event.getString("eventDetails_element")).getString("baseURI"):null;
 
                 catalogHTMLAttributes(domSnapshotData.getString("outerHTML"))
-                        .compose(done->cleanerService.cleanHTML(domSnapshotData.getString("outerHTML")))
+                        .compose(done->Future.succeededFuture(domSnapshotData.getString("outerHTML")))
+                        //.compose(done->cleanerService.cleanHTML(domSnapshotData.getString("outerHTML")))
 
-                        .compose(cleanedHTML->{
+                        .compose(html ->{
                             return sqliteService.saveDOMSnapshot(
                                     event.getString("mongo_id"),
-                                    cleanedHTML,
+                                    html,
                                     baseURI,
                                     sourceIndex
 
@@ -364,10 +368,15 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
 
     }
 
+    /**
+     * Detects click events in the nav model which match known common substructure xpaths.
+     * Computes relevant dynamicXpaths for each match, and annotates the nav model nodes accordingly.
+     * @param rc
+     */
     private void detectDxpaths(RoutingContext rc){
 
         sqliteService.getUniqueCommonSubstructureContainers()
-                .compose(containers->{
+                .compose(substructures->{
 
                     JsonObject matches = new JsonObject();
 
@@ -406,33 +415,37 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                                 }
                             }
 
-                            Set<String> prefixes = containers.stream()
+                            Set<String> prefixesWithDynamicTags = substructures.stream()
                                     .map(item->item.getString("prefix") + "/" + item.getString("dynamic_tag"))
                                     .collect(Collectors.toSet());
 
                             for(String xpath: xpaths){
-                                for(String prefix: prefixes){
-                                    if(xpath.startsWith(prefix)){
+                                for(JsonObject substructure: substructures){
+                                    String prefixAndDynamicTag = substructure.getString("prefix") + "/" + substructure.getString("dynamic_tag");
+                                    if(xpath.startsWith(prefixAndDynamicTag)){
 
                                         if(matches.containsKey(nodeId)){
+                                            //Update matches for this node id
                                             JsonObject nodeMatches = matches.getJsonObject(nodeId);
                                             if(!nodeMatches.getJsonArray("model_xpaths").stream()
                                                     .map(String.class::cast)
                                                     .collect(Collectors.toSet()).contains(xpath)){
                                                 nodeMatches.getJsonArray("model_xpaths").add(xpath);
                                             };
-                                            if(!nodeMatches.getJsonArray("matched_prefixes").stream()
-                                                    .map(String.class::cast)
-                                                    .collect(Collectors.toSet()).contains(prefix)
+                                            if(!nodeMatches.getJsonArray("matched_substructures").stream()
+                                                    .map(JsonObject.class::cast)
+                                                    .map(entry->entry.getString("prefix") + "/" +  entry.getString("dynamic_tag"))
+                                                    .collect(Collectors.toSet()).contains(prefixAndDynamicTag)
                                             ){
-                                                nodeMatches.getJsonArray("matched_prefixes").add(prefix);
+                                                nodeMatches.getJsonArray("matched_substructures").add(substructure);
                                             }
 
                                         }else{
+                                            //Initalize matches for this node id
                                             JsonObject nodeMatches = new JsonObject();
                                             nodeMatches.put("id", nodeId)
                                                     .put("model_xpaths", new JsonArray().add(xpath))
-                                                    .put("matched_prefixes", new JsonArray().add(prefix));
+                                                    .put("matched_substructures", new JsonArray().add(substructure));
                                             matches.put(nodeId, nodeMatches);
 
                                         }
@@ -448,6 +461,134 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                     }
 
                     return Future.succeededFuture(matches);
+                }).compose(matches->{
+                    //Convert matches into dynamic xpaths and annotate the nav model with them.
+                    matches.forEach(entry->{
+                        String nodeId = entry.getKey();
+                        JsonObject matchInfo = (JsonObject) entry.getValue();
+
+                        JsonArray modelXpaths = matchInfo.getJsonArray("model_xpaths");
+                        JsonArray matchedSubstructures = matchInfo.getJsonArray("matched_substructures");
+
+                        Set<String> originalXpathsOfFalsePositives = new HashSet<>();
+
+                        Set<DynamicXPath> dxpaths = modelXpaths.stream()
+                                .map(String.class::cast)
+                                .map(modelXpath->{
+
+
+                                    Set<DynamicXPath> modelDXpaths = matchedSubstructures.stream()
+                                            .map(JsonObject.class::cast)
+                                            .map(structure->{
+                                                DynamicXPath dxpath = new DynamicXPath();
+                                                dxpath.setPrefix(structure.getString("prefix"));
+                                                dxpath.setDynamicTag(structure.getString("dynamic_tag"));
+
+                                                log.info("modelXpath: {}", modelXpath);
+
+
+                                                String prefixAndDynamicTag = structure.getString("prefix") + "/" + structure.getString("dynamic_tag");
+                                                log.info("\tprefixAndDynamicTag: {}", prefixAndDynamicTag);
+
+                                                if(!modelXpath.startsWith(prefixAndDynamicTag)){
+                                                    //If this model path wasn't a match for this particular sub-structure, we cannot compute a dxpath for it.
+                                                    return null;
+                                                }
+                                                /**
+                                                 * The suffix is what is left of the model xpath after we remove the prefix, the dynamic tag and any dynamic tag index.
+                                                 */
+                                                String suffix = modelXpath.substring(prefixAndDynamicTag.length()); //Start after the dynamic tag
+
+                                                if (suffix.contains("/")){
+                                                    suffix = suffix.substring(suffix.indexOf("/") + 1); //And after any index associated with the dynamic tag in the model xpath
+                                                    dxpath.setSuffix(suffix);
+                                                }else{
+                                                    /*
+                                                     * Sometimes there is no further suffix, the dynamic tag is all there is. Consider:
+                                                     * /div/button[1]
+                                                     * /div/button[2]
+                                                     * /div/button[3]
+                                                     *
+                                                     * The dynamic tag is the button and there is no further suffix.
+                                                     */
+
+                                                    suffix = null;
+                                                }
+
+                                                //
+
+                                                log.info("prefix: {}", structure.getString("prefix"));
+                                                log.info("dynamicTag: {}", structure.getString("dynamic_tag"));
+                                                log.info("suffix: {}", suffix);
+
+                                                /*
+                                                 * Validate the match to this sub-structure by ensuring that the computed suffix exists in the sub-structure's reference HTML.
+                                                 */
+
+                                                Document structureHTMLSnippet = Jsoup.parseBodyFragment(structure.getString("html"));
+                                                String validationXpath = "//" + structure.getString("dynamic_tag");
+                                                if(suffix != null){
+                                                    validationXpath += "/" + suffix;
+                                                }
+                                                Elements matchedSnippetElements = structureHTMLSnippet.selectXpath(validationXpath);
+
+                                                if(matchedSnippetElements.size() > 0){
+                                                    return dxpath;
+                                                }else{
+                                                    originalXpathsOfFalsePositives.add(structure.getString("original_xpath"));
+                                                    return null;
+                                                }
+
+                                                //return dxpath;
+                                            })
+                                            .filter(Objects::nonNull)
+                                            .collect(Collectors.toSet());
+
+                                    return modelDXpaths;
+
+                                }).collect(HashSet::new, HashSet::addAll, HashSet::addAll);
+
+                                //Annotate the nav model with the dxpaths we were able to compute if any
+                                if (!dxpaths.isEmpty()){
+                                    String dxpathsPropertyValue = dxpaths.stream()
+                                            .map(DynamicXPath::toJson)
+                                            .map(JsonObject::encode)
+                                            .collect(JsonArray::new, JsonArray::add, JsonArray::addAll)
+                                            .encode();
+
+
+                                    try(var tx = LogPreprocessor.graphDB.db.beginTx();
+
+                                    ){
+                                        tx.execute("MATCH (n:ClickNode) WHERE n.id = '%s' SET n.dynamicXpaths = %s RETURN n;".formatted(nodeId,  dxpathsPropertyValue));
+                                        tx.commit();
+                                    }
+                                }
+
+
+                        //Remove false positive matches
+                        Iterator<Object> it = matchedSubstructures.iterator();
+                        while (it.hasNext()) {
+                            JsonObject substructure = (JsonObject) it.next();
+                            if(originalXpathsOfFalsePositives.contains(substructure.getString("original_xpath"))){
+                                it.remove();
+                            }
+                        }
+
+                    });
+
+                    /*
+                     * It is possible that during false positive filtering, all substructure matches were false positives, if that is the case, remove the entry for the matches json object.
+                     */
+                    JsonObject filteredMatches  = matches.stream().filter(entry->{
+                        JsonObject matchInfo = (JsonObject) entry.getValue();
+                        return matchInfo.getJsonArray("matched_substructures").size() > 0;
+                    }).collect(JsonObject::new, (json, entry)->json.put(entry.getKey(), entry.getValue()), JsonObject::mergeIn);
+
+
+
+
+                    return Future.succeededFuture(filteredMatches);
                 }).compose(matches->{
                     //Let's compute a nice little cypher query for convenience.
                     StringBuilder sb = new StringBuilder();
@@ -787,17 +928,17 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
 
     private Future<Void> mineCommonSubstructures(String clusteringId, String snapshotId, String baseURI, String snapshotHtml, double threshold, int numPerm, double dbscanEps, int dbscanMinSamples){
         return Future.all(
-                        cleanerService.cleanHTML(snapshotHtml), //Get cleaned HTML snapshot
+                        Future.succeededFuture(snapshotHtml), //Get cleaned HTML snapshot
                         makeMinhashLSHForSnapshotNodes(snapshotId, baseURI, snapshotHtml, threshold, numPerm)
                 )
                 .onFailure(err->log.error(err.getMessage(),err))
                 .compose(compositeFuture->{
-                    String cleanedSnapshotHTML = (String) compositeFuture.list().get(0);
+                    String snapshotHTML = (String) compositeFuture.list().get(0);
                     String lshId = (String) compositeFuture.list().get(1);
 
                     return Future.all(
                             getNodeClustering(lshId, Double.toString(dbscanEps), Integer.toString(dbscanMinSamples)),
-                            Future.succeededFuture(cleanedSnapshotHTML),
+                            Future.succeededFuture(snapshotHTML),
                             Future.succeededFuture(lshId)
                     );
 
@@ -805,7 +946,17 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                 .compose(compositeFuture -> {
                     Map<String, List<JsonObject>> clusterMap = (Map<String, List<JsonObject>>) compositeFuture.list().get(0);
 
-                    Document snapshotDocument = Jsoup.parse((String) compositeFuture.list().get(1));
+                    Document snapshotDocument = Jsoup.parse((String)compositeFuture.list().get(1));
+                    //snapshotDocument.traverse(new XpathSnapshotVisitor());
+                    //Need to run through the outerHtml() cycle to ensure that the document is being processed the same as during fingerprint registration
+                    String xpathAnnotatedHTML = snapshotDocument.outerHtml();
+
+
+                    String cleanHTML = HTMLCleaningTools.clean(xpathAnnotatedHTML);
+                    snapshotDocument = Jsoup.parse(cleanHTML);
+                    snapshotDocument.traverse(new BlankRemovingVisitor());
+                    snapshotDocument.traverse(new TagAndAttributeStrategy.PruningVisitor());
+
 
                     String lshId = (String) compositeFuture.list().get(2);
 
@@ -863,6 +1014,8 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
 
         TagAndAttributeStrategy.LabelingVisitor labelingNodeVisitor = new TagAndAttributeStrategy.LabelingVisitor();
         document.traverse(labelingNodeVisitor);
+
+        log.info("processNodeClusters got {} nodes",  labelingNodeVisitor.nodeMap.size());
 
         Iterator<Map.Entry<String, List<JsonObject>>> it = clusterMap.entrySet().iterator();
 
@@ -1076,8 +1229,8 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
 
         String html = rc.body().asString();
         cleanerService.cleanHTML(html)
-                .onSuccess(result -> rc.response().setStatusCode(200).end(result))
-                .onFailure(ex -> rc.response().setStatusCode(500).end(ex.getMessage()));
+                .onSuccess(result -> rc.getDelegate().response().setStatusCode(200).end(result))
+                .onFailure(ex -> rc.getDelegate().response().setStatusCode(500).end(ex.getMessage()));
         ;
 
     }

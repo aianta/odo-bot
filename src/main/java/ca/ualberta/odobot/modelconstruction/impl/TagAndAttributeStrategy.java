@@ -13,12 +13,17 @@ import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.*;
+import org.jsoup.parser.Parser;
+import org.jsoup.select.Elements;
 import org.jsoup.select.NodeVisitor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.function.Function;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static ca.ualberta.odobot.semanticflow.Utils.computeXpathNoRoot;
 
@@ -109,7 +114,7 @@ public class TagAndAttributeStrategy implements CleaningStrategy {
         return null;
     }
 
-    private class PruningVisitor implements NodeVisitor {
+    public static class PruningVisitor implements NodeVisitor {
 
 
         @Override
@@ -174,24 +179,31 @@ public class TagAndAttributeStrategy implements CleaningStrategy {
         doc.traverse(new PruningVisitor());
 
         //Execute after DOM modifications have been made.
-        doc.traverse(new LabelingVisitor());
+        LabelingVisitor labelingVisitor = new LabelingVisitor();
+        doc.traverse(labelingVisitor);
 
-
+        log.info("cleanHTML identified {} nodes", labelingVisitor.nodeMap.size());
 
         return Future.succeededFuture(doc.outerHtml());
     }
 
     public Future<JsonObject> toNodeLinks(String input){
-        String html = HTMLCleaningTools.clean(input);
+        //String html = HTMLCleaningTools.clean(input);
 
-        Document doc = Jsoup.parse(html);
+        Document doc = Jsoup.parse(input);
         doc.traverse(new XpathSnapshotVisitor());
+        String xpathAnnotatedHTML = doc.outerHtml();
+        xpathAnnotatedHTML = HTMLCleaningTools.clean(xpathAnnotatedHTML);
+
+        doc = Jsoup.parse(xpathAnnotatedHTML);
         doc.traverse(new BlankRemovingVisitor());
         doc.traverse(new PruningVisitor());
 
 
         LabelingVisitor labelingVisitor = new LabelingVisitor();
         doc.traverse(labelingVisitor);
+
+        log.info("toNodeLinks identified {} nodes", labelingVisitor.nodeMap.size() );
 
         NodeLinksVisitor nodeLinksVisitor = new NodeLinksVisitor(this::nodeToLabel, labelingVisitor.nodeMap, labelingVisitor.nodeIndex, doc, vertx );
         doc.traverse(nodeLinksVisitor);
@@ -201,20 +213,30 @@ public class TagAndAttributeStrategy implements CleaningStrategy {
 
     }
 
-    public Future<JsonObject> toElementAnnotationQuery(String html, String targetElementXpath) {
+    public Future<JsonObject> toElementAnnotationQuery(String htmlInput, String targetElementXpath) {
         targetElementXpath = Xpath.truncateXpath(targetElementXpath);
         log.info("targetElementXpath: {}",  targetElementXpath );
-        Document doc = Jsoup.parse(html);
+
+        /**
+         * We have to be really careful here. We must clean the HTML input in the exact same way
+         * that we do in toNodeLinks(), as that is the method which is invoked when generating
+         * our fingerprint database of minhashes.
+         *
+         * If we deviate even a little, the fingerprint database becomes useless.
+         *
+         */
+        Document doc = Jsoup.parse(htmlInput);
+
         Element targetElement = doc.selectXpath(targetElementXpath).first();
         String targetElementOriginalHTML = targetElement.outerHtml();
         String taintValue = UUID.randomUUID().toString();
         targetElement.attr("_odo_bot_taint", taintValue);
 
-        String taintedHtml = HTMLCleaningTools.clean(doc.outerHtml());
-
-        doc = Jsoup.parse(taintedHtml);
 
 
+        //Now we can follow the toNodeLinks() process exactly.
+        String taintedHTML = HTMLCleaningTools.clean(doc.outerHtml());
+        doc = Jsoup.parse(taintedHTML);
         doc.traverse(new BlankRemovingVisitor());
         doc.traverse(new PruningVisitor());
         LabelingVisitor labelingVisitor = new LabelingVisitor();
@@ -224,7 +246,13 @@ public class TagAndAttributeStrategy implements CleaningStrategy {
         doc.traverse(nodeLinksVisitor);
 
         String targetNodeXpath = "//*[@_odo_bot_taint='%s']".formatted(taintValue);
-        Element _targetElement = doc.selectXpath(targetNodeXpath).first();
+        Elements elements = doc.selectXpath(targetNodeXpath);
+        if(elements.size() > 1){
+            log.error("Fatal Error. Multiple tainted elements detected. {} tainted elements when there only should be one.", elements.size());
+            //log.error("original tag: {} replacement tag: {}", originalTag, replacementTag);
+            System.exit(1);
+        }
+        Element _targetElement = elements.first();
         //This may be different from the original because we do pruning during the cleaning process.
         String cleanedTargetElementXpath = computeXpathNoRoot(_targetElement);
 

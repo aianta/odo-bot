@@ -283,7 +283,17 @@ public class NavPath {
                             _instruction.parameterName = parameterNode.getProperty("name").toString();
                             _instruction.parameterId = parameterNode.getProperty("id").toString();
                             instruction = _instruction;
-                        }else if (node.hasProperty("dynamicXpath")){
+                        } else if(node.hasProperty("dynamicXpaths")){
+                            String [] _dxpaths = (String[])node.getProperty("dynamicXpaths");
+                            Set<DynamicXPath> dxpaths = Arrays.stream(_dxpaths)
+                                    .map(JsonObject::new)
+                                    .map(DynamicXPath::fromJson)
+                                    .collect(Collectors.toSet());
+                            QueryDom _instruction = new QueryDom();
+                            _instruction.dynamicXPaths = dxpaths;
+                            instruction = _instruction;
+
+                        } else if (node.hasProperty("dynamicXpath")){
                             DynamicXPath dxpath = DynamicXPath.fromJson(new JsonObject((String) node.getProperty("dynamicXpath")));
                             QueryDom _instruction = new QueryDom();
                             _instruction.dynamicXPath = dxpath;

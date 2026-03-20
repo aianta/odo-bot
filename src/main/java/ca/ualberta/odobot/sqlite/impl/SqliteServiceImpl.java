@@ -1701,6 +1701,8 @@ public class SqliteServiceImpl implements SqliteService {
                         executeQuery(promise, sql, genericErrorHandlerWithBusyRetry(promise, sql, null));
                     }
                 });
+            }if (err.getMessage().contains("SQLITE_CONSTRAINT_PRIMARYKEY")) {
+                promise.tryComplete();
             }else{
                 log.error(err.getMessage(), err);
                 log.error("ProblemSQL: \n{}", sql);
@@ -1720,7 +1722,7 @@ public class SqliteServiceImpl implements SqliteService {
     private Future<Void> executeParameterizedQuery(Promise promise, String sql, Tuple parameters, Handler<Throwable> errHandler){
 
         pool.preparedQuery(sql).execute(parameters)
-                .onSuccess(done->promise.complete())
+                .onSuccess(done->promise.tryComplete())
                 .onFailure(errHandler);
         return promise.future();
     }
