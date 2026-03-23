@@ -501,7 +501,8 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
 
                                                 if (suffix.contains("/")){
                                                     suffix = suffix.substring(suffix.indexOf("/") + 1); //And after any index associated with the dynamic tag in the model xpath
-                                                    dxpath.setSuffix(suffix);
+                                                    dxpath.setSuffixPattern(DynamicXPath.toSuffixPattern(List.of(suffix)));
+                                                    dxpath.setKnownSuffixes(List.of(suffix));
                                                 }else{
                                                     /*
                                                      * Sometimes there is no further suffix, the dynamic tag is all there is. Consider:

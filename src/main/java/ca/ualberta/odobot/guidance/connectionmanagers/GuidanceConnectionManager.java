@@ -14,6 +14,7 @@ import ca.ualberta.odobot.snippet2xml.Snippet2XMLService;
 import ca.ualberta.odobot.snippet2xml.Snippet2XMLVerticle;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -21,6 +22,10 @@ import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -248,6 +253,8 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
 
             promise.future().onSuccess(response->{
 
+                String sourceNodeId = executionRequest.getString("sourceNodeId");
+
                 List<JsonObject> queryResults = response.getJsonArray("queryResults").stream().map(o->(JsonObject)o).collect(Collectors.toList());
                 log.info("Last result: \n{}", queryResults.get(queryResults.size()-1).getString("html"));
 
@@ -263,6 +270,8 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                                         .put("xpath", option.getString("xpath"));
 
                                 activePromises.put("EXECUTION_RESULT", Promise.promise());
+                                //Log how this query dom operation went for debugging, troubleshooting and sanity checking.
+                                saveQueryDomResult(client, executionRequest, response.getJsonArray("queryResults"), sourceNodeId, clickRequest);
                                 try{
                                     Thread.sleep(1000);
                                 }catch (InterruptedException e){
@@ -318,6 +327,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                                         .put("xpath", option);
 
                                 activePromises.put("EXECUTION_RESULT", Promise.promise());
+
                                 try{
                                     Thread.sleep(1000);
                                 }catch (InterruptedException e){
@@ -348,5 +358,29 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
         send(executionRequest);
 
         return promise.future();
+    }
+
+    private static void saveQueryDomResult(OdoClient client, JsonObject executionRequest, JsonArray queryResults, String sourceNodeId, JsonObject clickRequest){
+        String filename = "./%s/%s-query-dom-%s.txt".formatted("execution_events", client.getRequestManager().getEvalId(),sourceNodeId).replaceAll("\\|","-");
+        File fout = new File(filename);
+        try(FileWriter fw = new FileWriter(fout);
+            BufferedWriter bw = new BufferedWriter(fw);
+        ){
+            StringBuilder sb = new StringBuilder();
+            sb.append("Source Node ID: %s\n".formatted(sourceNodeId));
+            sb.append("Cypher Query:\nMATCH (n) where n.id = '%s' RETURN n;\n".formatted(sourceNodeId));
+            sb.append("QueryDom Instruction Execution Request:\n%s\n".formatted(executionRequest.encodePrettily()));
+            sb.append("Query Results:\n%s\n".formatted(queryResults.encodePrettily()));
+            sb.append("Task Description:\n%s\n".formatted(client.getRequestManager().getActiveExecutionRequest().getTaskDescription()));
+            sb.append("Resulting Click Request:\n%s\n".formatted(clickRequest.encodePrettily()));
+
+            bw.write(sb.toString());
+            bw.flush();
+
+        }catch(IOException e){
+            log.error("Error while saving query dom result!");
+            log.error(e.getMessage(), e);
+
+        }
     }
 }

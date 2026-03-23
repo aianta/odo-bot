@@ -739,6 +739,19 @@ public class RequestManager {
                         }
                         log.info("Last instruction was dynamic xpath");
                         DynamicXPathInstruction dynamicXPathInstruction = (DynamicXPathInstruction) lastInstruction;
+
+
+                        //Handle query dom instructions with multiple dynamic xpaths
+                        if(dynamicXPathInstruction instanceof QueryDom && ((QueryDom)dynamicXPathInstruction).dynamicXPaths != null && !((QueryDom)dynamicXPathInstruction).dynamicXPaths.isEmpty()){
+                            QueryDom queryDom = (QueryDom) dynamicXPathInstruction;
+
+                            //As long as any match or still match we have a hit.
+                            return queryDom.dynamicXPaths.stream().anyMatch(dynamicXPath -> dynamicXPath.matches(observedXPath) || dynamicXPath.stillMatches(observedXPath))
+                                    ||
+                                    queryDom.alternateXpaths().contains(observedXPath);
+
+
+                        }
                         log.info("matches: {}, stillMatches: {}",dynamicXPathInstruction.dynamicXPath.matches(observedXPath), dynamicXPathInstruction.dynamicXPath.stillMatches(observedXPath) );
                         return dynamicXPathInstruction.dynamicXPath.matches(observedXPath) || dynamicXPathInstruction.dynamicXPath.stillMatches(observedXPath);
                     }

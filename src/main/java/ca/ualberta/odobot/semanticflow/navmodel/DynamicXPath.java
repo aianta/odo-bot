@@ -143,15 +143,31 @@ public class DynamicXPath {
      * @return
      */
     public boolean matches(String sampleXPath){
+
+        if(prefix.startsWith("//") && !sampleXPath.startsWith("//")){
+            sampleXPath = "/" + sampleXPath;
+        }
+
         log.info("SampleXPath: {}", sampleXPath);
         log.info("Prefix: {}", prefix);
+
+        if(suffixPattern == null && suffix != null){
+            suffixPattern = toSuffixPattern(List.of(suffix));
+        }
+
         log.info("SuffixPattern: {}", suffixPattern.pattern());
         log.info("Dynamic: {}", dynamicTag);
 
         log.info("startsWith: {}",sampleXPath.startsWith(prefix) );
+        log.info("matchesDynamicTag: {}", matchesDynamicTag(sampleXPath));
+        //TODO - Figure out how to determine if we have an empty suffix. This can occur when the dynamic tag is the end of the dxpath.
+        if(suffix == null || knownSuffixes.isEmpty() || suffixPattern == null){
+            return sampleXPath.startsWith(prefix) && matches(dynamicTag);
+        }
+
         log.info("endsWith: {}", sampleXPath.endsWith(suffix));
         log.info("matchesSuffixPattern: {}", suffixPattern.asPredicate().test(sampleXPath));
-        log.info("matchesDynamicTag: {}", matchesDynamicTag(sampleXPath));
+
 
         //NOTE: Check dynamic tag AFTER prefix and suffix, as dynamic tag extraction assumes prefix and suffix match.
         return sampleXPath.startsWith(prefix) && //Prefix matches
@@ -199,25 +215,42 @@ public class DynamicXPath {
 
     private boolean matchesDynamicTag(String sampleXPath){
         try{
-            log.info("matchesDynamicTag Logic");
-            log.info("[1]{}", sampleXPath);
+            log.info("Matches dynamic tag logic:");
+            log.info("SampleXPath: {}", sampleXPath);
+            String prefixRemoved = sampleXPath.substring(this.prefix.length());
 
-            var matcher = suffixPattern.matcher(sampleXPath);
-            String sampleDynamicTagString = null;
-            if(matcher.find()){
-                var _suffix = matcher.group(0);
-                sampleDynamicTagString = sampleXPath.substring(prefix.length(), sampleXPath.length()-_suffix.length() );
-
-            }else{
-                sampleDynamicTagString = sampleXPath.substring(sampleXPath.lastIndexOf("/")+1);
+            if(prefixRemoved.startsWith("/")){
+                prefixRemoved = prefixRemoved.substring(1);
             }
+            log.info("PrefixRemoved: {}", prefixRemoved);
+            int indexOfFirstSlash = sampleXPath.indexOf("/");
+            String suffixRemoved = prefixRemoved.substring(indexOfFirstSlash);
 
-            log.info("[2]{}", sampleDynamicTagString);
-//            sampleDynamicTagString = sampleDynamicTagString.substring(sampleDynamicTagString.length()-suffix.length());
-//            log.info("[3]{}", sampleDynamicTagString);
-            String sampleTag = NavPath.extractTag(sampleDynamicTagString);
-            log.info("extractedTag: {}", sampleTag);
-            return this.dynamicTag.equals(sampleTag);
+            if (suffixRemoved.contains("[")){
+                suffixRemoved = suffixRemoved.substring( 0,suffixRemoved.indexOf("["));
+            }
+            log.info("SuffixRemoved: {}", suffixRemoved);
+            return this.dynamicTag.equals(suffixRemoved);
+//
+//            log.info("matchesDynamicTag Logic");
+//            log.info("[1]{}", sampleXPath);
+//
+//            var matcher = suffixPattern.matcher(sampleXPath);
+//            String sampleDynamicTagString = null;
+//            if(matcher.find()){
+//                var _suffix = matcher.group(0);
+//                sampleDynamicTagString = sampleXPath.substring(prefix.length(), sampleXPath.length()-_suffix.length() );
+//
+//            }else{
+//                sampleDynamicTagString = sampleXPath.substring(sampleXPath.lastIndexOf("/")+1);
+//            }
+//
+//            log.info("[2]{}", sampleDynamicTagString);
+////            sampleDynamicTagString = sampleDynamicTagString.substring(sampleDynamicTagString.length()-suffix.length());
+////            log.info("[3]{}", sampleDynamicTagString);
+//            String sampleTag = NavPath.extractTag(sampleDynamicTagString);
+//            log.info("extractedTag: {}", sampleTag);
+//            return this.dynamicTag.equals(sampleTag);
 
 
         }catch (StringIndexOutOfBoundsException e){

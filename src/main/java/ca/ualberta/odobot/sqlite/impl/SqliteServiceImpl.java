@@ -1337,7 +1337,7 @@ public class SqliteServiceImpl implements SqliteService {
          */
 
         return createTable("""
-                CREATE TABLE common_substructures(
+                CREATE TABLE IF NOT EXISTS common_substructures(
                     clustering_id text,
                     snapshot_id text,
                     cluster_id text,

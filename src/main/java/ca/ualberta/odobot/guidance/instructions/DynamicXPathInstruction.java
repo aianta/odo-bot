@@ -20,6 +20,13 @@ public class DynamicXPathInstruction extends Instruction {
     }
 
     public String toString(){
-        return "Instruction with dynamicXpath: " + dynamicXPath.toString();
+        if(dynamicXPath != null){
+            return "Instruction with dynamicXpath: " + dynamicXPath.toString();
+        }else{
+            return "Instruction with multiple dynamicXPaths!";
+        }
+
+
+
     }
 }

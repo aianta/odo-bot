@@ -6,6 +6,7 @@ import io.vertx.core.json.JsonObject;
 import org.apache.commons.lang3.builder.HashCodeBuilder;
 
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Set;
 
 public class QueryDom extends DynamicXPathInstruction{
@@ -75,5 +76,25 @@ public class QueryDom extends DynamicXPathInstruction{
 
 
         return result;
+    }
+
+    public String toString(){
+        if(this.dynamicXPaths != null && !this.dynamicXPaths.isEmpty()){
+            StringBuilder sb = new StringBuilder();
+            sb.append("Query Dom instruction with %s dynamicXpath(s) [".formatted(this.dynamicXPaths.size()));
+            Iterator<DynamicXPath> it = this.dynamicXPaths.iterator();
+            while (it.hasNext()){
+                DynamicXPath dx = it.next();
+                sb.append(dx.toJson().encodePrettily());
+                if(it.hasNext()){
+                    sb.append(",\n");
+                }
+            }
+            sb.append("]");
+            return sb.toString();
+        }else{
+            return super.toString();
+        }
+
     }
 }
