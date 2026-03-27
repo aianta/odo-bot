@@ -39,6 +39,7 @@ public class HTMLCleaningTools {
             .addAttributes(":all", "role")
             .addAttributes(":all", "_odo_bot_taint")
             .addAttributes(":all", "oxp")
+            .addAttributes(":all",  "draggable")
             //.addAttributes(":all", "alt")
             //.addAttributes(":all", "value")
             .addAttributes(":all", "placeholder")

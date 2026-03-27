@@ -39,8 +39,8 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
 
     public long timeoutTimer = -1l;
 
-    //private static final long TIMEOUT = 6000000l; //100 minutes
-    private static final long TIMEOUT = 120000l; //2 minutes
+    private static final long TIMEOUT = 6000000l; //100 minutes
+    //private static final long TIMEOUT = 180000l; //3 minutes
 
     public GuidanceConnectionManager(OdoClient client){
         super(client);

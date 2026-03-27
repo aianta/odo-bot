@@ -95,7 +95,7 @@ public class SqliteServiceImpl implements SqliteService {
         Promise<List<JsonObject>> promise = Promise.promise();
         //TODO: Group by label is sneaky here and not implied by the method name
         pool.preparedQuery("""
-            SELECT * FROM data_entry_annotations group by label;
+            SELECT * FROM data_entry_annotations group by label, xpath;
         """).execute()
                 .onSuccess(rows->{
                     List<JsonObject> results = new ArrayList<>();

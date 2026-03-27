@@ -39,7 +39,7 @@ public class TagAndAttributeStrategy implements CleaningStrategy {
 
     //Certain attribute values are very likely to be content specific
     //Useful for attribute who's presence is still meaningful.
-    private Set<String> attributesWhoseValuesMustBeExcluded = Set.of("title", "id", "name", "href");
+    private Set<String> attributesWhoseValuesMustBeExcluded = Set.of("title", "id", "name", "href", "draggable");
     private Map<String, Function<String,String>> attributesWhoseValuesMustBeProcessed = new HashMap<>();
     private Set<String> attributesToExclude = Set.of("vid", "_odo_bot_taint", "oxp");
 

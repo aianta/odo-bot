@@ -292,7 +292,7 @@ public class NavPathsConstructor {
 
         TrajectoryDistanceBeamPathExpander pathExpander = new TrajectoryDistanceBeamPathExpander(
                 targetNodeId,
-                10
+                3
         );
 
         TraversalDescription traversal = tx.traversalDescription()
