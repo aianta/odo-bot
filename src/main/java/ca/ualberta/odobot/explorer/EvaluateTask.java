@@ -54,6 +54,7 @@ public class EvaluateTask implements Runnable{
 
     FirefoxDriver driver;
     OdoClient odoXClient;
+    long taskTimeout;
 
     Promise<Void> promise;
 
@@ -65,6 +66,8 @@ public class EvaluateTask implements Runnable{
         this.config = config;
         this.promise = promise;
         this.task = task;
+
+        this.taskTimeout = config.getLong("timeout", 180000L);
 
         this.odoXControlsUrl = "moz-extension://"+dynamicAddonId.toString()+"/popup/bot/bot.html";
         this.odoXOptionsUrl = "moz-extension://"+dynamicAddonId.toString()+"/options/options.html";
@@ -148,6 +151,7 @@ public class EvaluateTask implements Runnable{
 
     private Future<ExecutionRequest> taskToExecutionRequest(JsonObject task){
         ExecutionRequest executionRequest = new ExecutionRequest();
+        executionRequest.setTimeout(this.taskTimeout);
 
         if(agent == Agent.ODO_BOT_NL){
             return taskPlannerService.taskQueryConstruction(task)

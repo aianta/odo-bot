@@ -51,7 +51,11 @@ public class TaskParameterEvaluator implements Evaluator {
                 //objectParameters.contains((String)endNode.getSingleRelationship(RelationshipType.withName("PARAM"), Direction.OUTGOING).getEndNode().getProperty("id"))
                 !resourceParameters.contains(endNodeId)
         ){
-            log.info("Excluding path because end node {} is an undefined resource parameter...", endNodeId);
+            if(endNode.hasProperty("dynamicXpaths")){
+                return Evaluation.EXCLUDE_AND_CONTINUE;
+            }
+
+            log.info("Excluding path because end node {} is an undefined resource parameter and no dynamicXpaths to use instead...", endNodeId);
             //Stop exploring paths which contain object parameters that are not referenced in the task description
             return Evaluation.EXCLUDE_AND_PRUNE;
         }

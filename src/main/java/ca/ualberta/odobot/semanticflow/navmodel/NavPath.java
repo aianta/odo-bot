@@ -275,15 +275,7 @@ public class NavPath {
 
                     if(node.hasLabel(Label.label("ClickNode"))){
 
-                        if(node.hasRelationship(Direction.OUTGOING, RelationshipType.withName("PARAM"))){
-                            Relationship r = node.getSingleRelationship(RelationshipType.withName("PARAM"), Direction.OUTGOING);
-                            Node parameterNode = r.getEndNode();
-
-                            GetDOMSnapshot _instruction = new GetDOMSnapshot();
-                            _instruction.parameterName = parameterNode.getProperty("name").toString();
-                            _instruction.parameterId = parameterNode.getProperty("id").toString();
-                            instruction = _instruction;
-                        } else if(node.hasProperty("dynamicXpaths")){
+                        if(node.hasProperty("dynamicXpaths")){
                             String [] _dxpaths = (String[])node.getProperty("dynamicXpaths");
                             Set<DynamicXPath> dxpaths = Arrays.stream(_dxpaths)
                                     .map(JsonObject::new)
@@ -291,6 +283,15 @@ public class NavPath {
                                     .collect(Collectors.toSet());
                             QueryDom _instruction = new QueryDom();
                             _instruction.dynamicXPaths = dxpaths;
+                            instruction = _instruction;
+
+                        } else if(node.hasRelationship(Direction.OUTGOING, RelationshipType.withName("PARAM"))){
+                            Relationship r = node.getSingleRelationship(RelationshipType.withName("PARAM"), Direction.OUTGOING);
+                            Node parameterNode = r.getEndNode();
+
+                            GetDOMSnapshot _instruction = new GetDOMSnapshot();
+                            _instruction.parameterName = parameterNode.getProperty("name").toString();
+                            _instruction.parameterId = parameterNode.getProperty("id").toString();
                             instruction = _instruction;
 
                         } else if (node.hasProperty("dynamicXpath")){
@@ -626,6 +627,13 @@ public class NavPath {
             //Need to handle collapsed click nodes first.
             if(curr.hasLabel(Label.label("CollapsedClickNode")) && curr.hasRelationship(Direction.OUTGOING, RelationshipType.withName("PARAM"))){
                 JsonObject parameterMapping = getParameterById(getAssociatedSchemaParameterId(curr), parameters);
+
+                //Handle unmapped resource parameter nodes. Something we allow as of March 27, 2026 in cases where these nodes are executable by their dynamicXpaths property
+                if(parameterMapping == null){
+                    result.add("Select the task appropriate item.");
+                    continue;
+                }
+
                 String schemaName = getAssociatedSchemaName(curr);
                 result.add("Select the %s '%s'.".formatted(schemaName, parameterMapping.getString("query")));
                 continue;

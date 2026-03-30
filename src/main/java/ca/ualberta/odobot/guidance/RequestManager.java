@@ -165,7 +165,7 @@ public class RequestManager {
                 navPaths = LogPreprocessor.pathsConstructor.constructV3(tx, src.toString(), resourceParameters, inputParameters, apiCalls);
 
                 //First collect together our parameter mappings, we'll need this to generate semantically meaningful natural language descriptions of the different paths.
-                JsonArray parameters = request.getParameters().stream().map(ExecutionParameter::toJson).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+                JsonArray parameters = request.getParameterAsJson();
 
                 //Different nav paths only matter if they involve different interactions.
                 //We can determine if they actually have unique sets of interactions by converting them to natural language and ensuring the uniqueness of the output.
@@ -188,33 +188,9 @@ public class RequestManager {
                 log.info("Found {} execution paths", navPaths.size());
                 if(navPaths.size() > 1){
 
-                    //Now we prompt the LLM to decide between the paths we were able to find. This is where/how the system decides between create/edit paths for example.
-
-
-                    //Create a JsonObject containing all the different path options.
-                    //Each entry in the object is going to be <navPathID> : <Natural language steps in JsonArray>
-                    JsonObject paths = new JsonObject();
-
-                    navPaths.forEach(navPath -> paths.put(navPath.getId().toString(), navPath.toNaturalLanguage(parameters).stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll)));
-                    return TaskPlannerVerticle.service.selectPath(paths, request.getTaskDescription())
-                            .onFailure(err->log.error(err.getMessage(), err))
-                            .compose(chosenPathId->{
-                                NavPath chosenPath = navPaths.stream().filter(navPath -> navPath.getId().equals(UUID.fromString(chosenPathId))).findFirst().get();
+                    return this.naturalLanguagePathSelection(navPaths, request)
+                            .compose(chosenPath->{
                                 navPaths = List.of(chosenPath);
-
-                                //Save the navPath for this request.
-                                NavPath.saveNavPath("./%s/%s-navpath.txt".formatted("execution_events", evalId).replaceAll("\\|","-"), chosenPath);
-
-                                /**
-                                 * We still need a target node so that the execution mechanism can determine when the task has been completed.
-                                 * All paths produced using the new path construction logic will end in an API node.
-                                 *
-                                 * I think, in practice, we ultimately end up following the first path's instructions. So the last node in the first path should effectively
-                                 * be our target node.
-                                 */
-                                var targetNodeId = UUID.fromString(chosenPath.getPath().endNode().getProperty("id").toString());
-                                _input.setTargetNode(targetNodeId.toString());
-                                request.setTarget(targetNodeId);
 
                                 JsonObject executionInstruction = buildExecutionInstruction(navPaths);
                                 if(executionInstruction == null){
@@ -234,7 +210,6 @@ public class RequestManager {
                                 }
 
                                 return Future.succeededFuture(executionInstruction);
-
                             });
                 }
 
@@ -316,33 +291,9 @@ public class RequestManager {
 
                 if(navPaths.size() > 1){
 
-                    //Now we prompt the LLM to decide between the paths we were able to find. This is where/how the system decides between create/edit paths for example.
-
-
-                    //Create a JsonObject containing all the different path options.
-                    //Each entry in the object is going to be <navPathID> : <Natural language steps in JsonArray>
-                    JsonObject paths = new JsonObject();
-
-                    navPaths.forEach(navPath -> paths.put(navPath.getId().toString(), navPath.toNaturalLanguage(parameters).stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll)));
-                    return TaskPlannerVerticle.service.selectPath(paths, request.getTaskDescription())
-                            .onFailure(err->log.error(err.getMessage(), err))
-                            .compose(chosenPathId->{
-                                NavPath chosenPath = navPaths.stream().filter(navPath -> navPath.getId().equals(UUID.fromString(chosenPathId))).findFirst().get();
+                    return this.naturalLanguagePathSelection(navPaths, request)
+                            .compose(chosenPath->{
                                 navPaths = List.of(chosenPath);
-
-                                //Save the navPath for this request.
-                                NavPath.saveNavPath("./%s/%s-navpath.txt".formatted("execution_events", evalId).replaceAll("\\|","-"), chosenPath);
-
-                                /**
-                                 * We still need a target node so that the execution mechanism can determine when the task has been completed.
-                                 * All paths produced using the new path construction logic will end in an API node.
-                                 *
-                                 * I think, in practice, we ultimately end up following the first path's instructions. So the last node in the first path should effectively
-                                 * be our target node.
-                                 */
-                                var targetNodeId = UUID.fromString(chosenPath.getPath().endNode().getProperty("id").toString());
-                                _input.setTargetNode(targetNodeId.toString());
-                                request.setTarget(targetNodeId);
 
                                 JsonObject executionInstruction = buildExecutionInstruction(navPaths);
                                 if(executionInstruction == null){
@@ -362,7 +313,6 @@ public class RequestManager {
                                 }
 
                                 return Future.succeededFuture(executionInstruction);
-
                             });
                 }
 
@@ -564,44 +514,88 @@ public class RequestManager {
                 request.addRecomputation();
 
                 log.info("Found {} paths after recomputation", navPaths.size());
-                navPaths = List.of(navPaths.get(0));
 
-                NavPath.saveNavPath("./%s/%s-navpath-%d.txt".formatted("execution_events", evalId, request.getPathRecomputations()).replaceAll("\\|","-"), navPaths.get(0));
+                if(navPaths.size() > 1){
 
-                var targetNodeId = UUID.fromString(navPaths.get(0).getPath().endNode().getProperty("id").toString());
-                request.setTarget(targetNodeId);
+                    this.naturalLanguagePathSelection(navPaths, request)
+                            .onSuccess(chosenPath->{
+                                navPaths = List.of(chosenPath);
 
-                JsonObject instruction =  buildExecutionInstruction(navPaths);
+                                JsonObject instruction =  buildExecutionInstruction(navPaths);
 
-                Node firstNode = navPaths.get(0).getPath().startNode();
+                                Node firstNode = navPaths.get(0).getPath().startNode();
 
-                /**
-                 * This method (getExecutionPath) is only called on to produce the first instruction for the execution.
-                 * If the chosen path begins with a LocationNode (which is common), then the first instruction would
-                 * be to wait for that location change. But since we likely just initialized our local context. There's
-                 * not going to be an application location change event.
-                 *
-                 * To deal with this, if the execution instruction is null, as would be the case for WaitFor type instructions
-                 * (because they don't send anything to OdoX, the instruction JSON is null), call buildExecutionInstruction again
-                 * to get the next instruction.
-                 *
-                 * TODO: refactor this. This method is doing too much. And this 'temporary fix' only adds to the complexity of the execution logic.
-                 */
-                if(instruction == null && (firstNode.hasLabel(Label.label("LocationNode")) || firstNode.hasLabel(Label.label("APINode")))) {
-                    instruction = buildExecutionInstruction(navPaths);
-                }
+                                /**
+                                 * This method (getExecutionPath) is only called on to produce the first instruction for the execution.
+                                 * If the chosen path begins with a LocationNode (which is common), then the first instruction would
+                                 * be to wait for that location change. But since we likely just initialized our local context. There's
+                                 * not going to be an application location change event.
+                                 *
+                                 * To deal with this, if the execution instruction is null, as would be the case for WaitFor type instructions
+                                 * (because they don't send anything to OdoX, the instruction JSON is null), call buildExecutionInstruction again
+                                 * to get the next instruction.
+                                 *
+                                 * TODO: refactor this. This method is doing too much. And this 'temporary fix' only adds to the complexity of the execution logic.
+                                 */
+                                if(instruction == null && (firstNode.hasLabel(Label.label("LocationNode")) || firstNode.hasLabel(Label.label("APINode")))) {
+                                    instruction = buildExecutionInstruction(navPaths);
+                                }
 
-                //We don't want to execute a previously executed instruction twice. So get the next instruction here.
-                //Basically, if we recovered from a DataEntry or Click node, the new path would first attempt to re-execute that instruction. So we want to skip that and move to the next instruction along the new path.
-                if(instruction.getString("sourceNodeId").equals(updatedStartingNodeId.get())){
-                    instruction = buildExecutionInstruction(navPaths);
-                }
+                                //We don't want to execute a previously executed instruction twice. So get the next instruction here.
+                                //Basically, if we recovered from a DataEntry or Click node, the new path would first attempt to re-execute that instruction. So we want to skip that and move to the next instruction along the new path.
+                                if(instruction.getString("sourceNodeId").equals(updatedStartingNodeId.get())){
+                                    instruction = buildExecutionInstruction(navPaths);
+                                }
 
-                if(instruction != null){
-                    client.getGuidanceConnectionManager().sendExecutionInstruction(instruction);
+                                if(instruction != null){
+                                    client.getGuidanceConnectionManager().sendExecutionInstruction(instruction);
+                                }else{
+                                    log.error("Could not produce execution instruction for the re-computed path!");
+                                }
+                            })
+                            .onFailure(err->log.error(err.getMessage(),err));
+
                 }else{
-                    log.error("Could not produce execution instruction for the re-computed path!");
+                    navPaths = List.of(navPaths.get(0));
+
+                    NavPath.saveNavPath("./%s/%s-navpath-%d.txt".formatted("execution_events", evalId, request.getPathRecomputations()).replaceAll("\\|","-"), navPaths.get(0));
+
+                    var targetNodeId = UUID.fromString(navPaths.get(0).getPath().endNode().getProperty("id").toString());
+                    request.setTarget(targetNodeId);
+
+                    JsonObject instruction =  buildExecutionInstruction(navPaths);
+
+                    Node firstNode = navPaths.get(0).getPath().startNode();
+
+                    /**
+                     * This method (getExecutionPath) is only called on to produce the first instruction for the execution.
+                     * If the chosen path begins with a LocationNode (which is common), then the first instruction would
+                     * be to wait for that location change. But since we likely just initialized our local context. There's
+                     * not going to be an application location change event.
+                     *
+                     * To deal with this, if the execution instruction is null, as would be the case for WaitFor type instructions
+                     * (because they don't send anything to OdoX, the instruction JSON is null), call buildExecutionInstruction again
+                     * to get the next instruction.
+                     *
+                     * TODO: refactor this. This method is doing too much. And this 'temporary fix' only adds to the complexity of the execution logic.
+                     */
+                    if(instruction == null && (firstNode.hasLabel(Label.label("LocationNode")) || firstNode.hasLabel(Label.label("APINode")))) {
+                        instruction = buildExecutionInstruction(navPaths);
+                    }
+
+                    //We don't want to execute a previously executed instruction twice. So get the next instruction here.
+                    //Basically, if we recovered from a DataEntry or Click node, the new path would first attempt to re-execute that instruction. So we want to skip that and move to the next instruction along the new path.
+                    if(instruction.getString("sourceNodeId").equals(updatedStartingNodeId.get())){
+                        instruction = buildExecutionInstruction(navPaths);
+                    }
+
+                    if(instruction != null){
+                        client.getGuidanceConnectionManager().sendExecutionInstruction(instruction);
+                    }else{
+                        log.error("Could not produce execution instruction for the re-computed path!");
+                    }
                 }
+
 
             }
 
@@ -832,11 +826,110 @@ public class RequestManager {
                     request.addRecomputation();
 
                     log.info("Found {} paths after recomputation", navPaths.size());
-                    navPaths = List.of(navPaths.get(0)); //Only return/use the first path for execution.
 
-                    //Write the new path down for debugging
-                    NavPath.saveNavPath("./%s/%s-navpath-%d.txt".formatted("execution_events", evalId, request.getPathRecomputations()).replaceAll("\\|","-"), navPaths.get(0));
+                    if(navPaths.size() > 1){
+                        this.naturalLanguagePathSelection(navPaths, request)
+                                .onSuccess(chosenPath->{
+                                    navPaths = List.of(chosenPath);
 
+                                    JsonObject instruction = buildExecutionInstruction(navPaths);
+
+                                    Node firstNode = navPaths.get(0).getPath().startNode();
+
+                                    /**
+                                     * This method (getExecutionPath) is only called on to produce the first instruction for the execution.
+                                     * If the chosen path begins with a LocationNode (which is common), then the first instruction would
+                                     * be to wait for that location change. But since we likely just initialized our local context. There's
+                                     * not going to be an application location change event.
+                                     *
+                                     * To deal with this, if the execution instruction is null, as would be the case for WaitFor type instructions
+                                     * (because they don't send anything to OdoX, the instruction JSON is null), call buildExecutionInstruction again
+                                     * to get the next instruction.
+                                     *
+                                     * TODO: refactor this. This method is doing too much. And this 'temporary fix' only adds to the complexity of the execution logic.
+                                     */
+                                    if(instruction == null && (firstNode.hasLabel(Label.label("LocationNode")) || firstNode.hasLabel(Label.label("APINode")))) {
+                                        instruction = buildExecutionInstruction(navPaths);
+                                    }
+
+                                    if(instruction != null){
+                                        client.getGuidanceConnectionManager()
+                                                .sendExecutionInstruction(instruction);
+                                    }else{
+                                        log.error("Couldn't produce execution instruction for the re-computed path!");
+                                    }
+                                })
+                                .onFailure(err->log.error(err.getMessage(), err));
+
+                    }else{
+                        navPaths = List.of(navPaths.get(0)); //Only return/use the first path for execution.
+
+                        //Write the new path down for debugging
+                        NavPath.saveNavPath("./%s/%s-navpath-%d.txt".formatted("execution_events", evalId, request.getPathRecomputations()).replaceAll("\\|","-"), navPaths.get(0));
+
+
+                        /**
+                         * We still need a target node so that the execution mechanism can determine when the task has been completed.
+                         * All paths produced using the new path construction logic will end in an API node.
+                         *
+                         * I think, in practice, we ultimately end up following the first path's instructions. So the last node in the first path should effectively
+                         * be our target node.
+                         */
+                        var targetNodeId = UUID.fromString(navPaths.get(0).getPath().endNode().getProperty("id").toString());
+                        request.setTarget(targetNodeId);
+
+                        JsonObject instruction = buildExecutionInstruction(navPaths);
+
+                        Node firstNode = navPaths.get(0).getPath().startNode();
+
+                        /**
+                         * This method (getExecutionPath) is only called on to produce the first instruction for the execution.
+                         * If the chosen path begins with a LocationNode (which is common), then the first instruction would
+                         * be to wait for that location change. But since we likely just initialized our local context. There's
+                         * not going to be an application location change event.
+                         *
+                         * To deal with this, if the execution instruction is null, as would be the case for WaitFor type instructions
+                         * (because they don't send anything to OdoX, the instruction JSON is null), call buildExecutionInstruction again
+                         * to get the next instruction.
+                         *
+                         * TODO: refactor this. This method is doing too much. And this 'temporary fix' only adds to the complexity of the execution logic.
+                         */
+                        if(instruction == null && (firstNode.hasLabel(Label.label("LocationNode")) || firstNode.hasLabel(Label.label("APINode")))) {
+                            instruction = buildExecutionInstruction(navPaths);
+                        }
+
+                        if(instruction != null){
+                            client.getGuidanceConnectionManager()
+                                    .sendExecutionInstruction(instruction);
+                        }else{
+                            log.error("Couldn't produce execution instruction for the re-computed path!");
+                        }
+                    }
+
+
+
+                }
+
+
+
+            }
+        }
+    }
+
+    private Future<NavPath> naturalLanguagePathSelection(List<NavPath> navPaths, ExecutionRequest request){
+        //Now we prompt the LLM to decide between the paths we were able to find. This is where/how the system decides between create/edit paths for example.
+
+        //Create a JsonObject containing all the different path options.
+        //Each entry in the object is going to be <navPathID> : <Natural language steps in JsonArray>
+        JsonObject paths = new JsonObject();
+        JsonArray parameters = request.getParameterAsJson();
+
+        navPaths.forEach(navPath -> paths.put(navPath.getId().toString(), navPath.toNaturalLanguage(parameters).stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll)));
+        return TaskPlannerVerticle.service.selectPath(paths, request.getTaskDescription())
+                .onFailure(err->log.error(err.getMessage(), err))
+                .compose(chosenPathId->{
+                    NavPath chosenPath = navPaths.stream().filter(navPath->navPath.getId().equals(UUID.fromString(chosenPathId))).findFirst().get();
+                    NavPath.saveNavPath("./%s/%s-navpath-%d.txt".formatted("execution_events", evalId, request.getPathRecomputations()).replaceAll("\\|","-"), chosenPath);
 
                     /**
                      * We still need a target node so that the execution mechanism can determine when the task has been completed.
@@ -845,42 +938,12 @@ public class RequestManager {
                      * I think, in practice, we ultimately end up following the first path's instructions. So the last node in the first path should effectively
                      * be our target node.
                      */
-                    var targetNodeId = UUID.fromString(navPaths.get(0).getPath().endNode().getProperty("id").toString());
+                    var targetNodeId = UUID.fromString(chosenPath.getPath().endNode().getProperty("id").toString());
+                    _input.setTargetNode(targetNodeId.toString());
                     request.setTarget(targetNodeId);
 
-                    JsonObject instruction = buildExecutionInstruction(navPaths);
-
-                    Node firstNode = navPaths.get(0).getPath().startNode();
-
-                    /**
-                     * This method (getExecutionPath) is only called on to produce the first instruction for the execution.
-                     * If the chosen path begins with a LocationNode (which is common), then the first instruction would
-                     * be to wait for that location change. But since we likely just initialized our local context. There's
-                     * not going to be an application location change event.
-                     *
-                     * To deal with this, if the execution instruction is null, as would be the case for WaitFor type instructions
-                     * (because they don't send anything to OdoX, the instruction JSON is null), call buildExecutionInstruction again
-                     * to get the next instruction.
-                     *
-                     * TODO: refactor this. This method is doing too much. And this 'temporary fix' only adds to the complexity of the execution logic.
-                     */
-                    if(instruction == null && (firstNode.hasLabel(Label.label("LocationNode")) || firstNode.hasLabel(Label.label("APINode")))) {
-                        instruction = buildExecutionInstruction(navPaths);
-                    }
-
-                    if(instruction != null){
-                        client.getGuidanceConnectionManager()
-                                .sendExecutionInstruction(instruction);
-                    }else{
-                        log.error("Couldn't produce execution instruction for the re-computed path!");
-                    }
-
-                }
-
-
-
-            }
-        }
+                    return Future.succeededFuture(chosenPath);
+                });
     }
 
 

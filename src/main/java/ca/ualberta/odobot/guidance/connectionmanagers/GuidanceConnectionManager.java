@@ -39,9 +39,6 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
 
     public long timeoutTimer = -1l;
 
-    private static final long TIMEOUT = 6000000l; //100 minutes
-    //private static final long TIMEOUT = 180000l; //3 minutes
-
     public GuidanceConnectionManager(OdoClient client){
         super(client);
     }
@@ -148,7 +145,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
             GuidanceVerticle._vertx.cancelTimer(timeoutTimer);
         }
 
-        GuidanceVerticle._vertx.setTimer(TIMEOUT, id->{
+        GuidanceVerticle._vertx.setTimer(client.getRequestManager().getActiveExecutionRequest().getTimeout(), id->{
             timeoutTimer = id;
             log.info("Task execution timed out!");
             client.getRequestManager().getEvaluationComplete().tryFail("Timeout!");

@@ -1,6 +1,7 @@
 package ca.ualberta.odobot.guidance.execution;
 
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
+import io.vertx.core.json.JsonArray;
 import org.neo4j.graphdb.Node;
 import org.neo4j.graphdb.ResourceIterator;
 import org.neo4j.graphdb.Result;
@@ -21,6 +22,7 @@ public class ExecutionRequest {
     private String taskDescription;
 
     private int pathRecomputations = 0;
+    private long timeout = 180000l; //3 minutes default
 
     private Type type;
     private UUID id;
@@ -65,6 +67,15 @@ public class ExecutionRequest {
 
     public ExecutionRequest setId(UUID id) {
         this.id = id;
+        return this;
+    }
+
+    public long getTimeout() {
+        return timeout;
+    }
+
+    public ExecutionRequest setTimeout(long timeout) {
+        this.timeout = timeout;
         return this;
     }
 
@@ -135,6 +146,10 @@ public class ExecutionRequest {
 
     public List<ExecutionParameter> getParameters() {
         return parameters;
+    }
+
+    public JsonArray getParameterAsJson(){
+        return this.getParameters().stream().map(ExecutionParameter::toJson).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
     }
 
     public ExecutionRequest addParameter(ExecutionParameter parameter){

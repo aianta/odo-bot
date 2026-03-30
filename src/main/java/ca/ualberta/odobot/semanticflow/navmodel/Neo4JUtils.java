@@ -756,7 +756,8 @@ public class Neo4JUtils {
         var index  = timeline.indexOf(clickEvent);
         var entityTimelineId = timeline.getId().toString()+"#"+index;
 
-        String clickText = clickEvent.getTriggerElement() != null?clickEvent.getTriggerElement().ownText():"";
+        //String clickText = clickEvent.getTriggerElement() != null?clickEvent.getTriggerElement().ownText():"";
+        String clickText = clickEvent.getTriggerElement() != null?clickEvent.getTriggerElement().text():"";
         String clickXpath = clickEvent.getXpath();
 
         return processClick(clickText, clickXpath, entityTimelineId, clickEvent.getBasePath());
@@ -877,7 +878,7 @@ public class Neo4JUtils {
         TimelineEntity target = timeline.get(index);
         if (target instanceof ClickEvent){
             ClickEvent clickEvent = (ClickEvent)target;
-            return getClickNode(clickEvent.getXpath(), clickEvent.getTriggerElement() != null ? clickEvent.getTriggerElement().ownText():"", clickEvent.getBasePath());
+            return getClickNode(clickEvent.getXpath(), clickEvent.getTriggerElement() != null ? clickEvent.getTriggerElement().text():"", clickEvent.getBasePath());
         }
 
         if(target instanceof DataEntry){
@@ -1012,6 +1013,7 @@ public class Neo4JUtils {
         if(successor instanceof ApplicationLocationChangeNode){
             stmt +="-[:NEXT]->(b:ApplicationLocationChangeNode {id:$bId}) RETURN e;";
         }
+
 
         Query query = new Query(stmt, parameters("aId", predecessor.getId().toString(), "bId", successor.getId().toString()));
 
