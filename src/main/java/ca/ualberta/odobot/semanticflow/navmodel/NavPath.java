@@ -43,6 +43,7 @@ public class NavPath {
             node.hasLabel(Label.label("DataEntryNode")) ||
             node.hasLabel(Label.label("CheckboxNode")) ||
             node.hasLabel(Label.label("APINode")) ||
+            node.hasLabel(Label.label("GraphQLNode")) ||
             node.hasLabel(Label.label("LocationNode"));
 
     private Instruction lastInstruction;
