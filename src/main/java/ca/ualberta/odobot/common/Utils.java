@@ -7,6 +7,10 @@ import java.util.*;
 
 public class Utils {
 
+    public static String getTerminalElementOfXpath(String xpath){
+        return xpath.substring(xpath.lastIndexOf("/"));
+    }
+
     public static String normalizeBaseUri(String baseUri) {
         return baseUri.replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*");
     }

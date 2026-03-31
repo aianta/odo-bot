@@ -24,6 +24,7 @@ import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
+import static ca.ualberta.odobot.common.Utils.getTerminalElementOfXpath;
 import static ca.ualberta.odobot.semanticflow.Utils.getNormalizedPath;
 
 /**
@@ -323,6 +324,16 @@ public class OnlineEventProcessor {
     private void processClickEvent(JsonObject event){
         ClickEvent clickEvent = clickEventMapper.map(event);
         clickEvent.setTimestamp(parseTimestamp(event));
+
+        /*
+         * If the click event is a SPAN click, the terminal element of the click xpath should be a span.
+         * Do this check after creating the click event so that xpath truncation can take place first.
+         */
+        var eventName = event.getJsonObject("eventDetails").getString("name");
+        if(eventName.equals("SPAN_CLICK") && (!getTerminalElementOfXpath(clickEvent.getXpath()).contains("span") ||
+                clickEvent.getTriggerElement().text().isEmpty())){
+            return;
+        }
 
         /**
          * Special Case:

@@ -15,9 +15,20 @@ public class Xpath {
     }
 
     static Set<String> terminalElements = Set.of("/a", "/btn", "button", "svg");
+    //static Set<String> exceptionElements = Set.of("input", "textarea", "option", "select");
     static Set<String> topPriorityElements = Set.of("/a");
 
     public static String truncateXpath(String xpath){
+
+//        //First check to see that the xpath isn't an exception to our truncation rules.
+//        //We decide this by checking to see if the terminal element appears in our exceptionElements
+//        var terminalElement = xpath.substring(xpath.lastIndexOf("/"));
+//        if(terminalElement.contains("[")){
+//            terminalElement = terminalElement.substring(0, terminalElement.indexOf("["));
+//        }
+//        if(exceptionElements.contains(terminalElement)){
+//            return xpath;
+//        }
 
         for(String element: terminalElements){
             if (xpath.lastIndexOf(element) != -1){

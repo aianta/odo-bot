@@ -22,7 +22,17 @@ public class QueryDom extends DynamicXPathInstruction{
         QueryDom other = (QueryDom) o;
 
         if(parameterId == null){
-            return other.parameterId == null && dynamicXPath.equals(other.dynamicXPath);
+            if(other.parameterId != null){
+                return false;
+            }
+            if(dynamicXPath == null && other.dynamicXPath != null){
+                return false;
+            }
+
+            if(dynamicXPath != null && other.dynamicXPath != null){
+                return dynamicXPath.equals(other.dynamicXPath);
+            }
+
         }
 
         if(dynamicXPaths != null && !dynamicXPaths.isEmpty()){
