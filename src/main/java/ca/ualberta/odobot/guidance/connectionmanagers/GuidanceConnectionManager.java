@@ -253,6 +253,13 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                 String sourceNodeId = executionRequest.getString("sourceNodeId");
 
                 List<JsonObject> queryResults = response.getJsonArray("queryResults").stream().map(o->(JsonObject)o).collect(Collectors.toList());
+
+                //If the query failed to find any candidates for OdoBot to consider clicking on, try recovering by recomputing a new path avoiding the node that prompted this.
+                if (queryResults.isEmpty()){
+                    client.getRequestManager().recoverFromFailedNode(sourceNodeId);
+                    return;
+                }
+
                 log.info("Last result: \n{}", queryResults.get(queryResults.size()-1).getString("html"));
 
                 if(!executionRequest.containsKey("parameterId")){

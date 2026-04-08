@@ -171,7 +171,7 @@ public class DynamicXPath {
 
         //NOTE: Check dynamic tag AFTER prefix and suffix, as dynamic tag extraction assumes prefix and suffix match.
         return sampleXPath.startsWith(prefix) && //Prefix matches
-                (suffixPattern.asPredicate().test(sampleXPath) || (sampleXPath.equals(prefix + "/" + dynamicTag) )) && //Suffix matches
+                (suffixPattern.asPredicate().test(sampleXPath) || sampleXPath.equals(prefix + "/" + dynamicTag) || sampleXPath.endsWith(suffix)) && //Suffix matches
                 matchesDynamicTag(sampleXPath); //Dynamic tag matches
 
 
@@ -186,6 +186,7 @@ public class DynamicXPath {
         while (it.hasNext()){
             String _suffix = it.next();
             sb.append("(");
+            //TODO: Replace with Pattern.quote()
             sb.append(_suffix.replaceAll("/", "\\\\/"));
             sb.append(")");
             if(it.hasNext()){

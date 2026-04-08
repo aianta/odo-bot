@@ -510,7 +510,7 @@ public class RequestManager {
                 tx = LogPreprocessor.graphDB.db.beginTx(); // Open a new one
 
                 //navPaths = LogPreprocessor.pathsConstructor.constructV2(tx, updatedStartingNodeId.get(), request.getResourceParameters(), request.getInputParameters(), request.getApiCalls(), request.getFailedNodes());
-                navPaths = LogPreprocessor.pathsConstructor.constructV3(tx, updatedStartingNodeId.get(), request.getResourceParameters(), request.getInputParameters(), request.getApiCalls());
+                navPaths = LogPreprocessor.pathsConstructor.constructV3(tx, updatedStartingNodeId.get(), request.getResourceParameters(), request.getInputParameters(), request.getApiCalls(), request.getFailedNodes());
                 request.addRecomputation();
 
                 log.info("Found {} paths after recomputation", navPaths.size());

@@ -273,6 +273,10 @@ public class NavPathsConstructor {
     }
 
     public List<NavPath> constructV3(Transaction tx, String startingNodeId, Set<String> resourceParameters, Set<String> inputParameters, Set<String> apiCalls ){
+        return constructV3(tx, startingNodeId, resourceParameters, inputParameters, apiCalls, Set.of());
+    }
+
+    public List<NavPath> constructV3(Transaction tx, String startingNodeId, Set<String> resourceParameters, Set<String> inputParameters, Set<String> apiCalls, Set<String> excludedNodeIds ){
 
         if(apiCalls.size() != 1){
             throw new RuntimeException("Cannot construct path to multiple different API call targets!");
@@ -284,15 +288,20 @@ public class NavPathsConstructor {
 
         log.info("Path construction starting from node: {}", startingNodeId);
 
-        TaskParameterEvaluator evaluator = new TaskParameterEvaluator(
-                targetNodeId,
-                inputParameters,
-                resourceParameters
-        );
+
 
         TrajectoryDistanceBeamPathExpander pathExpander = new TrajectoryDistanceBeamPathExpander(
                 targetNodeId,
-                3
+                3,
+                5,
+                excludedNodeIds
+        );
+
+        TaskParameterEvaluator evaluator = new TaskParameterEvaluator(
+                targetNodeId,
+                inputParameters,
+                resourceParameters,
+                pathExpander
         );
 
         TraversalDescription traversal = tx.traversalDescription()

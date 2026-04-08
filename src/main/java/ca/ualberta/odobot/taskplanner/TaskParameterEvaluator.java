@@ -7,6 +7,9 @@ import org.neo4j.graphdb.traversal.Evaluator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Set;
 
 public class TaskParameterEvaluator implements Evaluator {
@@ -17,6 +20,17 @@ public class TaskParameterEvaluator implements Evaluator {
     private String targetNodeID;
     private Set<String> inputParameters;
     private Set<String> resourceParameters;
+
+    private TrajectoryDistanceBeamPathExpander beamPathExpander;
+
+    public TaskParameterEvaluator( String targetNodeID,
+                                   Set<String> inputParameters, Set<String> resourceParameters, TrajectoryDistanceBeamPathExpander beamPathExpander
+    ) {
+        this.targetNodeID = targetNodeID;
+        this.resourceParameters = resourceParameters;
+        this.inputParameters = inputParameters;
+        this.beamPathExpander = beamPathExpander;
+    }
 
     public TaskParameterEvaluator( String targetNodeID,
                                   Set<String> inputParameters, Set<String> resourceParameters
@@ -60,8 +74,35 @@ public class TaskParameterEvaluator implements Evaluator {
             return Evaluation.EXCLUDE_AND_PRUNE;
         }
 
+        //If a beam path expander is defined, ensure that no more than N nodes in a row are off heuristic nodes.
+        if(beamPathExpander != null && maxOffHeuristicGap(path, beamPathExpander.getOffHeuristicNodes()) > beamPathExpander.maxOffHeuristicGap){
+            return Evaluation.EXCLUDE_AND_PRUNE;
+        }
+
         return Evaluation.EXCLUDE_AND_CONTINUE;
 
+    }
+
+    private int maxOffHeuristicGap(Path path, Set<String> offHeuristicNodes){
+        Iterator<Node> it = path.nodes().iterator();
+        List<Integer> gaps = new ArrayList<>();
+        int consecutiveOffHeuristicNodes = 0;
+        while (it.hasNext()) {
+
+            while (it.hasNext() && offHeuristicNodes.contains((String)it.next().getProperty("id"))){
+                consecutiveOffHeuristicNodes +=1;
+            }
+
+            gaps.add(consecutiveOffHeuristicNodes);
+            consecutiveOffHeuristicNodes = 0;
+
+            if(it.hasNext()){
+                it.next();
+            }
+
+        }
+
+        return gaps.stream().mapToInt(Integer::intValue).max().getAsInt();
     }
 
 }

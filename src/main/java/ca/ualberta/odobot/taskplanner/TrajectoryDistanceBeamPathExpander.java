@@ -1,7 +1,7 @@
 package ca.ualberta.odobot.taskplanner;
 
 import apoc.util.collection.Iterables;
-import ca.ualberta.odobot.sqlite.SqliteService;
+import io.vertx.core.json.JsonObject;
 import org.neo4j.graphdb.*;
 import org.neo4j.graphdb.traversal.BranchState;
 import org.slf4j.Logger;
@@ -12,26 +12,34 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.*;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 /**
  * https://neo4j.com/docs/java-reference/current/traversal-framework/traversal-framework-java-api/#traversal-java-api-pathexpander
  */
 
-public class TrajectoryDistanceBeamPathExpander implements PathExpander {
+public class TrajectoryDistanceBeamPathExpander implements PathExpander<JsonObject> {
 
     private static final Logger log = LoggerFactory.getLogger(TrajectoryDistanceBeamPathExpander.class);
     private static final String SQLITE_PATH = "jdbc:sqlite:odobot.db";
 
     private int beamWidth;
+    public int maxOffHeuristicGap = 5;
     private String targetNodeId;
+
+    private Set<String> offHeuristicNodes = new HashSet<>();
+
+    private Set<String> excludedNodes = new HashSet<>();
 
     private Connection conn;
 
-    public TrajectoryDistanceBeamPathExpander( String targetNodeId, int beamWidth) {
+    public Set<String> getOffHeuristicNodes() {
+        return offHeuristicNodes;
+    }
+
+    public TrajectoryDistanceBeamPathExpander(String targetNodeId, int beamWidth, int maxOffHeuristicGap, Set<String> excludedNodes) {
+        this.excludedNodes = excludedNodes;
         this.beamWidth = beamWidth;
+        this.maxOffHeuristicGap = maxOffHeuristicGap;
         this.targetNodeId = targetNodeId;
 
         try{
@@ -44,7 +52,7 @@ public class TrajectoryDistanceBeamPathExpander implements PathExpander {
     }
 
     @Override
-    public ResourceIterable<Relationship> expand(Path path, BranchState branchState) {
+    public ResourceIterable<Relationship> expand(Path path, BranchState<JsonObject> branchState) {
 
         Node endNode = path.endNode();
 
@@ -55,6 +63,11 @@ public class TrajectoryDistanceBeamPathExpander implements PathExpander {
         for (Relationship relationship : relationships) {
             String nextNodeId = (String)relationship.getEndNode().getProperty("id");
 
+            //First make sure the end node is not part of the excluded node list
+            if(excludedNodes.contains(nextNodeId)){
+                continue;
+            }
+
             //Compute the estimated distance between the node at the end of a candidate edge and the target node.
             Double estimatedDistance = estimateDistance(nextNodeId, targetNodeId);
 
@@ -63,6 +76,8 @@ public class TrajectoryDistanceBeamPathExpander implements PathExpander {
                 candidates.put(relationship, estimatedDistance);
             }else{
                 log.info("No distance estimate from {} to {}", nextNodeId, targetNodeId );
+                offHeuristicNodes.add(nextNodeId);
+                candidates.put(relationship, Double.MAX_VALUE);
             }
 
         }
