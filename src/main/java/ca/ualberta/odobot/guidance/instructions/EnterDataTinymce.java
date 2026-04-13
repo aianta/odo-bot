@@ -28,12 +28,18 @@ public class EnterDataTinymce extends EnterData{
     }
 
     public JsonObject toJson(){
-        return super.toJson()
+        JsonObject json =  super.toJson()
                 .put("action", "input")
                 .put("xpath", xpath)
-                .put("data", data)
                 .put("editorId", editorId);
+
+        if (data != null){
+            json.put("data", data);
+        }
+
+        return json;
     }
+
 
     public String toString(){
         return "EnterDataTinyMCE on Xpath " + xpath + " with data: " + data + " and parameterId: " + parameterId + " and editorId: " + editorId;

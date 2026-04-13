@@ -114,7 +114,11 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
         api.route().method(HttpMethod.POST).path("/nodeLinks").handler(this::nodeLinks);
         api.route().method(HttpMethod.GET).path("/buildStateClusters").handler(this::buildStateClusters);
         api.route().method(HttpMethod.GET).path("/mineCommonSubstructures").handler(this::mineCommonDOMSubstructures);
+
+
+        //Not sure if this handler's logic still holds after numShingles changes...
         api.route().method(HttpMethod.GET).path("/computeAnnotations").handler(this::computeAnnotations);
+
         api.route().method(HttpMethod.GET).path("/loadDOMSnapshots").handler(this::loadDOMSnapshots);
         api.route().method(HttpMethod.GET).path("/processHrefs").handler(this::processHrefs);
         api.route().method(HttpMethod.GET).path("/detectDxpaths").handler(this::detectDxpaths);
@@ -137,6 +141,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
     private void computeAnnotations(RoutingContext rc) {
         String sourceIndex = rc.request().getParam("srcIndex");
         int numPerm = rc.queryParam("numPerm").isEmpty()?512:Integer.parseInt(rc.queryParam("numPerm").get(0));
+        int numShingles = rc.queryParam("numShingles").isEmpty()?5:Integer.parseInt(rc.queryParam("numShingles").get(0));
 
         elasticsearchService.fetchAll(sourceIndex)
                 .compose(events->
@@ -162,6 +167,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                                 }).compose(request->{
                                     return webClient.post(ODO_LSH_PORT, ODO_LSH_HOST, "/minhashLSH/query")
                                             .addQueryParam("minhash_perm", Integer.toString(numPerm))
+                                            .addQueryParam("num_shingles", Integer.toString(numShingles))
                                             .sendJson(request)
                                             .onFailure(err->log.error(err.getMessage(), err))
                                             .compose(response->Future.succeededFuture(response.bodyAsJsonObject()));
@@ -177,6 +183,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                                     }).compose(request->{
                                         return webClient.post(ODO_LSH_PORT, ODO_LSH_HOST, "/minhashLSH/query")
                                                 .addQueryParam("minhash_perm", Integer.toString(numPerm))
+                                                .addQueryParam("num_shingles", Integer.toString(numShingles))
                                                 .sendJson(request)
                                                 .onFailure(err->log.error(err.getMessage(), err))
                                                 .compose(response->Future.succeededFuture(response.bodyAsJsonObject()));
@@ -192,55 +199,6 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                             rc.response().setStatusCode(200).end(results.encodePrettily());
                         })
                                 .onFailure(err->log.error(err.getMessage(), err));
-
-//                        Future.all(clickEvents.stream()
-//                                .map(clickEvent->{
-//
-//                                    //Process the DOMSnapshot into node-links format
-//                                    //Identify the target element
-//                                    //Send everything to OdoLSH for querying
-//                                    JsonObject domSnapshotData = new JsonObject(clickEvent.getString("eventDetails_domSnapshot"));
-//                                    String snapshotHTML = domSnapshotData.getString("outerHTML");
-//                                    String targetElementXpath = clickEvent.getString("eventDetails_xpath");
-//                                    String baseURI = clickEvent.containsKey("eventDetails_element")?new JsonObject(clickEvent.getString("eventDetails_element")).getString("baseURI"):null;
-//
-//                                    return cleanerService.toElementAnnotationQuery(snapshotHTML, targetElementXpath)
-//                                            .compose(request->{
-//                                                request.put("baseURI", baseURI );
-//                                                return Future.succeededFuture(request);
-//                                            });
-//
-//                                })
-//                                .toList())
-//                                .compose(annotationRequests->{
-//
-//
-//
-//                                    return Future.all(
-//                                    annotationRequests.list().stream()
-//                                            .map(o->(JsonObject)o)
-//                                            .map(request->{
-//
-//                                                return webClient.post(ODO_LSH_PORT, ODO_LSH_HOST, "/minhashLSH/query")
-//                                                        .addQueryParam("minhash_perm", Integer.toString(numPerm))
-//                                                        .sendJson(request)
-//                                                        .onFailure(err->log.error(err.getMessage(), err))
-//                                                        .compose(response->Future.succeededFuture(response.bodyAsJsonObject()));
-//
-//                                            }).toList());
-//
-//                                })
-//                                .onFailure(err->log.error(err.getMessage(), err))
-//                                .onSuccess(annotations->{
-//                                    JsonArray result = annotations.list().stream().map(o->(JsonObject)o).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
-//
-//
-//                                })
-//                        ;
-
-
-
-
                         }
                 )
 
@@ -432,13 +390,14 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                                                     .collect(Collectors.toSet()).contains(xpath)){
                                                 nodeMatches.getJsonArray("model_xpaths").add(xpath);
                                             };
-                                            if(!nodeMatches.getJsonArray("matched_substructures").stream()
-                                                    .map(JsonObject.class::cast)
-                                                    .map(entry->entry.getString("prefix") + "/" +  entry.getString("dynamic_tag"))
-                                                    .collect(Collectors.toSet()).contains(prefixAndDynamicTag)
-                                            ){
-                                                nodeMatches.getJsonArray("matched_substructures").add(substructure);
-                                            }
+//                                            if(!nodeMatches.getJsonArray("matched_substructures").stream()
+//                                                    .map(JsonObject.class::cast)
+//                                                    .map(entry->entry.getString("prefix") + "/" +  entry.getString("dynamic_tag"))
+//                                                    .collect(Collectors.toSet()).contains(prefixAndDynamicTag)
+//                                            ){
+//                                                nodeMatches.getJsonArray("matched_substructures").add(substructure);
+//                                            }
+                                            nodeMatches.getJsonArray("matched_substructures").add(substructure);
 
                                         }else{
                                             //Initalize matches for this node id
@@ -470,7 +429,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                         JsonArray modelXpaths = matchInfo.getJsonArray("model_xpaths");
                         JsonArray matchedSubstructures = matchInfo.getJsonArray("matched_substructures");
 
-                        Set<String> originalXpathsOfFalsePositives = new HashSet<>();
+                        Set<String> htmlOfFalsePositives = new HashSet<>();
 
                         Set<DynamicXPath> dxpaths = modelXpaths.stream()
                                 .map(String.class::cast)
@@ -536,7 +495,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                                                 if(matchedSnippetElements.size() > 0){
                                                     return dxpath;
                                                 }else{
-                                                    originalXpathsOfFalsePositives.add(structure.getString("original_xpath"));
+                                                    htmlOfFalsePositives.add(structure.getString("html"));
                                                     return null;
                                                 }
 
@@ -571,7 +530,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                         Iterator<Object> it = matchedSubstructures.iterator();
                         while (it.hasNext()) {
                             JsonObject substructure = (JsonObject) it.next();
-                            if(originalXpathsOfFalsePositives.contains(substructure.getString("original_xpath"))){
+                            if(htmlOfFalsePositives.contains(substructure.getString("html"))){
                                 it.remove();
                             }
                         }
@@ -802,7 +761,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
         ;
     }
 
-    private Future<String> makeMinhashLSHForSnapshotNodes(String snapshotId, String baseURI, String html, double threshold, int numPerm){
+    private Future<String> makeMinhashLSHForSnapshotNodes(String snapshotId, String baseURI, String html, double threshold, int numPerm, int numShingles){
 
         Promise<String> promise = Promise.promise();
 
@@ -825,6 +784,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                                 nodeLinks.put("baseURI", baseURI);
 
                                 return webClient.put(ODO_LSH_PORT, ODO_LSH_HOST, "/minhashLSH/" + lshId)
+                                        .addQueryParam("num_shingles", Integer.toString(numShingles))
                                         .addQueryParam("minhash_perm", Integer.toString(numPerm))
                                         .sendJson(new JsonArray().add(nodeLinks));
                             })
@@ -853,6 +813,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
         //Minhash LSH parameters
         double threshold = rc.queryParam("threshold").isEmpty()?0.5:Double.parseDouble(rc.queryParam("threshold").get(0));
         int numPerm = rc.queryParam("numPerm").isEmpty()?256:Integer.parseInt(rc.queryParam("numPerm").get(0));
+        int numShingles = rc.queryParam("numShingles").isEmpty()?5:Integer.parseInt(rc.queryParam("numShingles").get(0));
 
         //DBSCAN parameters
         double eps = rc.queryParam("eps").isEmpty()?0.9:Double.parseDouble(rc.queryParam("eps").get(0));
@@ -908,9 +869,9 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                         String snapshotHtml = domSnapshot.getString("outerHTML");
 
                         if (f == null){
-                            f = mineCommonSubstructures(clusteringId, snapshotId, baseURI, snapshotHtml, threshold, numPerm, eps,  minSamples);
+                            f = mineCommonSubstructures(clusteringId, snapshotId, baseURI, snapshotHtml, threshold, numPerm, eps,  minSamples, numShingles);
                         }else{
-                            f = f.compose(done->mineCommonSubstructures(clusteringId, snapshotId, baseURI, snapshotHtml, threshold, numPerm, eps, minSamples));
+                            f = f.compose(done->mineCommonSubstructures(clusteringId, snapshotId, baseURI, snapshotHtml, threshold, numPerm, eps, minSamples, numShingles));
                         }
                     }
 
@@ -927,10 +888,10 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
 
     }
 
-    private Future<Void> mineCommonSubstructures(String clusteringId, String snapshotId, String baseURI, String snapshotHtml, double threshold, int numPerm, double dbscanEps, int dbscanMinSamples){
+    private Future<Void> mineCommonSubstructures(String clusteringId, String snapshotId, String baseURI, String snapshotHtml, double threshold, int numPerm, double dbscanEps, int dbscanMinSamples, int numShingles){
         return Future.all(
                         Future.succeededFuture(snapshotHtml), //Get cleaned HTML snapshot
-                        makeMinhashLSHForSnapshotNodes(snapshotId, baseURI, snapshotHtml, threshold, numPerm)
+                        makeMinhashLSHForSnapshotNodes(snapshotId, baseURI, snapshotHtml, threshold, numPerm, numShingles)
                 )
                 .onFailure(err->log.error(err.getMessage(),err))
                 .compose(compositeFuture->{
@@ -1142,6 +1103,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
         String lshName = rc.queryParam("targetLSH").get(0);
         double threshold = rc.queryParam("threshold").isEmpty()?0.5:Double.parseDouble(rc.queryParam("threshold").get(0));
         int numPerm = rc.queryParam("numPerm").isEmpty()?256:Integer.parseInt(rc.queryParam("numPerm").get(0));
+        int numShingles = rc.queryParam("numShingles").isEmpty()?5:Integer.parseInt(rc.queryParam("numShingles").get(0));
 
 
         //Create an LSH model for clustering the DOMSnapshots.
@@ -1173,6 +1135,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                                         nodeLinks.put("baseURI", baseURI==null?"-":baseURI);
 
                                         return webClient.put(ODO_LSH_PORT, ODO_LSH_HOST, "/minhashLSH/" + lshId)
+                                                .addQueryParam("num_shingles", Integer.toString(numShingles))
                                                 .sendJson(new JsonArray().add(nodeLinks));
                                     });
 

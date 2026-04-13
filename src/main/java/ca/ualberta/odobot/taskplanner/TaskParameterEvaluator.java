@@ -50,29 +50,29 @@ public class TaskParameterEvaluator implements Evaluator {
             return Evaluation.INCLUDE_AND_PRUNE;
         }
 
-        if(endNode.hasLabel(Label.label("DataEntryNode")) &&
-                !inputParameters.contains(endNodeId)){
-//                !inputParameters.contains((String)endNode.getSingleRelationship(RelationshipType.withName("PARAM"), Direction.OUTGOING).getEndNode().getProperty("id"))){
-            //Stop exploring paths which contain data entry nodes that do not appear in our input parameter set.
-            //These would be input parameters for which we don't have values or which have not been deemed to be relevant to the task at hand.
-            log.info("Excluding path because end node {} is an undefined input parameter...", endNodeId);
-            return Evaluation.EXCLUDE_AND_PRUNE;
-        }
-
-        if(endNode.hasLabel(Label.label("ClickNode")) &&
-                endNode.hasRelationship(Direction.OUTGOING, RelationshipType.withName("PARAM")) &&
-                //Compare object parameter node id to our set of object parameter nodes. NOTE: this is not the endNode, but rather the SchemaParameter node attached to the endNode.
-                //objectParameters.contains((String)endNode.getSingleRelationship(RelationshipType.withName("PARAM"), Direction.OUTGOING).getEndNode().getProperty("id"))
-                !resourceParameters.contains(endNodeId)
-        ){
-            if(endNode.hasProperty("dynamicXpaths")){
-                return Evaluation.EXCLUDE_AND_CONTINUE;
-            }
-
-            log.info("Excluding path because end node {} is an undefined resource parameter and no dynamicXpaths to use instead...", endNodeId);
-            //Stop exploring paths which contain object parameters that are not referenced in the task description
-            return Evaluation.EXCLUDE_AND_PRUNE;
-        }
+//        if(endNode.hasLabel(Label.label("DataEntryNode")) &&
+//                !inputParameters.contains(endNodeId)){
+////                !inputParameters.contains((String)endNode.getSingleRelationship(RelationshipType.withName("PARAM"), Direction.OUTGOING).getEndNode().getProperty("id"))){
+//            //Stop exploring paths which contain data entry nodes that do not appear in our input parameter set.
+//            //These would be input parameters for which we don't have values or which have not been deemed to be relevant to the task at hand.
+//            log.info("Excluding path because end node {} is an undefined input parameter...", endNodeId);
+//            return Evaluation.EXCLUDE_AND_PRUNE;
+//        }
+//
+//        if(endNode.hasLabel(Label.label("ClickNode")) &&
+//                endNode.hasRelationship(Direction.OUTGOING, RelationshipType.withName("PARAM")) &&
+//                //Compare object parameter node id to our set of object parameter nodes. NOTE: this is not the endNode, but rather the SchemaParameter node attached to the endNode.
+//                //objectParameters.contains((String)endNode.getSingleRelationship(RelationshipType.withName("PARAM"), Direction.OUTGOING).getEndNode().getProperty("id"))
+//                !resourceParameters.contains(endNodeId)
+//        ){
+//            if(endNode.hasProperty("dynamicXpaths")){
+//                return Evaluation.EXCLUDE_AND_CONTINUE;
+//            }
+//
+//            log.info("Excluding path because end node {} is an undefined resource parameter and no dynamicXpaths to use instead...", endNodeId);
+//            //Stop exploring paths which contain object parameters that are not referenced in the task description
+//            return Evaluation.EXCLUDE_AND_PRUNE;
+//        }
 
         //If a beam path expander is defined, ensure that no more than N nodes in a row are off heuristic nodes.
         if(beamPathExpander != null && maxOffHeuristicGap(path, beamPathExpander.getOffHeuristicNodes()) > beamPathExpander.maxOffHeuristicGap){

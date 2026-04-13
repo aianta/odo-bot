@@ -119,6 +119,36 @@ public class SqliteServiceImpl implements SqliteService {
         return promise.future();
     }
 
+    public Future<JsonObject> getAllDataEntryInfoForXpath(String xpath){
+        Promise<JsonObject> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            Select xpath, label, description, data_entry_annotations.radio_group, input_element, html_context, entered_data from data_entry_annotations right join data_entries USING (xpath) where xpath = ?; 
+        """
+        ).execute(Tuple.of(xpath))
+                .onSuccess(rows->{
+                    if(rows.size() == 1){
+                        Row row = rows.iterator().next();
+                        JsonObject result = new JsonObject();
+                        result.put("xpath", row.getString("xpath"));
+                        result.put("label", row.getString("label"));
+                        result.put("description", row.getString("description"));
+                        if(row.getString("radio_group") != null){
+                            result.put("radioGroup", row.getString("radio_group"));
+                        }
+                        result.put("inputElementHTML", row.getString("input_element"));
+                        result.put("htmlContext",  row.getString("htmlContext"));
+                        result.put("enteredData", new JsonArray(row.getString("entered_data")));
+
+                        promise.complete(result);
+                    }else{
+                        promise.fail("Expected single result for data entry, but instead got: %s".formatted(rows.size()));
+                    }
+                });
+
+        return promise.future();
+    }
+
     public Future<List<JsonObject>> getAllDataEntryInfo(){
         Promise<List<JsonObject>> promise = Promise.promise();
 
@@ -1028,7 +1058,7 @@ public class SqliteServiceImpl implements SqliteService {
 
     public Future<Set<JsonObject>> getUniqueCommonSubstructureContainers(){
         var sql = """
-                select html, original_xpath, dxpath_prefix, dxpath_dynamic_tag from common_substructures group by dxpath_prefix, dxpath_dynamic_tag
+                select html, original_xpath, dxpath_prefix, dxpath_dynamic_tag from common_substructures group by dxpath_prefix, dxpath_dynamic_tag, html
                 """;
 
         Promise<Set<JsonObject>> promise = Promise.promise();

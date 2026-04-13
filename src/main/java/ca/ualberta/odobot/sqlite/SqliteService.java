@@ -72,6 +72,8 @@ public interface SqliteService {
 
     Future<List<JsonObject>> getAllDataEntryInfo();
 
+    Future<JsonObject> getAllDataEntryInfoForXpath(String xpath);
+
     Future<List<JsonObject>> getAllDataEntryAnnotations();
 
     Future<Void> saveDataEntryAnnotation(JsonObject info);

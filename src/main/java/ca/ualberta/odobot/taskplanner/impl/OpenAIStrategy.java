@@ -31,6 +31,22 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
     }
 
 
+    @Override
+    public Future<String> resolveDataEntryValue(String taskDescription, String inputElementHTML, String htmlContext, List<String> exampleInputs, String label, String description) {
+
+        Optional<String> result = generateWithValidation(
+                ()->_generateInputValue(taskDescription, inputElementHTML, htmlContext, exampleInputs, label, description),
+                List.of(),
+                config.getJsonObject("resolveDataEntryValue").getInteger("maxAttempts")
+        );
+
+        if(result.isPresent()) {
+            return Future.succeededFuture(result.get());
+        }
+
+        return Future.failedFuture("Failed to generate data entry input value.");
+    }
+
     public Future<String> selectPath(JsonObject paths, String taskDescription){
         log.info("Selecting from nav path options...");
 
@@ -54,6 +70,32 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         return Future.failedFuture("Failed to select a nav path!");
 
     }
+
+    private String _generateInputValue(String taskDescription, String inputElementHTML, String htmlContext, List<String> exampleInputs, String label, String description){
+        List<ChatRequestMessage> chatMessages = new ArrayList<>();
+        String prompt = config.getJsonObject("resolveDataEntryValue").getString("systemPrompt");
+        chatMessages.add(new ChatRequestSystemMessage(prompt));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("\nField Information:\n");
+        sb.append("\tField HTML Element: %s\n".formatted(inputElementHTML));
+        sb.append("\tSurrounding HTML Context:\n%s\n".formatted(htmlContext));
+        if(!exampleInputs.isEmpty()){
+            sb.append("\tExample Inputs: %s\n".formatted(exampleInputs.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode()));
+        }
+        sb.append("\tInferred Semantic Label: %s\n".formatted(label));
+        sb.append("\tInferred Semantic Description:\n%s\n".formatted(description));
+        sb.append("\n\n");
+        sb.append("Task Description:\n%s\n".formatted(taskDescription));
+        sb.append("Output:\n");
+
+        log.info("{}", prompt + sb.toString());
+
+        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+
+        return executeChatCompletion(chatMessages);
+    }
+
 
     private String _selectPath(JsonObject paths, String taskDescription){
         List<ChatRequestMessage> chatMessages = new ArrayList<>();

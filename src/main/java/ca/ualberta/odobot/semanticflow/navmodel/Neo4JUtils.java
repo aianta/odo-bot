@@ -10,6 +10,7 @@ import io.vertx.core.json.JsonObject;
 import org.neo4j.driver.*;
 import org.neo4j.driver.Record;
 import org.neo4j.driver.exceptions.NoSuchRecordException;
+import org.neo4j.driver.types.Node;
 import org.neo4j.graphdb.Transaction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -1547,7 +1548,7 @@ public class Neo4JUtils {
 
     public String getAssociatedParameterId(String nodeId){
         String sQuery = """
-                match (m)-[:PARAM]->(n) WHERE (n:InputParameter OR n:SchemaParameter) AND m.id = $id RETURN n.id; 
+                match (m)-[:PARAM]->(n) WHERE (n:InputParameter OR n:SchemaParameter OR n:ResourceParameterNode) AND m.id = $id RETURN n.id; 
                 """;
         Query query = new Query(sQuery, parameters("id", nodeId));
 
@@ -1649,6 +1650,22 @@ public class Neo4JUtils {
             });
 
             return id;
+        }
+    }
+
+    public List<Node> getAllInputParameterNodes(){
+        String sQuery = """
+                match (n:InputParameter) return n;
+                """;
+
+        Query query = new Query(sQuery);
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+            List<Record> nodes = session.executeRead(tx->{
+                var result = tx.run(query);
+                return result.list();
+            });
+            List<Node> result = nodes.stream().map(record -> record.get(0).asNode()).collect(Collectors.toList());
+            return result;
         }
     }
 

@@ -18,4 +18,6 @@ public interface AIStrategy {
     Future<List<JsonObject>> getTaskAPICalls(String taskDescription, List<JsonObject> apiCalls);
 
     Future<String> selectPath(JsonObject paths, String taskDescription);
+
+    Future<String> resolveDataEntryValue(String taskDescription, String inputElementHTML, String htmlContext, List<String> exampleInputs, String label, String description);
 }

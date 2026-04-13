@@ -25,10 +25,17 @@ public class EnterData extends XPathInstruction{
     }
 
     public JsonObject toJson(){
-        return super.toJson()
+        JsonObject json = super.toJson()
                 .put("action", "input")
-                .put("xpath", xpath)
-                .put("data", data);
+                .put("parameterId", parameterId)
+                .put("xpath", xpath);
+
+        if(data != null){
+            json.put("data", data);
+        }
+
+        return json;
+
     }
 
     public String toString(){

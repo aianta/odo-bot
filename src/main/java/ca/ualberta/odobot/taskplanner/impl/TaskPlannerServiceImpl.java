@@ -224,4 +224,27 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
 
 
     }
+
+    @Override
+    public Future<String> resolveDataEntryValue(String taskDescription, String inputParameterId) {
+
+        //Figure out the xpath of the input parameter we're talking about
+        String inputParameterXpath = neo4j.getAllInputParameterNodes().stream().filter(inputParameterNode->inputParameterNode.get("id").asString().equals(inputParameterId))
+                .map(node->node.get("xpath").asString())
+                .findFirst().get();
+
+        //Use that xpath to retrieve all known info about that data entry, combine that with the task description and ask the LLM to spit out an appropriate value.
+        return sqlite.getAllDataEntryInfoForXpath(inputParameterXpath)
+                .compose(dataEntryInfo->{
+                    return this.strategy.resolveDataEntryValue(taskDescription,
+                            dataEntryInfo.getString("inputElementHTML"),
+                            dataEntryInfo.getString("htmlContext"),
+                            dataEntryInfo.getJsonArray("enteredData").stream().map(String.class::cast).toList(),
+                            dataEntryInfo.getString("label"),
+                            dataEntryInfo.getString("description")
+                    );
+                });
+
+
+    }
 }

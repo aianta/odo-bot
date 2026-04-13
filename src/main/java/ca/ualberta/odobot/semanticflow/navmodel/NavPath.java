@@ -223,17 +223,6 @@ public class NavPath {
             if(instructionNodePredicate.test(node)){
                 Instruction instruction = null;
 
-                //Handle collapsed nodes
-//                if(node.hasLabel(Label.label("CollapsedClickNode")) ||
-//                        node.hasLabel(Label.label("CollapsedDataEntryNode")) ||
-//                        node.hasLabel(Label.label("CollapsedCheckboxNode"))
-//                ){
-////                    QueryDom _instruction = new QueryDom();
-////                    _instruction.dynamicXPath = nodeToDynamicXPath(node);
-////                    _instruction.parameterId = LogPreprocessor.neo4j.getAssociatedParameterId((String)node.getProperty("id")); //This is going to cause problems for any collapsed click node or data entry node that doesn't have a schema parameter...
-////                    instruction = _instruction;
-//                }else{
-
                     if(node.hasLabel(Label.label("APINode")) || node.hasLabel(Label.label("GraphQLNode"))){
                         WaitForNetworkEvent _instruction = new WaitForNetworkEvent();
                         _instruction.method = (String) node.getProperty("method");

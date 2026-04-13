@@ -170,7 +170,7 @@ public class ExecutionRequest {
 
     public ExecutionParameter getParameter(String id){
         ExecutionParameter result = this.parameters.stream().filter(parameter -> parameter.getNodeId().equals(UUID.fromString(id)))
-                .findFirst().get();
+                .findFirst().orElse(null);
 
         if(result == null){
             log.error("Could not find parameter with id: {} in list of execution parameters for execution {}",id, getId().toString());
