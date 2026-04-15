@@ -41,6 +41,9 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.function.BiFunction;
+import java.util.regex.MatchResult;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.common.Predicates.stateClusteringEventFilter;
@@ -495,6 +498,17 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                                                 if(matchedSnippetElements.size() > 0){
                                                     return dxpath;
                                                 }else{
+
+                                                    //Before giving up, try expanding the validation xpath.
+                                                    List<String> otherCandidates = expandValidationXpaths(validationXpath);
+                                                    for(String otherCandidate: otherCandidates){
+                                                        matchedSnippetElements = structureHTMLSnippet.selectXpath(otherCandidate);
+                                                        // Be stricter with these hypothetical xpath candidates and require them to resolve to a single element.
+                                                        if(matchedSnippetElements.size() == 1){
+                                                            return dxpath;
+                                                        }
+                                                    }
+
                                                     htmlOfFalsePositives.add(structure.getString("html"));
                                                     return null;
                                                 }
@@ -571,6 +585,50 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
 
         ;
 
+    }
+
+    /**
+     * Given one xpath, produce other possible candidates that may match the intended target if there have been minor changes to the underlying html.
+     *
+     * The idea here is to try fiddling with xpath indices, for example:
+     *
+     * If this is the original xpath:
+     * //div/div/div/span/span/span[2]/div/div/span[2]/span/span[1]/span[2]/div/div[2]/span/span/button
+     *
+     * This method will produce the following candidates:
+     * //div/div/div/span/span/span[1]/div/div/span[2]/span/span[1]/span[2]/div/div[2]/span/span/button
+     * //div/div/div/span/span/span[2]/div/div/span[1]/span/span[1]/span[2]/div/div[2]/span/span/button
+     * //div/div/div/span/span/span[2]/div/div/span[2]/span/span[1]/span[1]/div/div[2]/span/span/button
+     * //div/div/div/span/span/span[2]/div/div/span[2]/span/span[1]/span[2]/div/div[1]/span/span/button
+     *
+     * These candidates have almost the exact same structure as the original, but will match some cases where a single indexed position has been altered.
+     *
+     * The hypothesis is that, if you find exactly one element using one of the candidate xpaths, it's likely what you were initially looking for.
+     *
+     * @param xpath
+     * @return
+     */
+    private List<String> expandValidationXpaths(String xpath){
+        List<String> result = new ArrayList<>();
+        Pattern pattern = Pattern.compile("(?<=\\[)[0-9]*(?=\\])");
+
+        Matcher matcher = pattern.matcher(xpath);
+        Iterator<MatchResult> it = matcher.results().iterator();
+        while(it.hasNext()){
+            MatchResult curr = it.next();
+            int matchedIndex = Integer.parseInt(curr.group(0));
+
+            while (--matchedIndex > 0){
+                var candidate = xpath.substring(0, curr.start());
+                candidate += Integer.toString(matchedIndex);
+                candidate += xpath.substring(curr.end());
+                result.add(candidate);
+            }
+
+
+        }
+
+        return result;
     }
 
     private void processHrefs(RoutingContext rc){

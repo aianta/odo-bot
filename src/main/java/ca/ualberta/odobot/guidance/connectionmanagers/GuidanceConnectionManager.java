@@ -161,7 +161,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                 .mergeIn(instruction);
 
         Promise<JsonObject> promise = Promise.promise();
-        //activePromises.put("EXECUTION_RESULT", promise);
+
 
         //Handle execution-time data entry input resolution
         if(executionRequest.getString("action").equals("input") && !executionRequest.containsKey("data")){
@@ -176,7 +176,11 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                         log.info("Generated input field value: {} for instruction @ sourceNodeId: {}", inputData, executionRequest.getString("sourceNodeId"));
                         log.info("Sending instruction to OdoX!");
                         activePromises.put("EXECUTION_RESULT", promise);
-
+                        try {
+                            Thread.sleep(1000);
+                        }catch (InterruptedException e){
+                            throw new RuntimeException(e);
+                        }
                         send(executionRequest);
             });
 
@@ -383,6 +387,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
 
         }
 
+        log.info("Added EXECUTION_RESULT promise.");
         activePromises.put("EXECUTION_RESULT", promise);
         try{
             Thread.sleep(3000);

@@ -151,11 +151,11 @@ public class DynamicXPath {
         log.info("SampleXPath: {}", sampleXPath);
         log.info("Prefix: {}", prefix);
 
-        if(suffixPattern == null && suffix != null){
+        if(suffixPattern == null && suffix != null && !suffix.isEmpty()){
             suffixPattern = toSuffixPattern(List.of(suffix));
         }
 
-        log.info("SuffixPattern: {}", suffixPattern.pattern());
+        log.info("SuffixPattern: {}", suffixPattern!=null? suffixPattern.pattern():null);
         log.info("Dynamic: {}", dynamicTag);
 
         log.info("startsWith: {}",sampleXPath.startsWith(prefix) );
