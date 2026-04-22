@@ -701,7 +701,10 @@ public class RequestManager {
                         if(observedEditorId == null){
                             return false;
                         }
-                        return observedEditorId.equals(((EnterDataTinymce) lastInstruction).editorId);
+
+                        //April 22, 2026: So long as we observed an editor ID, we'll consider it a match. The editor ids in our trace can be instance specific, so we can't necessarily rely on them matching exactly. This is a bit of a hack, but it allows us to move forward with the execution logic while we figure out a better way to handle this.
+                        return observedEditorId != null;
+                        //return observedEditorId.equals(((EnterDataTinymce) lastInstruction).editorId);
                     }
 
                     if(lastInstruction instanceof XPathInstruction){
