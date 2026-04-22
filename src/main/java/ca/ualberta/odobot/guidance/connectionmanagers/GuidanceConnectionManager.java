@@ -305,6 +305,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                                         .put("source", SOURCE)
                                         .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString())
                                         .put("action", "click")
+                                        .put("sourceNodeId", sourceNodeId)
                                         .put("xpath", option.getString("xpath"));
 
                                 activePromises.put("EXECUTION_RESULT", Promise.promise());

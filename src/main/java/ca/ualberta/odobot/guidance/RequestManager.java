@@ -734,10 +734,20 @@ public class RequestManager {
                         log.info("Last instruction was dynamic xpath");
                         DynamicXPathInstruction dynamicXPathInstruction = (DynamicXPathInstruction) lastInstruction;
 
+                        log.info("Last instruction alternateXpath size: {}", lastInstruction.alternateXpaths().size());
+                        if(!lastInstruction.alternateXpaths().isEmpty()){
+                            log.info("Last instruction alternateXpath: {}", lastInstruction.alternateXpaths().iterator().next());
+                        }
+                        //If the last instruction was a dynamic xpath instruction which was resolved but with an alternate xpath, report a match, so long as the observed xpath is in the list of registered alternate xpaths.
+                        if(!lastInstruction.alternateXpaths().isEmpty()){
+                            return lastInstruction.alternateXpaths().contains(observedXPath);
+                        }
 
                         //Handle query dom instructions with multiple dynamic xpaths
                         if(dynamicXPathInstruction instanceof QueryDom && ((QueryDom)dynamicXPathInstruction).dynamicXPaths != null && !((QueryDom)dynamicXPathInstruction).dynamicXPaths.isEmpty()){
                             QueryDom queryDom = (QueryDom) dynamicXPathInstruction;
+
+
 
                             //As long as any match or still match we have a hit.
                             return queryDom.dynamicXPaths.stream().anyMatch(dynamicXPath -> dynamicXPath.matches(observedXPath) || dynamicXPath.stillMatches(observedXPath))
@@ -746,6 +756,7 @@ public class RequestManager {
 
 
                         }
+
                         log.info("matches: {}, stillMatches: {}",dynamicXPathInstruction.dynamicXPath.matches(observedXPath), dynamicXPathInstruction.dynamicXPath.stillMatches(observedXPath) );
                         return dynamicXPathInstruction.dynamicXPath.matches(observedXPath) || dynamicXPathInstruction.dynamicXPath.stillMatches(observedXPath);
                     }
