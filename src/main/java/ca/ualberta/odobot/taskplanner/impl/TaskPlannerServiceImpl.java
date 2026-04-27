@@ -182,7 +182,12 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
                     .compose(dataEntryAnnotations->this.strategy.getTaskInputParameterMappings(taskDescription, dataEntryAnnotations))
                     .compose(chosenParameters->{
                         for(JsonObject entry: chosenParameters){
-                            var resolvedId = neo4j.getInputParameterId(entry.getString("label"));
+                            String resolvedId = null;
+                            if(entry.containsKey("radioGroup")){
+                                resolvedId = neo4j.getRadioButtonNodeId(entry.getString("radioGroup"));
+                            }else{
+                                resolvedId = neo4j.getInputParameterId(entry.getString("label"));
+                            }
                             if (resolvedId != null){
                                 //Add the id of each associated data entry or checkbox node
                                 entry.put("id", resolvedId );

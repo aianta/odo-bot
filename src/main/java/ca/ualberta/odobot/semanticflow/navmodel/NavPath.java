@@ -6,6 +6,8 @@ import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
 import ca.ualberta.odobot.guidance.execution.InputParameter;
 import ca.ualberta.odobot.guidance.instructions.*;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
+import ca.ualberta.odobot.semanticflow.model.RadioButtonEvent;
+import ca.ualberta.odobot.semanticflow.navmodel.nodes.RadioButtonNode;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.neo4j.graphdb.*;
@@ -42,6 +44,7 @@ public class NavPath {
             node.hasLabel(Label.label("ClickNode")) ||
             node.hasLabel(Label.label("DataEntryNode")) ||
             node.hasLabel(Label.label("CheckboxNode")) ||
+            node.hasLabel(Label.label("RadioButtonNode")) ||
             node.hasLabel(Label.label("APINode")) ||
             node.hasLabel(Label.label("GraphQLNode")) ||
             node.hasLabel(Label.label("LocationNode"));
@@ -224,6 +227,34 @@ public class NavPath {
                 Instruction instruction = null;
 
                     if(node.hasLabel(Label.label("APINode")) || node.hasLabel(Label.label("GraphQLNode"))){
+
+                        //Do not wait for API or GraphQL operations that seem to have been triggered by nothing.
+                        //We say that an API call or GraphQL operation was triggered by nothing if we have observed a tight loop (API/GQL Node A)->(effect)->(API/GQL Node A)
+                        //or a self loop (API/GQL Node A)->(API/GQL Node A) in the model.
+                        // In these cases, we assume that the API/GQL call in question is being triggered by some automated mechanism in the application, and that waiting for it to occur is not necessary for successful execution.
+                        ResourceIterable<Relationship> outgoingEdges = node.getRelationships(Direction.OUTGOING, RelationshipType.withName("NEXT"));
+                        ResourceIterable<Relationship> incomingEdges = node.getRelationships(Direction.INCOMING, RelationshipType.withName("NEXT"));
+
+                        //Look for the same effect node appearing both before and after the API/GQL node in question, which would indicate a tight loop.
+                        Set<String> nextNodeIds = outgoingEdges.stream()
+                                //Only interested in edges leading to effect nodes or API/GQL nodes
+                                .filter(r->
+                                        (r.getEndNode().hasLabel(Label.label("EffectNode")) || r.getEndNode().hasLabel(Label.label("APINode")) || r.getEndNode().hasLabel(Label.label("GraphQLNode"))))
+                                .map(r->(String)r.getEndNode().getProperty("id")).collect(Collectors.toSet());
+                        Set<String> previousNodeIds = incomingEdges.stream()
+                                .filter(r->
+                                        (r.getStartNode().hasLabel(Label.label("EffectNode")) || r.getEndNode().hasLabel(Label.label("APINode")) || r.getEndNode().hasLabel(Label.label("GraphQLNode"))))
+                                .map(r->(String)r.getStartNode().getProperty("id")).collect(Collectors.toSet());
+
+                        //Set intersection, if the same node id appears in both set, one of those tight loops exists.
+                        nextNodeIds.retainAll(previousNodeIds);
+
+                        if(!nextNodeIds.isEmpty()){
+                            continue;
+                        }
+
+
+
                         WaitForNetworkEvent _instruction = new WaitForNetworkEvent();
                         _instruction.method = (String) node.getProperty("method");
                         _instruction.path = (String) node.getProperty("path");
@@ -247,6 +278,15 @@ public class NavPath {
                          */
                         DoClick _instruction = new DoClick();
                         _instruction.xpath = nodeToXPath(node);
+                        instruction = _instruction;
+                    }
+
+                    if(node.hasLabel(Label.label("RadioButtonNode"))){
+                        log.info("Instruction is a radio button node!");
+                        GetUIControlState _instruction = new GetUIControlState();
+                        _instruction.xpath = nodeToXPath(node);
+                        _instruction.type = GetUIControlState.Type.RADIO_BUTTON;
+
                         instruction = _instruction;
                     }
 
@@ -298,7 +338,6 @@ public class NavPath {
 
                     }
 
-                //}
 
                 instruction.setSourceNodeId((String)node.getProperty("id"));
 
@@ -660,6 +699,23 @@ public class NavPath {
             if(curr.hasLabel(Label.label("CheckboxNode"))){
                 String parameterLabel = getAssociatedInputParameterLabel(curr);
                 result.add("Click the '%s' checkbox.".formatted(parameterLabel));
+                continue;
+            }
+
+            if(curr.hasLabel(Label.label("RadioButtonNode"))){
+                String radioGroup = (String)curr.getProperty("radioGroup");
+                List<RadioButtonEvent.RadioButton> options = RadioButtonNode.getRadioButtonsFromStrings(Arrays.stream(((String [])curr.getProperty("relatedElements"))).toList());
+                StringBuilder optionsStringBuilder = new StringBuilder();
+                Iterator<RadioButtonEvent.RadioButton> buttonIterator = options.iterator();
+                while (buttonIterator.hasNext()){
+                    RadioButtonEvent.RadioButton button = buttonIterator.next();
+                    optionsStringBuilder.append("'%s'".formatted(button.getValue()));
+                    if(buttonIterator.hasNext()){
+                        optionsStringBuilder.append(", ");
+                    }
+                }
+
+                result.add("Select the appropriate option for the '%s' radio button group. The available options are: [%s]".formatted(radioGroup, optionsStringBuilder.toString()));
                 continue;
             }
 

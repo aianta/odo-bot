@@ -23,6 +23,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.MalformedURLException;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
@@ -102,7 +103,7 @@ public class SqliteServiceImpl implements SqliteService {
                     for(Row row: rows){
                         JsonObject result = new JsonObject();
                         result.put("xpath", row.getString("xpath"))
-                                .put("label", row.getString("label"))
+                                .put("label", new String(row.getString("label").getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8))
                                 .put("description", row.getString("description"));
 
                         if (row.getString("radio_group") != null) {

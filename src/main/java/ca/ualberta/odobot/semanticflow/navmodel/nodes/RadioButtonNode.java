@@ -56,6 +56,18 @@ public class RadioButtonNode extends XpathAndBasePathNode {
         return this;
     }
 
+    public static List<RadioButtonEvent.RadioButton> getRadioButtonsFromStrings(List<String> buttonStrings){
+        List<RadioButtonEvent.RadioButton> result = new ArrayList<>();
+
+        for(String buttonString: buttonStrings){
+            JsonObject jsonButton = new JsonObject(buttonString);
+            RadioButtonEvent.RadioButton radioButton = RadioButtonEvent.RadioButton.fromJson(jsonButton);
+            result.add(radioButton);
+        }
+
+        return result;
+    }
+
     public List<String> getButtonsAsStrings(){
         List<String> result = new ArrayList<>();
 

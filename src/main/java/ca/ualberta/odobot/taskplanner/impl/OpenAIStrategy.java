@@ -240,7 +240,14 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
     }
 
     private JsonObject getAnnotationByLabel(String label, List<JsonObject> annotations){
-        return annotations.stream().filter(annotation->annotation.getString("label").equals(label)).findFirst().get();
+        Optional<JsonObject> _annotation = annotations.stream().filter(annotation->annotation.getString("label").equals(label)).findFirst();
+        if(_annotation.isEmpty()){
+            _annotation = annotations.stream()
+                    .filter(annotation->annotation.containsKey("radioGroup"))
+                    .filter(annotation->annotation.getString("radioGroup").equals(label)).findFirst();
+        }
+
+        return _annotation.get();
     }
 
     private String _getTaskInputParameterMappings(String taskDescription, List<JsonObject> dataEntryAnnotations){
@@ -252,7 +259,15 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         ListIterator<JsonObject> it = dataEntryAnnotations.listIterator();
         while (it.hasNext()){
             JsonObject curr = it.next();
+//            if (curr.containsKey("radioGroup")){
+//                //Use the radio group name for radio button inputs.
+//                sb.append((it.previousIndex() + 1) + ". " + curr.getString("radioGroup") + "["+curr.getString("description")+"]\n");
+//            }else{
+//
+//            }
+
             sb.append((it.previousIndex() + 1) + ". " + curr.getString("label") + "["+curr.getString("description")+"]\n");
+
         }
         sb.append("\n");
         sb.append("Task Description:\n");

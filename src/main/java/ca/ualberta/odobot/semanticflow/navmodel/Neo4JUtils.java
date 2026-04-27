@@ -1766,6 +1766,27 @@ public class Neo4JUtils {
 
     }
 
+    public String getRadioButtonNodeId(String radioGroup){
+        String sQuery = "match (n:RadioButtonNode) where n.radioGroup = $radioGroup return n.id;";
+        Query query = new Query(sQuery, parameters("radioGroup", radioGroup));
+
+        log.info("Getting radio button node id with radio group: {}", radioGroup);
+
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+            String id = session.executeRead(tx->{
+                var result = tx.run(query);
+                if(result.hasNext()){
+                    return result.single().get(0).asString();
+                }else{
+                    return null;
+                }
+
+            });
+
+            return id;
+        }
+    }
+
     public String getInputParameterId(String label){
         String sQuery = "match (n:InputParameter) where n.label = $label return n.id;";
         Query query = new Query(sQuery, parameters("label", label));
