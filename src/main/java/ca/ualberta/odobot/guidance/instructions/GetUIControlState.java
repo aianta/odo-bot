@@ -15,6 +15,8 @@ public class GetUIControlState extends XPathInstruction {
     }
 
     public Type type;
+    public String editorId;
+    public String parameterId;
 
     @Override
     public boolean equals(Object o) {
@@ -24,13 +26,21 @@ public class GetUIControlState extends XPathInstruction {
 
         GetUIControlState other = (GetUIControlState) o;
 
+        if (this.editorId != null) {
+            return other.editorId.equals(this.editorId);
+        }
+
         return this.type == other.type && this.xpath.equals(other.xpath);
     }
 
     public int hashCode() {
         HashCodeBuilder builder = new HashCodeBuilder(71, 53);
-        builder.append(this.xpath);
-        builder.append(this.type.name());
+        if (this.editorId != null) {
+            builder.append(this.editorId);
+        }else{
+            builder.append(this.xpath);
+            builder.append(this.type.name());
+        }
         return builder.toHashCode();
     }
 
@@ -39,6 +49,14 @@ public class GetUIControlState extends XPathInstruction {
         json.put("action", "getUIControlState");
         json.put("xpath", this.xpath);
         json.put("uiControlType", this.type.name());
+
+        if(parameterId != null){
+            json.put("parameterId", parameterId);
+        }
+
+        if(editorId != null){
+            json.put("editorId", editorId);
+        }
         return json;
     }
 

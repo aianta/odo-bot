@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.taskplanner;
 
+import ca.ualberta.odobot.guidance.instructions.GetUIControlState;
 import ca.ualberta.odobot.semanticflow.navmodel.Neo4JUtils;
 
 import ca.ualberta.odobot.sqlite.SqliteService;
@@ -8,6 +9,7 @@ import io.vertx.codegen.annotations.ProxyGen;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
 import java.util.List;
@@ -50,5 +52,12 @@ public interface TaskPlannerService {
 
     Future<List<JsonObject>> getRelevantAPICalls(String taskDescription);
 
-    Future<String> resolveDataEntryValue(String taskDescription, String inputParameterId);
+    Future<String> resolveDataEntryValue(String taskDescription, String inputParameterId, String currentValue);
+
+    Future<JsonObject> resolveRadioButtonAction(JsonArray state, String taskDescription);
+
+    Future<JsonObject> resolveSelectAction(JsonArray state, String taskDescription);
+
+    Future<Boolean> resolveCheckboxAction(JsonObject state, String taskDescription);
+
 }

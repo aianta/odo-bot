@@ -284,6 +284,8 @@ public class OnlineEventProcessor {
     }
 
     private void processInputChange(JsonObject event){
+        log.info("Input change event:\n{}\n", event.encodePrettily());
+
         InputChange inputChange = inputChangeMapper.map(event);
         inputChange.setTimestamp(parseTimestamp(event));
 

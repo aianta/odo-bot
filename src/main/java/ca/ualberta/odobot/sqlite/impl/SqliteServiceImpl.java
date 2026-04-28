@@ -138,7 +138,7 @@ public class SqliteServiceImpl implements SqliteService {
                             result.put("radioGroup", row.getString("radio_group"));
                         }
                         result.put("inputElementHTML", row.getString("input_element"));
-                        result.put("htmlContext",  row.getString("htmlContext"));
+                        result.put("htmlContext",  row.getString("html_context"));
                         result.put("enteredData", new JsonArray(row.getString("entered_data")));
 
                         promise.complete(result);

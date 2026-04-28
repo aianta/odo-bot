@@ -38,7 +38,7 @@ public class EventConnectionManager extends AbstractConnectionManager implements
 
 
     public void onMessage(JsonObject message){
-        log.info("EventConnectionManager got {}", message.getString("type"));
+        //log.info("EventConnectionManager got {}", message.getString("type"));
         switch (message.getString("type")){
             case "LOCAL_CONTEXT":
                 Promise promise = activePromises.get("LOCAL_CONTEXT");

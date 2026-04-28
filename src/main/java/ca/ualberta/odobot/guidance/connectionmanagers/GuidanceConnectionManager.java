@@ -6,8 +6,11 @@ import ca.ualberta.odobot.guidance.OdoClient;
 import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
 import ca.ualberta.odobot.guidance.execution.ResourceParameter;
 import ca.ualberta.odobot.guidance.execution.SchemaParameter;
+import ca.ualberta.odobot.guidance.instructions.EnterDataTinymce;
+import ca.ualberta.odobot.guidance.instructions.GetUIControlState;
 import ca.ualberta.odobot.guidance.instructions.Instruction;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
+import ca.ualberta.odobot.semanticflow.model.TinymceEvent;
 import ca.ualberta.odobot.semanticflow.navmodel.NavPath;
 import ca.ualberta.odobot.snippet2xml.SemanticObject;
 import ca.ualberta.odobot.snippet2xml.Snippet2XMLService;
@@ -168,7 +171,8 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
             log.info("Execution Instruction action for sourceNodeId: {} was 'input' with no defined data. Attempting real-time data entry resolution!", executionRequest.getString("sourceNodeId"));
             TaskPlannerVerticle.service.resolveDataEntryValue(
                     client.getRequestManager().getActiveExecutionRequest().getTaskDescription(),
-                    executionRequest.getString("parameterId")
+                    executionRequest.getString("parameterId"),
+                    ""
                     )
                     .onFailure(err->log.error(err.getMessage(), err))
                     .onSuccess(inputData->{
@@ -186,6 +190,97 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
 
             return promise.future();
 
+        }
+
+        //Handle getUIControlState processing
+        if(executionRequest.getString("action").equals("getUIControlState")){
+            log.info("Configuring handling the response for getUIControlState instruction.");
+
+            promise.future()
+                    .onFailure(err->log.error(err.getMessage(), err))
+                    .onSuccess(response->{
+                        log.info("Received control state: \n {}\n for instruction with sourceNodeId: {}",response.encodePrettily(), executionRequest.getString("sourceNodeId"));
+
+                        GetUIControlState.Type type = GetUIControlState.Type.valueOf(response.getString("uiControlType"));
+                        JsonArray state = response.getJsonArray("state");
+
+                        switch (type){
+                            case TEXT -> {
+                                JsonObject _state = state.getJsonObject(0);
+                                TaskPlannerVerticle.service.resolveDataEntryValue(
+                                        client.getRequestManager().getActiveExecutionRequest().getTaskDescription(),
+                                        executionRequest.getString("parameterId"),
+                                        _state.getString("value")
+                                ).onFailure(err->log.error(err.getMessage(), err))
+                                        .onSuccess(inputData->{
+
+                                            JsonObject inputInstruction = new JsonObject()
+                                                    .put("type", "EXECUTE")
+                                                    .put("source", SOURCE)
+                                                    .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString())
+                                                    .put("action", "input")
+                                                    .put("data", inputData)
+                                                    .put("sourceNodeId", executionRequest.getString("sourceNodeId"))
+                                                    .put("xpath", _state.getString("xpath"));
+
+                                            activePromises.put("EXECUTION_RESULT", Promise.promise());
+                                            try {
+                                                Thread.sleep(1000);
+                                            }catch (InterruptedException e){
+                                                throw new RuntimeException(e);
+                                            }
+                                            send(inputInstruction);
+                                        });
+                            }
+                            case SELECT -> {}
+                            case CHECKBOX -> {}
+                            case RADIO_BUTTON -> {}
+                            case TINY_MCE_EDITOR -> {
+                                JsonObject _state = state.getJsonObject(0);
+                                TaskPlannerVerticle.service.resolveDataEntryValue(
+                                                client.getRequestManager().getActiveExecutionRequest().getTaskDescription(),
+                                                executionRequest.getString("parameterId"),
+                                                _state.getString("value")
+                                        ).onFailure(err->log.error(err.getMessage(), err))
+                                        .onSuccess(inputData->{
+
+                                            //Create an instruction object to update the nav path's last instruction.
+                                            EnterDataTinymce _instruction = new EnterDataTinymce();
+                                            _instruction.xpath = _state.getString("xpath");
+                                            _instruction.editorId = _state.getString("id");
+                                            _instruction.setSourceNodeId(executionRequest.getString("sourceNodeId"));
+                                            _instruction.data = inputData;
+
+                                            client.getRequestManager().getNavPaths().forEach(path->{
+                                                //TODO: is checking that the last instruction is a GetUIControlState sufficient?
+                                                if(path.lastInstruction() instanceof GetUIControlState){
+                                                    path.updateLastInstruction(_instruction);
+                                                }
+                                            });
+
+
+                                            JsonObject inputInstruction = new JsonObject()
+                                                    .put("type", "EXECUTE")
+                                                    .put("source", SOURCE)
+                                                    .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString())
+                                                    .put("action", "input")
+                                                    .put("data", inputData)
+                                                    .put("editorId", _state.getString("id") )
+                                                    .put("sourceNodeId", executionRequest.getString("sourceNodeId"))
+                                                    .put("xpath", _state.getString("xpath"));
+
+                                            activePromises.put("EXECUTION_RESULT", Promise.promise());
+                                            try {
+                                                Thread.sleep(1000);
+                                            }catch (InterruptedException e){
+                                                throw new RuntimeException(e);
+                                            }
+                                            send(inputInstruction);
+                                        });
+                            }
+                            case INPUT_COMBO_BOX -> {}
+                        }
+                    });
         }
 
         //Handle getDOMSnapshot processing

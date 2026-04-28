@@ -32,10 +32,10 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
 
     @Override
-    public Future<String> resolveDataEntryValue(String taskDescription, String inputElementHTML, String htmlContext, List<String> exampleInputs, String label, String description) {
+    public Future<String> resolveDataEntryValue(String taskDescription, String inputElementHTML, String htmlContext, List<String> exampleInputs, String label, String description, String currentValue) {
 
         Optional<String> result = generateWithValidation(
-                ()->_generateInputValue(taskDescription, inputElementHTML, htmlContext, exampleInputs, label, description),
+                ()->_generateInputValue(taskDescription, inputElementHTML, htmlContext, exampleInputs, label, description, currentValue),
                 List.of(),
                 config.getJsonObject("resolveDataEntryValue").getInteger("maxAttempts")
         );
@@ -45,6 +45,31 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         }
 
         return Future.failedFuture("Failed to generate data entry input value.");
+    }
+
+    @Override
+    public Future<String> resolveTextInputAction(JsonObject state, String taskDescription) {
+        return null;
+    }
+
+    @Override
+    public Future<String> resolveTinyMCEAction(JsonObject state, String taskDescription) {
+        return null;
+    }
+
+    @Override
+    public Future<JsonObject> resolveRadioButtonAction(JsonArray state, String taskDescription) {
+        return null;
+    }
+
+    @Override
+    public Future<JsonObject> resolveSelectAction(JsonArray state, String taskDescription) {
+        return null;
+    }
+
+    @Override
+    public Future<Boolean> resolveCheckboxAction(JsonObject state, String taskDescription) {
+        return null;
     }
 
     public Future<String> selectPath(JsonObject paths, String taskDescription){
@@ -71,7 +96,7 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
     }
 
-    private String _generateInputValue(String taskDescription, String inputElementHTML, String htmlContext, List<String> exampleInputs, String label, String description){
+    private String _generateInputValue(String taskDescription, String inputElementHTML, String htmlContext, List<String> exampleInputs, String label, String description, String currentValue){
         List<ChatRequestMessage> chatMessages = new ArrayList<>();
         String prompt = config.getJsonObject("resolveDataEntryValue").getString("systemPrompt");
         chatMessages.add(new ChatRequestSystemMessage(prompt));
@@ -87,6 +112,7 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         sb.append("\tInferred Semantic Description:\n%s\n".formatted(description));
         sb.append("\n\n");
         sb.append("Task Description:\n%s\n".formatted(taskDescription));
+        sb.append("Existing/Current Value:\n'%s'\n".formatted(currentValue));
         sb.append("Output:\n");
 
         log.info("{}", prompt + sb.toString());

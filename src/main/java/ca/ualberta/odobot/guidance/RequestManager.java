@@ -708,6 +708,13 @@ public class RequestManager {
                     }
 
                     if(lastInstruction instanceof XPathInstruction){
+
+                        //If the observed entity is a data entry, but the last instruction was not an EnterData instruction, then this isn't a match.
+                        //The situation can occur, in particular with tinyMCE widgets, which, when they contain existing content, may emit data entry events during their initalization.
+                        if (entity instanceof DataEntry && !(lastInstruction instanceof EnterData)){
+                            return false;
+                        }
+
                         if(observedXPath == null){
                             return false;
                         }

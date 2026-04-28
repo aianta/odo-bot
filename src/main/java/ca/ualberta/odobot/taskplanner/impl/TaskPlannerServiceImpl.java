@@ -231,7 +231,7 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
     }
 
     @Override
-    public Future<String> resolveDataEntryValue(String taskDescription, String inputParameterId) {
+    public Future<String> resolveDataEntryValue(String taskDescription, String inputParameterId, String currentValue) {
 
         //Figure out the xpath of the input parameter we're talking about
         String inputParameterXpath = neo4j.getAllInputParameterNodes().stream().filter(inputParameterNode->inputParameterNode.get("id").asString().equals(inputParameterId))
@@ -246,10 +246,27 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
                             dataEntryInfo.getString("htmlContext"),
                             dataEntryInfo.getJsonArray("enteredData").stream().map(String.class::cast).toList(),
                             dataEntryInfo.getString("label"),
-                            dataEntryInfo.getString("description")
+                            dataEntryInfo.getString("description"),
+                            currentValue
                     );
                 });
 
 
+    }
+
+
+    @Override
+    public Future<JsonObject> resolveRadioButtonAction(JsonArray state, String taskDescription) {
+        return null;
+    }
+
+    @Override
+    public Future<JsonObject> resolveSelectAction(JsonArray state, String taskDescription) {
+        return null;
+    }
+
+    @Override
+    public Future<Boolean> resolveCheckboxAction(JsonObject state, String taskDescription) {
+        return null;
     }
 }
