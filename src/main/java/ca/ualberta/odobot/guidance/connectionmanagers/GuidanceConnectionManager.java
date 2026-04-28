@@ -6,6 +6,7 @@ import ca.ualberta.odobot.guidance.OdoClient;
 import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
 import ca.ualberta.odobot.guidance.execution.ResourceParameter;
 import ca.ualberta.odobot.guidance.execution.SchemaParameter;
+import ca.ualberta.odobot.guidance.instructions.EnterData;
 import ca.ualberta.odobot.guidance.instructions.EnterDataTinymce;
 import ca.ualberta.odobot.guidance.instructions.GetUIControlState;
 import ca.ualberta.odobot.guidance.instructions.Instruction;
@@ -214,6 +215,20 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                                 ).onFailure(err->log.error(err.getMessage(), err))
                                         .onSuccess(inputData->{
 
+                                            //Create an instruction object to update the nav path's last instruction.
+                                            EnterData _instruction = new EnterData();
+                                            _instruction.xpath = _state.getString("xpath");
+                                            _instruction.setSourceNodeId(executionRequest.getString("sourceNodeId"));
+                                            _instruction.data = inputData;
+                                            _instruction.parameterId = executionRequest.getString("parameterId");
+
+                                            client.getRequestManager().getNavPaths().forEach(path->{
+                                                //TODO: is checking that the last instruction is a GetUIControlState sufficient?
+                                                if(path.lastInstruction() instanceof GetUIControlState){
+                                                    path.updateLastInstruction(_instruction);
+                                                }
+                                            });
+
                                             JsonObject inputInstruction = new JsonObject()
                                                     .put("type", "EXECUTE")
                                                     .put("source", SOURCE)
@@ -250,6 +265,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                                             _instruction.editorId = _state.getString("id");
                                             _instruction.setSourceNodeId(executionRequest.getString("sourceNodeId"));
                                             _instruction.data = inputData;
+                                            _instruction.parameterId = executionRequest.getString("parameterId");
 
                                             client.getRequestManager().getNavPaths().forEach(path->{
                                                 //TODO: is checking that the last instruction is a GetUIControlState sufficient?

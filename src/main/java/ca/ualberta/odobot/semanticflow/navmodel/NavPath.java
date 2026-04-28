@@ -296,22 +296,17 @@ public class NavPath {
                     }
 
                     if(node.hasLabel(Label.label("DataEntryNode"))){
+                        GetUIControlState _instruction = new GetUIControlState();
+                        _instruction.parameterId = LogPreprocessor.neo4j.getAssociatedParameterId((String)node.getProperty("id")); //This is going to cause problems for any data entry node that doesn't have an input parameter...
+                        _instruction.xpath = nodeToXPath(node);
 
                         if (node.hasProperty("editorId")){
-                            GetUIControlState _instruction = new GetUIControlState();
                             _instruction.editorId = (String) node.getProperty("editorId");
-                            _instruction.parameterId = LogPreprocessor.neo4j.getAssociatedParameterId((String)node.getProperty("id")); //This is going to cause problems for any data entry node that doesn't have an input parameter...
                             _instruction.type = GetUIControlState.Type.TINY_MCE_EDITOR;
-                            _instruction.xpath = nodeToXPath(node);
-                            instruction = _instruction;
                         }else{
-                            EnterData _instruction = new EnterData();
-
-                            _instruction.xpath = nodeToXPath(node);
-                            _instruction.parameterId = LogPreprocessor.neo4j.getAssociatedParameterId((String)node.getProperty("id")); //This is going to cause problems for any data entry node that doesn't have an input parameter...
-                            _instruction.data = ((InputParameter)request.getParameter(_instruction.parameterId)).getValue();
-                            instruction = _instruction;
+                            _instruction.type = GetUIControlState.Type.TEXT;
                         }
+                        instruction = _instruction;
 
 
                     }
