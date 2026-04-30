@@ -4,10 +4,7 @@ import ca.ualberta.odobot.semanticflow.exceptions.InvalidSessionId;
 import ca.ualberta.odobot.semanticflow.exceptions.InvalidTimestamp;
 import ca.ualberta.odobot.semanticflow.exceptions.MissingSessionId;
 import ca.ualberta.odobot.semanticflow.exceptions.MissingTimestamp;
-import ca.ualberta.odobot.semanticflow.mappers.impl.ClickEventMapper;
-import ca.ualberta.odobot.semanticflow.mappers.impl.DomEffectMapper;
-import ca.ualberta.odobot.semanticflow.mappers.impl.InputChangeMapper;
-import ca.ualberta.odobot.semanticflow.mappers.impl.NetworkEventMapper;
+import ca.ualberta.odobot.semanticflow.mappers.impl.*;
 import ca.ualberta.odobot.semanticflow.model.*;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import io.vertx.core.json.JsonObject;
@@ -39,10 +36,11 @@ public class SemanticSequencer {
     public static DateTimeFormatter timeFormatter = DateTimeFormatter.ISO_INSTANT.withZone(ZoneId.systemDefault());
 
     //Interaction types to process from the timeline.
-    public Set<InteractionType> include = Set.of(InteractionType.CLICK, InteractionType.INPUT, InteractionType.NETWORK_EVENT, InteractionType.DOM_EFFECT);
+    public Set<InteractionType> include = Set.of(InteractionType.CLICK, InteractionType.INPUT, InteractionType.NETWORK_EVENT, InteractionType.DOM_EFFECT, InteractionType.SELECT);
 
     private DomEffectMapper domEffectMapper = new DomEffectMapper();
     private ClickEventMapper clickEventMapper = new ClickEventMapper();
+    private SelectEventMapper selectEventMapper = new SelectEventMapper();
     private InputChangeMapper inputChangeMapper = new InputChangeMapper();
     private NetworkEventMapper networkEventMapper = new NetworkEventMapper();
 
@@ -160,6 +158,16 @@ public class SemanticSequencer {
         switch (event.getString("eventType")){
             case "interactionEvent":
                 switch (InteractionType.getType(event.getString("eventDetails_name"))){
+                    case SELECT -> {
+                        SelectEvent selectEvent = selectEventMapper.map(event);
+
+                        selectEvent.setTimestamp(ZonedDateTime.parse(event.getString(TIMESTAMP_FIELD), timeFormatter));
+                        if(artifactConsumer != null){
+                            artifactConsumer.accept(selectEvent);
+                        }
+                        line.add(selectEvent);
+                        log.info("handled SELECT");
+                    }
                     case CLICK -> {
                         ClickEvent clickEvent = clickEventMapper.map(event);
                         clickEvent.setTimestamp(ZonedDateTime.parse(event.getString(TIMESTAMP_FIELD), timeFormatter));

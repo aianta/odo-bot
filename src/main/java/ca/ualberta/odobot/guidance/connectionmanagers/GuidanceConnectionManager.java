@@ -6,16 +6,14 @@ import ca.ualberta.odobot.guidance.OdoClient;
 import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
 import ca.ualberta.odobot.guidance.execution.ResourceParameter;
 import ca.ualberta.odobot.guidance.execution.SchemaParameter;
-import ca.ualberta.odobot.guidance.instructions.EnterData;
-import ca.ualberta.odobot.guidance.instructions.EnterDataTinymce;
-import ca.ualberta.odobot.guidance.instructions.GetUIControlState;
-import ca.ualberta.odobot.guidance.instructions.Instruction;
+import ca.ualberta.odobot.guidance.instructions.*;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import ca.ualberta.odobot.semanticflow.model.TinymceEvent;
 import ca.ualberta.odobot.semanticflow.navmodel.NavPath;
 import ca.ualberta.odobot.snippet2xml.SemanticObject;
 import ca.ualberta.odobot.snippet2xml.Snippet2XMLService;
 import ca.ualberta.odobot.snippet2xml.Snippet2XMLVerticle;
+import ca.ualberta.odobot.taskplanner.TaskPlannerService;
 import ca.ualberta.odobot.taskplanner.TaskPlannerVerticle;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
@@ -247,7 +245,39 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                                             send(inputInstruction);
                                         });
                             }
-                            case SELECT -> {}
+                            case SELECT -> {
+
+                                TaskPlannerVerticle.service.resolveSelectAction(state, client.getRequestManager().getActiveExecutionRequest().getTaskDescription(), executionRequest.getString("parameterId"))
+                                        .onFailure(err->log.error(err.getMessage(), err))
+                                        .onSuccess(selectedOption->{
+
+                                            //Create an instruction object to update the nav path's last instruction.
+                                            SelectOption _instruction = new SelectOption();
+                                            _instruction.xpath = state.getJsonObject(0).getString("xpath");
+                                            _instruction.setSourceNodeId(executionRequest.getString("sourceNodeId"));
+                                            _instruction.value = selectedOption.getString("value");
+                                            _instruction.parameterId = executionRequest.getString("parameterId");
+
+                                            client.getRequestManager().getNavPaths().forEach(path->{
+                                                if(path.lastInstruction() instanceof SelectOption){
+                                                    path.updateLastInstruction(_instruction);
+                                                }
+                                            });
+
+                                            JsonObject selectInstruction = _instruction.toJson();
+                                            selectInstruction.put("type", "EXECUTE")
+                                                    .put("source", SOURCE)
+                                                    .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString());
+
+                                            activePromises.put("EXECUTION_RESULT", Promise.promise());
+                                            try {
+                                                Thread.sleep(1000);
+                                            }catch (InterruptedException e){
+                                                throw new RuntimeException(e);
+                                            }
+                                            send(selectInstruction);
+                                        });
+                            }
                             case CHECKBOX -> {}
                             case RADIO_BUTTON -> {}
                             case TINY_MCE_EDITOR -> {

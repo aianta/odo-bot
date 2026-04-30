@@ -90,6 +90,7 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
         int applicationLocationChangeCount = 0;
         int checkboxCount = 0;
         int radioButtonCount = 0;
+        int selectEventCount = 0;
 
         log.info("Building nav model for timeline: {} [{}]: {}", timeline.getId(), timeline.size(), timeline.toString());
 
@@ -114,6 +115,11 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
                     neo4j.connect(clickNode, resourceParameterNode, "PARAM");
                 }
 
+            }
+
+            if (entity instanceof SelectEvent selectEvent){
+                selectEventCount++;
+                neo4j.processSelect(timeline, selectEvent);
             }
 
             if(entity instanceof CheckboxEvent){
@@ -238,6 +244,7 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
         log.info("Processed {} effects for nav model", effectCount);
         log.info("Processed {} checkbox events for nav model", checkboxCount);
         log.info("Processed {} radio button events for nav model", radioButtonCount);
+        log.info("Processed {} select events for nav model", selectEventCount);
         log.info("Processed {} application location changes for nav model", applicationLocationChangeCount);
 
 

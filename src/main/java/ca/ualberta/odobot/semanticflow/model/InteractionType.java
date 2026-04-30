@@ -10,7 +10,8 @@ public enum InteractionType{
     CLICK(Set.of("SPAN_CLICK","LINK_CLICK","TD_CLICK","BUTTON_CLICK_ACTUAL","BTN_CLICK", "LIST_ITEM_CLICK", "INPT_CLICK")),
     INPUT(Set.of("INPUT_CHANGE")),
     NETWORK_EVENT(Set.of("NETWORK_EVENT")),
-    DOM_EFFECT(Set.of("DOM_EFFECT"));
+    DOM_EFFECT(Set.of("DOM_EFFECT")),
+    SELECT(Set.of("SELECT"));
 
     InteractionType(Set<String> logNames){
         this.logNames = logNames;
@@ -24,6 +25,7 @@ public enum InteractionType{
         if(INPUT.logNames.contains(eventDetails_name))return INPUT;
         if(NETWORK_EVENT.logNames.contains(eventDetails_name))return NETWORK_EVENT;
         if(DOM_EFFECT.logNames.contains(eventDetails_name))return DOM_EFFECT;
+        if(SELECT.logNames.contains(eventDetails_name))return SELECT;
         log.warn("Cannot find InteractionType for eventDetails_name: {}", eventDetails_name);
         return null;
     }

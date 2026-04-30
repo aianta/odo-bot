@@ -1,10 +1,7 @@
 package ca.ualberta.odobot.guidance;
 
 import ca.ualberta.odobot.semanticflow.mappers.JsonMapper;
-import ca.ualberta.odobot.semanticflow.mappers.impl.LogUIClickEventMapper;
-import ca.ualberta.odobot.semanticflow.mappers.impl.LogUIDomEffectMapper;
-import ca.ualberta.odobot.semanticflow.mappers.impl.LogUIInputChangeMapper;
-import ca.ualberta.odobot.semanticflow.mappers.impl.LogUINetworkEventMapper;
+import ca.ualberta.odobot.semanticflow.mappers.impl.*;
 import ca.ualberta.odobot.semanticflow.model.*;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -40,6 +37,7 @@ public class OnlineEventProcessor {
     private Map<Consumer<TimelineEntity>, Predicate<TimelineEntity>> listeners = new HashMap<>();
 
     private JsonMapper<ClickEvent> clickEventMapper = new LogUIClickEventMapper();
+    private JsonMapper<SelectEvent> selectEventJsonMapper = new LogUISelectEventMapper();
     private JsonMapper<DomEffect> domEffectMapper = new LogUIDomEffectMapper();
     private JsonMapper<NetworkEvent> networkEventMapper = new LogUINetworkEventMapper();
     private JsonMapper<InputChange> inputChangeMapper = new LogUIInputChangeMapper();
@@ -120,6 +118,7 @@ public class OnlineEventProcessor {
                     switch (InteractionType.getType(eventName)){
                         case CLICK ->processClickEvent(event);
                         case INPUT ->processInputChange(event);
+                        case SELECT -> processSelectEvent(event);
                     }
                     break;
                 case "customEvent":
@@ -321,6 +320,13 @@ public class OnlineEventProcessor {
 
         //Should never get here.
         //throw new RuntimeException("Unexpected error while processing input change!");
+    }
+
+    private void processSelectEvent(JsonObject event){
+        SelectEvent selectEvent = selectEventJsonMapper.map(event);
+        selectEvent.setTimestamp(parseTimestamp(event));
+
+        line.add(selectEvent);
     }
 
     private void processClickEvent(JsonObject event){

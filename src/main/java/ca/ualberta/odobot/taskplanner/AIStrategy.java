@@ -22,13 +22,10 @@ public interface AIStrategy {
 
     Future<String> resolveDataEntryValue(String taskDescription, String inputElementHTML, String htmlContext, List<String> exampleInputs, String label, String description, String currentValue);
 
-    Future<String> resolveTextInputAction(JsonObject state, String taskDescription);
-
-    Future<String> resolveTinyMCEAction(JsonObject state, String taskDescription);
 
     Future<JsonObject> resolveRadioButtonAction(JsonArray state, String taskDescription);
 
-    Future<JsonObject> resolveSelectAction(JsonArray state, String taskDescription);
+    Future<JsonObject> resolveSelectAction(JsonArray state, String taskDescription, String inputElementHTML, String htmlContext, String label, String description);
 
     Future<Boolean> resolveCheckboxAction(JsonObject state, String taskDescription);
 

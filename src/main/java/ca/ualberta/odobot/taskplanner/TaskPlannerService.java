@@ -54,10 +54,10 @@ public interface TaskPlannerService {
 
     Future<String> resolveDataEntryValue(String taskDescription, String inputParameterId, String currentValue);
 
-    Future<JsonObject> resolveRadioButtonAction(JsonArray state, String taskDescription);
+    Future<JsonObject> resolveRadioButtonAction(JsonArray state, String taskDescription, String inputParameterId);
 
-    Future<JsonObject> resolveSelectAction(JsonArray state, String taskDescription);
+    Future<JsonObject> resolveSelectAction(JsonArray state, String taskDescription, String inputParameterId);
 
-    Future<Boolean> resolveCheckboxAction(JsonObject state, String taskDescription);
+    Future<Boolean> resolveCheckboxAction(JsonObject state, String taskDescription, String inputParameterId);
 
 }

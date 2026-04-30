@@ -1,14 +1,13 @@
 package ca.ualberta.odobot.dataentry2label;
 
+import ca.ualberta.odobot.common.BasePathAndXpath;
 import ca.ualberta.odobot.common.HttpServiceVerticle;
+import ca.ualberta.odobot.common.Xpath;
 import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 import ca.ualberta.odobot.semanticflow.SemanticSequencer;
 import ca.ualberta.odobot.semanticflow.model.*;
 import ca.ualberta.odobot.semanticflow.navmodel.Neo4JUtils;
-import ca.ualberta.odobot.semanticflow.navmodel.nodes.CheckboxNode;
-import ca.ualberta.odobot.semanticflow.navmodel.nodes.DataEntryNode;
-import ca.ualberta.odobot.semanticflow.navmodel.nodes.NavNode;
-import ca.ualberta.odobot.semanticflow.navmodel.nodes.RadioButtonNode;
+import ca.ualberta.odobot.semanticflow.navmodel.nodes.*;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.Future;
@@ -108,10 +107,25 @@ public class DataEntry2LabelVerticle extends HttpServiceVerticle {
                     nodesForInputParameters.stream()
                             .forEach(node->{
 
+                                //TODO: might need to add base paths to data entry annotations at some point.
                                 Optional<JsonObject> parameterAnnotation = annotations.stream().filter(annotation->{
-                                    if(node instanceof RadioButtonNode){
-                                        return ((RadioButtonNode)node).getXpaths().contains(annotation.getString("xpath"));
-                                    }else if (node instanceof DataEntryNode){
+                                    if(node instanceof RadioButtonNode radioButtonNode){
+                                        /**
+                                         *  radio button nodes are a special case because they can have multiple xpaths corresponding to the different options in the radio group.
+                                         *  They are also stored as basePaths & xpaths in Neo4j, so we need to convert them back to just xpaths and check if any of them match the annotation xpath.
+                                         */
+
+                                        return radioButtonNode.getXpaths().stream()
+                                                .map(BasePathAndXpath::fromString)
+                                                .map(BasePathAndXpath::getXpath)
+                                                .map(Xpath::toString)
+                                                .collect(Collectors.toSet())
+                                                .contains(annotation.getString("xpath"))
+                                        ;
+
+                                    }else if (node instanceof SelectOptionNode selectNode){
+                                        return annotation.getString("xpath").equals(selectNode.getXpath());
+                                    } else if (node instanceof DataEntryNode){
                                         return annotation.getString("xpath").equals(((DataEntryNode)node).getXpath());
                                     }else if (node instanceof CheckboxNode){
                                         return annotation.getString("xpath").equals(((CheckboxNode)node).getXpath());
@@ -304,8 +318,21 @@ public class DataEntry2LabelVerticle extends HttpServiceVerticle {
                     .compose(timeline->{
 
                         return Future.all(timeline.stream()
-                                .filter(entity->entity instanceof DataEntry || entity instanceof CheckboxEvent || entity instanceof RadioButtonEvent) //Data entries, checkbox events, and radio button events are all based on InputChanges
+                                .filter(entity->entity instanceof DataEntry || entity instanceof CheckboxEvent || entity instanceof RadioButtonEvent || entity instanceof SelectEvent) //Data entries, checkbox events, and radio button events are all based on InputChanges
                                 .map(entity->{
+
+                                    if (entity instanceof SelectEvent selectEvent){
+                                        //The DomSnapshot must contain the select element, otherwise what are we doing?
+                                        assert selectEvent.getDomSnapshot().outerHtml().contains(selectEvent.selectElement().outerHtml());
+
+                                        JsonObject data = new JsonObject()
+                                                .put("input_element", selectEvent.selectElement().outerHtml())
+                                                .put("html_context", getHTMLContext(selectEvent.getDomSnapshot().outerHtml(), selectEvent.getXpath()))
+                                                .put("xpath", selectEvent.getXpath());
+
+                                        return data;
+
+                                    }
 
                                     if(entity instanceof RadioButtonEvent){
                                         RadioButtonEvent radioButtonEvent = (RadioButtonEvent)entity;
@@ -394,7 +421,7 @@ public class DataEntry2LabelVerticle extends HttpServiceVerticle {
     private Timeline makeTimeline(String flightName, List<JsonObject> events){
 
         SemanticSequencer sequencer = new SemanticSequencer();
-        sequencer.updateIncludeFilter(Set.of(InteractionType.INPUT));
+        sequencer.updateIncludeFilter(Set.of(InteractionType.INPUT, InteractionType.SELECT));
 
         //Timeline data structure construction
         Timeline timeline = sequencer.parse(events);

@@ -610,6 +610,7 @@ public class RequestManager {
      * @param entity
      */
     public void instructionWatcher(TimelineEntity entity){
+        log.info("instructionWatcher observed entity: {}", entity.symbol());
 
         if(navPaths == null){ // If there are no navigation paths currently being managed for this request, then we can ignore realtime events.
             return;
@@ -628,6 +629,10 @@ public class RequestManager {
             if (dataEntry.lastChange() instanceof TinymceEvent){
                 editorId = ((TinymceEvent) dataEntry.lastChange()).getEditorId();
             }
+        }
+
+        if (entity instanceof SelectEvent selectEvent){
+            xpath = selectEvent.getXpath();
         }
 
         if(entity instanceof ClickEvent){

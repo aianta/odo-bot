@@ -13,6 +13,7 @@ public enum BaseLabel{
     APPLICATION_LOCATION_CHANGE_NODE("ApplicationLocationChangeNode"),
     LOCATION_NODE("LocationNode"),
     RADIO_BUTTON_NODE("RadioButtonNode"),
+    SELECT_OPTION_NODE("SelectOptionNode"),
     CHECKBOX_NODE("CheckboxNode"),
     API_NODE("APINode"),
     GRAPHQL_NODE("GraphQLNode"),;

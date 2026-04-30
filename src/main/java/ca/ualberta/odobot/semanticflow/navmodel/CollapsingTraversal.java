@@ -104,6 +104,7 @@ public class CollapsingTraversal {
                 case "EffectNode" -> new CollapsedEffectNode(nodeSet);
                 case "CheckboxNode" -> new CollapsedCheckboxNode(nodeSet);
                 case "RadioButtonNode" -> new CollapsedRadioButtonNode(nodeSet);
+                case "SelectOptionNode" -> new CollapsedSelectOptionNode(nodeSet);
                 default -> throw new RuntimeException("Uncollapsable node set!");
             };
 

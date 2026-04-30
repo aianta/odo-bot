@@ -99,7 +99,7 @@ public class Localizer {
     private Map<String, UUID> buildXpathLocationIndex(){
         Map<String,UUID> index = new HashMap<>();
 
-        executeNodesQuery("match (n) where (n:ClickNode OR n:DataEntryNode) AND NOT n:CollapsedClickNode AND NOT n:CollapsedDataEntryNode return n;", "n",
+        executeNodesQuery("match (n) where (n:ClickNode OR n:DataEntryNode OR n:CheckboxNode OR n:SelectOptionNode) AND NOT n:CollapsedClickNode AND NOT n:CollapsedDataEntryNode return n;", "n",
                 (node)->{
                     StringKeyIndexEntry entry = buildXpathIndexEntry(node);
                     index.put(entry.key(), entry.nodeId());

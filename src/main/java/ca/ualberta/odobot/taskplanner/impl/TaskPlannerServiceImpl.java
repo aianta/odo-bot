@@ -256,17 +256,56 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
 
 
     @Override
-    public Future<JsonObject> resolveRadioButtonAction(JsonArray state, String taskDescription) {
+    public Future<JsonObject> resolveRadioButtonAction(JsonArray state, String taskDescription, String inputParameterId) {
+
+        //Figure out the xpath of the input parameter we're talking about
+        String inputParameterXpath = neo4j.getAllInputParameterNodes().stream().filter(inputParameterNode->inputParameterNode.get("id").asString().equals(inputParameterId))
+                .map(node->node.get("xpath").asString())
+                .findFirst().get();
+
+//        //Use that xpath to retrieve all known info about that data entry, combine that with the task description and ask the LLM to spit out an appropriate value.
+//        return sqlite.getAllDataEntryInfoForXpath(inputParameterXpath)
+//                .compose(dataEntryInfo->{
+//                    return this.strategy.resolveDataEntryValue(taskDescription,
+//                            dataEntryInfo.getString("inputElementHTML"),
+//                            dataEntryInfo.getString("htmlContext"),
+//                            dataEntryInfo.getJsonArray("enteredData").stream().map(String.class::cast).toList(),
+//                            dataEntryInfo.getString("label"),
+//                            dataEntryInfo.getString("description"),
+//                            currentValue
+//                    );
+//                });
+
+
         return null;
     }
 
     @Override
-    public Future<JsonObject> resolveSelectAction(JsonArray state, String taskDescription) {
-        return null;
+    public Future<JsonObject> resolveSelectAction(JsonArray state, String taskDescription, String inputParameterId) {
+        //Figure out the xpath of the input parameter we're talking about
+        String inputParameterXpath = neo4j.getAllInputParameterNodes().stream().filter(inputParameterNode->inputParameterNode.get("id").asString().equals(inputParameterId))
+                .map(node->node.get("xpath").asString())
+                .findFirst().get();
+
+        //Use that xpath to retrieve all known info about that data entry, combine that with the task description and ask the LLM to spit out an appropriate value.
+        return sqlite.getAllDataEntryInfoForXpath(inputParameterXpath)
+                .compose(dataEntryInfo->{
+                    return this.strategy.resolveSelectAction(
+                            state,
+                            taskDescription,
+                            dataEntryInfo.getString("inputElementHTML"),
+                            dataEntryInfo.getString("htmlContext"),
+                            dataEntryInfo.getString("label"),
+                            dataEntryInfo.getString("description")
+                    );
+
+                });
+
+
     }
 
     @Override
-    public Future<Boolean> resolveCheckboxAction(JsonObject state, String taskDescription) {
+    public Future<Boolean> resolveCheckboxAction(JsonObject state, String taskDescription, String inputParameterId) {
         return null;
     }
 }

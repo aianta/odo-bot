@@ -168,25 +168,6 @@ public class Neo4JUtils {
     }
 
 
-    public void processSelectOptionWithWebsite(SelectOption selectOption, String website){
-        processSelectOptionWithWebsite(selectOption.getTargetElementXpath(), selectOption.getActionId(), website);
-    }
-
-    public void processSelectOptionWithWebsite(String xpath, String eventId, String website){
-        //If a select option node for this event already exists in the database, this supplier will be used to retrieve it.
-        Supplier<SelectOptionNode> existingSelectOptionNodeSupplier = ()-> getSelectOptionNodeWithWebsite(xpath, website);
-
-        //Invoke generic processing logic
-        processNode(
-                eventId,
-                SelectOptionNode.class,
-                existingSelectOptionNodeSupplier,
-                newSelectOptionNodeSupplier(xpath, eventId, website),
-                processSelectOptionNodeQueryFunction()
-        );
-
-    }
-
     public void processEnd(String website, String eventId){
         //If a start node for this event already exists in the database, this supplier will be used to retrieve it.
         Supplier<EndNode> existingEndNodeSupplier = ()->getEndNode(website);
@@ -225,36 +206,73 @@ public class Neo4JUtils {
         );
     }
 
-    public void processSelectOption(String xpath, String eventId, String basePath){
+    public void processSelectOption(String xpath, String eventId, String basePath, Set<SelectEvent.Option> options){
 
         //If a select option node for this event already exists in the database, this supplier will be used to retrieve it.
         Supplier<SelectOptionNode> existingSelectOptionNodeSupplier = ()->getSelectOptionNode(xpath, basePath);
 
 
-        //Invoke generic processing logic
-        processNode(
-                eventId,
-                SelectOptionNode.class,
-                existingSelectOptionNodeSupplier, //If a select option node for this event already exists in the database, this supplier will be used to retrieve it.
-                newSelectOptionNodeSupplier(xpath, eventId), //If no select option node could be found, this supplier will be used to create one
-                processSelectOptionNodeQueryFunction()
-        );
+        SelectOptionNode node = existingSelectOptionNodeSupplier.get();
+
+        if (node == null){//Node cannot be found
+            //Create it
+            node = newSelectOptionNodeSupplier(xpath, eventId, basePath, options).get();
+        }else{
+            //If the node was found, update its list of instances
+            node.getInstances().add(eventId);
+        }
+
+        //Write changes to the node back into the database
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+
+            //Try and find the existing node in the database
+            SelectOptionNode _existing = getSelectOptionNode(xpath, basePath);
+            if(_existing != null) {
+                log.info("Updating existing SelectOptionNode");
+
+                //Update its instances
+                var stmt = "MATCH (n:SelectOptionNode {id:$id}) SET n.instances = $instances RETURN n";
+                var query = new Query(stmt, parameters("id", _existing.getId().toString(), "instances", node.getInstances()));
+                session.executeWrite(tx -> {
+                    tx.run(query);
+                    return 0;
+                });
+            }else{
+                log.info("Creating new SelectOptionNode");
+
+                //Sanity check
+                log.info("Event xpath exists in SelectOptionNode's xpath: {}", node.getXpath().equals(xpath));
+                assert node.getXpath().equals(xpath);
+
+                //No existing node. Create one now.
+                HashMap<String, Object> props = new HashMap<>();
+                props.put("xpath", node.getXpath());
+                props.put("basePath", node.getBasePath());
+                props.put("id", node.getId().toString());
+                props.put("instances", node.getInstances());
+                props.put("options", node.getOptionsAsStrings());
+
+                var stmt = "CREATE (n:SelectOptionNode) SET n = $props RETURN n;";
+                var query = new Query(stmt, parameters("props", props));
+                session.executeWrite(tx -> {
+                    tx.run(query);
+                    return 0;
+                });
+            }
+        }
+
 
     }
 
-    private Supplier<SelectOptionNode> newSelectOptionNodeSupplier(String xpath, String eventId, String website){
-        return ()->{
-            SelectOptionNode node = this.newSelectOptionNodeSupplier(xpath, eventId).get();
-            node.setWebsite(website);
-            return node;
-        };
-    }
 
-    private Supplier<SelectOptionNode> newSelectOptionNodeSupplier(String xpath, String eventId){
+
+    private Supplier<SelectOptionNode> newSelectOptionNodeSupplier(String xpath, String eventId, String basePath, Set<SelectEvent.Option> options){
         Supplier<SelectOptionNode> newSelectOptionNodeSupplier = ()->{
             SelectOptionNode node = new SelectOptionNode();
             node.setId(UUID.randomUUID());
+            node.setBasePath(basePath);
             node.setXpath(xpath);
+            node.setOptions(options);
             node.setInstances(Set.of(eventId));
             return node;
         };
@@ -293,6 +311,7 @@ public class Neo4JUtils {
         Function<SelectOptionNode, Query> queryFunction = (selectOptionNode)->{
             HashMap<String, Object> props = new HashMap<>();
             props.put("xpath", selectOptionNode.getXpath());
+            props.put("basePath", selectOptionNode.getBasePath());
             props.put("id", selectOptionNode.getId().toString());
             props.put("instances", selectOptionNode.getInstances());
 
@@ -751,6 +770,12 @@ public class Neo4JUtils {
     }
 
 
+    public void processSelect(Timeline timeline, SelectEvent selectEvent){
+        var index = timeline.indexOf(selectEvent);
+        var entityTimelineId = timeline.getId().toString()+"#"+index;
+
+        processSelectOption(selectEvent.getXpath(), entityTimelineId, selectEvent.getBasePath(), selectEvent.options());
+    }
 
 
     public ClickNode processClickEvent(Timeline timeline, ClickEvent clickEvent){
@@ -895,6 +920,11 @@ public class Neo4JUtils {
             return getRadioButtonNode(radioButtonEvent.getXpath(), radioButtonEvent.getRadioGroup(), radioButtonEvent.getBasePath());
         }
 
+        if(target instanceof SelectEvent){
+            SelectEvent selectEvent = (SelectEvent) target;
+            return getSelectOptionNode(selectEvent.getXpath(), selectEvent.getBasePath());
+        }
+
         if(target instanceof CheckboxEvent){
             CheckboxEvent checkboxEvent = (CheckboxEvent) target;
             return getCheckboxNode(checkboxEvent.xpath(), checkboxEvent.getBasePath());
@@ -961,6 +991,10 @@ public class Neo4JUtils {
             stmt = "MATCH (a:RadioButtonNode {id:$aId})-[:NEXT]->(e:EffectNode)";
         }
 
+        if(predecessor instanceof SelectOptionNode){
+            stmt = "MATCH (a:SelectOptionNode {id:$aId})-[:NEXT]->(e:EffectNode)";
+        }
+
         if(predecessor instanceof CheckboxNode){
             stmt = "MATCH (a:CheckboxNode {id:$aId})-[:NEXT]->(e:EffectNode)";
         }
@@ -990,6 +1024,10 @@ public class Neo4JUtils {
 
         if(successor instanceof RadioButtonNode){
             stmt += "-[:NEXT]->(b:RadioButtonNode {id:$bId}) RETURN e;";
+        }
+
+        if(successor instanceof SelectOptionNode){
+            stmt += "-[:NEXT]->(b:SelectOptionNode {id:$bId}) RETURN e;";
         }
 
         if(successor instanceof CheckboxNode){
@@ -1034,6 +1072,10 @@ public class Neo4JUtils {
             stmt = "MATCH (e:EffectNode)-[:NEXT]->(n:RadioButtonNode {id:$id}) RETURN e;";
         }
 
+        if(successor instanceof SelectOptionNode){
+            stmt = "MATCH (e:EffectNode)-[:NEXT]->(n:SelectOptionNode {id:$id}) RETURN e;";
+        }
+
         if(successor instanceof CheckboxNode){
             stmt = "MATCH (e:EffectNode)-[:NEXT]->(n:CheckboxNode {id:$id}) RETURN e;";
         }
@@ -1072,6 +1114,10 @@ public class Neo4JUtils {
 
         if(predecessor instanceof RadioButtonNode){
             stmt = "MATCH (n:RadioButtonNode {id:$id})-[:NEXT]->(e:EffectNode) RETURN e;";
+        }
+
+        if(predecessor instanceof SelectOptionNode){
+            stmt = "MATCH (n:SelectOptionNode {id:$id})-[:NEXT]->(e:EffectNode) RETURN e;";
         }
 
         if(predecessor instanceof CheckboxNode){
@@ -1299,7 +1345,7 @@ public class Neo4JUtils {
     public List<NavNode> getNodesForInputParameters(){
         try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
             String sQuery = """
-                    match (n) WHERE n:DataEntryNode OR n:CheckboxNode OR n:RadioButtonNode return n;
+                    match (n) WHERE n:DataEntryNode OR n:CheckboxNode OR n:RadioButtonNode OR n:SelectOptionNode return n;
                     """;
             Query query = new Query(sQuery);
 
@@ -1315,6 +1361,8 @@ public class Neo4JUtils {
                             return DataEntryNode.fromRecord(record);
                         }else if(node.hasLabel("CheckboxNode")){
                             return CheckboxNode.fromRecord(record);
+                        }else if(node.hasLabel("SelectOptionNode")){
+                            return SelectOptionNode.fromRecord(record);
                         } else if(node.hasLabel("RadioButtonNode")){
                             return RadioButtonNode.fromRecord(record);
                         }else{

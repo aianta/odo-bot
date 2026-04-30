@@ -7,7 +7,9 @@ import ca.ualberta.odobot.guidance.execution.InputParameter;
 import ca.ualberta.odobot.guidance.instructions.*;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import ca.ualberta.odobot.semanticflow.model.RadioButtonEvent;
+import ca.ualberta.odobot.semanticflow.model.SelectEvent;
 import ca.ualberta.odobot.semanticflow.navmodel.nodes.RadioButtonNode;
+import ca.ualberta.odobot.semanticflow.navmodel.nodes.SelectOptionNode;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.neo4j.graphdb.*;
@@ -45,6 +47,7 @@ public class NavPath {
             node.hasLabel(Label.label("DataEntryNode")) ||
             node.hasLabel(Label.label("CheckboxNode")) ||
             node.hasLabel(Label.label("RadioButtonNode")) ||
+            node.hasLabel(Label.label("SelectOptionNode")) ||
             node.hasLabel(Label.label("APINode")) ||
             node.hasLabel(Label.label("GraphQLNode")) ||
             node.hasLabel(Label.label("LocationNode"));
@@ -206,7 +209,8 @@ public class NavPath {
                 candidateLabels.contains("ClickNode") ||
                 candidateLabels.contains("DataEntryNode") ||
                 candidateLabels.contains("CheckboxNode") ||
-                candidateLabels.contains("RadioButtonNode")
+                candidateLabels.contains("RadioButtonNode") ||
+                candidateLabels.contains("SelectOptionNode")
             ) && (candidate.getInteger("outDegreesOnNext") > 1)){
 
                 log.info("Recovery Starting Node: {}", candidate.encodePrettily());
@@ -283,6 +287,16 @@ public class NavPath {
                          */
                         DoClick _instruction = new DoClick();
                         _instruction.xpath = nodeToXPath(node);
+                        instruction = _instruction;
+                    }
+
+                    if(node.hasLabel(Label.label("SelectOptionNode"))){
+                        log.info("Instruction is a select option node!");
+                        GetUIControlState _instruction = new GetUIControlState();
+                        _instruction.xpath = nodeToXPath(node);
+                        _instruction.type = GetUIControlState.Type.SELECT;
+                        _instruction.parameterId = LogPreprocessor.neo4j.getAssociatedParameterId((String)node.getProperty("id")); //This is going to cause problems for any select option node that doesn't have an input parameter...
+
                         instruction = _instruction;
                     }
 
@@ -707,6 +721,24 @@ public class NavPath {
             if(curr.hasLabel(Label.label("CheckboxNode"))){
                 String parameterLabel = getAssociatedInputParameterLabel(curr);
                 result.add("Click the '%s' checkbox.".formatted(parameterLabel));
+                continue;
+            }
+
+            if (curr.hasLabel(Label.label("SelectOptionNode"))){
+                //TODO: this will break if we ever have a collapsed select option node, but we can deal with that later.
+                List<SelectEvent.Option> options = SelectOptionNode.optionsFromStrings((String[])curr.getProperty("options"));
+                String parameterLabel = getAssociatedInputParameterLabel(curr);
+                StringBuilder sb = new StringBuilder();
+                Iterator<SelectEvent.Option> optionIterator = options.iterator();
+                while (optionIterator.hasNext()){
+                    SelectEvent.Option option = optionIterator.next();
+                    sb.append("'%s'".formatted(option.label()));
+                    if(optionIterator.hasNext()){
+                        sb.append(", ");
+                    }
+                }
+
+                result.add("Select the appropriate option from the '%s' dropdown. The available options are: [%s]".formatted(parameterLabel, sb.toString()));
                 continue;
             }
 

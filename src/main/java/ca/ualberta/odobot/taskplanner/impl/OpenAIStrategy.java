@@ -47,15 +47,6 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         return Future.failedFuture("Failed to generate data entry input value.");
     }
 
-    @Override
-    public Future<String> resolveTextInputAction(JsonObject state, String taskDescription) {
-        return null;
-    }
-
-    @Override
-    public Future<String> resolveTinyMCEAction(JsonObject state, String taskDescription) {
-        return null;
-    }
 
     @Override
     public Future<JsonObject> resolveRadioButtonAction(JsonArray state, String taskDescription) {
@@ -63,8 +54,63 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
     }
 
     @Override
-    public Future<JsonObject> resolveSelectAction(JsonArray state, String taskDescription) {
-        return null;
+    public Future<JsonObject> resolveSelectAction(JsonArray state, String taskDescription, String inputElementHTML, String htmlContext, String label, String description) {
+
+        Optional<String> result = generateWithValidation(
+                ()->_generateSelectValue(state, taskDescription, inputElementHTML, htmlContext, label, description),
+                List.of(),
+                config.getJsonObject("resolveSelectOption").getInteger("maxAttempts")
+        );
+
+        if(result.isPresent()) {
+            JsonObject selectState = state.getJsonObject(0);
+
+            Optional<JsonObject> chosenOption = selectState.getJsonArray("options").stream().map(JsonObject.class::cast)
+                    .filter(option->option.getString("value").equals(result.get()))
+                    .findFirst();
+
+            if(chosenOption.isPresent()){
+                return Future.succeededFuture(chosenOption.get());
+            }else{
+                return Future.failedFuture("Failed to find the chosen select option (%s) in the state!".formatted(result.get()));
+            }
+        }else{
+            return Future.failedFuture("Failed to generate select option value.");
+        }
+
+    }
+
+    private String _generateSelectValue(JsonArray state, String taskDescription, String inputElementHTML, String htmlContext, String label, String description){
+
+        List<ChatRequestMessage> chatMessages = new ArrayList<>();
+        String prompt = config.getJsonObject("resolveSelectOption").getString("systemPrompt");
+        chatMessages.add(new ChatRequestSystemMessage(prompt));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("\nSelect Element Information:\n");
+        sb.append("\tField HTML Element: %s\n".formatted(inputElementHTML));
+        sb.append("\tSurrounding HTML Context:\n%s\n".formatted(htmlContext));
+        sb.append("\tInferred Semantic Label: %s\n".formatted(label));
+        sb.append("\tInferred Semantic Description:\n%s\n".formatted(description));
+        sb.append("\n\n");
+        sb.append("Task Description:\n%s\n".formatted(taskDescription));
+        sb.append("Available Options:\n");
+
+        JsonObject selectState = state.getJsonObject(0);
+        Iterator<JsonObject> it = selectState.getJsonArray("options").stream().map(JsonObject.class::cast).iterator();
+        while (it.hasNext()){
+            JsonObject option = it.next();
+            sb.append("\tOption Value: %s, Option Label: %s\n".formatted(option.getString("value"), option.getString("text")));
+        }
+        sb.append("\n");
+        sb.append("Output:\n");
+
+        log.info("{}", prompt + sb.toString());
+
+        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+
+        return executeChatCompletion(chatMessages);
+
     }
 
     @Override
