@@ -305,6 +305,8 @@ public class NavPath {
                         GetUIControlState _instruction = new GetUIControlState();
                         _instruction.xpath = nodeToXPath(node);
                         _instruction.type = GetUIControlState.Type.RADIO_BUTTON;
+                        _instruction.parameterId = LogPreprocessor.neo4j.getAssociatedParameterId((String)node.getProperty("id")); //This is going to cause problems for any select option node that doesn't have an input parameter...
+
 
                         instruction = _instruction;
                     }

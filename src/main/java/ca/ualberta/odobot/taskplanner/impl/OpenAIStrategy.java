@@ -49,8 +49,28 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
 
     @Override
-    public Future<JsonObject> resolveRadioButtonAction(JsonArray state, String taskDescription) {
-        return null;
+    public Future<JsonObject> resolveRadioButtonAction(JsonArray state, String taskDescription, String htmlContext, String label, String description) {
+
+        Optional<String> result = generateWithValidation(
+                ()->_generateRadioValue(state, taskDescription, htmlContext, label, description),
+                List.of(),
+                config.getJsonObject("resolveRadioValue").getInteger("maxAttempts")
+        );
+
+        if(result.isPresent()) {
+            Optional<JsonObject> chosenButton = state.stream().map(JsonObject.class::cast)
+                    .filter(button->button.getString("value").equals(result.get()))
+                    .findFirst();
+
+            if(chosenButton.isPresent()){
+                return Future.succeededFuture(chosenButton.get());
+            }else {
+                return Future.failedFuture("Generated value (%s) did not match any of the available radio button options in the state!".formatted(result.get()));
+            }
+        }else {
+            return Future.failedFuture("Failed to generate radio button value.");
+        }
+
     }
 
     @Override
@@ -78,6 +98,38 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
             return Future.failedFuture("Failed to generate select option value.");
         }
 
+    }
+
+    private String _generateRadioValue(JsonArray state, String taskDescription, String htmlContext, String label, String description){
+        List<ChatRequestMessage> chatMessages = new ArrayList<>();
+        String prompt = config.getJsonObject("resolveRadioValue").getString("systemPrompt");
+        chatMessages.add(new ChatRequestSystemMessage(prompt));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("\nRadio Button Element Information:\n");
+        sb.append("\tInferred Semantic Label: %s\n".formatted(label));
+        sb.append("\tInferred Semantic Description:\n%s\n".formatted(description));
+        //sb.append("\tRadio Buttons:\n%s\n".formatted(htmlContext));
+        sb.append("\n\n");
+        sb.append("Task Description:\n%s\n".formatted(taskDescription));
+
+
+        Iterator<JsonObject> it = state.stream().map(JsonObject.class::cast).iterator();
+
+        while (it.hasNext()){
+            JsonObject button = it.next();
+            sb.append("'%s'".formatted(button.getString("value")));
+            if(it.hasNext()){
+                sb.append(", ");
+            }
+        }
+
+        sb.append("Available Radio Button Values:\n[%s]\n".formatted(sb.toString()));
+
+        log.info("{}", prompt + sb.toString());
+
+        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+        return executeChatCompletion(chatMessages);
     }
 
     private String _generateSelectValue(JsonArray state, String taskDescription, String inputElementHTML, String htmlContext, String label, String description){

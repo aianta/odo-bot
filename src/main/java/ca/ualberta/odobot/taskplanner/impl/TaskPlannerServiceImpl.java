@@ -263,21 +263,17 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
                 .map(node->node.get("xpath").asString())
                 .findFirst().get();
 
-//        //Use that xpath to retrieve all known info about that data entry, combine that with the task description and ask the LLM to spit out an appropriate value.
-//        return sqlite.getAllDataEntryInfoForXpath(inputParameterXpath)
-//                .compose(dataEntryInfo->{
-//                    return this.strategy.resolveDataEntryValue(taskDescription,
-//                            dataEntryInfo.getString("inputElementHTML"),
-//                            dataEntryInfo.getString("htmlContext"),
-//                            dataEntryInfo.getJsonArray("enteredData").stream().map(String.class::cast).toList(),
-//                            dataEntryInfo.getString("label"),
-//                            dataEntryInfo.getString("description"),
-//                            currentValue
-//                    );
-//                });
-
-
-        return null;
+        //Use that xpath to retrieve all known info about that data entry, combine that with the task description and ask the LLM to spit out an appropriate value.
+        return sqlite.getAllDataEntryInfoForXpath(inputParameterXpath)
+                .compose(dataEntryInfo->{
+                    return this.strategy.resolveRadioButtonAction(
+                            state,
+                            taskDescription,
+                            dataEntryInfo.getString("htmlContext"),
+                            dataEntryInfo.getString("label"),
+                            dataEntryInfo.getString("description")
+                    );
+                });
     }
 
     @Override

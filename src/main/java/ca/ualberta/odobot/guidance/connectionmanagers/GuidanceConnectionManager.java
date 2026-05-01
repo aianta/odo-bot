@@ -259,7 +259,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                                             _instruction.parameterId = executionRequest.getString("parameterId");
 
                                             client.getRequestManager().getNavPaths().forEach(path->{
-                                                if(path.lastInstruction() instanceof SelectOption){
+                                                if(path.lastInstruction() instanceof GetUIControlState){
                                                     path.updateLastInstruction(_instruction);
                                                 }
                                             });
@@ -279,7 +279,51 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                                         });
                             }
                             case CHECKBOX -> {}
-                            case RADIO_BUTTON -> {}
+                            case RADIO_BUTTON -> {
+
+                                TaskPlannerVerticle.service.resolveRadioButtonAction(
+                                        state,
+                                        client.getRequestManager().getActiveExecutionRequest().getTaskDescription(),
+                                        executionRequest.getString("parameterId")
+                                ).onFailure(err->log.error(err.getMessage(), err))
+                                        .onSuccess(selectedButton->{
+
+                                            //Create an instruction object to update the nav paths's last instruction so instruction watcher can match it properly.
+                                            //The instruction we want to report to instruction watcher is an EnterData instruction, because the click on the radio button will be observed as a DataEntry.
+                                            EnterData _mockInstruction = new EnterData(); //We use an EnterData instruction here just to hold the alternate xpath for the radio button, since the instruction watcher only checks for matching xpaths when identifying whether an instruction was executed or not, and doesn't actually check that the instruction is an instance of ClickInstruction. This is a bit hacky but it works given the current implementation of the instruction watcher. A more robust long-term solution would be to refactor the instruction watcher to check for matching instruction types as well as matching xpaths.
+                                            _mockInstruction.xpath = selectedButton.getString("xpath");
+                                            _mockInstruction.setSourceNodeId(executionRequest.getString("sourceNodeId"));
+
+
+                                            client.getRequestManager().getNavPaths().forEach(path->{
+                                                if(path.lastInstruction() instanceof GetUIControlState){
+                                                    path.updateLastInstruction(_mockInstruction);
+                                                }
+                                            });
+
+                                            //The instruction we actually want to execute is a click.
+                                            DoClick _instruction = new DoClick();
+                                            _instruction.xpath = selectedButton.getString("xpath");
+                                            _instruction.setSourceNodeId(executionRequest.getString("sourceNodeId"));
+
+
+
+                                            JsonObject clickInstruction = _instruction.toJson();
+                                            clickInstruction.put("type", "EXECUTE")
+                                                    .put("source", SOURCE)
+                                                    .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString());
+
+                                            activePromises.put("EXECUTION_RESULT", Promise.promise());
+                                            try {
+                                                Thread.sleep(1000);
+                                            }catch (InterruptedException e){
+                                                throw new RuntimeException(e);
+                                            }
+                                            send(clickInstruction);
+
+                                        });
+
+                            }
                             case TINY_MCE_EDITOR -> {
                                 JsonObject _state = state.getJsonObject(0);
                                 TaskPlannerVerticle.service.resolveDataEntryValue(
