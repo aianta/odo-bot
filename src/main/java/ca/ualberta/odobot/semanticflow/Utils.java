@@ -1,7 +1,12 @@
 package ca.ualberta.odobot.semanticflow;
 
+import ca.ualberta.odobot.semanticflow.model.NetworkEvent;
 import ca.ualberta.odobot.snippet2xml.SemanticSchema;
 import ca.ualberta.odobot.sqlite.SqliteService;
+import edu.stanford.nlp.ling.CoreAnnotations;
+import edu.stanford.nlp.ling.CoreLabel;
+import edu.stanford.nlp.pipeline.Annotation;
+import edu.stanford.nlp.util.CoreMap;
 import io.vertx.core.json.JsonObject;
 import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
@@ -12,9 +17,58 @@ import java.net.URL;
 import java.util.*;
 import java.util.function.Predicate;
 
+
+import static ca.ualberta.odobot.logpreprocessor.LogPreprocessor.posPipeline;
+
 public class Utils {
 
     private static final Logger log = LoggerFactory.getLogger(Utils.class);
+
+    private static final Set<String> verbPOS = Set.of("VB","VBD","VBG","VBN","VBP","VBZ");
+
+    public static Predicate<NetworkEvent> networkEventPredicate = (networkEvent) ->{
+        if (networkEvent.getMethod().toLowerCase().equals("get")){
+            return false;
+        }
+
+        Optional<String> graphQLOperation = networkEvent.getGraphQLOperationName();
+        /**
+         * Advanced filtering for GraphQL requests: if this is a GraphQL request, we want to include it only if it contains a mutation operation.
+         * There is no standard way to determine this, but naming conventions often use "get" or "fetch" in the operation name for queries.
+         * Some guides advise against that. So for generality, we will include any GraphQL request that HAS a verb in the operation name, which is NOT 'get' or 'fetch'.
+         *
+         * We assume camel/pascal case naming for GraphQL operations, and therefore split the operation name into words based on capital letters.
+         * */
+        if(graphQLOperation.isPresent()){
+            String operationName = graphQLOperation.get();
+            operationName = ca.ualberta.odobot.common.Utils.splitCamelCase(operationName).toLowerCase();
+            operationName = operationName.replaceAll("update", "update the"); //Add "the" after "update" to make it more likely to be recognized as a verb by the POS tagger. Stupid context sensitive grammer rules...
+
+            Annotation document = new Annotation(operationName);
+            posPipeline.annotate(document);
+
+            Set<String> verbs = new HashSet<>();
+
+            List<CoreMap> sentences = document.get(CoreAnnotations.SentencesAnnotation.class);
+            for (CoreMap sentence : sentences) {
+                for (CoreLabel token: sentence.get(CoreAnnotations.TokensAnnotation.class)) {
+                    String word = token.get(CoreAnnotations.TextAnnotation.class);
+                    String pos = token.get(CoreAnnotations.PartOfSpeechAnnotation.class);
+                    log.info("{} - {}", word, pos);
+                    if(verbPOS.contains(pos)){
+                        verbs.add(word.toLowerCase());
+                    }
+                }
+            }
+
+            return !verbs.isEmpty() && !verbs.contains("get") && !verbs.contains("fetch");
+
+
+        }else {
+            //If this is not a GraphQL request, it is a non-get network event, so include it.
+            return true;
+        }
+    };
 
     /**
      * Utility method that converts output from {@link SqliteService#getSemanticSchemasWithSourceNodeIds()} into a Map.

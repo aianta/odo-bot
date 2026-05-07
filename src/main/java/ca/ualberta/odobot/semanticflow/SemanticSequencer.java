@@ -7,6 +7,7 @@ import ca.ualberta.odobot.semanticflow.exceptions.MissingTimestamp;
 import ca.ualberta.odobot.semanticflow.mappers.impl.*;
 import ca.ualberta.odobot.semanticflow.model.*;
 import ca.ualberta.odobot.sqlite.SqliteService;
+import edu.stanford.nlp.pipeline.StanfordCoreNLP;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,6 +47,7 @@ public class SemanticSequencer {
 
     private Predicate<NetworkEvent> networkEventFilter = null;
 
+
     private Timeline line;
 
     /**
@@ -54,7 +56,9 @@ public class SemanticSequencer {
     private Consumer<AbstractArtifact> artifactConsumer;
 
 
-    public SemanticSequencer(){};
+    public SemanticSequencer(){
+
+    };
 
     public SemanticSequencer(SqliteService sqliteService){
         this.clickEventMapper = new ClickEventMapper(sqliteService);
@@ -450,7 +454,7 @@ public class SemanticSequencer {
                                 line.add(networkEvent);
 
                                 //TODO - Temporarily ignore all GET requests. See 'Integrating Network Events # Network Event Summarization Options' in obsidian for details
-                            }else if(!networkEvent.getMethod().toLowerCase().equals("get")) {
+                            }else if(Utils.networkEventPredicate.test(networkEvent)) {
                                 //line.add(networkEvent);
 
                                 if(hasTriggeringClick(line.listIterator(line.size()))){

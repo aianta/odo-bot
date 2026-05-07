@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.guidance;
 
+import ca.ualberta.odobot.semanticflow.Utils;
 import ca.ualberta.odobot.semanticflow.mappers.JsonMapper;
 import ca.ualberta.odobot.semanticflow.mappers.impl.*;
 import ca.ualberta.odobot.semanticflow.model.*;
@@ -158,7 +159,7 @@ public class OnlineEventProcessor {
 
         log.info("{} - {}", networkEvent.getMethod(), networkEvent.getUrl());
 
-        if(!networkEvent.getMethod().toLowerCase().equals("get")){
+        if(Utils.networkEventPredicate.test(networkEvent)){
             line.add(networkEvent);
         }
 

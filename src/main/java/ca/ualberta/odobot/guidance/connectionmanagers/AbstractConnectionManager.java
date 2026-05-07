@@ -2,12 +2,20 @@ package ca.ualberta.odobot.guidance.connectionmanagers;
 
 import ca.ualberta.odobot.guidance.OdoClient;
 import ca.ualberta.odobot.guidance.WebSocketConnection;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.LinkedList;
+import java.util.List;
 import java.util.Queue;
+import java.util.stream.Collectors;
 
 public abstract class AbstractConnectionManager implements ConnectionManager {
 
@@ -18,6 +26,8 @@ public abstract class AbstractConnectionManager implements ConnectionManager {
     protected WebSocketConnection connection = null;
 
     protected OdoClient client;
+
+    protected List<JsonObject> history = new ArrayList<>();
 
     public AbstractConnectionManager(OdoClient client){
         this.client = client;
@@ -76,5 +86,22 @@ public abstract class AbstractConnectionManager implements ConnectionManager {
                 .put("pathsRequestId", client.getRequestManager().getActiveExecutionRequest().getId().toString());
 
         return notifyPathCompleteRequest;
+    }
+
+    protected void saveHistory(String source){
+        if(client.getRequestManager().getEvalId() != null){
+            String fileName = "./%s/%s-%s-history.json".formatted("execution_events", client.getRequestManager().getEvalId(),source).replaceAll("\\|","-");
+            File fout = new File(fileName);
+            try(FileWriter fw = new FileWriter(fout);
+                BufferedWriter bw = new BufferedWriter(fw);
+            ){
+                String output = history.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encodePrettily();
+                bw.write(output);
+                bw.flush();
+            }catch(IOException e){
+                log.error("Failed to save history for {}: {}", source, e.getMessage());
+            }
+        }
+
     }
 }

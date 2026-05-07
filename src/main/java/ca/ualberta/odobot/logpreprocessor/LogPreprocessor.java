@@ -16,6 +16,7 @@ import ca.ualberta.odobot.snippets.SnippetExtractorService;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import ca.ualberta.odobot.sqlite.impl.TrainingExemplar;
 import ca.ualberta.odobot.tpg.service.TPGService;
+import edu.stanford.nlp.pipeline.StanfordCoreNLP;
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerOptions;
@@ -73,9 +74,14 @@ public class LogPreprocessor extends AbstractVerticle {
 
     public static NavPathsConstructor pathsConstructor;
 
+    public static StanfordCoreNLP posPipeline;
+
     public Completable rxStart(){
         try {
 
+            Properties nlpProps = new  Properties();
+            nlpProps.setProperty("annotators", "tokenize,ssplit,pos");
+            posPipeline = new StanfordCoreNLP(nlpProps);
 
             //Init embedded Neo4J
             //TODO -> this should probably be its own service

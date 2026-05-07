@@ -115,7 +115,11 @@ public class EvaluateTask implements Runnable{
                 })
                 .onSuccess(executionRequest->{
             Promise<Void> evaluationPromise = Promise.promise();
-            evaluationPromise.future().onComplete((done)->this.taskComplete());
+            evaluationPromise.future().onComplete((done)->{
+                odoXClient.getGuidanceConnectionManager().dumpHistory();
+                this.taskComplete();
+
+            });
 
             odoXClient.getRequestManager().setEvaluationComplete(evaluationPromise);
             odoXClient.getRequestManager().setEvalId(task.getString("_evalId")); //Set the evaluationId for this execution.

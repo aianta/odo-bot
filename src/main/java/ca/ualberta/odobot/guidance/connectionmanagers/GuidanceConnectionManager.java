@@ -585,6 +585,16 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
         return promise.future();
     }
 
+    protected boolean send(JsonObject data){
+        super.history.add(data);
+        return super.send(data);
+    }
+
+    public void dumpHistory(){
+        super.saveHistory(SOURCE);
+        super.history.clear();
+    }
+
     private static void saveQueryDomResult(OdoClient client, JsonObject executionRequest, JsonArray queryResults, String sourceNodeId, JsonObject clickRequest){
         String filename = "./%s/%s-query-dom-%s.txt".formatted("execution_events", client.getRequestManager().getEvalId(),sourceNodeId).replaceAll("\\|","-");
         File fout = new File(filename);

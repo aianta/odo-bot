@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.logpreprocessor.impl;
 
+import ca.ualberta.odobot.common.Utils;
 import ca.ualberta.odobot.extractors.SemanticArtifactExtractor;
 import ca.ualberta.odobot.semanticflow.SemanticSequencer;
 import ca.ualberta.odobot.semanticflow.model.*;
@@ -20,8 +21,6 @@ import java.util.*;
 public class MinimalPipeline extends SimplePreprocessingPipeline{
 
     private static final Logger log = LoggerFactory.getLogger(MinimalPipeline.class);
-    private final StanfordCoreNLP pipeline;
-    private static final Set<String> verbPOS = Set.of("VB","VBD","VBG","VBN","VBP","VBZ");
 
     public MinimalPipeline(Vertx vertx, UUID id, String slug, String name) {
         super(vertx, id, slug, name);
@@ -31,9 +30,6 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
 
         extractorMultimap.clear();
 
-        Properties nlpProps = new  Properties();
-        nlpProps.setProperty("annotators", "tokenize,ssplit,pos");
-        pipeline = new StanfordCoreNLP(nlpProps);
 
     }
 
@@ -41,40 +37,6 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
         log.info("{} events in trajectory {}", events.size(), flightName);
 
         SemanticSequencer sequencer = new SemanticSequencer(sqliteService);
-        sequencer.setNetworkEventFilter(networkEvent -> { //Exclude get requests
-            if (networkEvent.getMethod().toLowerCase().equals("get")){
-                return false;
-            }
-
-            Optional<String> graphQLOperation = networkEvent.getGraphQLOperationName();
-            if(graphQLOperation.isPresent()){
-                String operationName = graphQLOperation.get();
-                Annotation document = new Annotation(operationName);
-                pipeline.annotate(document);
-
-                Set<String> verbs = new HashSet<>();
-
-                List<CoreMap> sentences = document.get(CoreAnnotations.SentencesAnnotation.class);
-                for (CoreMap sentence : sentences) {
-                    for (CoreLabel token: sentence.get(CoreAnnotations.TokensAnnotation.class)) {
-                        String word = token.get(CoreAnnotations.TextAnnotation.class);
-                        String pos = token.get(CoreAnnotations.PartOfSpeechAnnotation.class);
-                        if(verbPOS.contains(pos)){
-                            verbs.add(word.toLowerCase());
-                        }
-                    }
-                }
-
-                return !verbs.isEmpty() && !verbs.contains("get") && !verbs.contains("fetch");
-
-
-            }else {
-                //If this is not a GraphQL request, it is a non-get network event, so include it.
-                return true;
-            }
-
-        }
-        );
 
 
         //Timeline data structure construction
