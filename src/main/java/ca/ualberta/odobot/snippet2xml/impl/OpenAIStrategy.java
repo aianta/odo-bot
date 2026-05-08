@@ -163,11 +163,11 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         return executeChatCompletion(chatMessages);
     }
 
-    public Future<JsonObject> pickResourceParameterValue(List<JsonObject> options, String query){
+    public Future<JsonObject> pickResourceParameterValue(List<JsonObject> options, String query, String taskDescription){
         //Only validator we need is one that makes sure the output is a valid integer.
         List<Predicate<String>> validators = List.of(isNumber);
 
-        Optional<String> pickedValue = pickResourceParameter(options, query, validators);
+        Optional<String> pickedValue = pickResourceParameter(options, query, taskDescription, validators);
 
         if(pickedValue.isPresent()){
             Integer index = Integer.parseInt(pickedValue.get());
@@ -178,8 +178,8 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         return Future.failedFuture("Failed to pick a resource parameter option from the list!");
     }
 
-    public Optional<String> pickResourceParameter(List<JsonObject> options, String query, List<Predicate<String>> validators){
-        return generateWithValidation(()->pickResourceParameter(options, query), validators, config.getJsonObject("pickResourceParameterValue").getInteger("maxAttempts"));
+    public Optional<String> pickResourceParameter(List<JsonObject> options, String query, String taskDescription, List<Predicate<String>> validators){
+        return generateWithValidation(()->pickResourceParameter(options, query, taskDescription), validators, config.getJsonObject("pickResourceParameterValue").getInteger("maxAttempts"));
     }
 
     public Future<SemanticObject> pickParameterValue(List<SemanticObject> options, String query){
@@ -392,11 +392,17 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         return generateWithValidation(()->generateXMLObject(snippet.getSnippet(), schema.getSchema()), validators, config.getJsonObject("generateXMLObject").getInteger("maxAttempts"));
     }
 
-    private String pickResourceParameter(List<JsonObject> options, String query){
+    private String pickResourceParameter(List<JsonObject> options, String query, String taskDescription){
         List<ChatRequestMessage> chatMessages = new ArrayList<>();
         chatMessages.add(new ChatRequestUserMessage(config.getJsonObject("pickResourceParameterValue").getString("systemPrompt")));
 
         StringBuilder sb = new StringBuilder();
+        //Include the task description separately only if it is not the same as the query.
+        if (!taskDescription.equals(query)){
+            sb.append("Task Description:\n");
+            sb.append(taskDescription + "\n");
+        }
+
         sb.append("Query:\n");
         sb.append(query + "\n");
         sb.append("Options:\n");

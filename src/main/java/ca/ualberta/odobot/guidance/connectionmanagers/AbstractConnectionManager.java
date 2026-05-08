@@ -2,6 +2,7 @@ package ca.ualberta.odobot.guidance.connectionmanagers;
 
 import ca.ualberta.odobot.guidance.OdoClient;
 import ca.ualberta.odobot.guidance.WebSocketConnection;
+import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
@@ -11,6 +12,7 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
@@ -28,6 +30,7 @@ public abstract class AbstractConnectionManager implements ConnectionManager {
     protected OdoClient client;
 
     protected List<JsonObject> history = new ArrayList<>();
+
 
     public AbstractConnectionManager(OdoClient client){
         this.client = client;
@@ -53,14 +56,13 @@ public abstract class AbstractConnectionManager implements ConnectionManager {
                 break;
             }
         }
-
-
     }
 
     public abstract void onMessage(JsonObject message);
 
     protected boolean send(String data){
         if(connection != null && connection.isConnected()){
+
             log.info("Message sent over websocket! {}", getClass().getName());
             connection.send(data);
             return true;
@@ -70,6 +72,11 @@ public abstract class AbstractConnectionManager implements ConnectionManager {
             log.info("added message to queue! Queue size: {} {}", queue.size(), getClass().getName());
             return false;
         }
+    }
+
+    protected void addHistory(JsonObject data){
+        data.put("timestamp", Instant.now().toString());
+        history.add(data);
     }
 
     protected boolean send(JsonObject data){

@@ -42,6 +42,12 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
 
     public long timeoutTimer = -1l;
 
+    public long executionInstructionDelayTimer = -1l;
+    public long executionInstructionDelay = 5000l;
+
+
+    private JsonObject executionInstruction = null;
+
     public GuidanceConnectionManager(OdoClient client){
         super(client);
     }
@@ -56,11 +62,12 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
             case "PATH_COMPLETE_ACK":
                 activePromises.get("PATH_COMPLETE_ACK").complete(message);
                 activePromises.remove("PATH_COMPLETE_ACK");
+                super.addHistory(message);
                 break;
             case  "EXECUTION_RESULT":
                 activePromises.get("EXECUTION_RESULT").complete(message);
                 activePromises.remove("EXECUTION_RESULT");
-
+                super.addHistory(message);
                 break;
 
             case "UNRESOLVABLE_XPATH":
@@ -68,7 +75,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                 var failedNodeId = message.getString("sourceNodeId");
 
                 log.info("{}", message.encodePrettily());
-
+                super.addHistory(message);
                 client.getRequestManager().recoverFromFailedNode(failedNodeId);
 
 
@@ -89,6 +96,8 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                     _instruction.get().addAlternateXpath(alternateXpath);
                     log.info("Successfully registered alternate xpath: {}", alternateXpath);
                 }
+
+                super.addHistory(message);
 
                 JsonObject confirmation = new JsonObject()
                         .put("type", "ALTERNATE_XPATH_CONFIRMED")
@@ -143,6 +152,23 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
         return promise.future();
     }
 
+    public void resetExecutionInstructionDelay(){
+        if(executionInstructionDelayTimer != -1l){
+            GuidanceVerticle._vertx.cancelTimer(executionInstructionDelayTimer);
+        }
+        log.info("Next execution instruction will be delayed to give time for DOM to settle.");
+        executionInstructionDelayTimer = GuidanceVerticle._vertx.setTimer(executionInstructionDelay, id->{
+            executionInstructionDelayTimer = -1;
+            if(executionInstruction != null){
+                log.info("Delayed instruction is being sent now!");
+                super.addHistory(executionInstruction);
+                super.send(executionInstruction);
+                executionInstruction = null;
+            }
+
+        });
+    }
+
     public Future<JsonObject> sendExecutionInstruction(JsonObject instruction){
 
         //Reset the timeout timer.
@@ -150,8 +176,8 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
             GuidanceVerticle._vertx.cancelTimer(timeoutTimer);
         }
 
-        GuidanceVerticle._vertx.setTimer(client.getRequestManager().getActiveExecutionRequest().getTimeout(), id->{
-            timeoutTimer = id;
+        timeoutTimer = GuidanceVerticle._vertx.setTimer(client.getRequestManager().getActiveExecutionRequest().getTimeout(), id->{
+            //timeoutTimer = id;
             log.info("Task execution timed out!");
             client.getRequestManager().getEvaluationComplete().tryFail("Timeout!");
         });
@@ -423,7 +449,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                             ResourceParameter resourceParameter = (ResourceParameter)request.getParameter(executionRequest.getString("parameterId"));
 
                             return Future.all(
-                                    Snippet2XMLVerticle.snippet2XML.pickResourceParameterValue(optionsData, resourceParameter!=null?resourceParameter.getQuery():request.getTaskDescription()),
+                                    Snippet2XMLVerticle.snippet2XML.pickResourceParameterValue(optionsData, resourceParameter!=null?resourceParameter.getQuery():request.getTaskDescription(), request.getTaskDescription()),
                                     Future.succeededFuture(document)
                             );
 
@@ -586,8 +612,22 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
     }
 
     protected boolean send(JsonObject data){
-        super.history.add(data);
-        return super.send(data);
+        if(executionInstructionDelayTimer == -1l || (data.containsKey("type") && !data.getString("type").equals("EXECUTE"))){
+            log.info("No delay for instruction, sending immediately.");
+            data.put("delayed", false);
+            super.addHistory(data);
+            return super.send(data);
+        }else{
+            log.info("Delay requested for instruction, saving instruction to be sent after delay.");
+            data.put("delayed", true);
+            if(executionInstruction != null){
+                log.error("Fatal Error, previous instruction was still waiting to be sent!");
+                System.exit(1);
+            }
+            executionInstruction = data;
+            return true;
+        }
+
     }
 
     public void dumpHistory(){

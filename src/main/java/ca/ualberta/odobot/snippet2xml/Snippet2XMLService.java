@@ -126,6 +126,6 @@ public interface Snippet2XMLService {
 
     Future<JsonObject> pickValue(List<JsonObject> options, String taskDescription);
 
-    Future<JsonObject> pickResourceParameterValue(List<JsonObject> options, String query);
+    Future<JsonObject> pickResourceParameterValue(List<JsonObject> options, String query, String taskDescription);
 
 }

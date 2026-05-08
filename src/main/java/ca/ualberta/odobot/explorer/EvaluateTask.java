@@ -55,6 +55,7 @@ public class EvaluateTask implements Runnable{
     FirefoxDriver driver;
     OdoClient odoXClient;
     long taskTimeout;
+    boolean headless;
 
     Promise<Void> promise;
 
@@ -68,6 +69,7 @@ public class EvaluateTask implements Runnable{
         this.task = task;
 
         this.taskTimeout = config.getLong("timeout", 180000L);
+        this.headless = config.getBoolean("headless", true);
 
         this.odoXControlsUrl = "moz-extension://"+dynamicAddonId.toString()+"/popup/bot/bot.html";
         this.odoXOptionsUrl = "moz-extension://"+dynamicAddonId.toString()+"/options/options.html";
@@ -78,7 +80,10 @@ public class EvaluateTask implements Runnable{
     public void run() {
 
         FirefoxOptions options = new FirefoxOptions();
-        //options.addArguments("--headless");
+        if(headless){
+            options.addArguments("--headless");
+        }
+
 
         options.setProfile(buildProfile());
 
