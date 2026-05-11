@@ -65,6 +65,9 @@ public class SqliteServiceImpl implements SqliteService {
         createHTMLAttributeTable();
         createNormalizedLinksTable();
         createEventNodeIndexTable();
+        createSyntheticTaskTable();
+        createTrajectoryEventDescriptionTable();
+        createTrajectoryAPICallTable();
     }
 
 
@@ -535,6 +538,10 @@ public class SqliteServiceImpl implements SqliteService {
     public Future<Set<String>> getHarvestProgress(String dataset){
         Promise<Set<String>> promise = Promise.promise();
 
+        if (dataset == null){
+            Set<String> emptySet = Set.of();
+            promise.complete(emptySet);
+        }
         pool.preparedQuery("""
             SELECT DISTINCT source FROM training_materials WHERE dataset_name = ?;
         """).execute(Tuple.of(dataset), result->{
@@ -545,7 +552,7 @@ public class SqliteServiceImpl implements SqliteService {
                    sources.add(r.getString("source"));
                }
 
-               promise.complete(sources);
+               promise.tryComplete(sources);
 
            }else {
                log.error(result.cause().getMessage(), result.cause());
@@ -1307,6 +1314,105 @@ public class SqliteServiceImpl implements SqliteService {
         return executeParameterizedQuery(sql, params);
     }
 
+    public Future<Void> saveSyntheticTask(
+            String trajectoryId,
+            String task,
+            String timestamp,
+            String model,
+            String sourceIndex
+    ){
+        String sql = """
+                INSERT INTO synthetic_tasks (
+                    trajectory_id,
+                    task,
+                    timestamp,
+                    model,
+                    source_index
+                ) VALUES (?,?,?,?,?);
+                """;
+
+        Tuple params = Tuple.of(
+                trajectoryId,
+                task,
+                timestamp,
+                model,
+                sourceIndex
+        );
+
+        return executeParameterizedQuery(sql, params);
+    }
+
+    public Future<Void> saveTrajectoryAPICall(
+            String trajectoryId,
+            int eventIndex,
+            String method,
+            String path,
+            String operationName,
+            String request,
+            String response,
+            String sourceIndex
+    ){
+        String sql = """
+                INSERT INTO trajectory_api_calls (
+                    trajectory_id,
+                    event_index,
+                    method,
+                    path,
+                    operation_name,
+                    request,
+                    response,
+                    source_index
+                ) VALUES (?,?,?,?,?,?,?,?);
+                """;
+
+        Tuple params = Tuple.of(
+                trajectoryId,
+                eventIndex,
+                method,
+                path,
+                operationName,
+                request,
+                response,
+                sourceIndex
+        );
+
+        return executeParameterizedQuery(sql, params);
+    }
+
+    public Future<Void> saveTrajectoryEventDescription(
+            int eventIndex,
+            String trajectoryId,
+            String sourceIndex,
+            String description,
+            String symbol,
+            String timestamp,
+            String model
+    ){
+        String sql = """
+                INSERT INTO trajectory_event_descriptions (
+                    event_index,
+                    trajectory_id,
+                    source_index,
+                    description,
+                    symbol,
+                    timestamp,
+                    model
+                ) VALUES (?,?,?,?,?,?,?);
+                """;
+
+        Tuple params = Tuple.of(
+                eventIndex,
+                trajectoryId,
+                sourceIndex,
+                description,
+                symbol,
+                timestamp,
+                model
+        );
+
+        return executeParameterizedQuery(sql, params);
+    }
+
     public Future<Void> saveEventNodeMapping(String eventId, String nodeId, int eventIndex, String trajectoryId){
         String sql = """
                 INSERT INTO event_node_index (
@@ -1626,6 +1732,51 @@ public class SqliteServiceImpl implements SqliteService {
                 UNIQUE(snippet, dynamic_xpath, source_html)
             )
         """);
+    }
+
+    private Future<Void> createTrajectoryAPICallTable(){
+        return createTable("""
+                CREATE TABLE IF NOT EXISTS trajectory_api_calls(
+                    trajectory_id text not null,
+                    event_index numeric not null,
+                    method text not null,
+                    path text not null,
+                    operation_name text,
+                    request text,
+                    response text,
+                    source_index text not null,
+                    primary key (trajectory_id,  source_index, event_index)
+                )
+                
+                """);
+    }
+
+    private Future<Void> createTrajectoryEventDescriptionTable(){
+        return createTable("""
+                CREATE TABLE IF NOT EXISTS trajectory_event_descriptions(
+                    event_index numeric not null,
+                    trajectory_id text not null,
+                    source_index text not null,
+                    description text not null,
+                    symbol text not null,
+                    timestamp text not null,
+                    model text not null,
+                    primary key (trajectory_id, event_index)
+                )
+                """);
+    }
+
+    private Future<Void> createSyntheticTaskTable(){
+        return createTable("""
+                CREATE TABLE IF NOT EXISTS synthetic_tasks(
+                    trajectory_id text not null,
+                    task text not null,
+                    timestamp text not null,
+                    model text not null,
+                    source_index text not null,
+                    primary key (trajectory_id, source_index)
+                )
+                """);
     }
 
     private Future<Void> createDynamicXpathProgressTable(){

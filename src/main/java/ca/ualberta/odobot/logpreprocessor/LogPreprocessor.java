@@ -5,6 +5,7 @@ import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 import ca.ualberta.odobot.logpreprocessor.executions.impl.AbstractPreprocessingPipelineExecutionStatus;
 import ca.ualberta.odobot.logpreprocessor.executions.impl.BasicExecution;
 import ca.ualberta.odobot.logpreprocessor.impl.*;
+import ca.ualberta.odobot.modelconstruction.eventlabeling.LabelTrajectoryTask;
 import ca.ualberta.odobot.semanticflow.Utils;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 
@@ -75,6 +76,8 @@ public class LogPreprocessor extends AbstractVerticle {
     public static NavPathsConstructor pathsConstructor;
 
     public static StanfordCoreNLP posPipeline;
+
+    public static PreprocessingPipeline minimalPipeline;
 
     public Completable rxStart(){
         try {
@@ -153,6 +156,10 @@ public class LogPreprocessor extends AbstractVerticle {
 
                                     PreprocessingPipeline pipeline = (PreprocessingPipeline) constructor.newInstance(vertx, id, slug, name);
 
+                                    if(className.equals("ca.ualberta.odobot.logpreprocessor.impl.MinimalPipeline")){
+                                        minimalPipeline = pipeline;
+                                    }
+
 
                                     mountPipeline(api, pipeline);
                                 } catch (ClassNotFoundException | NoSuchMethodException e) {
@@ -215,7 +222,7 @@ public class LogPreprocessor extends AbstractVerticle {
                                     vertx, UUID.randomUUID(), "hierarchical-v1", "Hierarchical clustering technique that blends domain knowledge from the DOM with unsupervised learning to determine activity labels. "
                             );
 
-                            PreprocessingPipeline minimalPipeline = new MinimalPipeline(
+                            minimalPipeline = new MinimalPipeline(
                                     vertx, UUID.randomUUID(), "minimal-v1", "Minimal pipeline with no semantic extractors"
                             );
 
@@ -446,6 +453,7 @@ public class LogPreprocessor extends AbstractVerticle {
         chunkedSemanticTracesRoute.handler(rc->{
             rc.reroute(HttpMethod.GET, API_PATH_PREFIX.substring(0, API_PATH_PREFIX.length()-2)  + "/preprocessing/pipelines/" + pipeline.slug() + "/harvestTrainingMaterials");
         });
+
 
         router.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + pipeline.slug() + "/timelines").handler(pipeline::timelinesHandler);
         router.route().method(HttpMethod.GET).path("/preprocessing/pipelines/" + pipeline.slug() + "/timelines").handler(rc->{

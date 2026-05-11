@@ -55,6 +55,10 @@ public class SelectEvent extends AbstractArtifact implements TimelineEntity{
         return this;
     }
 
+    public Option getSelectedOption(){
+        return options.stream().filter(Option::selected).findFirst().orElse(null);
+    }
+
     @Override
     public int size() {
         return 1;

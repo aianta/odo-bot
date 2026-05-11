@@ -1,6 +1,8 @@
 package ca.ualberta.odobot.modelconstruction.eventlabeling;
 
 import ca.ualberta.odobot.semanticflow.model.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
 
@@ -8,21 +10,56 @@ import java.util.Optional;
  * Produces a string representation of a timeline/trajectory entity so that an LLM can describe what happened.
  */
 public class EventEncoder {
+    private static final Logger log = LoggerFactory.getLogger(EventEncoder.class);
 
     public static String encode(TimelineEntity entity) {
 
-        switch (entity){
-            case ClickEvent clickEvent: return encodeClickEvent(clickEvent);
-            case DataEntry dataEntry: return encodeDataEntry(dataEntry);
-            case NetworkEvent networkEvent: return encodeNetworkEvent(networkEvent);
-            case Effect domEffect: return encodeDOMEffect(domEffect);
-            case CheckboxEvent checkboxEvent: return encodeCheckboxEvent(checkboxEvent);
-            case RadioButtonEvent radioButtonEvent: return encodeRadioButtonEvent(radioButtonEvent);
-            case TinymceEvent tinymceEvent: return encodeTinymceEvent(tinymceEvent);
-            default:
-                throw new IllegalStateException("Unexpected value: " + entity);
+        if(entity instanceof ClickEvent clickEvent){
+            return encodeClickEvent(clickEvent);
         }
 
+        if (entity instanceof ApplicationLocationChange applicationLocationChange){
+            return encodeApplicationLocationChange(applicationLocationChange);
+        }
+
+        if(entity instanceof NetworkEvent networkEvent){
+            return encodeNetworkEvent(networkEvent);
+        }
+
+        if (entity instanceof Effect effect){
+            return encodeDOMEffect(effect);
+        }
+
+        if(entity instanceof TinymceEvent tinymceEvent){
+            return encodeTinymceEvent(tinymceEvent);
+        }
+
+        if (entity instanceof RadioButtonEvent radioButtonEvent){
+            return encodeRadioButtonEvent(radioButtonEvent);
+        }
+
+        if (entity instanceof SelectEvent selectEvent){
+            return encodeSelectEvent(selectEvent);
+        }
+
+        if(entity instanceof CheckboxEvent checkboxEvent){
+            return encodeCheckboxEvent(checkboxEvent);
+        }
+
+        if(entity instanceof DataEntry dataEntry){
+            return encodeDataEntry(dataEntry);
+        }
+
+        throw new RuntimeException("Unknown trajectory event type encountered during encoding: " + entity.getClass().getSimpleName());
+    }
+
+    private static String encodeApplicationLocationChange(ApplicationLocationChange applicationLocationChange) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Type: Application Location Change\n");
+        sb.append("The URL in the address bar of the browser has changed.\n");
+        sb.append("The previous URL was: %s\n".formatted(applicationLocationChange.getFrom()));
+        sb.append("The new URL is: %s\n".formatted(applicationLocationChange.getTo()));
+        return sb.toString();
     }
 
     private static String encodeClickEvent(ClickEvent clickEvent) {
@@ -132,6 +169,17 @@ public class EventEncoder {
         sb.append("The user interacted with a tinymce content editor.\n");
         sb.append("The content editor's id was: %s\n".formatted(tinymceEvent.getEditorId()));
         sb.append("The user entered the following data into the editor:\n%s\n".formatted(tinymceEvent.getValue()));
+        return sb.toString();
+    }
+
+    private static String encodeSelectEvent(SelectEvent selectEvent){
+        StringBuilder sb = new StringBuilder();
+        sb.append("Type: Select Event\n");
+        sb.append("This event was observed on the following page/view of the application: %s\n".formatted(selectEvent.getBaseURI().toString()));
+        sb.append("The user interacted with a select dropdown element.\n");
+        sb.append("The select dropdown HTML element looked like this:\n%s\n".formatted(selectEvent.selectElement().outerHtml()));
+        SelectEvent.Option selectedOption = selectEvent.getSelectedOption();
+        sb.append("The user selected the option with the label '%s' and value '%s' from the dropdown.\n".formatted(selectedOption.label(), selectedOption.value()));
         return sb.toString();
     }
 

@@ -32,6 +32,33 @@ public interface SqliteService {
 
     Future<Set<String>> getHarvestProgress(String dataset);
 
+    Future<Void> saveSyntheticTask(String trajectoryId,
+                                   String task,
+                                   String timestamp,
+                                   String model,
+                                   String sourceIndex);
+
+    Future<Void> saveTrajectoryEventDescription(
+            int eventIndex,
+            String trajectoryId,
+            String sourceIndex,
+            String description,
+            String symbol,
+            String timestamp,
+            String model
+    );
+
+    Future<Void> saveTrajectoryAPICall(
+            String trajectoryId,
+            int eventIndex,
+            String method,
+            String path,
+            String operationName,
+            String request,
+            String response,
+            String sourceIndex
+    );
+
     Future<Void> saveStateSample(JsonObject json);
 
     Future<JsonArray> loadDynamicXpaths(String website);

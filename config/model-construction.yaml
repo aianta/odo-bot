@@ -6,10 +6,14 @@ apiPathPrefix: "/api/*"
 openAI:
   secretKey: ""
   model: "gpt-5-mini-2025-08-07"
+  generateSyntheticTaskForTrajectory:
+    maxAttempts: 3
+    systemPrompt: |
+      You are an intelligent observer/auditor learning how to use a web application by watching how others interact with it. You will be given a history of events that have been observed on the web application. Your task is to generate a plausible description of a task that led to the observed interactions. Write in the imperative style as if you were the author of the task that prompted these interactions. Keep the succinct, no more than a paragraph 2 to 5 sentences long, but make sure to include relevant input values. To keep the task description short, omit task validation instructions.
   generateSemanticLabelForTrajectoryEvent:
     maxAttempts: 3
     systemPrompt: |
-      You are an intelligent observer/auditor learning how to use a web application by watching how others interact with it. You will be given a user interaction event. Your task is to describe what happened/was accomplished/was observed in this event. Write down anything that you feel would be relevant to you if someone were to ask you what a user did exactly on the web application.
+      You are an intelligent observer/auditor learning how to use a web application by watching how others interact with it. You will be given a user interaction event. Your task is to describe what happened/was accomplished/was observed in this event in 2 or 3 sentences maximum. Write down anything that you feel would be relevant to you if someone were to ask you what a user did exactly on the web application.
       
       Events rarely occur in isolation, any events leading up to the current event, as well as your notes and descriptions for them will be provided to you as history to help you contextualize the current event.
       

@@ -5,6 +5,8 @@ import ca.ualberta.odobot.common.RobulaPlus;
 import ca.ualberta.odobot.common.Utils;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import ca.ualberta.odobot.mind2web.HTMLCleaningTools;
+import ca.ualberta.odobot.modelconstruction.eventlabeling.EventDescription;
+import ca.ualberta.odobot.modelconstruction.eventlabeling.LabelTrajectoryTask;
 import ca.ualberta.odobot.modelconstruction.impl.TagAndAttributeStrategy;
 import ca.ualberta.odobot.common.HttpServiceVerticle;
 import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
@@ -13,6 +15,8 @@ import ca.ualberta.odobot.modelconstruction.impl.visitors.BlankRemovingVisitor;
 import ca.ualberta.odobot.modelconstruction.impl.visitors.XpathSnapshotVisitor;
 import ca.ualberta.odobot.modelconstruction.linklabeling.LinkLabelingService;
 import ca.ualberta.odobot.modelconstruction.statelabeling.StateLabelingService;
+import ca.ualberta.odobot.semanticflow.model.NetworkEvent;
+import ca.ualberta.odobot.semanticflow.model.Timeline;
 import ca.ualberta.odobot.semanticflow.navmodel.DynamicXPath;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import io.reactivex.rxjava3.core.Completable;
@@ -40,6 +44,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.BiFunction;
 import java.util.regex.MatchResult;
 import java.util.regex.Matcher;
@@ -72,6 +78,8 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
     public static ElasticsearchService elasticsearchService;
     public static StateLabelingService stateLabelingService;
     public static LinkLabelingService linkLabelingService;
+
+    private ExecutorService executorService = Executors.newFixedThreadPool(6);
 
     private static String ODO_LSH_HOST = "172.26.130.231";
     private int ODO_LSH_PORT = 5000;
@@ -136,8 +144,80 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                 .handler(this::getClustering)
                 .handler(this::getClusterSnapshots);
 
+        api.route().method(HttpMethod.GET).path("/describeTrajectories")
+                .handler(rc->LogPreprocessor.minimalPipeline.chunkedSemanticTracesHandler(rc))
+                .handler(rc->rc.reroute(_config.getString("apiPathPrefix").substring(0, _config.getString("apiPathPrefix").length() - 2) + "/describeTrajectory"));
+
+        api.route().method(HttpMethod.GET).path("/describeTrajectory")
+                .handler(rc->LogPreprocessor.minimalPipeline.timelinesHandler(rc))
+                .handler(this::describeTrajectory)
+                .handler(rc->{
+                    if(rc.get("todo") != null && ((List<String>)rc.get("todo")).size()> 0){
+                        rc.reroute(HttpMethod.GET, _config.getString("apiPathPrefix").substring(0,_config.getString("apiPathPrefix").length()-2) + "/describeTrajectory");
+                    }else{
+                        rc.response().setStatusCode(200).end("done");
+                    }
+                })
+        ;
+
         return Completable.complete();
 
+    }
+
+    private void describeTrajectory(RoutingContext rc){
+        List<Timeline> timelines = rc.get("timelines");
+        List<Future<String>> futures = new ArrayList<>();
+        for (Timeline timeline: timelines){
+            LabelTrajectoryTask task = new LabelTrajectoryTask(_config, timeline);
+
+            task.setEventDescriptionConsumer((eventDescription)->{
+                sqliteService.saveTrajectoryEventDescription(
+                        eventDescription.eventIndex(),
+                        task.getTrajectory().getId().toString(),
+                        rc.get("index"),
+                        eventDescription.getDescription(),
+                        eventDescription.getEntity().symbol(),
+                        eventDescription.timestamp(),
+                        _config.getJsonObject("openAI").getString("model")
+                );
+
+                if(eventDescription.getEntity() instanceof NetworkEvent networkEvent){
+                    sqliteService.saveTrajectoryAPICall(
+                            task.getTrajectory().getId().toString(),
+                            eventDescription.eventIndex(),
+                            networkEvent.getMethod(),
+                            networkEvent.getPath(),
+                            networkEvent.getGraphQLOperationName().orElse(null),
+                            networkEvent.getRequestObject() != null?networkEvent.getRequestObject().encode():null,
+                            networkEvent.getResponseObject() != null?networkEvent.getResponseObject().encode():null,
+                            rc.get("index")
+                    );
+                }
+            });
+
+            task.getPromise().future()
+                    .onFailure(err->log.error(err.getMessage(), err))
+                    .onSuccess(result->{
+
+                        sqliteService.saveSyntheticTask(
+                                task.getTrajectory().getId().toString(),
+                                task.getSyntheticTaskDescription(),
+                                task.getTaskCreationTime().toString(),
+                                _config.getJsonObject("openAI").getString("model"),
+                                rc.get("index")
+                        );
+
+                    })
+            ;
+            futures.add(task.getPromise().future());
+            executorService.submit(task);
+        }
+
+        Future.all(futures)
+                .onSuccess(done->rc.next())
+                .onFailure(err->log.error(err.getMessage(), err))
+        ;
+        //rc.next();
     }
 
 
