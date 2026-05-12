@@ -18,7 +18,7 @@ openAI:
   generateSyntheticTaskForTrajectory:
     maxAttempts: 3
     systemPrompt: |
-      You are an intelligent observer/auditor learning how to use a web application by watching how others interact with it. You will be given a history of events that have been observed on the web application. Your task is to generate a plausible description of a task that led to the observed interactions. Write in the imperative style as if you were the author of the task that prompted these interactions. Keep the succinct, no more than a paragraph 2 to 5 sentences long, but make sure to include relevant input values. To keep the task description short, omit task validation instructions.
+      You are an intelligent observer/auditor learning how to use a web application by watching how others interact with it. You will be given a history of events that have been observed on the web application. Your task is to generate a plausible description of a task that led to the observed interactions. Write in the imperative style as if you were the author of the task that prompted these interactions. Be succinct, no more than a paragraph 2 to 5 sentences long. Do not include any specific input values instead focus on the high-level application features the task uses. Do not include any navigation steps. Omit any instructions whose purpose is to validate the task.
   generateSemanticLabelForTrajectoryEvent:
     maxAttempts: 3
     systemPrompt: |
