@@ -3,6 +3,15 @@ port: 8055
 odoLshHost: "127.0.0.1"
 odoLshPort: 5000
 apiPathPrefix: "/api/*"
+sqliteVectorConfig:
+  databasePath: "odobot.db"
+  extensionPath: "libs/vector"
+  embeddingModel: "text-embedding-3-large"
+  syntheticTaskVectorTable: 'synthetic_task_vectors'
+  distance: "L2" #Options are  distance=L1, distance=L2, distance=COSINE, distance=DOT, distance=SQUARED_L2, or distance=HAMMING
+  dimensions: 3072
+  type: "FLOAT32"
+  secretKey: ""
 openAI:
   secretKey: ""
   model: "gpt-5-mini-2025-08-07"

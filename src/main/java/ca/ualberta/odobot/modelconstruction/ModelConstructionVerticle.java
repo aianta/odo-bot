@@ -19,6 +19,7 @@ import ca.ualberta.odobot.semanticflow.model.NetworkEvent;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 import ca.ualberta.odobot.semanticflow.navmodel.DynamicXPath;
 import ca.ualberta.odobot.sqlite.SqliteService;
+import ca.ualberta.odobot.sqlite.SqliteVectorService;
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
@@ -89,6 +90,8 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
     private CleanerService cleanerService;
     private RobulaPlus robulaPlus = new RobulaPlus();
 
+    private SqliteVectorService sqliteVectorService;
+
     @Override
     public Completable onStart() {
         super.onStart().subscribe();
@@ -103,8 +106,13 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                 .setUserAgent("OdoBot");
         webClient = WebClient.create(vertx.getDelegate(), webClientOptions);
 
+        //Init SQLiteVectorService
+        sqliteVectorService = SqliteVectorService.create(_config.getJsonObject("sqliteVectorConfig"));
+
         //Init SQLite Service Proxy
         sqliteService = SqliteService.createProxy(vertx.getDelegate(), SQLITE_SERVICE_ADDRESS);
+
+
 
         //Init Link Labeling service
         linkLabelingService = LinkLabelingService.create(_config);
@@ -144,6 +152,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                 .handler(this::getClustering)
                 .handler(this::getClusterSnapshots);
 
+        //Batch describe trajectories at scale.
         api.route().method(HttpMethod.GET).path("/describeTrajectories")
                 .handler(rc->LogPreprocessor.minimalPipeline.chunkedSemanticTracesHandler(rc))
                 .handler(rc->rc.reroute(_config.getString("apiPathPrefix").substring(0, _config.getString("apiPathPrefix").length() - 2) + "/describeTrajectory"));
@@ -160,64 +169,202 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                 })
         ;
 
+        api.route().method(HttpMethod.GET).path("/embedTrajectories")
+                .handler(this::embedTrajectories);
+
+        api.route().method(HttpMethod.GET).path("/queryTrajectories")
+                .handler(this::queryTrajectories);
+
         return Completable.complete();
 
     }
 
+    private void queryTrajectories(RoutingContext rc){
+        int k = Integer.parseInt(rc.request().getParam("k", "5"));
+        String queryTask = rc.body().asString();
+
+        Future.all(
+                sqliteService.getSyntheticTasks(),
+                sqliteVectorService.topK(k, queryTask)
+        ).onFailure(err->log.error(err.getMessage(), err))
+                .compose(results->{
+
+                    List<JsonObject> syntheticTasks = results.resultAt(0);
+                    List<String> hits = results.resultAt(1);
+
+                    List<JsonObject> matchedTasks = syntheticTasks.stream().filter(task->hits.contains(task.getString("id"))).toList();
+
+                    return Future.all(
+                            matchedTasks.stream()
+                                    .map(matchedTask->sqliteService.getAPICallsForTrajectory(matchedTask.getString("id"))
+                                            .compose(apiCalls->{
+                                                JsonObject resultEntry = new JsonObject();
+                                                resultEntry.mergeIn(matchedTask);
+                                                resultEntry.put("apiCalls", apiCalls.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
+
+                                                return Future.succeededFuture(resultEntry);
+                                            })
+                                    )
+                                    .toList()
+                    );
+                }).onSuccess(queryResults->{
+                    List<JsonObject> _queryResults = queryResults.list();
+                    rc.getDelegate().response().setStatusCode(200).end(_queryResults.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode());
+                });
+    }
+
+
+    private void embedTrajectories(RoutingContext rc){
+
+        Future.all(
+                sqliteService.getTrajectoryIdsFromSyntheticTaskVectorsTable(),
+                sqliteService.getSyntheticTasks()
+        ).onFailure(err->log.error(err.getMessage(), err))
+                .compose(state->{
+                    Set<String> alreadyEmbeddedTrajectoryIds = state.resultAt(0);
+                    List<JsonObject> tasks = state.resultAt(1);
+
+                    return Future.all(
+                            tasks.stream()
+                                    //Only embed trajectories that don't already have an entry in the synthetic task vectors table.
+                                    .filter(task->!alreadyEmbeddedTrajectoryIds.contains(task.getString("id")))
+                                    .map(task->sqliteVectorService.embedSyntheticTask(task.getString("id"), task.getString("task"))
+                                    ).collect(Collectors.toList())
+                    );
+                }).onSuccess(done->{
+                    //After all embeddings have been computed and stored in the vector table, prepare the vectors for querying.
+                    //This initalizes the vectors, performs quantization and loaded the quantized vectors into memory for fast retrieval.
+                    sqliteVectorService.readyVectorsForQuerying();
+                    rc.getDelegate().response().setStatusCode(200).end();
+                });
+    }
+
+    /**
+     * For a given index of trajectories (timelines) in elasticsearch, runs through all trajectories, describing each event within them, then using that information
+     * to generate a synthetic task description for the trajectory.
+     *
+     * All the generated event descriptions and synthetic tasks are stored in sqlite, tables 'trajectory_event_descriptions' and 'synthetic_tasks' respectively.
+     * Additionally, the API calls encountered in each trajectory are also saved in sqlite, in the 'trajectory_api_calls' table.
+     *
+     * Finally, this method supports resuming its work in case it gets interrupted. It does this by querying the aforementioned sqlite tables to determine which trajectories and events have already been processed.
+     */
     private void describeTrajectory(RoutingContext rc){
         List<Timeline> timelines = rc.get("timelines");
-        List<Future<String>> futures = new ArrayList<>();
-        for (Timeline timeline: timelines){
-            LabelTrajectoryTask task = new LabelTrajectoryTask(_config, timeline);
 
-            task.setEventDescriptionConsumer((eventDescription)->{
-                sqliteService.saveTrajectoryEventDescription(
-                        eventDescription.eventIndex(),
-                        task.getTrajectory().getId().toString(),
-                        rc.get("index"),
-                        eventDescription.getDescription(),
-                        eventDescription.getEntity().symbol(),
-                        eventDescription.timestamp(),
-                        _config.getJsonObject("openAI").getString("model")
-                );
+        Future.all(
+                sqliteService.getSyntheticTaskTrajectoryIds(rc.get("index")),
+                sqliteService.getEventDescriptionsTrajectoryIds(rc.get("index"))
+        ).compose(trajectoryInfo->{
+                    Set<String> completedTrajectories = trajectoryInfo.resultAt(0);
+                    Set<String> partiallyAndFullyCompletedTrajectories = trajectoryInfo.resultAt(1);
 
-                if(eventDescription.getEntity() instanceof NetworkEvent networkEvent){
-                    sqliteService.saveTrajectoryAPICall(
-                            task.getTrajectory().getId().toString(),
-                            eventDescription.eventIndex(),
-                            networkEvent.getMethod(),
-                            networkEvent.getPath(),
-                            networkEvent.getGraphQLOperationName().orElse(null),
-                            networkEvent.getRequestObject() != null?networkEvent.getRequestObject().encode():null,
-                            networkEvent.getResponseObject() != null?networkEvent.getResponseObject().encode():null,
-                            rc.get("index")
+                    //Now partiallyAndFullyCompletedTrajectories contains only trajectories that have been partially completed.
+                    partiallyAndFullyCompletedTrajectories.removeAll(completedTrajectories);
+
+                    //Filter out trajectories that have already been described.
+                    List<Timeline> filteredTimelines = timelines.stream()
+                            .filter(timeline->!completedTrajectories.contains(timeline.getId().toString()))
+                            .collect(Collectors.toList());
+
+                    Set<String> filteredTimelineIds = filteredTimelines.stream().map(Timeline::getId).map(UUID::toString).collect(Collectors.toSet());
+                    partiallyAndFullyCompletedTrajectories = partiallyAndFullyCompletedTrajectories.stream().filter(trajectoryId->filteredTimelineIds.contains(trajectoryId)).collect(Collectors.toSet());
+
+                    return Future.all(
+                            sqliteService.getEventDescriptionsForTrajectories(partiallyAndFullyCompletedTrajectories),
+                            Future.succeededFuture(filteredTimelines)
                     );
+
+        }).compose((inProgressInfo)-> {
+                    Set<JsonObject> eventDescriptionsFromInProgressTrajectories = inProgressInfo.resultAt(0);
+                    List<Timeline> filteredTimelines = inProgressInfo.resultAt(1);
+
+                    //Organize Event Descriptions by Trajectory ID
+                    Map<String, List<EventDescription>> eventDescriptionsByTrajectoryId = new HashMap<>();
+                    eventDescriptionsFromInProgressTrajectories.forEach(json -> {
+                        Timeline correspondingTimeline = filteredTimelines.stream().filter(timeline -> timeline.getId().toString().equals(json.getString("trajectoryId"))).findFirst().get();
+                        EventDescription eventDescription = EventDescription.fromJson(json, correspondingTimeline);
+                        String trajectoryId = json.getString("trajectoryId");
+
+                        if (eventDescriptionsByTrajectoryId.containsKey(trajectoryId)) {
+                            eventDescriptionsByTrajectoryId.get(trajectoryId).add(eventDescription);
+                        } else {
+                            List<EventDescription> list = new ArrayList<>();
+                            list.add(eventDescription);
+                            eventDescriptionsByTrajectoryId.put(trajectoryId, list);
+                        }
+                    });
+
+                    return Future.all(
+                            Future.succeededFuture(eventDescriptionsByTrajectoryId),
+                            Future.succeededFuture(filteredTimelines)
+                    );
+
+        }).compose(initializationData->{
+                    Map<String, List<EventDescription>> eventDescriptionsByTrajectoryId = initializationData.resultAt(0);
+                    List<Timeline> filteredTimelines = initializationData.resultAt(1);
+
+
+            List<Future<String>> futures = new ArrayList<>();
+            for (Timeline timeline: filteredTimelines){
+                LabelTrajectoryTask task;
+                //If we have partial results for this trajectory, initialize the labeling task with our existing work.
+                if(eventDescriptionsByTrajectoryId.containsKey(timeline.getId().toString())){
+                    List<EventDescription> existingEventDescriptions = eventDescriptionsByTrajectoryId.get(timeline.getId().toString());
+                    task = new LabelTrajectoryTask(_config, timeline,existingEventDescriptions.size(), existingEventDescriptions);
+                }else{
+                    task = new LabelTrajectoryTask(_config, timeline);
                 }
-            });
 
-            task.getPromise().future()
-                    .onFailure(err->log.error(err.getMessage(), err))
-                    .onSuccess(result->{
 
-                        sqliteService.saveSyntheticTask(
+
+                task.setEventDescriptionConsumer((eventDescription)->{
+                    sqliteService.saveTrajectoryEventDescription(
+                            eventDescription.eventIndex(),
+                            task.getTrajectory().getId().toString(),
+                            rc.get("index"),
+                            eventDescription.getDescription(),
+                            eventDescription.getEntity().symbol(),
+                            eventDescription.timestamp(),
+                            _config.getJsonObject("openAI").getString("model")
+                    );
+
+                    if(eventDescription.getEntity() instanceof NetworkEvent networkEvent){
+                        sqliteService.saveTrajectoryAPICall(
                                 task.getTrajectory().getId().toString(),
-                                task.getSyntheticTaskDescription(),
-                                task.getTaskCreationTime().toString(),
-                                _config.getJsonObject("openAI").getString("model"),
+                                eventDescription.eventIndex(),
+                                networkEvent.getMethod(),
+                                networkEvent.getPath(),
+                                networkEvent.getGraphQLOperationName().orElse(null),
+                                networkEvent.getRequestObject() != null?networkEvent.getRequestObject().encode():null,
+                                networkEvent.getResponseObject() != null?networkEvent.getResponseObject().encode():null,
                                 rc.get("index")
                         );
+                    }
+                });
 
-                    })
-            ;
-            futures.add(task.getPromise().future());
-            executorService.submit(task);
-        }
+                task.getPromise().future()
+                        .onFailure(err->log.error(err.getMessage(), err))
+                        .onSuccess(result->{
 
-        Future.all(futures)
-                .onSuccess(done->rc.next())
-                .onFailure(err->log.error(err.getMessage(), err))
-        ;
-        //rc.next();
+                            sqliteService.saveSyntheticTask(
+                                    task.getTrajectory().getId().toString(),
+                                    task.getSyntheticTaskDescription(),
+                                    task.getTaskCreationTime().toString(),
+                                    _config.getJsonObject("openAI").getString("model"),
+                                    rc.get("index")
+                            );
+
+                        })
+                ;
+                futures.add(task.getPromise().future());
+                executorService.submit(task);
+            }
+
+            return Future.all(futures);
+
+        }).onSuccess(done->rc.next())
+                .onFailure(err->log.error(err.getMessage(), err));
+
     }
 
 

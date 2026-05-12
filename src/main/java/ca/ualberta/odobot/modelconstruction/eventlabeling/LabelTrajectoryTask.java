@@ -12,10 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.ListIterator;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Consumer;
 
 public class LabelTrajectoryTask extends AbstractOpenAIStrategy implements Runnable{
@@ -54,10 +51,21 @@ public class LabelTrajectoryTask extends AbstractOpenAIStrategy implements Runna
         return syntheticTaskDescription;
     }
 
+    private int startingIndex = 0;
+
+    public LabelTrajectoryTask(JsonObject config, Timeline trajectory, int startingFrom, List<EventDescription> history){
+        super(config);
+        this.trajectory = trajectory;
+        this.startingIndex = startingFrom;
+        this.eventDescriptions = history;
+
+        //Sort event descriptions by their event index in ascending order
+        this.eventDescriptions.sort(Comparator.comparingInt(EventDescription::eventIndex));
+    }
+
     public LabelTrajectoryTask(JsonObject config, Timeline trajectory) {
         super(config);
         this.trajectory = trajectory;
-
     }
 
     public Promise<String> getPromise() {
@@ -71,6 +79,16 @@ public class LabelTrajectoryTask extends AbstractOpenAIStrategy implements Runna
         ListIterator<TimelineEntity> it = trajectory.listIterator();
         while (it.hasNext()) {
             TimelineEntity entity = it.next();
+            if(it.previousIndex() < startingIndex){
+                continue;
+            }
+
+            if(eventDescriptions.size() != it.previousIndex()){
+                String errorMsg = "Something is wrong, the number of event descriptions in the history (%d) doesn't align with the current event index (%d)".formatted(eventDescriptions.size(), it.previousIndex());
+                log.error("Something is wrong, the number of event descriptions in the history ({}) doesn't align with the current event index ({})", eventDescriptions.size(), it.previousIndex());
+                throw new RuntimeException(errorMsg);
+            }
+
             log.info("Trajectory {} - Event {}: {}", trajectory.getId(), it.previousIndex()+1, entity.symbol());
             String description = labelEvent(entity, eventDescriptions);
             EventDescription eventDescription = new EventDescription(description, entity, config.getString("model"), it.previousIndex());

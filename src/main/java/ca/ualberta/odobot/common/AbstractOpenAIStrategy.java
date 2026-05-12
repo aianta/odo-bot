@@ -38,6 +38,8 @@ public abstract class AbstractOpenAIStrategy {
         client = new OpenAIClientBuilder()
                 .credential(new KeyCredential(this.config.getString("secretKey")))
                 .buildClient();
+
+
     }
 
     protected String executeChatCompletion(List<ChatRequestMessage> chatMessages){

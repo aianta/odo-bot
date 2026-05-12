@@ -179,7 +179,11 @@ public class EventEncoder {
         sb.append("The user interacted with a select dropdown element.\n");
         sb.append("The select dropdown HTML element looked like this:\n%s\n".formatted(selectEvent.selectElement().outerHtml()));
         SelectEvent.Option selectedOption = selectEvent.getSelectedOption();
-        sb.append("The user selected the option with the label '%s' and value '%s' from the dropdown.\n".formatted(selectedOption.label(), selectedOption.value()));
+        if(selectedOption == null){
+            sb.append("The user has not yet selected any option from the dropdown.\n");
+        }else{
+            sb.append("The user selected the option with the label '%s' and value '%s' from the dropdown.\n".formatted(selectedOption.label(), selectedOption.value()));
+        }
         return sb.toString();
     }
 

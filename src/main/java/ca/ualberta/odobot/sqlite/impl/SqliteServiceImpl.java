@@ -95,6 +95,92 @@ public class SqliteServiceImpl implements SqliteService {
         return promise.future();
     }
 
+    public Future<Set<String>> getTrajectoryIdsFromSyntheticTaskVectorsTable(){
+        Promise<Set<String>> promise = Promise.promise();
+        pool.preparedQuery("""
+            SELECT DISTINCT trajectory_id FROM synthetic_task_vectors;
+        """).execute()
+                .onSuccess(results->{
+                    Set<String> trajectoryIds = new HashSet<>();
+                    results.forEach(row->trajectoryIds.add(row.getString("trajectory_id")));
+                    promise.complete(trajectoryIds);
+                })
+                .onFailure(err->{
+                    log.error(err.getMessage(),err);
+                    promise.fail(err.getCause());
+                });
+        return promise.future();
+    }
+
+    public Future<List<JsonObject>> getSyntheticTasks(){
+        Promise<List<JsonObject>> promise = Promise.promise();
+        pool.preparedQuery("""
+            SELECT * FROM synthetic_tasks;
+        """).execute()
+                .onSuccess(results->{
+                    List<JsonObject> tasks = new ArrayList<>();
+                    results.forEach(row->{
+                        JsonObject task = new JsonObject()
+                                .put("id", row.getString("trajectory_id"))
+                                .put("task", row.getString("task"))
+                                .put("timestamp", row.getString("timestamp"))
+                                .put("model", row.getString("model"))
+                                .put("sourceIndex", row.getString("source_index"))
+                                ;
+
+                        tasks.add(task);
+                    });
+
+                    promise.complete(tasks);
+                })
+                .onFailure(err->{
+                    log.error(err.getMessage(),err);
+                    promise.fail(err.getCause());
+                });
+        return promise.future();
+    }
+
+
+    public Future<List<JsonObject>> getAPICallsForTrajectory(String trajectoryId){
+        Promise<List<JsonObject>> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            SELECT * FROM trajectory_api_calls WHERE trajectory_id = ?;
+        """).execute(Tuple.of(trajectoryId))
+                .onFailure(err->{
+                    log.error(err.getMessage(),err);
+                    promise.fail(err.getCause());
+                })
+                .onSuccess(results->{
+                   List<JsonObject> apiCalls = new ArrayList<>();
+                    results.forEach(row->{
+                       JsonObject apiCall = new JsonObject()
+                               .put("trajectoryId", row.getString("trajectory_id"))
+                               .put("eventIndex", row.getInteger("event_index"))
+                               .put("path", row.getString("path"))
+                               .put("method", row.getString("method"))
+                               .put("sourceIndex", row.getString("source_index"));
+
+                       if(row.getString("operation_name") != null){
+                           apiCall.put("operation_name", row.getString("operation_name"));
+                       }
+
+                       if(row.getString("request") != null){
+                           apiCall.put("request", new JsonObject(row.getString("request")));
+                       }
+
+                       if(row.getString("response") != null){
+                           apiCall.put("response", new JsonObject(row.getString("response")));
+                       }
+
+                       apiCalls.add(apiCall);
+                   });
+
+                    promise.complete(apiCalls);
+                });
+        return promise.future();
+    }
+
     public Future<List<JsonObject>> getAllDataEntryAnnotations(){
         Promise<List<JsonObject>> promise = Promise.promise();
         //TODO: Group by label is sneaky here and not implied by the method name
@@ -875,7 +961,7 @@ public class SqliteServiceImpl implements SqliteService {
         );
 
         Promise<Void> promise = Promise.promise();
-        return executeParameterizedQuery(promise, sql, params, mutePrivateKeyViolationError(promise));
+        return executeParameterizedQuery(promise, sql, params, ignorePrimaryKeyConstraintViolationError(promise));
     }
 
     @Override
@@ -1314,6 +1400,70 @@ public class SqliteServiceImpl implements SqliteService {
         return executeParameterizedQuery(sql, params);
     }
 
+    public Future<Set<JsonObject>> getEventDescriptionsForTrajectories(Set<String> trajectoryIds){
+        Promise<Set<JsonObject>> promise = Promise.promise();
+        StringBuilder sb = new StringBuilder();
+        Iterator<String> it = trajectoryIds.iterator();
+        while(it.hasNext()){
+            sb.append("'" +  it.next() + "'");
+            if(it.hasNext()){
+                sb.append(",");
+            }
+        }
+
+        String sql = """
+                SELECT event_index, trajectory_id, source_index, description, symbol, timestamp, model from trajectory_event_descriptions
+                WHERE trajectory_id IN (%s)
+                """.formatted(sb.toString());
+
+        pool.preparedQuery(sql).execute()
+                .onFailure(promise::fail)
+                .onSuccess(rows->{
+                    Set<JsonObject> descriptions = new HashSet<>();
+                    rows.forEach(row->descriptions.add(new JsonObject()
+                            .put("eventIndex", row.getInteger("event_index"))
+                            .put("trajectoryId", row.getString("trajectory_id"))
+                            .put("sourceIndex", row.getString("source_index"))
+                            .put("description", row.getString("description"))
+                            .put("symbol", row.getString("symbol"))
+                            .put("timestamp", row.getString("timestamp"))
+                            .put("model", row.getString("model"))
+                    ));
+                    promise.complete(descriptions);
+                });
+        return promise.future();
+    }
+
+    public Future<Set<String>> getEventDescriptionsTrajectoryIds(String sourceIndex){
+        Promise<Set<String>> promise = Promise.promise();
+        String sql = """
+                SELECT DISTINCT trajectory_id from trajectory_event_descriptions WHERE source_index = ?;
+                """;
+        pool.preparedQuery(sql).execute(Tuple.of(sourceIndex))
+                .onFailure(promise::fail)
+                .onSuccess(rows->{
+                    Set<String> trajectoryIds = new HashSet<>();
+                    rows.forEach(row->trajectoryIds.add(row.getString("trajectory_id")));
+                    promise.complete(trajectoryIds);
+                });
+        return promise.future();
+    }
+
+    public Future<Set<String>> getSyntheticTaskTrajectoryIds(String sourceIndex){
+        Promise<Set<String>> promise = Promise.promise();
+        String sql = """
+                SELECT DISTINCT trajectory_id from synthetic_tasks WHERE source_index = ?;
+                """;
+        pool.preparedQuery(sql).execute(Tuple.of(sourceIndex))
+                .onFailure(promise::fail)
+                .onSuccess(rows->{
+                    Set<String> trajectoryIds = new HashSet<>();
+                    rows.forEach(row->trajectoryIds.add(row.getString("trajectory_id")));
+                    promise.complete(trajectoryIds);
+                });
+        return promise.future();
+    }
+
     public Future<Void> saveSyntheticTask(
             String trajectoryId,
             String task,
@@ -1352,6 +1502,7 @@ public class SqliteServiceImpl implements SqliteService {
             String response,
             String sourceIndex
     ){
+        Promise<Void> promise = Promise.promise();
         String sql = """
                 INSERT INTO trajectory_api_calls (
                     trajectory_id,
@@ -1376,7 +1527,8 @@ public class SqliteServiceImpl implements SqliteService {
                 sourceIndex
         );
 
-        return executeParameterizedQuery(sql, params);
+
+        return executeParameterizedQuery(promise, sql, params, ignorePrimaryKeyConstraintViolationError(promise));
     }
 
     public Future<Void> saveTrajectoryEventDescription(
@@ -1835,6 +1987,17 @@ public class SqliteServiceImpl implements SqliteService {
     private Handler<Throwable> ignoreUniqueConstraintViolationErrorHandler(Promise promise){
         return (err)->{
             if(err.getMessage().contains("A UNIQUE constraint failed") || err.getMessage().contains("UNIQUE constraint failed")){
+                promise.complete();
+            }else{
+                log.error(err.getMessage(), err);
+                promise.fail(err.getCause());
+            }
+        };
+    }
+
+    private Handler<Throwable> ignorePrimaryKeyConstraintViolationError(Promise promise){
+        return (err)->{
+            if(err.getMessage().contains("A PRIMARY KEY constraint failed")){
                 promise.complete();
             }else{
                 log.error(err.getMessage(), err);

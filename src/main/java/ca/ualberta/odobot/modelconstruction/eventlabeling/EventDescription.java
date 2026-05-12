@@ -1,6 +1,8 @@
 package ca.ualberta.odobot.modelconstruction.eventlabeling;
 
+import ca.ualberta.odobot.semanticflow.model.Timeline;
 import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
+import io.vertx.core.json.JsonObject;
 
 import java.time.Instant;
 
@@ -9,7 +11,21 @@ public class EventDescription {
     private TimelineEntity entity;
     private String model;
     private int eventIndex;
-    private final Instant timestamp;
+    private Instant timestamp;
+
+    public static EventDescription fromJson(JsonObject json, Timeline timeline){
+        EventDescription result = new EventDescription(
+                json.getString("description"),
+                timeline.get(json.getInteger("eventIndex")),
+                json.getString("model"),
+                json.getInteger("eventIndex")
+        );
+
+        result.timestamp = Instant.parse(json.getString("timestamp"));
+        return result;
+    }
+
+
 
     public EventDescription(String description, TimelineEntity entity, String model, int eventIndex) {
         this.description = description;

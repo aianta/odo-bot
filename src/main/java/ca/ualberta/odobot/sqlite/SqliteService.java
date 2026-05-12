@@ -26,11 +26,23 @@ public interface SqliteService {
         return new SqliteServiceVertxEBProxy(vertx, address);
     }
 
+    Future<Set<String>> getTrajectoryIdsFromSyntheticTaskVectorsTable();
+
+    Future<List<JsonObject>> getSyntheticTasks();
+
     Future<Void> saveTrainingMaterial(JsonObject json);
 
     Future<JsonArray> loadTrainingMaterialsForDataset(String dataset);
 
     Future<Set<String>> getHarvestProgress(String dataset);
+
+    Future<Set<JsonObject>> getEventDescriptionsForTrajectories(Set<String> trajectoryIds);
+
+    Future<Set<String>> getEventDescriptionsTrajectoryIds(String sourceIndex);
+
+    Future<Set<String>> getSyntheticTaskTrajectoryIds(String sourceIndex);
+
+    Future<List<JsonObject>> getAPICallsForTrajectory(String trajectoryId);
 
     Future<Void> saveSyntheticTask(String trajectoryId,
                                    String task,
