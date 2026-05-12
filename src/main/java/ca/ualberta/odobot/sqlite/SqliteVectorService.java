@@ -22,7 +22,7 @@ public interface SqliteVectorService {
 
     Future<Void> readyVectorsForQuerying();
 
-    Future<List<String>> topK(int k, String queryString);
+    Future<List<JsonObject>> topK(int k, String queryString);
 
     Future<Void> embedSyntheticTasks(JsonObject tasks);
 

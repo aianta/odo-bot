@@ -190,9 +190,15 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                 .compose(results->{
 
                     List<JsonObject> syntheticTasks = results.resultAt(0);
-                    List<String> hits = results.resultAt(1);
+                    List<JsonObject> hits = results.resultAt(1);
 
-                    List<JsonObject> matchedTasks = syntheticTasks.stream().filter(task->hits.contains(task.getString("id"))).toList();
+                    List<JsonObject> matchedTasks = syntheticTasks.stream()
+                            .filter(task->hits.stream().map(json->json.getString("trajectoryId")).toList().contains(task.getString("id"))).toList();
+
+                    //Merge in query distance
+                    matchedTasks.stream().forEach(task->{
+                        task.put("distance",hits.stream().filter(hit->hit.getString("trajectoryId").equals(task.getString("id"))).findFirst().get().getFloat("distance"));;
+                    });
 
                     return Future.all(
                             matchedTasks.stream()
@@ -209,6 +215,8 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                     );
                 }).onSuccess(queryResults->{
                     List<JsonObject> _queryResults = queryResults.list();
+                    _queryResults.sort(Comparator.comparingDouble(json->json.getFloat("distance")));
+
                     rc.getDelegate().response().setStatusCode(200).end(_queryResults.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode());
                 });
     }

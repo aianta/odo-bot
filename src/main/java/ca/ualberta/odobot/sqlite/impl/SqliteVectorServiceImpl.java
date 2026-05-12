@@ -102,7 +102,7 @@ public class SqliteVectorServiceImpl  implements SqliteVectorService {
         return Future.succeededFuture();
     }
 
-    public Future<List<String>> topK(int k, String queryString){
+    public Future<List<JsonObject>> topK(int k, String queryString){
 
         EmbeddingsOptions options = new EmbeddingsOptions(List.of(queryString));
         options.setDimensions(config.getInteger("dimensions"));
@@ -117,19 +117,23 @@ public class SqliteVectorServiceImpl  implements SqliteVectorService {
 
         String sql = """
                     SELECT e.trajectory_id, v.distance FROM %s AS e
-                    JOIN vector_quantize_scan('%s','embedding', ?, ?) AS v
+                    JOIN vector_quantize_scan('%s','embedding', vector_as_f32(?), ?) AS v
                     ON e.rowid = v.rowid;
                     """.formatted(config.getString("syntheticTaskVectorTable"), config.getString("syntheticTaskVectorTable"));
         log.info("{}", sql);
         try(PreparedStatement stmt = connection.prepareStatement(sql);){
-            stmt.setBytes(1, queryVector);
+            stmt.setString(1, item.getEmbedding().stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll ).encode());
             stmt.setInt(2, k);
 
             ResultSet rs = stmt.executeQuery();
 
-            List<String> topKTrajectories = new ArrayList<>();
+            List<JsonObject> topKTrajectories = new ArrayList<>();
             while (rs.next()){
-                topKTrajectories.add(rs.getString("trajectory_id"));
+                topKTrajectories.add(
+                        new JsonObject()
+                                .put("trajectoryId", rs.getString("trajectory_id"))
+                                .put("distance", rs.getFloat("distance")));
+
                 log.info("trajectory: {} distance: {}", rs.getString("trajectory_id"), rs.getString("distance"));
             }
 
