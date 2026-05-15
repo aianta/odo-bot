@@ -45,6 +45,10 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
         };
     }
 
+    public Future<String> generateNodeAnnotation(List<String> descriptions){
+        return this.strategy.generateNodeAnnotation(descriptions);
+    }
+
     public Future<JsonObject> pickMostRelevantTask(String queryTask, List<JsonObject> options){
         return this.strategy.pickMostRelevantTask(queryTask, options);
     }

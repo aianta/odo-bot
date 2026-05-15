@@ -38,7 +38,7 @@ public class TaskPlannerVerticle extends HttpServiceVerticle {
 
     public static SqliteVectorService sqliteVectorService;
 
-    private static Neo4JUtils neo4j;
+    public static Neo4JUtils neo4j;
 
     @Override
     public String serviceName() {

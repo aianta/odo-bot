@@ -9,6 +9,8 @@ import java.util.List;
 
 public interface AIStrategy {
 
+    Future<String> generateNodeAnnotation(List<String> descriptions);
+
     Future<JsonObject> pickMostRelevantTask(String queryTask, List<JsonObject> options);
 
     Future<String> rewriteQueryTaskWithoutSpecificInputs(String queryTask, List<JsonObject> syntheticTasks);

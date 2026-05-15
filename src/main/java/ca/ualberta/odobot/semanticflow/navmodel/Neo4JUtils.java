@@ -1726,6 +1726,20 @@ public class Neo4JUtils {
         return readNodes(query, APINode.class);
     }
 
+    public void saveAnnotation(String nodeId, String annotation){
+        String sQuery = """
+                match (n) WHERE n.id = $id SET n.annotation = $annotation; 
+                """;
+
+        Query query = new Query(sQuery, parameters("id", nodeId, "annotation", annotation));
+        try(var session = driver.session(SessionConfig.forDatabase(databaseName))){
+            session.executeWrite(tx->{
+                tx.run(query);
+                return 0;
+            });
+        }
+    }
+
     public List<GraphQLNode> getAllGraphQLNodes(){
         String sQuery = """
                 match (n:GraphQLNode) return n;

@@ -38,6 +38,8 @@ public interface TaskPlannerService {
 
     Future<JsonObject> taskQueryConstructionV2(JsonObject task);
 
+    Future<String> generateNodeAnnotation(List<String> descriptions);
+
     /**
      * Given a set of nav paths, select the one which best aligns with the task description.
      *

@@ -112,6 +112,57 @@ public class SqliteServiceImpl implements SqliteService {
         return promise.future();
     }
 
+    public Future<Set<String>> getModelNodeIdsBySymbol(String symbol){
+        Promise<Set<String>> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            SELECT DISTINCT node_id FROM event_node_index
+            RIGHT JOIN trajectory_event_descriptions ON event_node_index.event_id = (trajectory_event_descriptions.trajectory_id ||  '#' || trajectory_event_descriptions.event_index)
+            WHERE symbol = ?
+        """)
+                .execute(Tuple.of(symbol))
+                .onFailure(err->{
+                    log.error(err.getMessage(),err);
+                    promise.fail(err.getCause());
+                })
+                .onSuccess(results->{
+                    Set<String> nodeIds = new HashSet<>();
+                    results.forEach(row->nodeIds.add(row.getString("node_id")));
+                    promise.complete(nodeIds);
+                })
+        ;
+        return promise.future();
+    }
+
+    public Future<Set<JsonObject>> getEventDescriptionsForNodeId(String nodeId){
+        Promise<Set<JsonObject>> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            SELECT node_id, event_id, trajectory_event_descriptions.description FROM event_node_index
+            RIGHT JOIN trajectory_event_descriptions ON event_node_index.event_id = (trajectory_event_descriptions.trajectory_id || '#' || trajectory_event_descriptions.event_index)
+            WHERE node_id = ?
+        """).execute(Tuple.of(nodeId))
+                .onFailure(err->{
+                    log.error(err.getMessage(),err);
+                    promise.fail(err.getCause());
+                })
+                .onSuccess(result->{
+
+                    Set<JsonObject> eventDescriptions = new HashSet<>();
+                    result.forEach(row->eventDescriptions.add(
+                            new JsonObject()
+                                    .put("description", row.getString("description"))
+                                    .put("nodeId", row.getString("node_id"))
+                                    .put("eventId", row.getString("event_id"))
+                            ));
+
+                    promise.complete(eventDescriptions);
+                });
+
+
+        return promise.future();
+    }
+
     public Future<List<JsonObject>> getSyntheticTasks(){
         Promise<List<JsonObject>> promise = Promise.promise();
         pool.preparedQuery("""

@@ -172,6 +172,35 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         return null;
     }
 
+    public Future<String> generateNodeAnnotation(List<String> descriptions){
+
+        int numDescriptions =config.getJsonObject("generateNodeAnnotation").getInteger("sampledDescriptions");
+
+        descriptions = descriptions.stream().limit(numDescriptions).collect(Collectors.toList());
+
+
+        List<ChatRequestMessage> chatMessages = new ArrayList<>();
+        String systemPrompt = config.getJsonObject("generateNodeAnnotation").getString("systemPrompt")
+                .formatted(descriptions.size(), descriptions.size());
+        chatMessages.add(new ChatRequestSystemMessage(systemPrompt));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("Descriptions for this step:\n");
+        Iterator<String> it = descriptions.iterator();
+        while (it.hasNext()){
+            String curr = it.next();
+            sb.append("\t* %s\n".formatted(curr));
+        }
+        sb.append("\n");
+        sb.append("Generated Instruction:\n");
+        log.info("{}", systemPrompt + sb.toString());
+
+        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+
+        return Future.succeededFuture(executeChatCompletion(chatMessages));
+
+    }
+
     public Future<JsonObject> pickMostRelevantTask(String queryTask, List<JsonObject> options){
 
         Optional<String> result = generateWithValidation(

@@ -666,86 +666,13 @@ public class NavPath {
 
 
     public String nodeToNaturalLanguage(Node curr){
-        //Need to handle collapsed click nodes first.
-        if(curr.hasLabel(Label.label("CollapsedClickNode")) && curr.hasRelationship(Direction.OUTGOING, RelationshipType.withName("PARAM"))){
-            JsonObject parameterMapping = getParameterById(getAssociatedSchemaParameterId(curr), taskParameters);
 
-            //Handle unmapped resource parameter nodes. Something we allow as of March 27, 2026 in cases where these nodes are executable by their dynamicXpaths property
-            if(parameterMapping == null){
-                return "Select the task appropriate item.";
-
-            }
-
-            String schemaName = getAssociatedSchemaName(curr);
-            return "Select the %s '%s'.".formatted(schemaName, parameterMapping.getString("query"));
-
-        }
-
-        if(curr.hasLabel(Label.label("ClickNode"))){
-
-            String btnText = "";
-            if(curr.hasProperty("text")){
-                btnText = (String) curr.getProperty("text");
-            }
-
-
-
-            //If the text property of the button isn't blank.
-            if(!btnText.isBlank() && !btnText.isEmpty() && btnText != null){
-                return "Click on the '%s' button.".formatted((String)curr.getProperty("text"));
-            }else{
-                return "Click on a button.";
-            }
-        }
-
-        if(curr.hasLabel(Label.label("DataEntryNode"))){
-            JsonObject parameterMapping = getParameterById(getAssociatedInputParameterId(curr), taskParameters);
-            if(parameterMapping == null){
-                return null;
-            }
-            String parameterLabel = getAssociatedInputParameterLabel(curr);
-            return "Enter '%s' as the %s value.".formatted(parameterMapping.getString("value"), parameterLabel);
-        }
-
-        if(curr.hasLabel(Label.label("CheckboxNode"))){
-            String parameterLabel = getAssociatedInputParameterLabel(curr);
-            return "Click the '%s' checkbox.".formatted(parameterLabel);
-        }
-
-        if (curr.hasLabel(Label.label("SelectOptionNode"))){
-            //TODO: this will break if we ever have a collapsed select option node, but we can deal with that later.
-            List<SelectEvent.Option> options = SelectOptionNode.optionsFromStrings((String[])curr.getProperty("options"));
-            String parameterLabel = getAssociatedInputParameterLabel(curr);
-            StringBuilder sb = new StringBuilder();
-            Iterator<SelectEvent.Option> optionIterator = options.iterator();
-            while (optionIterator.hasNext()){
-                SelectEvent.Option option = optionIterator.next();
-                sb.append("'%s'".formatted(option.label()));
-                if(optionIterator.hasNext()){
-                    sb.append(", ");
-                }
-            }
-
-            return "Select the appropriate option from the '%s' dropdown. The available options are: [%s]".formatted(parameterLabel, sb.toString());
-        }
-
-        if(curr.hasLabel(Label.label("RadioButtonNode"))){
-            String radioGroup = (String)curr.getProperty("radioGroup");
-            List<RadioButtonEvent.RadioButton> options = RadioButtonNode.getRadioButtonsFromStrings(Arrays.stream(((String [])curr.getProperty("relatedElements"))).toList());
-            StringBuilder optionsStringBuilder = new StringBuilder();
-            Iterator<RadioButtonEvent.RadioButton> buttonIterator = options.iterator();
-            while (buttonIterator.hasNext()){
-                RadioButtonEvent.RadioButton button = buttonIterator.next();
-                optionsStringBuilder.append("'%s'".formatted(button.getValue()));
-                if(buttonIterator.hasNext()){
-                    optionsStringBuilder.append(", ");
-                }
-            }
-
-            return "Select the appropriate option for the '%s' radio button group. The available options are: [%s]".formatted(radioGroup, optionsStringBuilder.toString());
+        if(curr.hasProperty("annotation")){
+            return (String)curr.getProperty("annotation");
         }
 
         return null;
+
     }
 
     public List<String> toNaturalLanguage(JsonArray parameters){
@@ -757,92 +684,10 @@ public class NavPath {
         Iterator<Node> it = path.nodes().iterator();
         while (it.hasNext()){
             Node curr = it.next();
-            String currNodeId = (String)curr.getProperty("id");
+            if (curr.hasProperty("annotation")){
+                result.add((String)curr.getProperty("annotation"));
 
-            //Need to handle collapsed click nodes first.
-            if(curr.hasLabel(Label.label("CollapsedClickNode")) && curr.hasRelationship(Direction.OUTGOING, RelationshipType.withName("PARAM"))){
-                JsonObject parameterMapping = getParameterById(getAssociatedSchemaParameterId(curr), parameters);
-
-                //Handle unmapped resource parameter nodes. Something we allow as of March 27, 2026 in cases where these nodes are executable by their dynamicXpaths property
-                if(parameterMapping == null){
-                    result.add("Select the task appropriate item.");
-                    continue;
-                }
-
-                String schemaName = getAssociatedSchemaName(curr);
-                result.add("Select the %s '%s'.".formatted(schemaName, parameterMapping.getString("query")));
-                continue;
             }
-
-            if(curr.hasLabel(Label.label("ClickNode"))){
-
-                String btnText = "";
-                if(curr.hasProperty("text")){
-                    btnText = (String) curr.getProperty("text");
-                }
-
-
-
-                //If the text property of the button isn't blank.
-                if(!btnText.isBlank() && !btnText.isEmpty() && btnText != null){
-                    result.add("Click on the '%s' button.".formatted((String)curr.getProperty("text")));
-                }else{
-                    result.add("Click on a button.");
-                }
-                continue;
-            }
-
-            if(curr.hasLabel(Label.label("DataEntryNode"))){
-                JsonObject parameterMapping = getParameterById(getAssociatedInputParameterId(curr), parameters);
-                if(parameterMapping == null){
-                    continue;
-                }
-                String parameterLabel = getAssociatedInputParameterLabel(curr);
-                result.add("Enter '%s' as the %s value.".formatted(parameterMapping.getString("value"), parameterLabel));
-                continue;
-            }
-
-            if(curr.hasLabel(Label.label("CheckboxNode"))){
-                String parameterLabel = getAssociatedInputParameterLabel(curr);
-                result.add("Click the '%s' checkbox.".formatted(parameterLabel));
-                continue;
-            }
-
-            if (curr.hasLabel(Label.label("SelectOptionNode"))){
-                //TODO: this will break if we ever have a collapsed select option node, but we can deal with that later.
-                List<SelectEvent.Option> options = SelectOptionNode.optionsFromStrings((String[])curr.getProperty("options"));
-                String parameterLabel = getAssociatedInputParameterLabel(curr);
-                StringBuilder sb = new StringBuilder();
-                Iterator<SelectEvent.Option> optionIterator = options.iterator();
-                while (optionIterator.hasNext()){
-                    SelectEvent.Option option = optionIterator.next();
-                    sb.append("'%s'".formatted(option.label()));
-                    if(optionIterator.hasNext()){
-                        sb.append(", ");
-                    }
-                }
-
-                result.add("Select the appropriate option from the '%s' dropdown. The available options are: [%s]".formatted(parameterLabel, sb.toString()));
-                continue;
-            }
-
-            if(curr.hasLabel(Label.label("RadioButtonNode"))){
-                String radioGroup = (String)curr.getProperty("radioGroup");
-                List<RadioButtonEvent.RadioButton> options = RadioButtonNode.getRadioButtonsFromStrings(Arrays.stream(((String [])curr.getProperty("relatedElements"))).toList());
-                StringBuilder optionsStringBuilder = new StringBuilder();
-                Iterator<RadioButtonEvent.RadioButton> buttonIterator = options.iterator();
-                while (buttonIterator.hasNext()){
-                    RadioButtonEvent.RadioButton button = buttonIterator.next();
-                    optionsStringBuilder.append("'%s'".formatted(button.getValue()));
-                    if(buttonIterator.hasNext()){
-                        optionsStringBuilder.append(", ");
-                    }
-                }
-
-                result.add("Select the appropriate option for the '%s' radio button group. The available options are: [%s]".formatted(radioGroup, optionsStringBuilder.toString()));
-                continue;
-            }
-
         }
 
         this.naturalLanguageDescription = result;

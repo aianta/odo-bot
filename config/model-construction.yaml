@@ -8,7 +8,7 @@ sqliteVectorConfig:
   extensionPath: "libs/vector"
   embeddingModel: "text-embedding-3-large"
   syntheticTaskVectorTable: 'synthetic_task_vectors'
-  distance: "L2" #Options are  distance=L1, distance=L2, distance=COSINE, distance=DOT, distance=SQUARED_L2, or distance=HAMMING
+  distance: "COSINE" #Options are  distance=L1, distance=L2, distance=COSINE, distance=DOT, distance=SQUARED_L2, or distance=HAMMING
   dimensions: 3072
   type: "FLOAT32"
   secretKey: ""

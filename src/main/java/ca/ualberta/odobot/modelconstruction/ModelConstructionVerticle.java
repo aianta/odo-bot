@@ -18,9 +18,11 @@ import ca.ualberta.odobot.modelconstruction.statelabeling.StateLabelingService;
 import ca.ualberta.odobot.semanticflow.model.NetworkEvent;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 import ca.ualberta.odobot.semanticflow.navmodel.DynamicXPath;
+import ca.ualberta.odobot.semanticflow.navmodel.Neo4JUtils;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import ca.ualberta.odobot.sqlite.SqliteVectorService;
 import ca.ualberta.odobot.taskplanner.TaskPlannerService;
+import ca.ualberta.odobot.taskplanner.TaskPlannerVerticle;
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
@@ -83,6 +85,8 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
     public static LinkLabelingService linkLabelingService;
     public static TaskPlannerService taskPlannerService;
 
+
+
     private ExecutorService executorService = Executors.newFixedThreadPool(6);
 
     private static String ODO_LSH_HOST = "172.26.130.231";
@@ -102,8 +106,6 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
         //Override odo LSH host from config file.
         ODO_LSH_HOST = _config.getString("odoLshHost");
         ODO_LSH_PORT = Integer.parseInt(_config.getString("odoLshPort"));
-
-
 
         WebClientOptions webClientOptions = new WebClientOptions()
                 .setUserAgent("OdoBot");
@@ -187,7 +189,58 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
         api.route().method(HttpMethod.GET).path("/queryTrajectories")
                 .handler(this::queryTrajectories);
 
+        api.route().method(HttpMethod.GET).path("/describeModel")
+                .handler(this::describeModel);
+
         return Completable.complete();
+
+    }
+
+    private void describeModel(RoutingContext rc){
+
+        Set<String> symbolsToInclude = Set.of("CE", "S", "DE", "CHKBX", "RAD");
+
+        Future.all(
+                        symbolsToInclude.stream()
+                                .map(nodeType->{
+                                    return sqliteService.getModelNodeIdsBySymbol(nodeType).compose(
+                                            nodeIds->{
+
+                                                return Future.all(
+                                                        nodeIds.stream()
+                                                                .map(nodeId->sqliteService.getEventDescriptionsForNodeId(nodeId)
+                                                                        .compose(descriptions->taskPlannerService.generateNodeAnnotation(descriptions.stream().map(json->json.getString("description")).toList()))
+                                                                        .compose(annotation->{
+                                                                            log.info("Annotation for {} is: \n{}", nodeId, annotation);
+                                                                            TaskPlannerVerticle.neo4j.saveAnnotation(nodeId, annotation);
+                                                                            return Future.succeededFuture(new JsonObject().put(nodeId, annotation));
+                                                                        })
+                                                                ).toList()
+
+                                                );
+                                            }
+                                    );
+
+                                }).toList()
+        ).onFailure(err->log.error(err.getMessage(), err))
+                .onSuccess(done->{
+
+
+                    JsonObject result = new JsonObject();
+                    for (CompositeFuture f: done.<CompositeFuture>list()){
+                        List<JsonObject> annotations = f.<JsonObject>list();
+                        annotations.forEach(result::mergeIn);
+                    }
+
+                    rc.getDelegate().response().setStatusCode(200).end(result.encode());
+                });
+        ;
+
+        ;
+
+
+
+
 
     }
 
