@@ -3,11 +3,15 @@ package ca.ualberta.odobot.common;
 import io.vertx.core.json.DecodeException;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
 import java.util.function.Predicate;
 
 public class AIOutputValidators {
+
+    private static final Logger log = LoggerFactory.getLogger(AIOutputValidators.class);
 
     public static Predicate<String> isValidJsonArray(){
         return (output)->{
@@ -20,6 +24,17 @@ public class AIOutputValidators {
         };
     }
 
+    public static Predicate<String> isNumber = (input)->{
+        log.info("Validating input: {}", input);
+        try{
+            Integer.parseInt(input);
+            log.info("Input is fine");
+            return true;
+        }catch (NumberFormatException e){
+            log.info("Input is not fine");
+            return false;
+        }
+    };
 
 
     /**

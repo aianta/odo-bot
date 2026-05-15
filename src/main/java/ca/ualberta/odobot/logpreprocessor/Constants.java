@@ -8,7 +8,7 @@ public class Constants {
     public static final String SNIPPET_2_XML_SERVICE_ADDRESS = "snippet2xml-service";
     public static final String DOMSEQUENCING_SERVICE_ADDRESS = "domsequencing-service";
     public static final String ELASTICSEARCH_SERVICE_ADDRESS = "elasticsearch-service";
-
+    public static final String SQLITE_VECTOR_SERVICE_ADDRESS = "sqlite-vector-service";
     public static final String TASK_PLANNER_SERVICE_ADDRESS = "task-planner-service";
     public static final String DATA_ENTRY_2_LABEL_SERVICE_ADDRESS = "dataentry2label-service";
     public static final String SNIPPET_EXTRACTOR_SERVICE_ADDRESS = "snippet-extractor-service";

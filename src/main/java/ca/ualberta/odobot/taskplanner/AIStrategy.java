@@ -9,6 +9,9 @@ import java.util.List;
 
 public interface AIStrategy {
 
+    Future<JsonObject> pickMostRelevantTask(String queryTask, List<JsonObject> options);
+
+    Future<String> rewriteQueryTaskWithoutSpecificInputs(String queryTask, List<JsonObject> syntheticTasks);
 
     Future<List<JsonObject>> getTaskSchemas(String taskDescription, List<SemanticSchema> options);
 

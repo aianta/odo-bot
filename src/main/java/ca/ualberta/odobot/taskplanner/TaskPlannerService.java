@@ -4,6 +4,7 @@ import ca.ualberta.odobot.guidance.instructions.GetUIControlState;
 import ca.ualberta.odobot.semanticflow.navmodel.Neo4JUtils;
 
 import ca.ualberta.odobot.sqlite.SqliteService;
+import ca.ualberta.odobot.sqlite.SqliteVectorService;
 import ca.ualberta.odobot.taskplanner.impl.TaskPlannerServiceImpl;
 import io.vertx.codegen.annotations.ProxyGen;
 import io.vertx.core.Future;
@@ -17,8 +18,8 @@ import java.util.List;
 @ProxyGen
 public interface TaskPlannerService {
 
-    static TaskPlannerService create(Vertx vertx, JsonObject config, SqliteService sqliteService, Neo4JUtils neo4j){
-        return new TaskPlannerServiceImpl( config, vertx, sqliteService, neo4j, Strategy.OPENAI);
+    static TaskPlannerService create(Vertx vertx, JsonObject config, SqliteService sqliteService, SqliteVectorService vectorService, Neo4JUtils neo4j){
+        return new TaskPlannerServiceImpl( config, vertx, sqliteService, vectorService, neo4j, Strategy.OPENAI);
     }
 
     static TaskPlannerService createProxy(Vertx vertx, String address){
@@ -35,6 +36,8 @@ public interface TaskPlannerService {
      */
     Future<JsonObject> taskQueryConstruction(JsonObject task);
 
+    Future<JsonObject> taskQueryConstructionV2(JsonObject task);
+
     /**
      * Given a set of nav paths, select the one which best aligns with the task description.
      *
@@ -43,6 +46,10 @@ public interface TaskPlannerService {
      * @return
      */
     Future<String> selectPath(JsonObject paths, String taskDescription);
+
+    Future<JsonObject> pickMostRelevantTask(String queryTask, List<JsonObject> options);
+
+    Future<String> rewriteQueryTaskWithoutSpecificInputs(String queryTask, List<JsonObject> syntheticTasks);
 
     Future<List<JsonObject>> getRelevantObjectParameters(String taskDescription);
 

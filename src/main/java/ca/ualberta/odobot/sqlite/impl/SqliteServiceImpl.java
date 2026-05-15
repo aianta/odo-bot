@@ -162,7 +162,7 @@ public class SqliteServiceImpl implements SqliteService {
                                .put("sourceIndex", row.getString("source_index"));
 
                        if(row.getString("operation_name") != null){
-                           apiCall.put("operation_name", row.getString("operation_name"));
+                           apiCall.put("operationName", row.getString("operation_name"));
                        }
 
                        if(row.getString("request") != null){

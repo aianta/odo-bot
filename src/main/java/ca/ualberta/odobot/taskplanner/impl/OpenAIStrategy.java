@@ -18,6 +18,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import static ca.ualberta.odobot.common.AIOutputValidators.isNumber;
+
 public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIStrategy.class);
@@ -169,6 +171,83 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
     public Future<Boolean> resolveCheckboxAction(JsonObject state, String taskDescription) {
         return null;
     }
+
+    public Future<JsonObject> pickMostRelevantTask(String queryTask, List<JsonObject> options){
+
+        Optional<String> result = generateWithValidation(
+                ()->_pickMostRelevantTask(queryTask, options),
+                List.of(isNumber),
+                config.getJsonObject("selectMostRelevantTask").getInteger("maxAttempts")
+        );
+
+        if(result.isPresent()){
+            int chosenOption = Integer.parseInt(result.get()) - 1;
+
+            return Future.succeededFuture(options.get(chosenOption));
+        }else {
+            return Future.failedFuture("Failed to select the most relevant task.");
+        }
+
+    }
+
+    public String _pickMostRelevantTask(String queryTask, List<JsonObject> options){
+        List<ChatRequestMessage> chatRequestMessages = new ArrayList<>();
+        String prompt = config.getJsonObject("selectMostRelevantTask").getString("systemPrompt");
+        chatRequestMessages.add(new ChatRequestSystemMessage(prompt));
+
+        ListIterator<JsonObject> it = options.listIterator();
+        StringBuilder sb = new StringBuilder();
+        sb.append("\nKnown similar high-level tasks:\n");
+        while (it.hasNext()){
+            JsonObject option = it.next();
+            sb.append("%d. %s\n".formatted(it.previousIndex()+1, option.getString("task")));
+        }
+
+        sb.append("\n");
+        sb.append("Given task:\n");
+        sb.append("%s\n".formatted(queryTask));
+
+        chatRequestMessages.add(new ChatRequestUserMessage(sb.toString()));
+
+        log.info("{}", prompt + sb.toString());
+
+        return executeChatCompletion(chatRequestMessages);
+
+    }
+
+
+    public Future<String> rewriteQueryTaskWithoutSpecificInputs(String queryTask, List<JsonObject> syntheticTasks){
+        List<ChatRequestMessage> chatMessages = new ArrayList<>();
+        String prompt = config.getJsonObject("rewriteQueryTaskWithoutSpecificInputs").getString("systemPrompt");
+
+        StringBuilder sb = new StringBuilder();
+        Collections.shuffle(syntheticTasks);
+        int numExamples = config.getJsonObject("rewriteQueryTaskWithoutSpecificInputs").getInteger("numExamples");
+
+        syntheticTasks
+                .stream()
+                .limit(numExamples)
+                .forEach(example->{
+                    sb.append("\t* %s\n".formatted(example.getString("task")));
+                });
+
+        prompt = prompt.formatted(sb.toString());
+        chatMessages.add(new ChatRequestSystemMessage(prompt));
+
+        String userMessage = """
+      The current task to rewrite:
+      %s
+      
+      Re-written task:
+      """.formatted(queryTask);
+
+
+        log.info("{}", prompt + userMessage);
+        chatMessages.add(new ChatRequestUserMessage(userMessage));
+
+        return Future.succeededFuture(executeChatCompletion(chatMessages));
+    }
+
 
     public Future<String> selectPath(JsonObject paths, String taskDescription){
         log.info("Selecting from nav path options...");

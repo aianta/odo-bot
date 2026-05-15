@@ -40,6 +40,10 @@ public class NavPath {
     private UUID id = UUID.randomUUID();
 
     private Iterator<Node> iterator = null;
+    private int _cursor = 0;
+
+    private JsonArray taskParameters;
+    private List<String> naturalLanguageDescription;
 
     //These are the nodes that produce instructions.
     private Predicate<Node> instructionNodePredicate = (node)->
@@ -136,21 +140,6 @@ public class NavPath {
         return List.of();
     }
 
-    public String getXPath(){
-        while (iterator.hasNext()){
-            Node node = iterator.next();
-
-            //Instances associated with start and end nodes are annotation ids not action ids, and also don't have xpaths
-            if(node.hasLabel(Label.label("StartNode")) || node.hasLabel(Label.label("EndNode"))){
-                continue;
-            }
-
-            return (String)node.getProperty("xpath");
-        }
-
-        log.warn("No xpaths left for this path");
-        return null;
-    }
 
     /**
      * Returns the id of the last node in the path from which one can attempt to compute a new execution path.
@@ -198,6 +187,7 @@ public class NavPath {
         while (cursor.hasPrevious()){
             JsonObject candidate = cursor.previous();
 
+
             //Don't start from the failed node.
             if(candidate.getString("id").equals(failedNodeId)){
                 continue;
@@ -214,7 +204,7 @@ public class NavPath {
             ) && (candidate.getInteger("outDegreesOnNext") > 1)){
 
                 log.info("Recovery Starting Node: {}", candidate.encodePrettily());
-
+                _cursor = cursor.previousIndex();
                 return Optional.of(candidate.getString("id"));
             }
 
@@ -231,7 +221,7 @@ public class NavPath {
     public Instruction getExecutionInstruction(ExecutionRequest request){
         while (iterator.hasNext()){
             Node node = iterator.next();
-
+            _cursor++;
             if(instructionNodePredicate.test(node)){
                 Instruction instruction = null;
 
@@ -337,6 +327,10 @@ public class NavPath {
                                     .collect(Collectors.toSet());
                             QueryDom _instruction = new QueryDom();
                             _instruction.dynamicXPaths = dxpaths;
+                            if(nodeToNaturalLanguage(node) != null){
+                                _instruction.naturalLanguageGuidance = nodeToNaturalLanguage(node);
+                            }
+
                             instruction = _instruction;
 
                         } else if(node.hasRelationship(Direction.OUTGOING, RelationshipType.withName("PARAM"))){
@@ -352,6 +346,9 @@ public class NavPath {
                             DynamicXPath dxpath = DynamicXPath.fromJson(new JsonObject((String) node.getProperty("dynamicXpath")));
                             QueryDom _instruction = new QueryDom();
                             _instruction.dynamicXPath = dxpath;
+                            if(nodeToNaturalLanguage(node) != null){
+                                _instruction.naturalLanguageGuidance = nodeToNaturalLanguage(node);
+                            }
                             instruction = _instruction;
                         }else {
                             DoClick _instruction = new DoClick();
@@ -666,8 +663,93 @@ public class NavPath {
                 });
     }
 
-    public List<String> toNaturalLanguage(JsonArray parameters){
 
+
+    public String nodeToNaturalLanguage(Node curr){
+        //Need to handle collapsed click nodes first.
+        if(curr.hasLabel(Label.label("CollapsedClickNode")) && curr.hasRelationship(Direction.OUTGOING, RelationshipType.withName("PARAM"))){
+            JsonObject parameterMapping = getParameterById(getAssociatedSchemaParameterId(curr), taskParameters);
+
+            //Handle unmapped resource parameter nodes. Something we allow as of March 27, 2026 in cases where these nodes are executable by their dynamicXpaths property
+            if(parameterMapping == null){
+                return "Select the task appropriate item.";
+
+            }
+
+            String schemaName = getAssociatedSchemaName(curr);
+            return "Select the %s '%s'.".formatted(schemaName, parameterMapping.getString("query"));
+
+        }
+
+        if(curr.hasLabel(Label.label("ClickNode"))){
+
+            String btnText = "";
+            if(curr.hasProperty("text")){
+                btnText = (String) curr.getProperty("text");
+            }
+
+
+
+            //If the text property of the button isn't blank.
+            if(!btnText.isBlank() && !btnText.isEmpty() && btnText != null){
+                return "Click on the '%s' button.".formatted((String)curr.getProperty("text"));
+            }else{
+                return "Click on a button.";
+            }
+        }
+
+        if(curr.hasLabel(Label.label("DataEntryNode"))){
+            JsonObject parameterMapping = getParameterById(getAssociatedInputParameterId(curr), taskParameters);
+            if(parameterMapping == null){
+                return null;
+            }
+            String parameterLabel = getAssociatedInputParameterLabel(curr);
+            return "Enter '%s' as the %s value.".formatted(parameterMapping.getString("value"), parameterLabel);
+        }
+
+        if(curr.hasLabel(Label.label("CheckboxNode"))){
+            String parameterLabel = getAssociatedInputParameterLabel(curr);
+            return "Click the '%s' checkbox.".formatted(parameterLabel);
+        }
+
+        if (curr.hasLabel(Label.label("SelectOptionNode"))){
+            //TODO: this will break if we ever have a collapsed select option node, but we can deal with that later.
+            List<SelectEvent.Option> options = SelectOptionNode.optionsFromStrings((String[])curr.getProperty("options"));
+            String parameterLabel = getAssociatedInputParameterLabel(curr);
+            StringBuilder sb = new StringBuilder();
+            Iterator<SelectEvent.Option> optionIterator = options.iterator();
+            while (optionIterator.hasNext()){
+                SelectEvent.Option option = optionIterator.next();
+                sb.append("'%s'".formatted(option.label()));
+                if(optionIterator.hasNext()){
+                    sb.append(", ");
+                }
+            }
+
+            return "Select the appropriate option from the '%s' dropdown. The available options are: [%s]".formatted(parameterLabel, sb.toString());
+        }
+
+        if(curr.hasLabel(Label.label("RadioButtonNode"))){
+            String radioGroup = (String)curr.getProperty("radioGroup");
+            List<RadioButtonEvent.RadioButton> options = RadioButtonNode.getRadioButtonsFromStrings(Arrays.stream(((String [])curr.getProperty("relatedElements"))).toList());
+            StringBuilder optionsStringBuilder = new StringBuilder();
+            Iterator<RadioButtonEvent.RadioButton> buttonIterator = options.iterator();
+            while (buttonIterator.hasNext()){
+                RadioButtonEvent.RadioButton button = buttonIterator.next();
+                optionsStringBuilder.append("'%s'".formatted(button.getValue()));
+                if(buttonIterator.hasNext()){
+                    optionsStringBuilder.append(", ");
+                }
+            }
+
+            return "Select the appropriate option for the '%s' radio button group. The available options are: [%s]".formatted(radioGroup, optionsStringBuilder.toString());
+        }
+
+        return null;
+    }
+
+    public List<String> toNaturalLanguage(JsonArray parameters){
+        this.taskParameters = parameters;
         printNavPaths(List.of(this), 10);
 
         List<String> result = new ArrayList<>();
@@ -762,6 +844,8 @@ public class NavPath {
             }
 
         }
+
+        this.naturalLanguageDescription = result;
 
         return result;
     }

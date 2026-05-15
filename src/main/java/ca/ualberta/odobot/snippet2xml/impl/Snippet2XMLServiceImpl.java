@@ -79,9 +79,9 @@ public class Snippet2XMLServiceImpl implements Snippet2XMLService {
 
     }
 
-    public Future<JsonObject> pickValue(List<JsonObject> options, String taskDescription){
+    public Future<JsonObject> pickValue(List<JsonObject> options, String taskDescription, String naturalLanguageGuidance){
         return vertx.executeBlocking(blocking->{
-            this.strategy.pickValue(options, taskDescription)
+            this.strategy.pickValue(options, taskDescription, naturalLanguageGuidance)
                     .onSuccess(blocking::complete)
                     .onFailure(blocking::fail);
         });

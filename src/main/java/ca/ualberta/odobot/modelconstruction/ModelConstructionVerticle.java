@@ -20,7 +20,9 @@ import ca.ualberta.odobot.semanticflow.model.Timeline;
 import ca.ualberta.odobot.semanticflow.navmodel.DynamicXPath;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import ca.ualberta.odobot.sqlite.SqliteVectorService;
+import ca.ualberta.odobot.taskplanner.TaskPlannerService;
 import io.reactivex.rxjava3.core.Completable;
+import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.eventbus.DeliveryOptions;
@@ -32,6 +34,7 @@ import io.vertx.ext.web.client.WebClientOptions;
 import io.vertx.rxjava3.core.eventbus.MessageConsumer;
 import io.vertx.rxjava3.ext.web.RoutingContext;
 
+import io.vertx.serviceproxy.ServiceBinder;
 import io.vertx.serviceproxy.ServiceProxyBuilder;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
@@ -54,8 +57,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.common.Predicates.stateClusteringEventFilter;
-import static ca.ualberta.odobot.logpreprocessor.Constants.ELASTICSEARCH_SERVICE_ADDRESS;
-import static ca.ualberta.odobot.logpreprocessor.Constants.SQLITE_SERVICE_ADDRESS;
+import static ca.ualberta.odobot.logpreprocessor.Constants.*;
 import static ca.ualberta.odobot.semanticflow.Utils.computeXpathNoRoot;
 
 /**
@@ -79,6 +81,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
     public static ElasticsearchService elasticsearchService;
     public static StateLabelingService stateLabelingService;
     public static LinkLabelingService linkLabelingService;
+    public static TaskPlannerService taskPlannerService;
 
     private ExecutorService executorService = Executors.newFixedThreadPool(6);
 
@@ -108,11 +111,20 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
 
         //Init SQLiteVectorService
         sqliteVectorService = SqliteVectorService.create(_config.getJsonObject("sqliteVectorConfig"));
+        new ServiceBinder(vertx.getDelegate())
+                .setAddress(SQLITE_VECTOR_SERVICE_ADDRESS)
+                .register(SqliteVectorService.class, sqliteVectorService)
+        ;
+
 
         //Init SQLite Service Proxy
         sqliteService = SqliteService.createProxy(vertx.getDelegate(), SQLITE_SERVICE_ADDRESS);
 
+        ServiceProxyBuilder taskPlanningServiceProxyBuilder = new ServiceProxyBuilder(vertx.getDelegate())
+                .setAddress(TASK_PLANNER_SERVICE_ADDRESS);
+        taskPlanningServiceProxyBuilder.setOptions(new DeliveryOptions().setSendTimeout(3600000)); //1hr timeout
 
+        taskPlannerService = taskPlanningServiceProxyBuilder.build(TaskPlannerService.class);
 
         //Init Link Labeling service
         linkLabelingService = LinkLabelingService.create(_config);
@@ -181,44 +193,147 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
 
     private void queryTrajectories(RoutingContext rc){
         int k = Integer.parseInt(rc.request().getParam("k", "5"));
-        String queryTask = rc.body().asString();
+        JsonObject request = rc.body().asJsonObject();
+        JsonArray tasks = request.getJsonArray("tasks");
 
-        Future.all(
-                sqliteService.getSyntheticTasks(),
-                sqliteVectorService.topK(k, queryTask)
-        ).onFailure(err->log.error(err.getMessage(), err))
-                .compose(results->{
 
-                    List<JsonObject> syntheticTasks = results.resultAt(0);
-                    List<JsonObject> hits = results.resultAt(1);
 
-                    List<JsonObject> matchedTasks = syntheticTasks.stream()
-                            .filter(task->hits.stream().map(json->json.getString("trajectoryId")).toList().contains(task.getString("id"))).toList();
+        sqliteService.getSyntheticTasks()
+                        //Get all the synthetic tasks, we'll use these to populate the information about matched tasks. We need this because sqliteVectorService.topK only returns trajectory ids and distances.
+                        .compose(syntheticTasks->{
 
-                    //Merge in query distance
-                    matchedTasks.stream().forEach(task->{
-                        task.put("distance",hits.stream().filter(hit->hit.getString("trajectoryId").equals(task.getString("id"))).findFirst().get().getFloat("distance"));;
-                    });
 
-                    return Future.all(
-                            matchedTasks.stream()
-                                    .map(matchedTask->sqliteService.getAPICallsForTrajectory(matchedTask.getString("id"))
-                                            .compose(apiCalls->{
-                                                JsonObject resultEntry = new JsonObject();
-                                                resultEntry.mergeIn(matchedTask);
-                                                resultEntry.put("apiCalls", apiCalls.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
+                            List<Future<CompositeFuture>> taskQueries = tasks.stream()
+                                    .map(JsonObject.class::cast)
+                                    .map(queryTask->{
+                                        return Future.all(
+                                                Future.succeededFuture(queryTask),
+                                                taskPlannerService.rewriteQueryTaskWithoutSpecificInputs(queryTask.getJsonObject("odoBotNL").getString("task"), syntheticTasks)
+                                        );
+                                    })
 
-                                                return Future.succeededFuture(resultEntry);
+                                    .map(compositeFuture->{
+
+                                        return compositeFuture.compose(results->{
+
+                                            JsonObject queryTask = results.resultAt(0);
+                                            String rewrittenTask = results.resultAt(1);
+
+                                            log.info("Rewrote task:\n{}\nto:\n{}", queryTask.getJsonObject("odoBotNL").getString("task"), rewrittenTask);
+                                            return Future.all(
+                                                    Future.succeededFuture(queryTask.getJsonObject("odoBotNL").put("rewrittenTo", rewrittenTask)),
+                                                    sqliteVectorService.topK(k, rewrittenTask).compose(
+                                                            hits-> {
+                                                                List<JsonObject> matchedTasks = syntheticTasks.stream()
+                                                                        .filter(task->hits.stream().map(json->json.getString("trajectoryId")).toList().contains(task.getString("id"))).toList();
+
+                                                                //Merge in query distance
+                                                                matchedTasks.stream().forEach(task->{
+                                                                    task.put("distance",hits.stream().filter(hit->hit.getString("trajectoryId").equals(task.getString("id"))).findFirst().get().getFloat("distance"));;
+                                                                });
+
+                                                                return Future.all(
+                                                                        matchedTasks.stream()
+                                                                                .map(matchedTask->sqliteService.getAPICallsForTrajectory(matchedTask.getString("id"))
+                                                                                        .compose(apiCalls->{
+                                                                                            JsonObject resultEntry = new JsonObject();
+                                                                                            resultEntry.mergeIn(matchedTask);
+                                                                                            resultEntry.put("apiCalls", apiCalls.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
+
+                                                                                            return Future.succeededFuture(resultEntry);
+                                                                                        })
+                                                                                )
+                                                                                .toList()
+                                                                ).compose(queryResults->{
+                                                                    List<JsonObject> _queryResults = queryResults.list();
+                                                                    _queryResults.sort(Comparator.comparingDouble(json->json.getFloat("distance")));
+                                                                    return Future.succeededFuture(_queryResults.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
+                                                                });
+                                                            }
+                                                    )
+                                            );
+
+                                                }
+                                        );
+
+
+
+
                                             })
-                                    )
-                                    .toList()
-                    );
-                }).onSuccess(queryResults->{
-                    List<JsonObject> _queryResults = queryResults.list();
-                    _queryResults.sort(Comparator.comparingDouble(json->json.getFloat("distance")));
+                                    .toList();
 
-                    rc.getDelegate().response().setStatusCode(200).end(_queryResults.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode());
-                });
+                            return Future.all(taskQueries)
+                                    .compose(_results->{
+                                        List<CompositeFuture> results = _results.list();
+
+                                        return Future.all(results.stream()
+                                                .map(result->{
+
+                                                    JsonObject query = result.resultAt(0);
+                                                    JsonArray options = result.resultAt(1);
+                                                    return taskPlannerService.pickMostRelevantTask(query.getString("task"), options.stream().map(JsonObject.class::cast).toList())
+                                                                    .compose(mostRelevantTask->{
+                                                                        JsonObject queryResult = new JsonObject();
+                                                                        queryResult.put("query", query)
+                                                                                .put("results", options)
+                                                                                .put("mostRelevant", mostRelevantTask)
+                                                                        ;
+                                                                        return Future.succeededFuture(queryResult);
+                                                                    });
+
+
+                                                }).toList());
+                                    }).compose(_results->{
+                                        return Future.succeededFuture(_results.list()
+                                                        .stream()
+                                                                .map(JsonObject.class::cast)
+                                                .collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
+                                    });
+
+
+                        })
+                .onFailure(err->{
+                    log.error(err.getMessage(),err);
+                    rc.getDelegate().response().setStatusCode(500).end(err.getMessage());
+                })
+                .onSuccess(response->rc.getDelegate().response().setStatusCode(200).end(response.encode()));
+        ;
+
+//        Future.all(
+//                taskHits
+//        ).onFailure(err->log.error(err.getMessage(), err))
+//                .compose(results->{
+//
+//                    List<JsonObject> syntheticTasks = results.resultAt(0);
+//                    List<JsonObject> hits = results.resultAt(1);
+//
+//                    List<JsonObject> matchedTasks = syntheticTasks.stream()
+//                            .filter(task->hits.stream().map(json->json.getString("trajectoryId")).toList().contains(task.getString("id"))).toList();
+//
+//                    //Merge in query distance
+//                    matchedTasks.stream().forEach(task->{
+//                        task.put("distance",hits.stream().filter(hit->hit.getString("trajectoryId").equals(task.getString("id"))).findFirst().get().getFloat("distance"));;
+//                    });
+//
+//                    return Future.all(
+//                            matchedTasks.stream()
+//                                    .map(matchedTask->sqliteService.getAPICallsForTrajectory(matchedTask.getString("id"))
+//                                            .compose(apiCalls->{
+//                                                JsonObject resultEntry = new JsonObject();
+//                                                resultEntry.mergeIn(matchedTask);
+//                                                resultEntry.put("apiCalls", apiCalls.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
+//
+//                                                return Future.succeededFuture(resultEntry);
+//                                            })
+//                                    )
+//                                    .toList()
+//                    );
+//                }).onSuccess(queryResults->{
+//                    List<JsonObject> _queryResults = queryResults.list();
+//                    _queryResults.sort(Comparator.comparingDouble(json->json.getFloat("distance")));
+//
+//                    rc.getDelegate().response().setStatusCode(200).end(_queryResults.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode());
+//                });
     }
 
 

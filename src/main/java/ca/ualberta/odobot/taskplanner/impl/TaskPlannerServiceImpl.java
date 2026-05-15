@@ -4,6 +4,7 @@ import ca.ualberta.odobot.semanticflow.navmodel.Neo4JUtils;
 
 import ca.ualberta.odobot.snippet2xml.SemanticSchema;
 import ca.ualberta.odobot.sqlite.SqliteService;
+import ca.ualberta.odobot.sqlite.SqliteVectorService;
 import ca.ualberta.odobot.taskplanner.AIStrategy;
 import ca.ualberta.odobot.taskplanner.Strategy;
 import ca.ualberta.odobot.taskplanner.TaskPlannerService;
@@ -26,20 +27,26 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
     private Neo4JUtils neo4j;
 
     private SqliteService sqlite;
+    private SqliteVectorService vectorService;
 
     private JsonObject config;
 
     private AIStrategy strategy;
 
-    public TaskPlannerServiceImpl(JsonObject config, Vertx vertx, SqliteService sqliteService, Neo4JUtils neo4j, Strategy strategy){
+    public TaskPlannerServiceImpl(JsonObject config, Vertx vertx, SqliteService sqliteService, SqliteVectorService vectorService, Neo4JUtils neo4j, Strategy strategy){
         this.vertx = vertx;
         this.config = config;
         this.sqlite = sqliteService;
         this.neo4j = neo4j;
+        this.vectorService = vectorService;
 
         this.strategy = switch (strategy){
             case OPENAI -> new OpenAIStrategy(config);
         };
+    }
+
+    public Future<JsonObject> pickMostRelevantTask(String queryTask, List<JsonObject> options){
+        return this.strategy.pickMostRelevantTask(queryTask, options);
     }
 
 
@@ -50,6 +57,140 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
                     .onSuccess(pathId->blocking.complete(pathId))
                     .onFailure(err->blocking.fail(err));
         });
+    }
+
+    public Future<String> rewriteQueryTaskWithoutSpecificInputs(String queryTask, List<JsonObject> syntheticTasks){
+        return this.strategy.rewriteQueryTaskWithoutSpecificInputs(queryTask, syntheticTasks);
+    }
+
+
+
+    public Future<JsonObject> taskQueryConstructionV2(JsonObject task){
+        log.info("Performing Task Query Construction");
+        String taskDescription = task.getString("task");
+
+        return Future.all(
+                //Resolve input parameter mappings for the task.
+                this.getInputParameterMappings(taskDescription),
+                //Resolve resource parameter mappings for the task.
+                this.getRelevantResourceParameters(taskDescription),
+                //Resolve target API calls for the task.
+
+                sqlite.getSyntheticTasks().compose(syntheticTasks->{
+                    return Future.all(
+                            Future.succeededFuture(syntheticTasks),
+                            //Rewrite the given task omitting input values in order to improve accuracy of targeting. Need synthetic tasks for this to give the LLM examples of the style to rewrite in.
+                            this.strategy.rewriteQueryTaskWithoutSpecificInputs(taskDescription, syntheticTasks)
+                    );
+                }).compose( results->{
+                        List<JsonObject> syntheticTasks = results.resultAt(0);
+                        String rewrittenTask = results.resultAt(1);
+
+                        log.info("Rewrote task:\n{}\nto:\n{}", taskDescription, rewrittenTask);
+                        task.put("rewrittenTo", rewrittenTask);
+                        return Future.all(
+                                vectorService.topK(5, rewrittenTask),
+                                Future.succeededFuture(syntheticTasks)
+                        );
+                        }
+
+                ).compose(targetingQueryResult->{
+                    List<JsonObject> hits = targetingQueryResult.resultAt(0);
+                    List<JsonObject> syntheticTasks = targetingQueryResult.resultAt(1);
+
+                    List<JsonObject> matchedTasks = syntheticTasks.stream()
+                            .filter(mTask->hits.stream().map(json->json.getString("trajectoryId")).toList().contains(mTask.getString("id"))).toList();
+
+                    //Merge in query distance
+                    matchedTasks.stream().forEach(mTask->{
+                        mTask.put("distance",hits.stream().filter(hit->hit.getString("trajectoryId").equals(mTask.getString("id"))).findFirst().get().getFloat("distance"));;
+                    });
+
+                    return Future.all(
+                            matchedTasks.stream()
+                                    .map(matchedTask->sqlite.getAPICallsForTrajectory(matchedTask.getString("id"))
+                                            .compose(apiCalls->{
+                                                JsonObject resultEntry = new JsonObject();
+                                                resultEntry.mergeIn(matchedTask);
+                                                resultEntry.put("apiCalls", apiCalls.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
+
+                                                return Future.succeededFuture(resultEntry);
+                                            })
+                                    )
+                                    .toList()
+                    ).compose(queryResults->{
+                        List<JsonObject> _queryResults = queryResults.list();
+                        _queryResults.sort(Comparator.comparingDouble(json->json.getFloat("distance")));
+                        return Future.succeededFuture(_queryResults.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
+                    }).compose(options->{
+
+                        //Pick the correct task from a list of likely options.
+                        return this.strategy.pickMostRelevantTask(taskDescription, options.stream().map(JsonObject.class::cast).toList());
+                    });
+
+                })
+
+        ).onFailure(err->{
+            log.error("Error while performing task query construction");
+            log.error(err.getMessage(), err);
+        })
+                .compose(compositeFuture -> {
+
+                    try {
+
+                        //Extract the results from the composite future.
+                        log.info("Got input parameter mappings");
+                        List<JsonObject> inputParameterMappings = compositeFuture.resultAt(0);
+                        log.info("Got resource parameters mappings");
+                        List<JsonObject> resourceParameters = compositeFuture.resultAt(1);
+                        log.info("Got API target query results");
+                        JsonArray apiCalls = new JsonArray().add(compositeFuture.resultAt(2));
+
+
+
+
+                        JsonObject result =  new JsonObject();
+                        result.put("id", task.getString("id"));
+                        result.put("userLocation", task.getString("userLocation"));
+                        result.put("targets", processTargetingResults(apiCalls));
+
+                        //Compute input parameters in task format for odobot.
+                        JsonArray parameters = inputParameterMappings.stream()
+                                .map(inputParam->{
+                                    JsonObject _param = new JsonObject()
+                                            .put("id", inputParam.getString("id"))
+                                            .put("type", "InputParameter")
+                                            .put("value", inputParam.getString("value"));
+                                    return _param;
+                                }).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+
+                        //Add schema/object parameters
+                        parameters.addAll(
+                                resourceParameters.stream()
+                                        .map(objectParam->{
+                                            JsonObject _param = new JsonObject()
+                                                    .put("id", objectParam.getString("id"))
+                                                    .put("type", "ResourceParameter")
+                                                    .put("query", objectParam.getString("query"))
+                                                    .put("name", objectParam.getString("name"));
+                                            return _param;
+                                        }).collect(JsonArray::new, JsonArray::add, JsonArray::addAll)
+                        );
+
+                        result.put("parameters", parameters);
+                        result.put("_evalId", task.getString("_evalId"));
+                        result.put("rewrittenTo", task.getString("rewrittenTo"));
+
+                        log.info("Completed task query construction!");
+
+                        return Future.succeededFuture(result);
+
+                    }catch (Exception e){
+                        log.error(e.getMessage(), e);
+                        return Future.failedFuture(e);
+                    }
+
+                });
     }
 
     public Future<JsonObject> taskQueryConstruction(JsonObject task){
@@ -119,6 +260,65 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
 
         });
 
+    }
+
+    private JsonArray processTargetingResults(JsonArray queryResults){
+
+        //Expect top-1 match
+        assert queryResults.size() == 1;
+
+        JsonObject matchedTask = queryResults.getJsonObject(0);
+        JsonArray apiCalls = matchedTask.getJsonArray("apiCalls");
+
+        //TODO: This is a hack, I am ignoring the login API call that is returned. We need proper task composition support to do this right.
+        //I am also picking the last API call. Thus our trajectories must end on the API call that completes the task.
+        apiCalls = new JsonArray().add(apiCalls.getJsonObject(apiCalls.size()-1));
+        //apiCalls = apiCalls.stream().map(JsonObject.class::cast).filter(call->!call.getString("path").equals("/login/canvas")).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+
+        assert apiCalls.size() == 1;
+
+        List<JsonObject> modelAPICalls = neo4j.getAllAPINodes()
+                .stream()
+                .map(apiNode -> new JsonObject()
+                        .put("method", apiNode.getMethod())
+                        .put("path", apiNode.getPath())
+                        .put("id", apiNode.getId().toString())
+                ).collect(Collectors.toList());
+
+        modelAPICalls.addAll(
+                neo4j.getAllGraphQLNodes()
+                        .stream()
+                        .map(graphQLNode -> new JsonObject()
+                                .put("method", graphQLNode.getMethod())
+                                .put("path", graphQLNode.getPath())
+                                .put("operationName", graphQLNode.getOperationName())
+                                .put("id", graphQLNode.getId().toString())
+                        ).toList()
+        );
+
+        JsonObject targetAPICall = apiCalls.getJsonObject(0);
+
+        //Look through the api calls in the model and find the one that matches the one returned by the targeting mechanism.
+        JsonObject targetModelAPICall = modelAPICalls.stream().filter(modelCall->{
+            if(targetAPICall.containsKey("operationName")){
+                //If there is no operationName key in the model call it cannot match a targetAPI call that does specify one.
+                if(!modelCall.containsKey("operationName")){
+                    return false;
+                }
+
+                return modelCall.getString("operationName").equals(targetAPICall.getString("operationName")) &&
+                        modelCall.getString("method").equals(targetAPICall.getString("method")) &&
+                                modelCall.getString("path").equals(targetAPICall.getString("path"));
+            }else{
+                return modelCall.getString("method").equals(targetAPICall.getString("method")) &&
+                        modelCall.getString("path").equals(targetAPICall.getString("path"));
+            }
+        }).findFirst().get();
+
+        targetModelAPICall.put("targetingTaskId", matchedTask.getString("id"))
+                .put("targetingTaskResult", matchedTask.getString("task"));
+
+        return new JsonArray().add(targetModelAPICall);
     }
 
     public Future<List<JsonObject>> getRelevantResourceParameters(String taskDescription){

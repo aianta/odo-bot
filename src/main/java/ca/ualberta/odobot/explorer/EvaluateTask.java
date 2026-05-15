@@ -163,7 +163,7 @@ public class EvaluateTask implements Runnable{
         executionRequest.setTimeout(this.taskTimeout);
 
         if(agent == Agent.ODO_BOT_NL){
-            return taskPlannerService.taskQueryConstruction(task)
+            return taskPlannerService.taskQueryConstructionV2(task)
                     .onFailure(err->{
                         log.error(err.getMessage(), err);
                         taskComplete();

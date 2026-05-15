@@ -954,21 +954,29 @@ public class RequestManager {
         return TaskPlannerVerticle.service.selectPath(paths, request.getTaskDescription())
                 .onFailure(err->log.error(err.getMessage(), err))
                 .compose(chosenPathId->{
-                    NavPath chosenPath = navPaths.stream().filter(navPath->navPath.getId().equals(UUID.fromString(chosenPathId))).findFirst().get();
-                    NavPath.saveNavPath("./%s/%s-navpath-%d.txt".formatted("execution_events", evalId, request.getPathRecomputations()).replaceAll("\\|","-"), chosenPath);
+                    Optional<NavPath> _chosenPath = navPaths.stream().filter(navPath->navPath.getId().equals(UUID.fromString(chosenPathId))).findFirst();
+                    if(_chosenPath.isPresent()){
+                        NavPath chosenPath = _chosenPath.get();
+                        NavPath.saveNavPath("./%s/%s-navpath-%d.txt".formatted("execution_events", evalId, request.getPathRecomputations()).replaceAll("\\|","-"), chosenPath);
 
-                    /**
-                     * We still need a target node so that the execution mechanism can determine when the task has been completed.
-                     * All paths produced using the new path construction logic will end in an API node.
-                     *
-                     * I think, in practice, we ultimately end up following the first path's instructions. So the last node in the first path should effectively
-                     * be our target node.
-                     */
-                    var targetNodeId = UUID.fromString(chosenPath.getPath().endNode().getProperty("id").toString());
-                    _input.setTargetNode(targetNodeId.toString());
-                    request.setTarget(targetNodeId);
+                        /**
+                         * We still need a target node so that the execution mechanism can determine when the task has been completed.
+                         * All paths produced using the new path construction logic will end in an API node.
+                         *
+                         * I think, in practice, we ultimately end up following the first path's instructions. So the last node in the first path should effectively
+                         * be our target node.
+                         */
+                        var targetNodeId = UUID.fromString(chosenPath.getPath().endNode().getProperty("id").toString());
+                        _input.setTargetNode(targetNodeId.toString());
+                        request.setTarget(targetNodeId);
 
-                    return Future.succeededFuture(chosenPath);
+                        return Future.succeededFuture(chosenPath);
+                    }else{
+                        return Future.failedFuture("No chosen path was present!");
+                    }
+
+
+
                 });
     }
 

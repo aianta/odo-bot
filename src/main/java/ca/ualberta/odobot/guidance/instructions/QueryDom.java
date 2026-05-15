@@ -13,6 +13,7 @@ public class QueryDom extends DynamicXPathInstruction{
 
     public String parameterId;
     public Set<DynamicXPath> dynamicXPaths = new HashSet<DynamicXPath>();
+    public String naturalLanguageGuidance;
 
     public boolean equals(Object o){
         if(!(o instanceof QueryDom)){
@@ -84,6 +85,9 @@ public class QueryDom extends DynamicXPathInstruction{
             result.put("xpath", this.dynamicXPath.toJson());
         }
 
+        if(this.naturalLanguageGuidance != null){
+            result.put("naturalLanguageGuidance", this.naturalLanguageGuidance);
+        }
 
         return result;
     }

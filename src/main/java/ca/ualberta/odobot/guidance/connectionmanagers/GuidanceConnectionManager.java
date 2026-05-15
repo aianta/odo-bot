@@ -508,7 +508,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                 log.info("Last result: \n{}", queryResults.get(queryResults.size()-1).getString("html"));
 
                 if(!executionRequest.containsKey("parameterId")){
-                    Snippet2XMLVerticle.snippet2XML.pickValue(queryResults, client.getRequestManager().getActiveExecutionRequest().getTaskDescription())
+                    Snippet2XMLVerticle.snippet2XML.pickValue(queryResults, client.getRequestManager().getActiveExecutionRequest().getTaskDescription(), executionRequest.getString("naturalLanguageGuidance"))
                             .onSuccess(option->{
                                 log.info("Picked option: {}", option);
                                 JsonObject clickRequest = new JsonObject()

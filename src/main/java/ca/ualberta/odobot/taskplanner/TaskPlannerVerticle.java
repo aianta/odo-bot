@@ -7,9 +7,11 @@ import ca.ualberta.odobot.semanticflow.navmodel.NavPathsConstructor;
 import ca.ualberta.odobot.semanticflow.navmodel.Neo4JUtils;
 import ca.ualberta.odobot.snippet2xml.SemanticSchema;
 import ca.ualberta.odobot.sqlite.SqliteService;
+import ca.ualberta.odobot.sqlite.SqliteVectorService;
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
+import io.vertx.core.Vertx;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -25,8 +27,7 @@ import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-import static ca.ualberta.odobot.logpreprocessor.Constants.SQLITE_SERVICE_ADDRESS;
-import static ca.ualberta.odobot.logpreprocessor.Constants.TASK_PLANNER_SERVICE_ADDRESS;
+import static ca.ualberta.odobot.logpreprocessor.Constants.*;
 
 public class TaskPlannerVerticle extends HttpServiceVerticle {
     private static final Logger log = LoggerFactory.getLogger(TaskPlannerVerticle.class);
@@ -34,6 +35,8 @@ public class TaskPlannerVerticle extends HttpServiceVerticle {
     public static TaskPlannerService service;
 
     public static SqliteService sqliteService;
+
+    public static SqliteVectorService sqliteVectorService;
 
     private static Neo4JUtils neo4j;
 
@@ -58,8 +61,10 @@ public class TaskPlannerVerticle extends HttpServiceVerticle {
         //Init SQLite Service Proxy
         sqliteService = SqliteService.createProxy(vertx.getDelegate(), SQLITE_SERVICE_ADDRESS);
 
+        sqliteVectorService = SqliteVectorService.createProxy(vertx.getDelegate(), SQLITE_VECTOR_SERVICE_ADDRESS);
+
         //Init and expose TaskPlanner Service
-        service = TaskPlannerService.create(vertx.getDelegate(), _config, sqliteService, neo4j);
+        service = TaskPlannerService.create(vertx.getDelegate(), _config, sqliteService, sqliteVectorService,  neo4j);
         new ServiceBinder(vertx.getDelegate())
                 .setAddress(TASK_PLANNER_SERVICE_ADDRESS)
                 .register(TaskPlannerService.class, service);

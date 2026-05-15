@@ -25,6 +25,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import static ca.ualberta.odobot.common.AIOutputValidators.isNumber;
+
 public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIStrategy.class);
@@ -36,17 +38,6 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
     }
 
 
-    private Predicate<String> isNumber = (input)->{
-        log.info("Validating input: {}", input);
-        try{
-            Integer.parseInt(input);
-            log.info("Input is fine");
-            return true;
-        }catch (NumberFormatException e){
-            log.info("Input is not fine");
-            return false;
-        }
-    };
 
     @Override
     public Future<JsonObject> makeSchema(List<Snippet> snippets) {
@@ -121,11 +112,11 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         }
     }
 
-    public Future<JsonObject> pickValue(List<JsonObject> options, String taskDescription){
+    public Future<JsonObject> pickValue(List<JsonObject> options, String taskDescription, String naturalLanguageGuidance){
         //Only validator we need is one that makes sure the output is a valid integer.
         List<Predicate<String>> validators = List.of(isNumber);
 
-        Optional<String> pickedValue = pickValue(options, taskDescription, validators);
+        Optional<String> pickedValue = pickValue(options, taskDescription, validators, naturalLanguageGuidance);
 
         if(pickedValue.isPresent()){
             Integer index = Integer.parseInt(pickedValue.get());
@@ -136,17 +127,23 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         return Future.failedFuture("Failed to pick an option from the list!");
     }
 
-    public Optional<String> pickValue(List<JsonObject> options, String taskDescription, List<Predicate<String>> validators){
-        return generateWithValidation(()->_pickValue(options, taskDescription), validators, config.getJsonObject("pickValue").getInteger("maxAttempts"));
+    public Optional<String> pickValue(List<JsonObject> options, String taskDescription, List<Predicate<String>> validators, String naturalLanguageGuidance){
+        return generateWithValidation(()->_pickValue(options, taskDescription, naturalLanguageGuidance), validators, config.getJsonObject("pickValue").getInteger("maxAttempts"));
     }
 
-    public String _pickValue(List<JsonObject> options, String taskDescription){
+    public String _pickValue(List<JsonObject> options, String taskDescription, String naturalLanguageGuidance){
         List<ChatRequestMessage> chatMessages = new ArrayList<>();
         chatMessages.add(new ChatRequestSystemMessage(config.getJsonObject("pickValue").getString("systemPrompt")));
 
         StringBuilder sb = new StringBuilder();
         sb.append("Task Description: \n");
         sb.append(taskDescription + "\n");
+
+        if(naturalLanguageGuidance != null){
+            sb.append("A similar step from a similar task:\n");
+            sb.append(naturalLanguageGuidance + "\n");
+        }
+
         sb.append("Options:\n");
 
         List<String> optionsStrings = options.stream().map(o -> o.getString("html")).toList();
