@@ -32,6 +32,7 @@ execution_events
 config/snippet2xml.yaml
 config/dataentry2label.yaml
 config/taskplanner.yaml
+config/model-construction.yaml
 config/parameterized-task-generator.yaml
 libs/jsoup-1.19.1-SNAPSHOT.jar
 WebVoyager*

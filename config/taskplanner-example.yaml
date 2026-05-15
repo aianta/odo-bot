@@ -1,0 +1,97 @@
+host: 0.0.0.0
+port: 8054
+apiPathPrefix: "/api/*"
+neo4j:
+  host: "bolt://localhost:7687"
+  user: "neo4j"
+  password: "odobotdb"
+openAI:
+  secretKey: ""
+  model: "gpt-5-mini-2025-08-07"
+  temperature: null
+  maxTokens: null
+  generateNodeAnnotation:
+    maxAttempts: 3
+    sampledDescriptions: 3
+    systemPrompt: |
+      You will be given %d descriptions of events that took place in the process of completing a task on a web application. All %d descriptions are of the same step. Your task is to use these descriptions to write a short 1 sentence maximum instruction in the imperative form that prompts the user to perform the described step. The instruction should be general and make no reference to specific input values.
+  selectMostRelevantTask:
+    maxAttempts: 5
+    systemPrompt: |
+      You are a web agent completing tasks on a web application. You understand how to complete a variety of high-level tasks. Currently you have been given a task and must compare it to similar high-level tasks you already know how to complete. 
+      From the following options, return the number of the known high-level task that best matches the given task. Your output should be the number of the known high-level task that matches the given task, and nothing else.
+  rewriteQueryTaskWithoutSpecificInputs:
+    maxAttempts: 5
+    numExamples: 3
+    systemPrompt: | 
+      You will be given a task to complete on a web application. Rewrite the given task stripping away any specific input values defined in the task, instead the rewritten version should focus on the generic high-level objective of the original task.  
+      Here are some examples of generic high-level task descriptions:
+      %s
+  getRelevantResourceParameters:
+    maxAttempts: 5
+    systemPrompt: |
+      What follows is a list of resource types defined on a web application. Your job is to identify instances of these resources in the description of a task to completed on the web application. The output should be a list of 2-length arrays [resource name, value] in valid JSON and nothing else. If you cannot determine an appropriate value for a resource, set the value to null.
+  getRelevantObjectParameters:
+    maxAttempts: 5
+    systemPrompt: |
+      What follows is a list of objects that exist in a web application. Your job is to identify instances of these items in the description of a task to be completed on the web application. The output should be a list of 2-length arrays [input field, value] in valid JSON and nothing else. If you cannot determine an appropriate value for a field, set the value to null.
+  getInputParameterMappings:
+    maxAttempts: 5
+    systemPrompt: |
+      What follows is a list of objects and input values that exist in a web application. Your job is to identify instances of these items in the description of a task to be completed on the web application. The output should be a list of 2-length arrays [input field, value] in valid JSON and nothing else. If you cannot determine an appropriate value for a field, set the value to null. If there are multiple similar objects listed set the same input value for all of them.
+  getTaskAPICalls:
+    maxAttempts: 5
+    systemPrompt: |
+      What follows is a list of API routes that have been captured for a web application. You will also be given a description of a task to be completed on the web application. Your job is to identify one single API route, that best characterizes the intent of the task. The output should be a single number corresponding with the API route you have identified and nothing else.
+  resolveDataEntryValue:
+    maxAttempts: 5
+    systemPrompt: |
+      You are a web agent completing tasks on a web application. 
+      You will be given a task description, as well as information about an input field, this information includes:
+      * The html of the element into which data is to be entered. 
+      * A snippet of HTML surrounding the input element. 
+      * If available examples of any known previous data entered into this field.
+      * An inferred semantic label for this field. 
+      * An inferred semantic description for the kind of data that is to be entered in this field.
+      
+      Your output should be the task-appropriate text value to enter into the specified field and nothing else.
+  selectPath:
+    maxAttempts: 5
+    systemPrompt: |
+      You are meant to complete the following task on a web application: 
+      
+      %s
+      
+      What follows is a list of possible paths to achieving the above task on the web application. Each path has an ID and a list of interactions to be applied to the web application. Your job is to select the ID of the path that best fits the description of the task above. These paths are constructed from data observed during past executions of similar tasks, therefore, sometimes button texts will include names of entities specific to those tasks. In those cases interpret the general meaning behind the button text rather than the literal text being displayed. The output should be the ID of the selected path an nothing else.
+  resolveRadioValue:
+    maxAttempts: 5
+    systemPrompt: |
+      You are a web agent completing tasks on a web application. 
+      You will be given a task description, as well as information about a radio button group, this information includes:
+        * An inferred semantic label for this radio button group.
+        * An inferred semantic description for the options in this radio button group.
+        * The html of the radio buttons in the radio button group.
+      
+        Your output should be the value of the most task-appropriate radio button selection and nothing else.
+  resolveCheckboxValue:
+    maxAttempts: 5
+    systemPrompt: |
+      You are a web agent completing tasks on a web application. 
+      You will be given a task description, as well as information about a checkbox, this information includes:
+        * An inferred semantic label for this checkbox.
+        * An inferred semantic description for meaning of the checkbox being checked or unchecked.
+        * The html of the checkbox.
+      
+        Your output should be either "check" or "uncheck" depending on what is appropriate for the task and nothing else.
+  resolveSelectOption:
+    maxAttempts: 5
+    systemPrompt: |
+      You are a web agent completing tasks on a web application. 
+      You will be given a task description, as well as information about a select element, this information includes:
+        * The html of the select element.
+        * A snippet of HTML surrounding the select element.
+        * An inferred semantic label for this field.
+        * An inferred semantic description for the kind of data that is to be selected in this field
+        * A list of the options available in the select element, including both the visible text and the underlying value for each option.
+      
+        Your output should be the task-appropriate option value to select in the specified field and nothing else.
