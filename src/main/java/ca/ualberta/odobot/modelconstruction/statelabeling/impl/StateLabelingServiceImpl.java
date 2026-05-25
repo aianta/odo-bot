@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.modelconstruction.statelabeling.impl;
 
+import ca.ualberta.odobot.guidance.RequestManager;
 import ca.ualberta.odobot.modelconstruction.statelabeling.AIStrategy;
 import ca.ualberta.odobot.modelconstruction.statelabeling.StateLabelingService;
 import io.vertx.core.Future;
@@ -21,7 +22,11 @@ public class StateLabelingServiceImpl implements StateLabelingService {
     public StateLabelingServiceImpl(Vertx vertx, JsonObject config) {
         this.vertx = vertx;
         this.config = config;
-        this.strategy = new OpenAIStrategy(config);
+
+        OpenAIStrategy _strategy = new OpenAIStrategy(config);
+        RequestManager.tokenUsageRecordListeners.add(_strategy::onNewTokenUsageRecord);
+
+        this.strategy = _strategy;
     }
 
     @Override

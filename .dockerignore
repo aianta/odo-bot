@@ -1,0 +1,10 @@
+.gradle
+.idea
+out
+odobot.db
+crawljax_out
+data_artifacts
+*.db
+execution_events
+tpg
+src/test/resources/oldtestdata

@@ -19,6 +19,7 @@ import ca.ualberta.odobot.sqlite.impl.TrainingExemplar;
 import ca.ualberta.odobot.tpg.service.TPGService;
 import edu.stanford.nlp.pipeline.StanfordCoreNLP;
 import io.reactivex.rxjava3.core.Completable;
+import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.JsonArray;
@@ -52,6 +53,7 @@ public class LogPreprocessor extends AbstractVerticle {
     public static final String API_PATH_PREFIX = "/api/*";
     private static final String HOST = "0.0.0.0";
     private static final int PORT = 8078;
+    private static final String PIPELINES_FILE = "odo-pipelines.json";
 
     private static ElasticsearchService elasticsearchService;
 
@@ -135,123 +137,95 @@ public class LogPreprocessor extends AbstractVerticle {
                     .register(ElasticsearchService.class, elasticsearchService);
 
 
-            /**
-             * Load up pipelines as defined in elasticsearch records.
-             * NOTE: Experimental
-             */
-            elasticsearchService.fetchAll(PIPELINES_INDEX)
-                    .onFailure(err -> log.error(err.getMessage(), err))
-                    .onSuccess(pipelineRecords -> {
-                        if (pipelineRecords.size() > 0) { //If we found pipeline records.
-                            pipelineRecords.forEach(record -> {
-
-                                try {
-                                    UUID id = UUID.fromString(record.getString("id"));
-                                    String slug = record.getString("slug");
-                                    String name = record.getString("name");
-                                    String className = record.getString("class");
-
-                                    Class clazz = Class.forName(className);
-                                    Constructor constructor = clazz.getConstructor(Vertx.class, UUID.class, String.class, String.class);
-
-                                    PreprocessingPipeline pipeline = (PreprocessingPipeline) constructor.newInstance(vertx, id, slug, name);
-
-                                    if(className.equals("ca.ualberta.odobot.logpreprocessor.impl.MinimalPipeline")){
-                                        minimalPipeline = pipeline;
-                                    }
 
 
-                                    mountPipeline(api, pipeline);
-                                } catch (ClassNotFoundException | NoSuchMethodException e) {
-                                    log.error(e.getMessage(), e);
-                                } catch (InvocationTargetException e) {
-                                    log.error(e.getMessage(), e);
-                                } catch (InstantiationException e) {
-                                    log.error(e.getMessage(), e);
-                                } catch (IllegalAccessException e) {
-                                    log.error(e.getMessage(), e);
+            if(vertx.getDelegate().fileSystem().existsBlocking(PIPELINES_FILE)){
+                log.info("Loading pipeline definitions from {}", PIPELINES_FILE);
+                JsonArray _pipelines = new JsonArray(vertx.getDelegate().fileSystem().readFileBlocking(PIPELINES_FILE));
+                _pipelines
+                        .stream()
+                        .map(JsonObject.class::cast)
+                        .forEach(record->{
+                            try {
+                                UUID id = UUID.fromString(record.getString("id"));
+                                String slug = record.getString("slug");
+                                String name = record.getString("name");
+                                String className = record.getString("class");
+
+                                Class clazz = Class.forName(className);
+                                Constructor constructor = clazz.getConstructor(Vertx.class, UUID.class, String.class, String.class);
+
+                                PreprocessingPipeline pipeline = (PreprocessingPipeline) constructor.newInstance(vertx, id, slug, name);
+
+                                if(className.equals("ca.ualberta.odobot.logpreprocessor.impl.MinimalPipeline")){
+                                    minimalPipeline = pipeline;
                                 }
 
 
-                            });
+                                mountPipeline(api, pipeline);
+                            } catch (ClassNotFoundException | NoSuchMethodException e) {
+                                log.error(e.getMessage(), e);
+                            } catch (InvocationTargetException e) {
+                                log.error(e.getMessage(), e);
+                            } catch (InstantiationException e) {
+                                log.error(e.getMessage(), e);
+                            } catch (IllegalAccessException e) {
+                                log.error(e.getMessage(), e);
+                            }
+                        });
+            }else{
+                //Otherwise initalize the Pipelines file.
+                //Create simple preprocessing pipeline
+                PreprocessingPipeline simplePipeline = new SimplePreprocessingPipeline(
+                        vertx, UUID.randomUUID(), "test", "test pipeline"
+                );
 
-                            //ADD NEW PIPELINES HERE
+                PreprocessingPipeline enhancedEmbeddingsPipeline = new EnhancedEmbeddingPipeline(
+                        vertx, UUID.randomUUID(), "embeddings-v2", "First pipeline to use the /activitylabels/v2/ deep service endpoint"
+                );
 
-//                            PreprocessingPipeline minimalPipeline = new MinimalPipeline(
-//                                    vertx, UUID.randomUUID(), "minimal-v1", "Minimal pipeline with no semantic extractors"
-//                            );
-//
-//                            mountPipeline(api, minimalPipeline);
-//                            elasticsearchService.saveIntoIndex(List.of(minimalPipeline.toJson()), PIPELINES_INDEX).onSuccess(saved->log.info("saved minimal pipeline to index"));
+                PreprocessingPipeline tfidfPipeline = new TFIDFPipeline(
+                        vertx, UUID.randomUUID(), "activity-labels-v3", "First pipeline to use tfidf /activitylabels/v3/ deep service endpoint"
+                );
 
-//                PreprocessingPipeline hierarchicalPipeline = new HierarchicalClusteringPipeline(
-//                        vertx, UUID.randomUUID(), "hierarchical-v1", "Hierarchical clustering technique that blends domain knowledge from the DOM with unsupervised learning to determine activity labels. "
-//                );
-//
-//                mountPipeline(api, hierarchicalPipeline);
-//                elasticsearchService.saveIntoIndex(List.of(hierarchicalPipeline.toJson()),PIPELINES_INDEX).onSuccess(saved->log.info("saved effect overhaul pipeline to index"));
+                PreprocessingPipeline temporalPipeline = new TemporalPipeline(
+                        vertx, UUID.randomUUID(), "temporal-v1", "First pipeline to add info about previous and next entities."
+                );
 
+                PreprocessingPipeline tfidfTemporalPipeline = new TFIDFPipeline(
+                        vertx, UUID.randomUUID(), "tfidf-temporal-v1", "First tfidf pipeline to add info about previous and next entities."
+                );
 
-                        } else { //Otherwise create a new pipeline
-                            //Create simple preprocessing pipeline
-                            PreprocessingPipeline simplePipeline = new SimplePreprocessingPipeline(
-                                    vertx, UUID.randomUUID(), "test", "test pipeline"
-                            );
+                PreprocessingPipeline effectOverhaulPipeline = new EffectOverhaulPipeline(
+                        vertx, UUID.randomUUID(), "effect-overhaul-v1", "Split Effect representation in 'added' and 'removed' lists to allow more meaningful embedding."
+                );
 
-                            PreprocessingPipeline enhancedEmbeddingsPipeline = new EnhancedEmbeddingPipeline(
-                                    vertx, UUID.randomUUID(), "embeddings-v2", "First pipeline to use the /activitylabels/v2/ deep service endpoint"
-                            );
+                PreprocessingPipeline hierarchicalPipeline = new HierarchicalClusteringPipeline(
+                        vertx, UUID.randomUUID(), "hierarchical-v1", "Hierarchical clustering technique that blends domain knowledge from the DOM with unsupervised learning to determine activity labels. "
+                );
 
-                            PreprocessingPipeline tfidfPipeline = new TFIDFPipeline(
-                                    vertx, UUID.randomUUID(), "activity-labels-v3", "First pipeline to use tfidf /activitylabels/v3/ deep service endpoint"
-                            );
-
-                            PreprocessingPipeline temporalPipeline = new TemporalPipeline(
-                                    vertx, UUID.randomUUID(), "temporal-v1", "First pipeline to add info about previous and next entities."
-                            );
-
-                            PreprocessingPipeline tfidfTemporalPipeline = new TFIDFPipeline(
-                                    vertx, UUID.randomUUID(), "tfidf-temporal-v1", "First tfidf pipeline to add info about previous and next entities."
-                            );
-
-                            PreprocessingPipeline effectOverhaulPipeline = new EffectOverhaulPipeline(
-                                    vertx, UUID.randomUUID(), "effect-overhaul-v1", "Split Effect representation in 'added' and 'removed' lists to allow more meaningful embedding."
-                            );
-
-                            PreprocessingPipeline hierarchicalPipeline = new HierarchicalClusteringPipeline(
-                                    vertx, UUID.randomUUID(), "hierarchical-v1", "Hierarchical clustering technique that blends domain knowledge from the DOM with unsupervised learning to determine activity labels. "
-                            );
-
-                            minimalPipeline = new MinimalPipeline(
-                                    vertx, UUID.randomUUID(), "minimal-v1", "Minimal pipeline with no semantic extractors"
-                            );
-
-                            elasticsearchService.saveIntoIndex(List.of(
-                                    simplePipeline.toJson(),
-                                    enhancedEmbeddingsPipeline.toJson(),
-                                    tfidfPipeline.toJson(),
-                                    temporalPipeline.toJson(),
-                                    tfidfTemporalPipeline.toJson(),
-                                    effectOverhaulPipeline.toJson(),
-                                    hierarchicalPipeline.toJson(),
-                                    minimalPipeline.toJson()
-                            ), PIPELINES_INDEX).onSuccess(done -> {
-                                log.info("Registered pipeline(s) in elasticsearch");
-                            });
-
-                            mountPipeline(api, enhancedEmbeddingsPipeline);
-                            mountPipeline(api, simplePipeline);
-                            mountPipeline(api, tfidfPipeline);
-                            mountPipeline(api, temporalPipeline);
-                            mountPipeline(api, tfidfTemporalPipeline);
-                            mountPipeline(api, effectOverhaulPipeline);
-                            mountPipeline(api, hierarchicalPipeline);
-                            mountPipeline(api, minimalPipeline);
-
-                        }
+                minimalPipeline = new MinimalPipeline(
+                        vertx, UUID.randomUUID(), "minimal-v1", "Minimal pipeline with no semantic extractors"
+                );
 
 
-                    });
+                List<JsonObject> pipelines = List.of(
+                        simplePipeline.toJson(),
+                        enhancedEmbeddingsPipeline.toJson(),
+                        tfidfPipeline.toJson(),
+                        temporalPipeline.toJson(),
+                        tfidfTemporalPipeline.toJson(),
+                        effectOverhaulPipeline.toJson(),
+                        hierarchicalPipeline.toJson(),
+                        minimalPipeline.toJson()
+                );
+
+
+                vertx.getDelegate().fileSystem().writeFile(PIPELINES_FILE,
+                        Buffer.buffer(pipelines.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode())
+                );
+            }
+
 
 
             //Define API routes

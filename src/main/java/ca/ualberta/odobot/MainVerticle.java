@@ -11,6 +11,7 @@ import ca.ualberta.odobot.mind2web.Mind2WebService;
 import ca.ualberta.odobot.snippet2xml.Snippet2XMLVerticle;
 import ca.ualberta.odobot.snippets.Extractor;
 import ca.ualberta.odobot.taskplanner.TaskPlannerVerticle;
+import ca.ualberta.odobot.telemetry.TelemetryVerticle;
 import ca.ualberta.odobot.tpg.TPGVerticle;
 import ca.ualberta.odobot.web.OdoSightSupport;
 import ca.ualberta.odobot.web.TimelineWebApp;
@@ -124,6 +125,11 @@ public class MainVerticle extends ConfigurableVerticle {
         if(_config.getBoolean("ModelConstruction")){
             ModelConstructionVerticle modelConstructionVerticle = new ModelConstructionVerticle();
             vertx.deployVerticle(modelConstructionVerticle);
+        }
+
+        if(_config.getBoolean("Telemetry")){
+            TelemetryVerticle telemetryVerticle = new TelemetryVerticle();
+            vertx.deployVerticle(telemetryVerticle);
         }
 
         return Completable.complete();

@@ -2,6 +2,7 @@ package ca.ualberta.odobot.taskplanner.impl;
 
 import ca.ualberta.odobot.common.AIOutputValidators;
 import ca.ualberta.odobot.common.AbstractOpenAIStrategy;
+import ca.ualberta.odobot.common.UsageTelemetry;
 import ca.ualberta.odobot.snippet2xml.SemanticSchema;
 import ca.ualberta.odobot.taskplanner.AIStrategy;
 import com.azure.ai.openai.models.ChatRequestMessage;
@@ -20,7 +21,7 @@ import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.common.AIOutputValidators.isNumber;
 
-public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy {
+public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy, UsageTelemetry {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIStrategy.class);
 

@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.guidance.llm.uicontrol.impl;
 
+import ca.ualberta.odobot.guidance.RequestManager;
 import ca.ualberta.odobot.guidance.llm.uicontrol.AIStrategy;
 import ca.ualberta.odobot.guidance.llm.uicontrol.Strategy;
 import ca.ualberta.odobot.guidance.llm.uicontrol.UIControlLLMService;
@@ -7,6 +8,8 @@ import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+
+import static ca.ualberta.odobot.guidance.RequestManager.tokenUsageRecord;
 
 public class UIControlLLMServiceImpl implements UIControlLLMService {
 
@@ -16,7 +19,11 @@ public class UIControlLLMServiceImpl implements UIControlLLMService {
     public  UIControlLLMServiceImpl(Vertx vertx, JsonObject config, Strategy strategy){
         this.vertx = vertx;
         this.strategy = switch (strategy){
-            case OPENAI ->  new OpenAIStrategy(config);
+            case OPENAI -> {
+                OpenAIStrategy _strategy = new OpenAIStrategy(config);
+                RequestManager.tokenUsageRecordListeners.add(_strategy::onNewTokenUsageRecord);
+                yield _strategy;
+            }
         };
     }
 

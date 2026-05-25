@@ -3,6 +3,7 @@ package ca.ualberta.odobot.dataentry2label.impl;
 import ca.ualberta.odobot.dataentry2label.AIStrategy;
 import ca.ualberta.odobot.dataentry2label.DataEntry2LabelService;
 import ca.ualberta.odobot.dataentry2label.Strategy;
+import ca.ualberta.odobot.guidance.RequestManager;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonArray;
@@ -18,7 +19,11 @@ public class DataEntry2LabelServiceImpl implements DataEntry2LabelService {
     public DataEntry2LabelServiceImpl(Vertx vertx, JsonObject config, Strategy strategy){
         this.vertx = vertx;
         this.strategy = switch (strategy){
-            case OPENAI -> new OpenAIStrategy(config);
+            case OPENAI -> {
+                OpenAIStrategy _strategy = new OpenAIStrategy(config);
+                RequestManager.tokenUsageRecordListeners.add(_strategy::onNewTokenUsageRecord);
+                yield _strategy;
+            }
         };
     }
 

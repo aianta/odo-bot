@@ -124,6 +124,8 @@ public class EvaluateTask implements Runnable{
                 odoXClient.getGuidanceConnectionManager().dumpHistory();
                 this.taskComplete();
 
+
+
             });
 
             odoXClient.getRequestManager().setEvaluationComplete(evaluationPromise);

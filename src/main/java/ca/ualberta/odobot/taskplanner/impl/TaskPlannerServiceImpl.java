@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.taskplanner.impl;
 
+import ca.ualberta.odobot.guidance.RequestManager;
 import ca.ualberta.odobot.semanticflow.navmodel.Neo4JUtils;
 
 import ca.ualberta.odobot.snippet2xml.SemanticSchema;
@@ -18,6 +19,8 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 import java.util.stream.Collectors;
+
+import static ca.ualberta.odobot.guidance.RequestManager.tokenUsageRecord;
 
 public class TaskPlannerServiceImpl implements TaskPlannerService {
 
@@ -41,7 +44,11 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
         this.vectorService = vectorService;
 
         this.strategy = switch (strategy){
-            case OPENAI -> new OpenAIStrategy(config);
+            case OPENAI -> {
+                OpenAIStrategy _strategy = new OpenAIStrategy(config);
+                RequestManager.tokenUsageRecordListeners.add(_strategy::onNewTokenUsageRecord);
+                yield _strategy;
+            }
         };
     }
 

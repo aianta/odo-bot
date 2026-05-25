@@ -1,6 +1,7 @@
 package ca.ualberta.odobot.dataentry2label.impl;
 
 import ca.ualberta.odobot.common.AbstractOpenAIStrategy;
+import ca.ualberta.odobot.common.UsageTelemetry;
 import ca.ualberta.odobot.dataentry2label.AIStrategy;
 import com.azure.ai.openai.models.ChatRequestMessage;
 import com.azure.ai.openai.models.ChatRequestSystemMessage;
@@ -23,7 +24,7 @@ import java.util.regex.Pattern;
 import static ca.ualberta.odobot.common.AIOutputValidators.*;
 import static ca.ualberta.odobot.taskplanner.impl.OpenAIStrategy.extractJSONFromResponse;
 
-public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy {
+public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy, UsageTelemetry {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIStrategy.class);
 

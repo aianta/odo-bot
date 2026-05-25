@@ -18,7 +18,7 @@ import io.vertx.rxjava3.ext.web.Router;
 import io.vertx.rxjava3.ext.web.RoutingContext;
 import io.vertx.rxjava3.ext.web.handler.BodyHandler;
 import io.vertx.rxjava3.ext.web.handler.LoggerHandler;
-import org.eclipse.rdf4j.query.algebra.In;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

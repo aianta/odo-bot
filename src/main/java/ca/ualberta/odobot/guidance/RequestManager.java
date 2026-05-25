@@ -18,6 +18,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -44,6 +45,10 @@ public class RequestManager {
     public List<NavPath> getNavPaths() {
         return navPaths;
     }
+
+    public static TokenUsageRecord tokenUsageRecord;
+
+    public static List<Consumer<TokenUsageRecord>> tokenUsageRecordListeners = new ArrayList<>();
 
     public RequestManager(OdoClient client){
         this.client = client;
@@ -77,6 +82,10 @@ public class RequestManager {
         return this;
     }
 
+    private void setupTokenUsageRecord(){
+        tokenUsageRecord = new TokenUsageRecord();
+        tokenUsageRecordListeners.forEach(listener->listener.accept(tokenUsageRecord));
+    }
 
     public ExecutionRequest getActiveExecutionRequest() {
         return activeExecutionRequest;
@@ -89,6 +98,7 @@ public class RequestManager {
 
     public void addNewRequest(ExecutionRequest request){
         setActiveExecutionRequest(request);
+        setupTokenUsageRecord();
         client.getEventConnectionManager().startTransmitting()//Turn on event transmissions //TODO -> if something behaves oddly, this is a likely area where things might go wrong. Not sure when transmission should start.
                 .compose(done->client.getEventConnectionManager().getLocalContext())
                 .compose(localContext->getExecutionPath(request, localContext))

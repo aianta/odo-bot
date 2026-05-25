@@ -13,7 +13,7 @@ import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
-import org.apache.commons.collections.list.AbstractLinkedList;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

@@ -1,6 +1,7 @@
 package ca.ualberta.odobot.modelconstruction.statelabeling.impl;
 
 import ca.ualberta.odobot.common.AbstractOpenAIStrategy;
+import ca.ualberta.odobot.common.UsageTelemetry;
 import ca.ualberta.odobot.modelconstruction.statelabeling.AIStrategy;
 import com.azure.ai.openai.models.ChatRequestMessage;
 import com.azure.ai.openai.models.ChatRequestSystemMessage;
@@ -14,7 +15,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 
-public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy {
+public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy, UsageTelemetry {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIStrategy.class);
 

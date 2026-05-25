@@ -1,7 +1,9 @@
 plugins {
     id 'java'
+    id 'application'
     id 'idea'
-    id "io.vertx.vertx-plugin" version "1.4.0"
+    id("com.gradleup.shadow") version "8.3.10"
+//    id "io.vertx.vertx-plugin" version "1.4.0"
 }
 
 group 'org.example'
@@ -15,33 +17,52 @@ repositories {
     }
 }
 
-vertx{
-    launcher = "ca.ualberta.odobot.Launcher"
-    mainVerticle = "ca.ualberta.odobot.MainVerticle"
-    vertxVersion = "4.5.9"
-    redeploy = false
-//    jvmArgs = ["-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"]
-}
-
 
 
 ext{
     corenlp_version = "4.4.0"
     neo4j_version = "5.19.0"
+    vertx_version = "4.5.9"
 }
 
-dependencies {
-    implementation "io.vertx:vertx-web"
-    implementation 'io.vertx:vertx-rx-java3'
-    implementation 'io.vertx:vertx-config'
-    implementation 'io.vertx:vertx-web-client'
-    implementation 'io.vertx:vertx-service-proxy'
-    implementation 'io.vertx:vertx-jdbc-client'
-    implementation 'io.vertx:vertx-config'
-    implementation 'io.vertx:vertx-config-yaml'
+def mainVerticleName = "ca.ualberta.odobot.MainVerticle"
+def mainClassName = "ca.ualberta.odobot.Launcher"
+application{
+    mainClass = mainClassName
+}
 
-    annotationProcessor 'io.vertx:vertx-codegen:4.5.9:processor'
-    annotationProcessor 'io.vertx:vertx-service-proxy:4.5.9'
+
+
+shadowJar{
+    manifest{
+        attributes "Main-Class": mainClassName
+        attributes "Main-Verticle": mainVerticleName
+    }
+    zip64 = true
+
+    mergeServiceFiles {
+        include 'META-INF/services/io.vertx.core.spi.VerticleFactory'
+    }
+}
+
+run {
+    args = ['run', mainVerticleName, "--launcher-class=$mainClass"]
+}
+
+
+dependencies {
+    // Source: https://mvnrepository.com/artifact/io.vertx/vertx-web
+    implementation group: 'io.vertx', name: 'vertx-web', version: vertx_version
+    implementation group:'io.vertx', name: 'vertx-rx-java3', version: vertx_version
+    implementation group:'io.vertx', name: 'vertx-config', version: vertx_version
+    implementation group:'io.vertx', name: 'vertx-web-client', version: vertx_version
+    implementation group:'io.vertx', name: 'vertx-service-proxy', version: vertx_version
+    implementation group:'io.vertx', name:'vertx-jdbc-client', version: vertx_version
+    implementation group:'io.vertx', name:'vertx-config', version: vertx_version
+    implementation group:'io.vertx', name:'vertx-config-yaml', version: vertx_version
+
+    annotationProcessor "io.vertx:vertx-codegen:$vertx_version:processor"
+    annotationProcessor "io.vertx:vertx-service-proxy:$vertx_version"
 
     /**
      * Logging
@@ -103,8 +124,8 @@ dependencies {
     implementation 'org.seleniumhq.selenium:selenium-java:4.16.1'
 
     // https://mvnrepository.com/artifact/org.eclipse.rdf4j/rdf4j-bom
-    implementation group: 'org.eclipse.rdf4j', name: 'rdf4j-bom', version: '4.2.0', ext: 'pom'
-    implementation("org.eclipse.rdf4j:rdf4j-storage:4.2.0")
+    //implementation group: 'org.eclipse.rdf4j', name: 'rdf4j-bom', version: '4.2.0', ext: 'pom'
+    //implementation("org.eclipse.rdf4j:rdf4j-storage:4.2.0")
 
     /*
      * Neo4j

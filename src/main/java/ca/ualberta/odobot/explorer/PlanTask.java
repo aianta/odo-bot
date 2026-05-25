@@ -8,8 +8,7 @@ import ca.ualberta.odobot.explorer.model.Operation;
 import ca.ualberta.odobot.explorer.model.ToDo;
 import io.vertx.core.Promise;
 import io.vertx.core.json.JsonObject;
-import org.apache.regexp.RE;
-import org.apache.zookeeper.Op;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

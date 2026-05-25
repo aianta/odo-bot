@@ -1,6 +1,7 @@
 package ca.ualberta.odobot.snippet2xml.impl;
 
 import ca.ualberta.odobot.common.AbstractOpenAIStrategy;
+import ca.ualberta.odobot.common.UsageTelemetry;
 import ca.ualberta.odobot.snippet2xml.AIStrategy;
 import ca.ualberta.odobot.snippet2xml.SemanticObject;
 import ca.ualberta.odobot.snippet2xml.SemanticSchema;
@@ -27,7 +28,7 @@ import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.common.AIOutputValidators.isNumber;
 
-public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy {
+public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy, UsageTelemetry {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIStrategy.class);
 

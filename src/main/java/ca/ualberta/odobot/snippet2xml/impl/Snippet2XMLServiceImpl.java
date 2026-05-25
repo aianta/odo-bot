@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.snippet2xml.impl;
 
+import ca.ualberta.odobot.guidance.RequestManager;
 import ca.ualberta.odobot.snippet2xml.*;
 import ca.ualberta.odobot.snippets.Snippet;
 import io.vertx.core.Future;
@@ -11,6 +12,8 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
+import static ca.ualberta.odobot.guidance.RequestManager.tokenUsageRecord;
+
 
 public class Snippet2XMLServiceImpl implements Snippet2XMLService {
 
@@ -21,8 +24,15 @@ public class Snippet2XMLServiceImpl implements Snippet2XMLService {
     public Snippet2XMLServiceImpl(Vertx vertx, JsonObject config, Strategy strategy){
         this.vertx = vertx;
         this.strategy = switch (strategy){
-            case OPENAI -> new OpenAIStrategy(config);
+            case OPENAI -> {
+                OpenAIStrategy _strategy = new OpenAIStrategy(config);
+                RequestManager.tokenUsageRecordListeners.add(_strategy::onNewTokenUsageRecord);
+
+                yield _strategy;
+            }
         };
+
+
 
     }
 
