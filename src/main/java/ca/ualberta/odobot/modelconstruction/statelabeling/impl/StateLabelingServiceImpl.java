@@ -24,7 +24,7 @@ public class StateLabelingServiceImpl implements StateLabelingService {
         this.config = config;
 
         OpenAIStrategy _strategy = new OpenAIStrategy(config);
-        RequestManager.tokenUsageRecordListeners.add(_strategy::onNewTokenUsageRecord);
+        RequestManager.newTokenUsageRecordListeners.add(_strategy::onNewTokenUsageRecord);
 
         this.strategy = _strategy;
     }

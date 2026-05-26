@@ -13,8 +13,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
-import static ca.ualberta.odobot.guidance.RequestManager.tokenUsageRecord;
-
 
 public class Snippet2XMLServiceImpl implements Snippet2XMLService {
 
@@ -28,7 +26,7 @@ public class Snippet2XMLServiceImpl implements Snippet2XMLService {
         this.strategy = switch (strategy){
             case OPENAI -> {
                 OpenAIStrategy _strategy = new OpenAIStrategy(config);
-                RequestManager.tokenUsageRecordListeners.add(_strategy::onNewTokenUsageRecord);
+                RequestManager.newTokenUsageRecordListeners.add(_strategy::onNewTokenUsageRecord);
                 model = _strategy.getModel();
                 yield _strategy;
             }

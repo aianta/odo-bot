@@ -50,7 +50,8 @@ public class RequestManager {
 
     public static TokenUsageRecord tokenUsageRecord;
 
-    public static List<Consumer<TokenUsageRecord>> tokenUsageRecordListeners = new ArrayList<>();
+    public static List<Consumer<TokenUsageRecord>> finalTokenUsageRecordListeners = new ArrayList<>();
+    public static List<Consumer<TokenUsageRecord>> newTokenUsageRecordListeners = new ArrayList<>();
 
     public RequestManager(OdoClient client){
         this.client = client;
@@ -103,8 +104,13 @@ public class RequestManager {
     }
 
     private void setupTokenUsageRecord(){
+        if(tokenUsageRecord != null){
+            //Report the last tokenUsage record to anyone tabulating token useage records across multiple requests.
+            finalTokenUsageRecordListeners.forEach(listener->listener.accept(tokenUsageRecord));
+        }
+
         tokenUsageRecord = new TokenUsageRecord();
-        tokenUsageRecordListeners.forEach(listener->listener.accept(tokenUsageRecord));
+        newTokenUsageRecordListeners.forEach(listener->listener.accept(tokenUsageRecord));
     }
 
     public ExecutionRequest getActiveExecutionRequest() {

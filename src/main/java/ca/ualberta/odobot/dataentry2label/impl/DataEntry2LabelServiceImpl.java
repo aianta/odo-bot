@@ -1,6 +1,5 @@
 package ca.ualberta.odobot.dataentry2label.impl;
 
-import ca.ualberta.odobot.common.UsageTelemetry;
 import ca.ualberta.odobot.dataentry2label.AIStrategy;
 import ca.ualberta.odobot.dataentry2label.DataEntry2LabelService;
 import ca.ualberta.odobot.dataentry2label.Strategy;
@@ -23,7 +22,7 @@ public class DataEntry2LabelServiceImpl implements DataEntry2LabelService {
         this.strategy = switch (strategy){
             case OPENAI -> {
                 OpenAIStrategy _strategy = new OpenAIStrategy(config);
-                RequestManager.tokenUsageRecordListeners.add(_strategy::onNewTokenUsageRecord);
+                RequestManager.newTokenUsageRecordListeners.add(_strategy::onNewTokenUsageRecord);
                 model = _strategy.getModel();
                 yield _strategy;
             }

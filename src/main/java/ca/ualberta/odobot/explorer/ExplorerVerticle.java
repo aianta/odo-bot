@@ -1,12 +1,20 @@
 package ca.ualberta.odobot.explorer;
 
 import ca.ualberta.odobot.common.HttpServiceVerticle;
+import ca.ualberta.odobot.dataentry2label.impl.DataEntry2LabelServiceImpl;
+import ca.ualberta.odobot.guidance.RequestManager;
+import ca.ualberta.odobot.guidance.TokenUsageRecord;
+import ca.ualberta.odobot.snippet2xml.impl.Snippet2XMLServiceImpl;
 import ca.ualberta.odobot.taskplanner.TaskPlannerService;
+import ca.ualberta.odobot.taskplanner.impl.TaskPlannerServiceImpl;
+import ca.ualberta.odobot.telemetry.TelemetryVerticle;
+import ca.ualberta.odobot.telemetry.model.ExperimentResults;
 import io.reactivex.rxjava3.core.Completable;
 
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
+import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.DeliveryOptions;
 import io.vertx.core.http.HttpMethod;
 import io.vertx.core.http.HttpServerOptions;
@@ -31,6 +39,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.*;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -54,6 +63,8 @@ public class ExplorerVerticle extends HttpServiceVerticle {
     public String configFilePath(){
         return "config/explorer.yaml";
     }
+
+    private static TokenUsageRecord tokenUsageRecord;
 
 
     public Completable onStart(){
@@ -1003,17 +1014,32 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
     }
 
+    private void updateExperimentTokenUsageRecord(TokenUsageRecord taskRecord ){
+        tokenUsageRecord.merge(taskRecord);
+    }
+
     private void evaluateHandler(RoutingContext rc){
         JsonObject config = rc.get("config");
         if(config == null){
             config = rc.body().asJsonObject();
         }
 
+        //Create a folder inside the output artifacts folder for this experiment based on the experiment id
+        String experimentId = (config.containsKey("experimentId")?config.getString("experimentId"):"default");
+        String experimentFolderPath = _config.getString("outputArtifactsFolder") + "/" + experimentId;
+        String experimentResultsFolderPath = experimentFolderPath + "/results";
+
+        tokenUsageRecord = new TokenUsageRecord();
+        if(RequestManager.finalTokenUsageRecordListeners.isEmpty()){
+            RequestManager.finalTokenUsageRecordListeners.add(this::updateExperimentTokenUsageRecord);
+        }
+
+
         String _agent = rc.request().getParam("agent", "odoBot");
         Agent agent = Agent.fromField(_agent);
 
         JsonArray tasks = getTasks(config.getJsonArray("tasks"), agent);
-
+        Instant experimentStartTime = Instant.now();
 
         Future f = null;
 
@@ -1022,10 +1048,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
             JsonObject _task = taskIterator.next();
 
             try{
-                //Create a folder inside the output artifacts folder for this experiment based on the experiment id
-                String experimentId = (config.containsKey("experimentId")?config.getString("experimentId"):"default");
-                String experimentFolderPath = _config.getString("outputArtifactsFolder") + "/" + experimentId;
-                String experimentResultsFolderPath = experimentFolderPath + "/results";
+
                 if(!vertx.fileSystem().existsBlocking(experimentFolderPath)){
                     Files.createDirectories(Path.of(experimentFolderPath));
                 }
@@ -1078,12 +1101,92 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
         }
 
-        if(f != null){
-            f.onSuccess(done->rc.response().setStatusCode(200).end());
-        }else{
-            //It's possible that there are no tasks left to resume from for this experiment, in which case f will be null here.
-            rc.getDelegate().response().setStatusCode(200).end();
+
+        if (f == null){
+            f = Future.succeededFuture();
         }
+
+        JsonObject finalConfig1 = config;
+        f.onSuccess(done->{
+
+            if(finalConfig1.containsKey("evaluationDatasetPath")){
+                try{
+                    Instant experimentEndTime = Instant.now();
+
+                    //Evaluate all experiment results
+                    String evalScriptPath = "%s/%s".formatted(_config.getString("evaluationScriptsPath"), _config.getString("evaluationScript"));
+                    String datasetPath = "%s/%s".formatted(_config.getString("evaluationScriptsPath"), finalConfig1.getString("evaluationDatasetPath"));
+                    String experimentResultsFile = experimentResultsFolderPath + "/" + experimentId + "-results.json";
+
+                    ProcessBuilder pb = new ProcessBuilder(
+                            "python",
+                            "-X", "utf8",
+                            evalScriptPath,
+                            "-t", datasetPath,
+                            "-o", experimentResultsFile,
+                            "--odobot-execution-events",
+                            "%s".formatted(experimentFolderPath)
+                    );
+
+                    StringBuilder commandSb = new StringBuilder();
+                    pb.command().forEach(part->commandSb.append(part + " "));
+                    log.info("{}", commandSb.toString());
+
+                    pb.inheritIO();
+                    Process evalProcess = pb.start();
+                    evalProcess.waitFor();
+
+                    JsonObject experimentResult = new JsonObject(Buffer.buffer(Files.readAllBytes(Path.of(experimentResultsFile))));
+
+                    //Report Experiment level telemetry
+                    ExperimentResults experimentResults = new ExperimentResults();
+                    experimentResults.setExperimentId(experimentId);
+                    experimentResults.setAgent(_config.getString("agentName"));
+                    experimentResults.setAgentVersion(_config.getString("agentVersion"));
+                    experimentResults.setNumTasks(tasks.size());
+                    experimentResults.setDuration(experimentEndTime.toEpochMilli() - experimentStartTime.toEpochMilli());
+                    experimentResults.setTotalInputTokens(tokenUsageRecord.inputTokens);
+                    experimentResults.setTotalOutputTokens(tokenUsageRecord.outputTokens);
+                    experimentResults.setTotalCombinedTokens(tokenUsageRecord.totalTokens);
+                    experimentResults.setSuccessfulTasks(experimentResult.getInteger("correct"));
+                    experimentResults.setFailedTasks(experimentResult.getInteger("incorrect"));
+                    experimentResults.setEvaluationDatasetId(finalConfig1.getString("evaluationDatasetPath"));
+
+                    //Compute a string that details the OpenAI models used to compute this task.
+                    Set<String> modelInfo = new HashSet<>();
+                    modelInfo.add(Snippet2XMLServiceImpl.model);
+                    modelInfo.add(DataEntry2LabelServiceImpl.model);
+                    modelInfo.add(TaskPlannerServiceImpl.model);
+                    StringBuilder modelSb = new StringBuilder();
+                    Iterator<String> modelStringsIt = modelInfo.iterator();
+                    while (modelStringsIt.hasNext()) {
+                        String modelString = modelStringsIt.next();
+                        modelSb.append(modelString);
+                        if(modelStringsIt.hasNext()){
+                            modelSb.append(", ");
+                        }
+                    }
+                    experimentResults.setModel(modelSb.toString());
+
+                    if (finalConfig1.containsKey("notes")){
+                        experimentResults.setNotes(finalConfig1.getString("notes"));
+                    }
+
+                    TelemetryVerticle.telemetryService.reportExperimentResults(experimentResults);
+
+                    rc.getDelegate().response().setStatusCode(200).end();
+                }catch (Exception e){
+                    log.error(e.getMessage(), e);
+                    rc.getDelegate().response().setStatusCode(500).end();
+                }
+            }else {
+                rc.getDelegate().response().setStatusCode(200).end();
+            }
+
+
+
+        });
+
 
     }
 

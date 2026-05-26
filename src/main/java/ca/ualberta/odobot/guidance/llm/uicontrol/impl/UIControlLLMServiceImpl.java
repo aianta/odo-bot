@@ -9,8 +9,6 @@ import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
-import static ca.ualberta.odobot.guidance.RequestManager.tokenUsageRecord;
-
 public class UIControlLLMServiceImpl implements UIControlLLMService {
 
     private AIStrategy strategy;
@@ -21,7 +19,7 @@ public class UIControlLLMServiceImpl implements UIControlLLMService {
         this.strategy = switch (strategy){
             case OPENAI -> {
                 OpenAIStrategy _strategy = new OpenAIStrategy(config);
-                RequestManager.tokenUsageRecordListeners.add(_strategy::onNewTokenUsageRecord);
+                RequestManager.newTokenUsageRecordListeners.add(_strategy::onNewTokenUsageRecord);
                 yield _strategy;
             }
         };

@@ -20,8 +20,6 @@ import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import static ca.ualberta.odobot.guidance.RequestManager.tokenUsageRecord;
-
 public class TaskPlannerServiceImpl implements TaskPlannerService {
 
     private static final Logger log = LoggerFactory.getLogger(TaskPlannerServiceImpl.class);
@@ -47,7 +45,7 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
         this.strategy = switch (strategy){
             case OPENAI -> {
                 OpenAIStrategy _strategy = new OpenAIStrategy(config);
-                RequestManager.tokenUsageRecordListeners.add(_strategy::onNewTokenUsageRecord);
+                RequestManager.newTokenUsageRecordListeners.add(_strategy::onNewTokenUsageRecord);
                 model = _strategy.getModel();
                 yield _strategy;
             }

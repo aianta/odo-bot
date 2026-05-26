@@ -45,7 +45,7 @@ public class ExperimentResults extends JsonObject {
     }
 
     public ExperimentResults setTimestamp(String timestamp) {
-        put("timestamp", timestamp);
+        put("Timestamp", timestamp);
         return this;
     }
 

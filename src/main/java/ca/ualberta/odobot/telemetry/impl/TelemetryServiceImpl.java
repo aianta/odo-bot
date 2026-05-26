@@ -72,9 +72,9 @@ public class TelemetryServiceImpl implements TelemetryService {
                 client.indices()
                         .create(create->create.index(index)
 
-                                        .mappings(m->m.properties(
-                                "timestamp", value->value.date(d->d.format("basic_date_time_no_millis||epoch_millis"))
-                        ))
+                                        .mappings(m->m
+                                                        .properties("Details.mismatch_report", p->p.object(o->o.enabled(false)))
+                                        )
                         );
 
             }
