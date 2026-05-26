@@ -1,0 +1,3 @@
+[submodule "canvas-evaluation-scripts"]
+	path = canvas-evaluation-scripts
+	url = git@github.com:aianta/canvas-evaluation-scripts.git
