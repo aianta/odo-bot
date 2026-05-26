@@ -34,6 +34,10 @@ public abstract class AbstractOpenAIStrategy {
     protected List<Consumer<Integer>> completionTokenConsumers = new ArrayList<>();
     protected List<Consumer<Integer>> totalTokenConsumers = new ArrayList<>();
 
+    public String getModel(){
+     return model;
+    }
+
     public AbstractOpenAIStrategy(JsonObject config){
         this.config = config.getJsonObject("openAI");
         this.model = this.config.getString("model");
@@ -52,7 +56,7 @@ public abstract class AbstractOpenAIStrategy {
 
         addPromptTokenConsumer(r::addInputTokens);
         addCompletionTokenConsumer(r::addOutputTokens);
-        addTotalTokenConsumer(r::addOutputTokens);
+        addTotalTokenConsumer(r::addTotalTokens);
     }
 
     public void addPromptTokenConsumer(Consumer<Integer> promptTokenConsumer) {

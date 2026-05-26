@@ -4,6 +4,8 @@ import java.util.function.Consumer;
 
 public interface UsageTelemetry {
 
+    String getModel();
+
     void addPromptTokenConsumer(Consumer<Integer> promptTokenConsumer);
 
     void addCompletionTokenConsumer(Consumer<Integer> completionTokenConsumer);

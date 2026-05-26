@@ -636,7 +636,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
     }
 
     private static void saveQueryDomResult(OdoClient client, JsonObject executionRequest, JsonArray queryResults, String sourceNodeId, JsonObject clickRequest){
-        String filename = "./%s/%s-query-dom-%s.txt".formatted("execution_events", client.getRequestManager().getEvalId(),sourceNodeId).replaceAll("\\|","-");
+        String filename = "%s/%s-query-dom-%s.txt".formatted(client.getRequestManager().getExperimentFolderPath(), client.getRequestManager().getEvalId(),sourceNodeId).replaceAll("\\|","-");
         File fout = new File(filename);
         try(FileWriter fw = new FileWriter(fout);
             BufferedWriter bw = new BufferedWriter(fw);

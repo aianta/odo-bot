@@ -31,10 +31,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
-import java.util.ListIterator;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -61,7 +58,15 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
     public Completable onStart(){
         super.onStart();
+
+
+
         try{
+
+            //Setup Output Artifact folder if it doesn't exist, this is where experimental results will go.
+            if(!vertx.fileSystem().existsBlocking(_config.getString("outputArtifactsFolder"))){
+                Files.createDirectories(Path.of(_config.getString("outputArtifactsFolder")));
+            }
 
             //Init task planner service proxy
             ServiceProxyBuilder taskplannerServiceProxyBuilder = new ServiceProxyBuilder(vertx.getDelegate())
@@ -97,7 +102,9 @@ public class ExplorerVerticle extends HttpServiceVerticle {
             });
 
 
-        }catch (Exception e){
+        }catch (IOException e){
+            log.error(e.getMessage(),e);
+        } catch (Exception e){
             log.error(e.getMessage(), e);
         }
 
@@ -1014,13 +1021,42 @@ public class ExplorerVerticle extends HttpServiceVerticle {
         while (taskIterator.hasNext()){
             JsonObject _task = taskIterator.next();
 
+            try{
+                //Create a folder inside the output artifacts folder for this experiment based on the experiment id
+                String experimentId = (config.containsKey("experimentId")?config.getString("experimentId"):"default");
+                String experimentFolderPath = _config.getString("outputArtifactsFolder") + "/" + experimentId;
+                String experimentResultsFolderPath = experimentFolderPath + "/results";
+                if(!vertx.fileSystem().existsBlocking(experimentFolderPath)){
+                    Files.createDirectories(Path.of(experimentFolderPath));
+                }
+
+                //Inside each experiment folder create a new folder specifically for evaluation script results.
+                if(!vertx.fileSystem().existsBlocking(experimentResultsFolderPath)){
+                    Files.createDirectories(Path.of(experimentResultsFolderPath));
+                }
+
+                //Check to see if this task has already been run for this experiment.
+                List<String> experimentOutputs = vertx.fileSystem().readDirBlocking(experimentFolderPath);
+                //If it's been run before, there will be files whose names contain this task instance id.
+                List<String> taskOutputs = experimentOutputs.stream().filter(path->path.contains(_task.getString("id"))).toList();
+                if(!taskOutputs.isEmpty()){ //So if we find any of those, skip this task.
+                    log.info("Output artifacts for task {} in experiment {} already exist, skipping this task.",_task.getString("id"),  experimentId);
+                    continue;
+                }
+
+            }catch (IOException e){
+                log.error("Failed to create experiment folder!");
+                log.error(e.getMessage(),e);
+            }
+
+
             if(f == null){
                 Promise<Void> promise = Promise.promise();
                 promise.future()
                         .onFailure(err->serverError(rc, err));
                 f = promise.future();
 
-                EvaluateTask evaluateTask = new EvaluateTask(config, _task, promise, taskPlannerService, agent);
+                EvaluateTask evaluateTask = new EvaluateTask(_config, config, _task, promise, taskPlannerService, agent);
                 Thread thread = new Thread(evaluateTask);
                 thread.start();
             }else{
@@ -1031,7 +1067,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                     promise.future()
                             .onFailure(err->serverError(rc, err));
 
-                    EvaluateTask evaluateTask = new EvaluateTask(finalConfig, _task, promise, taskPlannerService, agent);
+                    EvaluateTask evaluateTask = new EvaluateTask(_config, finalConfig, _task, promise, taskPlannerService, agent);
                     Thread thread = new Thread(evaluateTask);
                     thread.start();
 
@@ -1042,7 +1078,13 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
         }
 
-        f.onSuccess(done->rc.response().setStatusCode(200).end());
+        if(f != null){
+            f.onSuccess(done->rc.response().setStatusCode(200).end());
+        }else{
+            //It's possible that there are no tasks left to resume from for this experiment, in which case f will be null here.
+            rc.getDelegate().response().setStatusCode(200).end();
+        }
+
     }
 
     /**

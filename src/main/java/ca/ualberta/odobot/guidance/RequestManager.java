@@ -35,6 +35,8 @@ public class RequestManager {
     private ExecutionRequest activeExecutionRequest = null;
 
     private String evalId = null;
+    private String experimentId = null;
+    private String experimentFolderPath = null;
 
     private List<NavPath> navPaths = null;
 
@@ -54,6 +56,24 @@ public class RequestManager {
         this.client = client;
         this.client.setRequestManager(this);
 
+    }
+
+    public String getExperimentFolderPath() {
+        return experimentFolderPath;
+    }
+
+    public RequestManager setExperimentFolderPath(String experimentFolderPath) {
+        this.experimentFolderPath = experimentFolderPath;
+        return this;
+    }
+
+    public String getExperimentId() {
+        return experimentId;
+    }
+
+    public RequestManager setExperimentId(String experimentId) {
+        this.experimentId = experimentId;
+        return this;
     }
 
     public String getEvalId() {
@@ -77,7 +97,7 @@ public class RequestManager {
         });
         this.evaluationComplete.future().onFailure(err->{
             log.error(err.getMessage(), err);
-            client.getEventConnectionManager().getEventProcessor().saveRawEvents("./%s/%s.json".formatted("execution_events", evalId).replaceAll("\\|","-"));
+            client.getEventConnectionManager().getEventProcessor().saveRawEvents("%s/%s.json".formatted(this.experimentFolderPath, evalId).replaceAll("\\|","-"));
         });
         return this;
     }
@@ -228,7 +248,7 @@ public class RequestManager {
                 navPaths = List.of(navPaths.get(0)); //Only return/use the first path for execution. TODO: leveraging multiple paths + using them to fallback could be an interesting direction to explore.
 
                 //Save the navPath for this request.
-                NavPath.saveNavPath("./%s/%s-navpath.txt".formatted("execution_events", evalId).replaceAll("\\|","-"), navPaths.get(0));
+                NavPath.saveNavPath("%s/%s-navpath.txt".formatted(this.experimentFolderPath, evalId).replaceAll("\\|","-"), navPaths.get(0));
 
                 /**
                  * We still need a target node so that the execution mechanism can determine when the task has been completed.
@@ -331,7 +351,7 @@ public class RequestManager {
                 navPaths = List.of(navPaths.get(0)); //Only return/use the first path for execution. TODO: leveraging multiple paths + using them to fallback could be an interesting direction to explore.
 
                 //Save the navPath for this request.
-                NavPath.saveNavPath("./%s/%s-navpath.txt".formatted("execution_events", evalId).replaceAll("\\|","-"), navPaths.get(0));
+                NavPath.saveNavPath("%s/%s-navpath.txt".formatted(this.experimentFolderPath, evalId).replaceAll("\\|","-"), navPaths.get(0));
 
                 /**
                  * We still need a target node so that the execution mechanism can determine when the task has been completed.
@@ -484,7 +504,7 @@ public class RequestManager {
 
             if(evalId != null && evaluationComplete != null){
                 //If the evaluation ID is not null (meaning this was an evaluation run, output the raw events from this execution to the appropriate folder.
-                client.getEventConnectionManager().getEventProcessor().saveRawEvents("./%s/%s.json".formatted("execution_events", evalId).replaceAll("\\|","-"));
+                client.getEventConnectionManager().getEventProcessor().saveRawEvents("%s/%s.json".formatted(this.experimentFolderPath, evalId).replaceAll("\\|","-"));
                 evaluationComplete.complete();
             }
             client.getEventConnectionManager().getEventProcessor().clearRawEvents();
@@ -568,7 +588,7 @@ public class RequestManager {
                 }else{
                     navPaths = List.of(navPaths.get(0));
 
-                    NavPath.saveNavPath("./%s/%s-navpath-%d.txt".formatted("execution_events", evalId, request.getPathRecomputations()).replaceAll("\\|","-"), navPaths.get(0));
+                    NavPath.saveNavPath("%s/%s-navpath-%d.txt".formatted(this.experimentFolderPath, evalId, request.getPathRecomputations()).replaceAll("\\|","-"), navPaths.get(0));
 
                     var targetNodeId = UUID.fromString(navPaths.get(0).getPath().endNode().getProperty("id").toString());
                     request.setTarget(targetNodeId);
@@ -901,7 +921,7 @@ public class RequestManager {
                         navPaths = List.of(navPaths.get(0)); //Only return/use the first path for execution.
 
                         //Write the new path down for debugging
-                        NavPath.saveNavPath("./%s/%s-navpath-%d.txt".formatted("execution_events", evalId, request.getPathRecomputations()).replaceAll("\\|","-"), navPaths.get(0));
+                        NavPath.saveNavPath("%s/%s-navpath-%d.txt".formatted(this.experimentFolderPath, evalId, request.getPathRecomputations()).replaceAll("\\|","-"), navPaths.get(0));
 
 
                         /**
@@ -967,7 +987,7 @@ public class RequestManager {
                     Optional<NavPath> _chosenPath = navPaths.stream().filter(navPath->navPath.getId().equals(UUID.fromString(chosenPathId))).findFirst();
                     if(_chosenPath.isPresent()){
                         NavPath chosenPath = _chosenPath.get();
-                        NavPath.saveNavPath("./%s/%s-navpath-%d.txt".formatted("execution_events", evalId, request.getPathRecomputations()).replaceAll("\\|","-"), chosenPath);
+                        NavPath.saveNavPath("%s/%s-navpath-%d.txt".formatted(this.experimentFolderPath, evalId, request.getPathRecomputations()).replaceAll("\\|","-"), chosenPath);
 
                         /**
                          * We still need a target node so that the execution mechanism can determine when the task has been completed.

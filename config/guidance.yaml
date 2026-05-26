@@ -3,12 +3,3 @@ port: 7080
 apiPathPrefix: "/api/*"
 jksPath: "./ssl/odobot-server.jks"
 jksPassword: "odobotserver"
-openAI:
-  secretKey: ""
-  model: ""
-  temperature: null
-  topP: 0.01
-  maxTokens: null
-  computeTargetUIControlState:
-    maxAttempts: 5
-    systemPrompt:

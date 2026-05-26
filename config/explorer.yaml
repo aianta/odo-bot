@@ -1,3 +1,8 @@
 host: 0.0.0.0
 port: 8076
 apiPathPrefix: "/api/*"
+evaluationScriptsPath: "./canvas-evaluation-scripts"
+evaluationScript: "evaluation_script.py"
+outputArtifactsFolder: "./execution_events"
+agentName: "OdoBot"
+agentVersion: "may-26-2026"

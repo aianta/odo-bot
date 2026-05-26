@@ -5,6 +5,7 @@ import io.vertx.codegen.annotations.DataObject;
 import io.vertx.core.json.JsonObject;
 
 import java.text.SimpleDateFormat;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 
@@ -30,6 +31,24 @@ public class TaskInstanceResults extends JsonObject {
     private String result;
     private long timestampLong;
     private String timestamp;
+    private JsonObject details;
+    private String taskDescription;
+    private String model;
+
+    public TaskInstanceResults setModel(String model) {
+        put("Model", model);
+        return this;
+    }
+
+    public TaskInstanceResults setTaskDescription(String taskDescription) {
+        put("TaskDescription", taskDescription);
+        return this;
+    }
+
+    public TaskInstanceResults setDetails(JsonObject details) {
+        put("Details", details);
+        return this;
+    }
 
     public TaskInstanceResults setId(String id) {
         put("Id", id);
@@ -88,6 +107,8 @@ public class TaskInstanceResults extends JsonObject {
 
     public TaskInstanceResults setDuration(long duration) {
         put("Duration", duration);
+        Duration _duration = Duration.ofMillis(duration);
+        put("DurationString", "%dm%ds".formatted(_duration.toMinutes(), _duration.toSecondsPart()));
         return this;
     }
 

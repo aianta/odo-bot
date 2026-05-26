@@ -97,7 +97,7 @@ public abstract class AbstractConnectionManager implements ConnectionManager {
 
     protected void saveHistory(String source){
         if(client.getRequestManager().getEvalId() != null){
-            String fileName = "./%s/%s-%s-history.json".formatted("execution_events", client.getRequestManager().getEvalId(),source).replaceAll("\\|","-");
+            String fileName = "%s/%s-%s-history.json".formatted(client.getRequestManager().getExperimentFolderPath(), client.getRequestManager().getEvalId(),source).replaceAll("\\|","-");
             File fout = new File(fileName);
             try(FileWriter fw = new FileWriter(fout);
                 BufferedWriter bw = new BufferedWriter(fw);

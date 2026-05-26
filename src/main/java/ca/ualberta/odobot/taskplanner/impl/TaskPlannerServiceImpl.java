@@ -35,6 +35,7 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
     private JsonObject config;
 
     private AIStrategy strategy;
+    public static String model;
 
     public TaskPlannerServiceImpl(JsonObject config, Vertx vertx, SqliteService sqliteService, SqliteVectorService vectorService, Neo4JUtils neo4j, Strategy strategy){
         this.vertx = vertx;
@@ -47,6 +48,7 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
             case OPENAI -> {
                 OpenAIStrategy _strategy = new OpenAIStrategy(config);
                 RequestManager.tokenUsageRecordListeners.add(_strategy::onNewTokenUsageRecord);
+                model = _strategy.getModel();
                 yield _strategy;
             }
         };

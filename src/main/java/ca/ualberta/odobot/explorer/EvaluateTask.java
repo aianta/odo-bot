@@ -1,14 +1,22 @@
 package ca.ualberta.odobot.explorer;
 
+import ca.ualberta.odobot.dataentry2label.DataEntry2LabelService;
+import ca.ualberta.odobot.dataentry2label.impl.DataEntry2LabelServiceImpl;
 import ca.ualberta.odobot.guidance.OdoClient;
 import ca.ualberta.odobot.guidance.OnlineEventProcessor;
+import ca.ualberta.odobot.guidance.RequestManager;
 import ca.ualberta.odobot.guidance.WebSocketConnection;
 import ca.ualberta.odobot.guidance.execution.ExecutionParameter;
 import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
+import ca.ualberta.odobot.snippet2xml.impl.Snippet2XMLServiceImpl;
 import ca.ualberta.odobot.taskplanner.TaskPlannerService;
+import ca.ualberta.odobot.taskplanner.impl.TaskPlannerServiceImpl;
+import ca.ualberta.odobot.telemetry.TelemetryVerticle;
+import ca.ualberta.odobot.telemetry.model.TaskInstanceResults;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
+import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.openqa.selenium.By;
@@ -26,10 +34,10 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Iterator;
-import java.util.ListIterator;
-import java.util.UUID;
+import java.time.Instant;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.explorer.ExploreTask.ODOSIGHT_OPTIONS_LOGUI_SERVER_PASSWORD_FIELD_ID;
@@ -49,6 +57,7 @@ public class EvaluateTask implements Runnable{
     String odoXControlsUrl;
     String odoXOptionsUrl;
     JsonObject config;
+    JsonObject exploreVerticleConfig;
     JsonArray tasks;
     JsonObject task;
 
@@ -56,12 +65,15 @@ public class EvaluateTask implements Runnable{
     OdoClient odoXClient;
     long taskTimeout;
     boolean headless;
+    String experimentFolderPath;
+    String experimentResultsFolderPath;
 
     Promise<Void> promise;
 
+    Instant startTime;
     TaskPlannerService taskPlannerService;
 
-    public EvaluateTask(JsonObject config, JsonObject task, Promise<Void> promise, TaskPlannerService taskPlannerService, Agent agent){
+    public EvaluateTask(JsonObject exploreVerticleConfig, JsonObject config, JsonObject task, Promise<Void> promise, TaskPlannerService taskPlannerService, Agent agent){
         this.agent = agent;
         this.taskPlannerService = taskPlannerService;
         this.config = config;
@@ -74,6 +86,9 @@ public class EvaluateTask implements Runnable{
         this.odoXControlsUrl = "moz-extension://"+dynamicAddonId.toString()+"/popup/bot/bot.html";
         this.odoXOptionsUrl = "moz-extension://"+dynamicAddonId.toString()+"/options/options.html";
 
+        this.experimentFolderPath = exploreVerticleConfig.getString("outputArtifactsFolder") + "/" + (config.containsKey("experimentId")?config.getString("experimentId"):"default");
+        this.experimentResultsFolderPath = experimentFolderPath + "/results";
+        this.exploreVerticleConfig = exploreVerticleConfig;
     }
 
     @Override
@@ -112,6 +127,7 @@ public class EvaluateTask implements Runnable{
     public void startTask(JsonObject task){
 
         log.info("Starting task {}", task.getString("_evalId"));
+        this.startTime = Instant.now();
 
         taskToExecutionRequest(task)
                 .onFailure(err->{
@@ -122,18 +138,122 @@ public class EvaluateTask implements Runnable{
             Promise<Void> evaluationPromise = Promise.promise();
             evaluationPromise.future().onComplete((done)->{
                 odoXClient.getGuidanceConnectionManager().dumpHistory();
-                this.taskComplete();
 
+
+                //Perform task evaluation after the task is complete.
+                //If a ground truth dataset is specified.
+                if(config.containsKey("evaluationDatasetPath")){
+                    Instant endTime = Instant.now();
+
+                    try{
+                        String evalScriptPath = "%s/%s".formatted(exploreVerticleConfig.getString("evaluationScriptsPath"), exploreVerticleConfig.getString("evaluationScript"));
+                        String datasetPath = "%s/%s".formatted(exploreVerticleConfig.getString("evaluationScriptsPath"), config.getString("evaluationDatasetPath"));
+                        String taskInstanceResultFile = "%s/%s".formatted(this.experimentResultsFolderPath, task.getString("id") + "-result.json");
+
+                        ProcessBuilder pb = new ProcessBuilder(
+                                "python",
+                                "-X", "utf8",
+                                evalScriptPath,
+                                "-t", datasetPath,
+                                "-o", taskInstanceResultFile,
+                                "--single-odobot-execution-events",
+                                "%s/%s.json".formatted(this.experimentFolderPath, odoXClient.getRequestManager().getEvalId()).formatted().replaceAll("\\|","-"),
+                                "--single-odobot-task-query-construction",
+                                "%s/%s-task-query-construction-result.json".formatted(this.experimentFolderPath, odoXClient.getRequestManager().getEvalId()).replaceAll("\\|","-")
+                        );
+
+                        StringBuilder commandSb = new StringBuilder();
+                        pb.command().forEach(part->commandSb.append(part + " "));
+                        log.info("{}", commandSb.toString());
+
+                        pb.inheritIO();
+                        Process evalProcess = pb.start();
+                        evalProcess.waitFor();
+
+                        JsonObject taskResult = new JsonObject(Buffer.buffer(Files.readAllBytes(Path.of(taskInstanceResultFile))));
+                        TaskInstanceResults taskResultTelemetry = new TaskInstanceResults();
+                        taskResultTelemetry.setDetails(taskResult.getJsonArray("details").getJsonObject(0));
+                        taskResultTelemetry.setResult(taskResult.getInteger("correct") == 1?"PASS":"FAIL");
+                        taskResultTelemetry.setExperimentId(odoXClient.getRequestManager().getExperimentId());
+                        taskResultTelemetry.setInstanceId(task.getString("id"));
+                        taskResultTelemetry.setAgent(exploreVerticleConfig.getString("agentName"));
+                        taskResultTelemetry.setAgentVersion(exploreVerticleConfig.getString("agentVersion"));
+                        taskResultTelemetry.setTaskDescription(task.getString("task"));
+                        taskResultTelemetry.setDuration(endTime.toEpochMilli() - startTime.toEpochMilli());
+                        taskResultTelemetry.setEvaluationDatasetId(datasetPath);
+                        taskResultTelemetry.setInputTokens(RequestManager.tokenUsageRecord.inputTokens);
+                        taskResultTelemetry.setOutputTokens(RequestManager.tokenUsageRecord.outputTokens);
+                        taskResultTelemetry.setCombinedTokens(RequestManager.tokenUsageRecord.totalTokens);
+
+                        //Compute a string that details the OpenAI models used to compute this task.
+                        Set<String> modelInfo = new HashSet<>();
+                        modelInfo.add(Snippet2XMLServiceImpl.model);
+                        modelInfo.add(DataEntry2LabelServiceImpl.model);
+                        modelInfo.add(TaskPlannerServiceImpl.model);
+                        StringBuilder modelSb = new StringBuilder();
+                        Iterator<String> modelStringsIt = modelInfo.iterator();
+                        while (modelStringsIt.hasNext()) {
+                            String modelString = modelStringsIt.next();
+                            modelSb.append(modelString);
+                            if(modelStringsIt.hasNext()){
+                                modelSb.append(", ");
+                            }
+                        }
+                        taskResultTelemetry.setModel(modelSb.toString());
+
+
+                        String parentTaskId = resolveTaskIdFromInstanceIdAndDatasetPath(datasetPath, task.getString("id"));
+                        if(parentTaskId != null){
+                            taskResultTelemetry.setTaskId(parentTaskId);
+                        }
+
+                        TelemetryVerticle.telemetryService.reportTaskResults(taskResultTelemetry)
+                                .onSuccess(result -> log.info("Task [{}] {} Telemetry sent!", odoXClient.getRequestManager().getExperimentId(), task.getString("id")))
+                                .onFailure(err->log.error(err.getMessage(), err));
+
+
+
+                    }catch (IOException|InterruptedException e){
+                        log.info(e.getMessage(), e);
+                    }
+
+
+
+                }
+
+                this.taskComplete();
 
 
             });
 
             odoXClient.getRequestManager().setEvaluationComplete(evaluationPromise);
+            odoXClient.getRequestManager().setExperimentId(config.containsKey("experimentId")?config.getString("experimentId"):"default");
+            odoXClient.getRequestManager().setExperimentFolderPath(this.experimentFolderPath);
             odoXClient.getRequestManager().setEvalId(task.getString("_evalId")); //Set the evaluationId for this execution.
             odoXClient.getRequestManager().addNewRequest(executionRequest);
         });
 
 
+    }
+
+    private String resolveTaskIdFromInstanceIdAndDatasetPath(String datasetPath, String instanceId){
+        try{
+            JsonArray dataset = new JsonArray(Buffer.buffer(Files.readAllBytes(Path.of(datasetPath))));
+            JsonObject parentTask = dataset.stream()
+                    .map(JsonObject.class::cast)
+                    .filter(taskDefinition->{
+                        return taskDefinition.getJsonArray("instances")
+                                .stream()
+                                .map(JsonObject.class::cast)
+                                .map(instance->instance.getString("id"))
+                                .anyMatch(instanceId::equals);
+                    }).findFirst().get();
+
+            return parentTask.getString("id");
+        }catch ( Exception e){
+            log.error(e.getMessage(), e);
+            return null;
+        }
     }
 
     public void failTask(Throwable e){
@@ -172,7 +292,7 @@ public class EvaluateTask implements Runnable{
                     })
                     .compose(definedTask->{
                         log.info("Got task definition from task query construction:\n{}", definedTask.encodePrettily());
-                        saveTaskQueryConstructionResult("./%s/%s-task-query-construction-result.json".formatted("execution_events", definedTask.getString("_evalId")).replaceAll("\\|","-"), definedTask);
+                        saveTaskQueryConstructionResult("%s/%s-task-query-construction-result.json".formatted(this.experimentFolderPath, definedTask.getString("_evalId")).replaceAll("\\|","-"), definedTask);
 
                         executionRequest.setTaskDescription(task.getString("task"));
 

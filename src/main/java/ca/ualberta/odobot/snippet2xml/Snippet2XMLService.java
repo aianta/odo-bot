@@ -80,6 +80,7 @@ public interface Snippet2XMLService {
         return Optional.empty();
     }
 
+
     /**
      * Helper method for extracting {@link SemanticObject}s from the return value of {@link #makeSchema(List)}.
      * @param json The JsonObject returned by {@link #makeSchema(List)}

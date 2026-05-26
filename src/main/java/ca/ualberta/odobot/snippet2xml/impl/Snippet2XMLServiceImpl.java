@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.snippet2xml.impl;
 
+import ca.ualberta.odobot.common.UsageTelemetry;
 import ca.ualberta.odobot.guidance.RequestManager;
 import ca.ualberta.odobot.snippet2xml.*;
 import ca.ualberta.odobot.snippets.Snippet;
@@ -20,6 +21,7 @@ public class Snippet2XMLServiceImpl implements Snippet2XMLService {
     private static final Logger log = LoggerFactory.getLogger(Snippet2XMLServiceImpl.class);
     private Vertx vertx;
     private AIStrategy strategy;
+    public static String model;
 
     public Snippet2XMLServiceImpl(Vertx vertx, JsonObject config, Strategy strategy){
         this.vertx = vertx;
@@ -27,13 +29,17 @@ public class Snippet2XMLServiceImpl implements Snippet2XMLService {
             case OPENAI -> {
                 OpenAIStrategy _strategy = new OpenAIStrategy(config);
                 RequestManager.tokenUsageRecordListeners.add(_strategy::onNewTokenUsageRecord);
-
+                model = _strategy.getModel();
                 yield _strategy;
             }
         };
 
 
 
+    }
+
+    public String getModel(){
+        return ((UsageTelemetry)strategy).getModel();
     }
 
 
