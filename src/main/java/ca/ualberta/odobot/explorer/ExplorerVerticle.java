@@ -70,7 +70,8 @@ public class ExplorerVerticle extends HttpServiceVerticle {
     public Completable onStart(){
         super.onStart();
 
-
+        //Register a handler to listen for token usage record changes.
+        RequestManager.finalTokenUsageRecordListeners.add(this::updateExperimentTokenUsageRecord);
 
         try{
 
@@ -1030,9 +1031,6 @@ public class ExplorerVerticle extends HttpServiceVerticle {
         String experimentResultsFolderPath = experimentFolderPath + "/results";
 
         tokenUsageRecord = new TokenUsageRecord();
-        if(RequestManager.finalTokenUsageRecordListeners.isEmpty()){
-            RequestManager.finalTokenUsageRecordListeners.add(this::updateExperimentTokenUsageRecord);
-        }
 
 
         String _agent = rc.request().getParam("agent", "odoBot");
@@ -1112,6 +1110,8 @@ public class ExplorerVerticle extends HttpServiceVerticle {
             if(finalConfig1.containsKey("evaluationDatasetPath")){
                 try{
                     Instant experimentEndTime = Instant.now();
+                    updateExperimentTokenUsageRecord(RequestManager.tokenUsageRecord);
+                    RequestManager.tokenUsageRecord = null;
 
                     //Evaluate all experiment results
                     String evalScriptPath = "%s/%s".formatted(_config.getString("evaluationScriptsPath"), _config.getString("evaluationScript"));
@@ -1174,7 +1174,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
                     TelemetryVerticle.telemetryService.reportExperimentResults(experimentResults);
 
-                    rc.getDelegate().response().setStatusCode(200).end();
+                    rc.getDelegate().response().setStatusCode(200).end(experimentResults.encode());
                 }catch (Exception e){
                     log.error(e.getMessage(), e);
                     rc.getDelegate().response().setStatusCode(500).end();
