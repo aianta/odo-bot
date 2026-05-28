@@ -22,7 +22,6 @@ public class DataEntry2LabelServiceImpl implements DataEntry2LabelService {
         this.strategy = switch (strategy){
             case OPENAI -> {
                 OpenAIStrategy _strategy = new OpenAIStrategy(config);
-                RequestManager.newTokenUsageRecordListeners.add(_strategy::onNewTokenUsageRecord);
                 model = _strategy.getModel();
                 yield _strategy;
             }

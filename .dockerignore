@@ -8,3 +8,5 @@ data_artifacts
 execution_events
 tpg
 src/test/resources/oldtestdata
+gradle.properties
+*.png

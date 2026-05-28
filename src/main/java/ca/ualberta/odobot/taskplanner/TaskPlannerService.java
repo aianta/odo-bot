@@ -12,11 +12,32 @@ import io.vertx.core.Vertx;
 
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.List;
 
 @ProxyGen
 public interface TaskPlannerService {
+
+    static void saveChosenPathTelemetry(String filename, JsonObject chosenPathInfo){
+        File fout = new File(filename);
+        try(FileWriter fw = new FileWriter(fout);
+            BufferedWriter bw = new BufferedWriter(fw)
+        ){
+
+            bw.write(chosenPathInfo.getString("prompt"));
+            bw.newLine();
+            bw.write(chosenPathInfo.encodePrettily());
+            bw.flush();
+        }catch (IOException e){
+            LoggerFactory.getLogger(TaskPlannerService.class).error(e.getMessage(),e);
+        }
+    }
 
     static TaskPlannerService create(Vertx vertx, JsonObject config, SqliteService sqliteService, SqliteVectorService vectorService, Neo4JUtils neo4j){
         return new TaskPlannerServiceImpl( config, vertx, sqliteService, vectorService, neo4j, Strategy.OPENAI);
@@ -47,7 +68,7 @@ public interface TaskPlannerService {
      * @param taskDescription
      * @return
      */
-    Future<String> selectPath(JsonObject paths, String taskDescription);
+    Future<JsonObject> selectPath(JsonObject paths, String taskDescription);
 
     Future<JsonObject> pickMostRelevantTask(String queryTask, List<JsonObject> options);
 

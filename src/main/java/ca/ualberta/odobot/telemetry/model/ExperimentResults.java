@@ -19,6 +19,8 @@ public class ExperimentResults extends JsonObject {
     private String experimentId;
     private int successfulTasks;
     private int failedTasks;
+    private int submittedTasks;
+    private int evaluatedTasks;
     private int numTasks;
     private String notes;
     private String agent;
@@ -33,6 +35,16 @@ public class ExperimentResults extends JsonObject {
     private String evaluationDatasetNotes;
     private long timestampLong;
     private String timestamp;
+
+    public ExperimentResults setSubmittedTasks(int submittedTasks) {
+        put("SubmittedTasks", submittedTasks);
+        return this;
+    }
+
+    public ExperimentResults setEvaluatedTasks(int evaluatedTasks) {
+        put("EvaluatedTasks", evaluatedTasks);
+        return this;
+    }
 
     public ExperimentResults setId(String id) {
         put("Id", id);

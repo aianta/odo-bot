@@ -26,7 +26,6 @@ public class Snippet2XMLServiceImpl implements Snippet2XMLService {
         this.strategy = switch (strategy){
             case OPENAI -> {
                 OpenAIStrategy _strategy = new OpenAIStrategy(config);
-                RequestManager.newTokenUsageRecordListeners.add(_strategy::onNewTokenUsageRecord);
                 model = _strategy.getModel();
                 yield _strategy;
             }

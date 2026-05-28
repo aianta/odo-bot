@@ -279,11 +279,12 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
     }
 
 
-    public Future<String> selectPath(JsonObject paths, String taskDescription){
+    public Future<JsonObject> selectPath(JsonObject paths, String taskDescription){
         log.info("Selecting from nav path options...");
 
+        JsonObject telemetry = new JsonObject();
         Optional<String> result = generateWithValidation(
-                ()->_selectPath(paths, taskDescription),
+                ()->_selectPath(paths, taskDescription, telemetry),
                 List.of((output)->{
                     try{
                         UUID.fromString(output);
@@ -296,7 +297,8 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
                 );
 
         if(result.isPresent()){
-            return Future.succeededFuture(UUID.fromString(result.get()).toString());
+            telemetry.put("chosenPathId",result.get());
+            return Future.succeededFuture(telemetry);
         }
 
         return Future.failedFuture("Failed to select a nav path!");
@@ -330,7 +332,7 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
     }
 
 
-    private String _selectPath(JsonObject paths, String taskDescription){
+    private String _selectPath(JsonObject paths, String taskDescription, JsonObject telemetry){
         List<ChatRequestMessage> chatMessages = new ArrayList<>();
         String prompt = config.getJsonObject("selectPath").getString("systemPrompt").formatted(taskDescription);
         chatMessages.add(new ChatRequestSystemMessage(prompt));
@@ -359,6 +361,8 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
         log.info("\n{}", sb.toString());
         chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+
+        telemetry.put("prompt", prompt + sb.toString());
 
         return executeChatCompletion(chatMessages);
     }

@@ -30,9 +30,7 @@ public abstract class AbstractOpenAIStrategy {
 
     protected String model; //The openAI model to use for chat completions
 
-    protected List<Consumer<Integer>> promptTokenConsumers = new ArrayList<>();
-    protected List<Consumer<Integer>> completionTokenConsumers = new ArrayList<>();
-    protected List<Consumer<Integer>> totalTokenConsumers = new ArrayList<>();
+    public static TokenUsageRecord activeTokenUsageRecord;
 
     public String getModel(){
      return model;
@@ -49,27 +47,6 @@ public abstract class AbstractOpenAIStrategy {
 
     }
 
-    public void onNewTokenUsageRecord(TokenUsageRecord r){
-        promptTokenConsumers.clear();
-        completionTokenConsumers.clear();
-        totalTokenConsumers.clear();
-
-        addPromptTokenConsumer(r::addInputTokens);
-        addCompletionTokenConsumer(r::addOutputTokens);
-        addTotalTokenConsumer(r::addTotalTokens);
-    }
-
-    public void addPromptTokenConsumer(Consumer<Integer> promptTokenConsumer) {
-        promptTokenConsumers.add(promptTokenConsumer);
-    }
-
-    public void addCompletionTokenConsumer(Consumer<Integer> completionTokenConsumer) {
-        completionTokenConsumers.add(completionTokenConsumer);
-    }
-
-    public void addTotalTokenConsumer(Consumer<Integer> totalTokenConsumer) {
-        totalTokenConsumers.add(totalTokenConsumer);
-    }
 
     protected String executeChatCompletion(List<ChatRequestMessage> chatMessages){
         ChatCompletionsOptions options = new ChatCompletionsOptions(chatMessages);
@@ -86,10 +63,12 @@ public abstract class AbstractOpenAIStrategy {
         ChatCompletions chatCompletions = client.getChatCompletions(model, options);
         CompletionsUsage usage = chatCompletions.getUsage();
 
-        //Report token usage to any registered consumers
-        promptTokenConsumers.forEach(consumer->consumer.accept(usage.getPromptTokens()));
-        completionTokenConsumers.forEach(consumer->consumer.accept(usage.getCompletionTokens()));
-        totalTokenConsumers.forEach(consumer->consumer.accept(usage.getTotalTokens()));
+        //Record token usage if there is an active token usage record
+        if(activeTokenUsageRecord != null){
+            activeTokenUsageRecord.addInputTokens(usage.getPromptTokens());
+            activeTokenUsageRecord.addOutputTokens(usage.getCompletionTokens());
+            activeTokenUsageRecord.addTotalTokens(usage.getTotalTokens());
+        }
 
 
         log.info("Got chat completion ({})@{}", chatCompletions.getId(), chatCompletions.getCreatedAt());

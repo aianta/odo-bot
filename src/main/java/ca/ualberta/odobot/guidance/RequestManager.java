@@ -6,6 +6,7 @@ import ca.ualberta.odobot.guidance.instructions.*;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import ca.ualberta.odobot.semanticflow.model.*;
 import ca.ualberta.odobot.semanticflow.navmodel.NavPath;
+import ca.ualberta.odobot.taskplanner.TaskPlannerService;
 import ca.ualberta.odobot.taskplanner.TaskPlannerVerticle;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
@@ -48,10 +49,6 @@ public class RequestManager {
         return navPaths;
     }
 
-    public static TokenUsageRecord tokenUsageRecord;
-
-    public static List<Consumer<TokenUsageRecord>> finalTokenUsageRecordListeners = new ArrayList<>();
-    public static List<Consumer<TokenUsageRecord>> newTokenUsageRecordListeners = new ArrayList<>();
 
     public RequestManager(OdoClient client){
         this.client = client;
@@ -98,20 +95,10 @@ public class RequestManager {
         });
         this.evaluationComplete.future().onFailure(err->{
             log.error(err.getMessage(), err);
-            client.getEventConnectionManager().getEventProcessor().saveRawEvents("%s/%s.json".formatted(this.experimentFolderPath, evalId).replaceAll("\\|","-"));
         });
         return this;
     }
 
-    private void setupTokenUsageRecord(){
-        if(tokenUsageRecord != null){
-            //Report the last tokenUsage record to anyone tabulating token useage records across multiple requests.
-            finalTokenUsageRecordListeners.forEach(listener->listener.accept(tokenUsageRecord));
-        }
-
-        tokenUsageRecord = new TokenUsageRecord();
-        newTokenUsageRecordListeners.forEach(listener->listener.accept(tokenUsageRecord));
-    }
 
     public ExecutionRequest getActiveExecutionRequest() {
         return activeExecutionRequest;
@@ -124,7 +111,6 @@ public class RequestManager {
 
     public void addNewRequest(ExecutionRequest request){
         setActiveExecutionRequest(request);
-        setupTokenUsageRecord();
         client.getEventConnectionManager().startTransmitting()//Turn on event transmissions //TODO -> if something behaves oddly, this is a likely area where things might go wrong. Not sure when transmission should start.
                 .compose(done->client.getEventConnectionManager().getLocalContext())
                 .compose(localContext->getExecutionPath(request, localContext))
@@ -510,7 +496,6 @@ public class RequestManager {
 
             if(evalId != null && evaluationComplete != null){
                 //If the evaluation ID is not null (meaning this was an evaluation run, output the raw events from this execution to the appropriate folder.
-                client.getEventConnectionManager().getEventProcessor().saveRawEvents("%s/%s.json".formatted(this.experimentFolderPath, evalId).replaceAll("\\|","-"));
                 evaluationComplete.complete();
             }
             client.getEventConnectionManager().getEventProcessor().clearRawEvents();
@@ -989,7 +974,9 @@ public class RequestManager {
         navPaths.forEach(navPath -> paths.put(navPath.getId().toString(), navPath.toNaturalLanguage(parameters).stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll)));
         return TaskPlannerVerticle.service.selectPath(paths, request.getTaskDescription())
                 .onFailure(err->log.error(err.getMessage(), err))
-                .compose(chosenPathId->{
+                .compose(chosenPathInfo->{
+                    String chosenPathId = chosenPathInfo.getString("chosenPathId");
+                    TaskPlannerService.saveChosenPathTelemetry("%s/%s-path-selection-result-%d.txt".formatted(this.experimentFolderPath, evalId, request.getPathRecomputations()).replaceAll("\\|","-"), chosenPathInfo);
                     Optional<NavPath> _chosenPath = navPaths.stream().filter(navPath->navPath.getId().equals(UUID.fromString(chosenPathId))).findFirst();
                     if(_chosenPath.isPresent()){
                         NavPath chosenPath = _chosenPath.get();

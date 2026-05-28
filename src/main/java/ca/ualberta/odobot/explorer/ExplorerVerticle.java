@@ -64,14 +64,10 @@ public class ExplorerVerticle extends HttpServiceVerticle {
         return "config/explorer.yaml";
     }
 
-    private static TokenUsageRecord tokenUsageRecord;
-
 
     public Completable onStart(){
         super.onStart();
 
-        //Register a handler to listen for token usage record changes.
-        RequestManager.finalTokenUsageRecordListeners.add(this::updateExperimentTokenUsageRecord);
 
         try{
 
@@ -1015,9 +1011,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
     }
 
-    private void updateExperimentTokenUsageRecord(TokenUsageRecord taskRecord ){
-        tokenUsageRecord.merge(taskRecord);
-    }
+
 
     private void evaluateHandler(RoutingContext rc){
         JsonObject config = rc.get("config");
@@ -1030,7 +1024,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
         String experimentFolderPath = _config.getString("outputArtifactsFolder") + "/" + experimentId;
         String experimentResultsFolderPath = experimentFolderPath + "/results";
 
-        tokenUsageRecord = new TokenUsageRecord();
+        TokenUsageRecord experimentTokenUsageRecord = new TokenUsageRecord();
 
 
         String _agent = rc.request().getParam("agent", "odoBot");
@@ -1059,7 +1053,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                 //Check to see if this task has already been run for this experiment.
                 List<String> experimentOutputs = vertx.fileSystem().readDirBlocking(experimentFolderPath);
                 //If it's been run before, there will be files whose names contain this task instance id.
-                List<String> taskOutputs = experimentOutputs.stream().filter(path->path.contains(_task.getString("id"))).toList();
+                List<String> taskOutputs = experimentOutputs.stream().filter(path->path.contains(_task.getString("id") + ".json")).toList();
                 if(!taskOutputs.isEmpty()){ //So if we find any of those, skip this task.
                     log.info("Output artifacts for task {} in experiment {} already exist, skipping this task.",_task.getString("id"),  experimentId);
                     continue;
@@ -1078,6 +1072,8 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                 f = promise.future();
 
                 EvaluateTask evaluateTask = new EvaluateTask(_config, config, _task, promise, taskPlannerService, agent);
+                //Add task token usage to experiment token usage.
+                promise.future().onComplete(done->experimentTokenUsageRecord.merge(evaluateTask.getTokenUsageRecord()));
                 Thread thread = new Thread(evaluateTask);
                 thread.start();
             }else{
@@ -1089,6 +1085,9 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                             .onFailure(err->serverError(rc, err));
 
                     EvaluateTask evaluateTask = new EvaluateTask(_config, finalConfig, _task, promise, taskPlannerService, agent);
+
+                    //Add task token usage to experiment token usage.
+                    promise.future().onComplete(done->experimentTokenUsageRecord.merge(evaluateTask.getTokenUsageRecord()));
                     Thread thread = new Thread(evaluateTask);
                     thread.start();
 
@@ -1110,8 +1109,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
             if(finalConfig1.containsKey("evaluationDatasetPath")){
                 try{
                     Instant experimentEndTime = Instant.now();
-                    updateExperimentTokenUsageRecord(RequestManager.tokenUsageRecord);
-                    RequestManager.tokenUsageRecord = null;
+
 
                     //Evaluate all experiment results
                     String evalScriptPath = "%s/%s".formatted(_config.getString("evaluationScriptsPath"), _config.getString("evaluationScript"));
@@ -1143,13 +1141,14 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                     experimentResults.setExperimentId(experimentId);
                     experimentResults.setAgent(_config.getString("agentName"));
                     experimentResults.setAgentVersion(_config.getString("agentVersion"));
-                    experimentResults.setNumTasks(tasks.size());
+                    experimentResults.setSubmittedTasks(tasks.size());
                     experimentResults.setDuration(experimentEndTime.toEpochMilli() - experimentStartTime.toEpochMilli());
-                    experimentResults.setTotalInputTokens(tokenUsageRecord.inputTokens);
-                    experimentResults.setTotalOutputTokens(tokenUsageRecord.outputTokens);
-                    experimentResults.setTotalCombinedTokens(tokenUsageRecord.totalTokens);
+                    experimentResults.setTotalInputTokens(experimentTokenUsageRecord.inputTokens);
+                    experimentResults.setTotalOutputTokens(experimentTokenUsageRecord.outputTokens);
+                    experimentResults.setTotalCombinedTokens(experimentTokenUsageRecord.totalTokens);
                     experimentResults.setSuccessfulTasks(experimentResult.getInteger("correct"));
                     experimentResults.setFailedTasks(experimentResult.getInteger("incorrect"));
+                    experimentResults.setEvaluatedTasks(experimentResult.getInteger("correct") + experimentResult.getInteger("incorrect"));
                     experimentResults.setEvaluationDatasetId(finalConfig1.getString("evaluationDatasetPath"));
 
                     //Compute a string that details the OpenAI models used to compute this task.

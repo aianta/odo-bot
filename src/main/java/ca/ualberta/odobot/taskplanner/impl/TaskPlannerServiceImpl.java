@@ -45,7 +45,6 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
         this.strategy = switch (strategy){
             case OPENAI -> {
                 OpenAIStrategy _strategy = new OpenAIStrategy(config);
-                RequestManager.newTokenUsageRecordListeners.add(_strategy::onNewTokenUsageRecord);
                 model = _strategy.getModel();
                 yield _strategy;
             }
@@ -61,11 +60,11 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
     }
 
 
-    public Future<String> selectPath(JsonObject paths, String taskDescription){
+    public Future<JsonObject> selectPath(JsonObject paths, String taskDescription){
 
-        return vertx.<String>executeBlocking(blocking->{
+        return vertx.<JsonObject>executeBlocking(blocking->{
             this.strategy.selectPath(paths, taskDescription)
-                    .onSuccess(pathId->blocking.complete(pathId))
+                    .onSuccess(chosenPath->blocking.complete(chosenPath))
                     .onFailure(err->blocking.fail(err));
         });
     }

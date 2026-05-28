@@ -1,11 +1,9 @@
 package ca.ualberta.odobot.explorer;
 
+import ca.ualberta.odobot.common.AbstractOpenAIStrategy;
 import ca.ualberta.odobot.dataentry2label.DataEntry2LabelService;
 import ca.ualberta.odobot.dataentry2label.impl.DataEntry2LabelServiceImpl;
-import ca.ualberta.odobot.guidance.OdoClient;
-import ca.ualberta.odobot.guidance.OnlineEventProcessor;
-import ca.ualberta.odobot.guidance.RequestManager;
-import ca.ualberta.odobot.guidance.WebSocketConnection;
+import ca.ualberta.odobot.guidance.*;
 import ca.ualberta.odobot.guidance.execution.ExecutionParameter;
 import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
 import ca.ualberta.odobot.snippet2xml.impl.Snippet2XMLServiceImpl;
@@ -68,6 +66,8 @@ public class EvaluateTask implements Runnable{
     String experimentFolderPath;
     String experimentResultsFolderPath;
 
+    TokenUsageRecord tokenUsageRecord = new TokenUsageRecord();
+
     Promise<Void> promise;
 
     Instant startTime;
@@ -93,6 +93,8 @@ public class EvaluateTask implements Runnable{
 
     @Override
     public void run() {
+
+        AbstractOpenAIStrategy.activeTokenUsageRecord = tokenUsageRecord;
 
         FirefoxOptions options = new FirefoxOptions();
         if(headless){
@@ -124,6 +126,10 @@ public class EvaluateTask implements Runnable{
 
     }
 
+    public TokenUsageRecord getTokenUsageRecord(){
+        return tokenUsageRecord;
+    }
+
     public void startTask(JsonObject task){
 
         log.info("Starting task {}", task.getString("_evalId"));
@@ -138,7 +144,7 @@ public class EvaluateTask implements Runnable{
             Promise<Void> evaluationPromise = Promise.promise();
             evaluationPromise.future().onComplete((done)->{
                 odoXClient.getGuidanceConnectionManager().dumpHistory();
-
+                odoXClient.getEventConnectionManager().getEventProcessor().saveRawEvents("%s/%s.json".formatted(this.experimentFolderPath, odoXClient.getRequestManager().getEvalId()).replaceAll("\\|","-"));
 
                 //Perform task evaluation after the task is complete.
                 //If a ground truth dataset is specified.
@@ -189,9 +195,9 @@ public class EvaluateTask implements Runnable{
                         taskResultTelemetry.setTaskDescription(task.getString("task"));
                         taskResultTelemetry.setDuration(endTime.toEpochMilli() - startTime.toEpochMilli());
                         taskResultTelemetry.setEvaluationDatasetId(datasetPath);
-                        taskResultTelemetry.setInputTokens(RequestManager.tokenUsageRecord.inputTokens);
-                        taskResultTelemetry.setOutputTokens(RequestManager.tokenUsageRecord.outputTokens);
-                        taskResultTelemetry.setCombinedTokens(RequestManager.tokenUsageRecord.totalTokens);
+                        taskResultTelemetry.setInputTokens(this.tokenUsageRecord.inputTokens);
+                        taskResultTelemetry.setOutputTokens(this.tokenUsageRecord.outputTokens);
+                        taskResultTelemetry.setCombinedTokens(this.tokenUsageRecord.totalTokens);
 
                         //Compute a string that details the OpenAI models used to compute this task.
                         Set<String> modelInfo = new HashSet<>();

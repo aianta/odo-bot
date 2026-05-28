@@ -18,13 +18,14 @@ public class StateLabelingServiceImpl implements StateLabelingService {
     private Vertx vertx;
     private JsonObject config;
     private AIStrategy strategy;
+    private static String model;
 
     public StateLabelingServiceImpl(Vertx vertx, JsonObject config) {
         this.vertx = vertx;
         this.config = config;
 
         OpenAIStrategy _strategy = new OpenAIStrategy(config);
-        RequestManager.newTokenUsageRecordListeners.add(_strategy::onNewTokenUsageRecord);
+        model = _strategy.getModel();
 
         this.strategy = _strategy;
     }
