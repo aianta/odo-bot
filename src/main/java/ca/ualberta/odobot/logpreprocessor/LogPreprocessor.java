@@ -90,7 +90,7 @@ public class LogPreprocessor extends AbstractVerticle {
 
             //Init embedded Neo4J
             //TODO -> this should probably be its own service
-            graphDB = new GraphDB("/graphdb/", "embedded");
+            graphDB = new GraphDB("db/graphdb/", "embedded");
 
             //TODO -> refactor this, probably...
             neo4j = new Neo4JUtils("bolt://localhost:7687", "neo4j", "odobotdb");

@@ -1,12 +1,17 @@
 .gradle
 .idea
+db
 out
 odobot.db
 crawljax_out
 data_artifacts
+canvas*
+!canvas-evaluation-scripts
 *.db
 execution_events
 tpg
 src/test/resources/oldtestdata
 gradle.properties
 *.png
+test_task
+*.csv

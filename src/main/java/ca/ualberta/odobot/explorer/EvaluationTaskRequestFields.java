@@ -10,6 +10,8 @@ public enum EvaluationTaskRequestFields implements RequestFields {
     ODOX_OPTIONS_LOGUI_USERNAME("logUIUsername", String.class),
 
     ODOX_OPTIONS_LOGUI_PASSWORD("logUIPassword", String.class),
+    ODOX_OPTIONS_LOGUI_HOST("logUIHost", String.class),
+    ODOX_OPTIONS_GUIDANCE_SERVICE_HOST("guidanceServiceHost", String.class),
     TASKS("tasks", JsonArray.class);
 
     EvaluationTaskRequestFields(String field, Class type){

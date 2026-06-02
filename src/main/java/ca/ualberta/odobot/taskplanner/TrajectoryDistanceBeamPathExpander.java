@@ -13,6 +13,8 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.*;
 
+import static ca.ualberta.odobot.logpreprocessor.Constants.SQLITE_CONNECTION_STRING;
+
 /**
  * https://neo4j.com/docs/java-reference/current/traversal-framework/traversal-framework-java-api/#traversal-java-api-pathexpander
  */
@@ -20,7 +22,6 @@ import java.util.*;
 public class TrajectoryDistanceBeamPathExpander implements PathExpander<JsonObject> {
 
     private static final Logger log = LoggerFactory.getLogger(TrajectoryDistanceBeamPathExpander.class);
-    private static final String SQLITE_PATH = "jdbc:sqlite:odobot.db";
 
     private int beamWidth;
     public int maxOffHeuristicGap = 5;
@@ -43,7 +44,7 @@ public class TrajectoryDistanceBeamPathExpander implements PathExpander<JsonObje
         this.targetNodeId = targetNodeId;
 
         try{
-            this.conn = DriverManager.getConnection(SQLITE_PATH);
+            this.conn = DriverManager.getConnection(SQLITE_CONNECTION_STRING);
 
         } catch (SQLException e) {
             throw new RuntimeException(e);

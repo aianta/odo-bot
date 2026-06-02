@@ -51,6 +51,9 @@ public class ExploreTask implements Runnable{
      * https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/browser_specific_settings
      */
     private static final String ADDON_ID = "odosight@ualberta.ca";
+    public static final String ODOSIGHT_OPTIONS_GUIDANCE_SERVICE_HOST_FIELD_ID = "guidance-host";
+    public static final String ODOSIGHT_OPTIONS_TARGET_HOST_FIELD_ID = "target-host";
+    public static final String ODOSIGHT_OPTIONS_LOGUI_SERVER_HOST_FIELD_ID = "logui-server-host";
     public static final String ODOSIGHT_OPTIONS_LOGUI_SERVER_USERNAME_FIELD_ID = "logui-server-username";
     public static final String ODOSIGHT_OPTIONS_LOGUI_SERVER_PASSWORD_FIELD_ID = "logui-server-password";
     private static final String ODOSIGHT_CONTROLS_EDIT_FLIGHT_BUTTON_ID = "edit_flight_btn";

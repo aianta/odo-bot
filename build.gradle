@@ -121,7 +121,7 @@ dependencies {
     implementation 'com.google.guava:guava:31.1-jre'
 
 
-    implementation 'org.seleniumhq.selenium:selenium-java:4.16.1'
+    implementation 'org.seleniumhq.selenium:selenium-java:4.44.0'
 
     // https://mvnrepository.com/artifact/org.eclipse.rdf4j/rdf4j-bom
     //implementation group: 'org.eclipse.rdf4j', name: 'rdf4j-bom', version: '4.2.0', ext: 'pom'

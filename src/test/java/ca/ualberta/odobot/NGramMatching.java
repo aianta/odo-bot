@@ -25,7 +25,7 @@ public class NGramMatching {
     @BeforeAll
     public static void setup(){
         Properties properties = new Properties();
-        properties.setProperty("englishWords.wordnetHome", "C:\\Program Files (x86)\\WordNet\\2.1");
+        properties.setProperty("englishWords.wordnetHome", "./libs/WordNet/2.1");
         properties.setProperty("customAnnotatorClass.englishWords", "ca.ualberta.odobot.semanticflow.extraction.terms.annotators.EnglishWordAnnotator");
         properties.setProperty("annotators", "tokenize,ssplit,pos,lemma,englishWords");
 

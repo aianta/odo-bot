@@ -2,7 +2,7 @@ package ca.ualberta.odobot.logpreprocessor;
 
 public class Constants {
 
-    public static final String SQLITE_CONNECTION_STRING = "jdbc:sqlite:odobot.db";
+    public static final String SQLITE_CONNECTION_STRING = "jdbc:sqlite:db/odobot.db";
     public static final String TPG_SERVICE_ADDRESS = "tpg-service";
     public static final String SQLITE_SERVICE_ADDRESS = "sqlite-service";
     public static final String TELEMETRY_SERVICE_ADDRESS = "telemetry-service";

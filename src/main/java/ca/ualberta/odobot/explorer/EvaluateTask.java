@@ -1,7 +1,6 @@
 package ca.ualberta.odobot.explorer;
 
 import ca.ualberta.odobot.common.AbstractOpenAIStrategy;
-import ca.ualberta.odobot.dataentry2label.DataEntry2LabelService;
 import ca.ualberta.odobot.dataentry2label.impl.DataEntry2LabelServiceImpl;
 import ca.ualberta.odobot.guidance.*;
 import ca.ualberta.odobot.guidance.execution.ExecutionParameter;
@@ -11,35 +10,30 @@ import ca.ualberta.odobot.taskplanner.TaskPlannerService;
 import ca.ualberta.odobot.taskplanner.impl.TaskPlannerServiceImpl;
 import ca.ualberta.odobot.telemetry.TelemetryVerticle;
 import ca.ualberta.odobot.telemetry.model.TaskInstanceResults;
-import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
-import org.openqa.selenium.By;
-import org.openqa.selenium.NoSuchElementException;
-import org.openqa.selenium.WebElement;
-import org.openqa.selenium.WindowType;
-import org.openqa.selenium.firefox.FirefoxDriver;
-import org.openqa.selenium.firefox.FirefoxOptions;
-import org.openqa.selenium.firefox.FirefoxProfile;
-import org.openqa.selenium.firefox.ProfilesIni;
+import org.openqa.selenium.*;
+import org.openqa.selenium.firefox.*;
+import org.openqa.selenium.remote.Augmenter;
+import org.openqa.selenium.remote.RemoteWebDriver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
-
-import static ca.ualberta.odobot.explorer.ExploreTask.ODOSIGHT_OPTIONS_LOGUI_SERVER_PASSWORD_FIELD_ID;
-import static ca.ualberta.odobot.explorer.ExploreTask.ODOSIGHT_OPTIONS_LOGUI_SERVER_USERNAME_FIELD_ID;
+import static ca.ualberta.odobot.explorer.ExploreTask.*;
 import static ca.ualberta.odobot.explorer.WebDriverUtils.*;
 
 public class EvaluateTask implements Runnable{
@@ -59,7 +53,8 @@ public class EvaluateTask implements Runnable{
     JsonArray tasks;
     JsonObject task;
 
-    FirefoxDriver driver;
+    //FirefoxDriver driver;
+    WebDriver driver;
     OdoClient odoXClient;
     long taskTimeout;
     boolean headless;
@@ -93,35 +88,66 @@ public class EvaluateTask implements Runnable{
 
     @Override
     public void run() {
+        try{
+            AbstractOpenAIStrategy.activeTokenUsageRecord = tokenUsageRecord;
 
-        AbstractOpenAIStrategy.activeTokenUsageRecord = tokenUsageRecord;
+            FirefoxOptions options = new FirefoxOptions();
+            if(headless){
+                log.info("Running in headless mode");
+//            options.addArguments("--firefox-arg=\"--headless\"");
+                options.addArguments("--headless");
+            }
 
-        FirefoxOptions options = new FirefoxOptions();
-        if(headless){
-            options.addArguments("--headless");
+            options.addPreference("network.dns.disableIPv6", true);
+            FirefoxProfile profile = buildProfile();
+            profile.addExtension(new File(config.getString(EvaluationTaskRequestFields.ODOSIGHT_PATH.field)));
+
+            options.setProfile(buildProfile());
+
+//
+//            FirefoxDriverService service = new GeckoDriverService.Builder()
+//                    .usingDriverExecutable(new File("/usr/bin/firefox"))
+//                    .usingAnyFreePort()
+//                    .withLogLevel(FirefoxDriverLogLevel.DEBUG)
+//                    .withLogOutput(System.out)
+//                    .build();
+
+
+            if (config.containsKey("firefoxDockerGridURL")){
+                driver = new RemoteWebDriver(new URL(config.getString("firefoxDockerGridURL")), options);
+                WebDriver _augmentedDriver = new Augmenter().augment(driver);
+                String extensionId = ((HasExtensions) _augmentedDriver).installExtension(Paths.get(config.getString(EvaluationTaskRequestFields.ODOSIGHT_PATH.field)));
+                log.info("Installed extension with id {}", extensionId);
+
+             }else{
+                driver = new FirefoxDriver( options);
+                ((FirefoxDriver)driver).installExtension(Path.of(config.getString(EvaluationTaskRequestFields.ODOSIGHT_PATH.field)),true);
+            }
+
+
+
+
+            //Load Evaluation Canvas State
+
+            //Setup OdoX
+            setupOdoX();
+
+            //Navigate to Canvas Login
+
+            //At this stage OdoX should be connected to the guidance vertical.
+            assert WebSocketConnection.clientMap.size() == 1;
+
+            log.info("OdoX connected to Guidance Subsystem");
+
+            odoXClient = WebSocketConnection.clientMap.entrySet().iterator().next().getValue();
+
+            startTask(task);
+        }catch (MalformedURLException e){
+            log.error(e.getMessage(), e);
+        }catch (Exception e){
+            log.error(e.getMessage(), e);
         }
 
-
-        options.setProfile(buildProfile());
-
-        driver = new FirefoxDriver(options);
-        driver.installExtension(Path.of(config.getString(EvaluationTaskRequestFields.ODOSIGHT_PATH.field)),true);
-
-        //Load Evaluation Canvas State
-
-        //Setup OdoX
-        setupOdoX();
-
-        //Navigate to Canvas Login
-
-        //At this stage OdoX should be connected to the guidance vertical.
-        assert WebSocketConnection.clientMap.size() == 1;
-
-        log.info("OdoX connected to Guidance Subsystem");
-
-        odoXClient = WebSocketConnection.clientMap.entrySet().iterator().next().getValue();
-
-        startTask(task);
 
 
     }
@@ -392,9 +418,44 @@ public class EvaluateTask implements Runnable{
          * they won't show up on the options page, which means we'll overwrite option values with blanks, which we do not want.
          */
         explicitlyWait(driver, 3);
-
         //Load the OdoX options page
         driver.get(odoXOptionsUrl);
+
+        //Get the guidance host input field, clear any existing value, then set it to the value specified in the request config.
+        WebElement guidanceHostInput = driver.findElement(By.id(ODOSIGHT_OPTIONS_GUIDANCE_SERVICE_HOST_FIELD_ID));
+        guidanceHostInput.clear();
+        guidanceHostInput.sendKeys(config.getString(EvaluationTaskRequestFields.ODOX_OPTIONS_GUIDANCE_SERVICE_HOST.field));
+
+        //Get the target application host input field, clear any existing value, then set it to the value specified in the request config.
+        try{
+            URL webAppUrl = new URL(config.getString(EvaluationTaskRequestFields.WEB_APP_URL.field));
+            WebElement targetHostInput = driver.findElement(By.id(ODOSIGHT_OPTIONS_TARGET_HOST_FIELD_ID));
+            targetHostInput.clear();
+            String targetHost = webAppUrl.getProtocol() + "://" + webAppUrl.getHost() + (webAppUrl.getPort() != -1?":"+webAppUrl.getPort():"");
+            targetHostInput.sendKeys(targetHost);
+        }catch(MalformedURLException e){
+            if(e.getMessage().contains("unknown protocol")){
+                log.warn("No protocol specified in web app url, defaulting to http://");
+                URL webAppUrl = null;
+                try {
+                    webAppUrl = new URL("http://" + config.getString(EvaluationTaskRequestFields.WEB_APP_URL.field));
+                } catch (MalformedURLException ex) {
+                    throw new RuntimeException(ex);
+                }
+                WebElement targetHostInput = driver.findElement(By.id(ODOSIGHT_OPTIONS_TARGET_HOST_FIELD_ID));
+                targetHostInput.clear();
+                String targetHost = webAppUrl.getProtocol() + "://" + webAppUrl.getHost() + (webAppUrl.getPort() != -1?":"+webAppUrl.getPort():"");
+                targetHostInput.sendKeys(targetHost);
+            }else{
+                log.error(e.getMessage(), e);
+            }
+
+        }
+
+        //Get the host input field, clear any existing value, then set it to the value specified in the request config.
+        WebElement hostInput = driver.findElement(By.id(ODOSIGHT_OPTIONS_LOGUI_SERVER_HOST_FIELD_ID));
+        hostInput.clear();
+        hostInput.sendKeys(config.getString(EvaluationTaskRequestFields.ODOX_OPTIONS_LOGUI_HOST.field));
 
         //Get the username input field, clear any existing value, then set it to the value specified in the request config
         WebElement usernameInput = driver.findElement(By.id(ODOSIGHT_OPTIONS_LOGUI_SERVER_USERNAME_FIELD_ID));
@@ -474,9 +535,11 @@ public class EvaluateTask implements Runnable{
          * the selenium controlled browser starts up and cause selenium to fail as it tried to setup odo-sight.
          */
         ProfilesIni allProfiles = new ProfilesIni();
-        FirefoxProfile profile = allProfiles.getProfile("Selenium");
+        //FirefoxProfile profile = allProfiles.getProfile("Selenium");
+        FirefoxProfile profile = new FirefoxProfile();
         profile.setAcceptUntrustedCertificates(true); //LogUI Server is likely running locally over a self-signed cert.
         profile.setPreference("extensions.webextensions.uuids", addonIdPreference.encode());
+        profile.setPreference("xpinstall.signatures.required", false);
         profile.setPreference("browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features", false);
         profile.setPreference("browser.aboutwelcome.enabled", false);
         profile.setPreference("browser.messaging-system.whatsNewPanel.enabled", false);
