@@ -93,6 +93,8 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
             api.route(HttpMethod.POST, "/convertToOdoBotNL").handler(this::convertToOdoBotNL);
 
+            api.route(HttpMethod.GET, "/health").handler(rc->rc.getDelegate().response().setStatusCode(200).end("OK"));
+
             api.route(HttpMethod.POST, "/evaluate").handler(this::evaluateValidationHandler);
             api.route(HttpMethod.POST, "/evaluate").handler(this::evaluateHandler);
 
