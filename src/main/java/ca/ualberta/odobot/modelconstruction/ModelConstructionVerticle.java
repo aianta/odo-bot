@@ -745,7 +745,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                     JsonObject matches = new JsonObject();
 
                     try(var tx =  LogPreprocessor.graphDB.db.beginTx();
-                        var result = tx.execute("MATCH (n:ClickNode) return n;");
+                        var result = tx.execute("MATCH (n) WHERE n:ClickNode OR n:DataEntryNode OR n:CheckboxNode or n:RadioButtonNode or n:SelectOptionNode return n;");
                         ResourceIterator<Node> it = result.columnAs("n");
                     ){
 
@@ -937,7 +937,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                                     try(var tx = LogPreprocessor.graphDB.db.beginTx();
 
                                     ){
-                                        tx.execute("MATCH (n:ClickNode) WHERE n.id = '%s' SET n.dynamicXpaths = %s RETURN n;".formatted(nodeId,  dxpathsPropertyValue));
+                                        tx.execute("MATCH (n) WHERE n.id = '%s' SET n.dynamicXpaths = %s RETURN n;".formatted(nodeId,  dxpathsPropertyValue));
                                         tx.commit();
                                     }
                                 }
@@ -1011,7 +1011,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
      * @param xpath
      * @return
      */
-    private List<String> expandValidationXpaths(String xpath){
+    public static List<String> expandValidationXpaths(String xpath){
         List<String> result = new ArrayList<>();
         Pattern pattern = Pattern.compile("(?<=\\[)[0-9]*(?=\\])");
 

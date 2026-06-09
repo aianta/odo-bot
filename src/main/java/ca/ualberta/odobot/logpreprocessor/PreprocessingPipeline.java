@@ -53,6 +53,7 @@ public interface PreprocessingPipeline extends PipelineService {
     Future<List<TrainingExemplar>> makeTrainingExemplars(List<TrainingMaterials> materials);
 
 
+    Future<Timeline> detectDynamicXpaths(Timeline timeline);
     Future<List<TimelineEntity>> makeEntities(List<Timeline> timelines);
 
 

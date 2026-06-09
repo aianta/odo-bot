@@ -357,6 +357,7 @@ public class LogPreprocessor extends AbstractVerticle {
             rc.next();
         });
         navModelRoute.handler(pipeline::timelinesHandler);
+        navModelRoute.handler(pipeline::detectDxPathHandler);
         navModelRoute.handler(pipeline::navModelHandler);
         navModelRoute.handler(rc->{
             if(rc.get("todo") != null && ((List<String>)rc.get("todo")).size()> 0){

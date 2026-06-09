@@ -14,6 +14,10 @@ public class NavNode {
     public static <T extends NavNode> T fromRecord(Record record, T out){
         Node node = record.get(0).asNode();
 
+        if (node.containsKey("dynamicXpaths")) {
+            out.setDynamicXpaths(node.get("dynamicXpaths").asString());
+        }
+
         if(!node.get("website").isNull()){
             out.setWebsite(node.get("website").asString());
         }
@@ -27,6 +31,8 @@ public class NavNode {
 
         return out;
     }
+
+    private String dynamicXpaths;
 
     private UUID id;
 
@@ -57,5 +63,13 @@ public class NavNode {
 
     public void setInstances(Set<String> instances) {
         this.instances = instances;
+    }
+
+    public void setDynamicXpaths(String dynamicXpaths){
+        this.dynamicXpaths = dynamicXpaths;
+    }
+
+    public String getDynamicXpaths(){
+        return dynamicXpaths;
     }
 }

@@ -27,6 +27,8 @@ public interface PipelineService {
 
     void extractStateSamplesHandler(RoutingContext rc);
 
+    void detectDxPathHandler(RoutingContext rc);
+
     void navModelHandler(RoutingContext rc);
 
     void captureTrainingMaterialsHandler(RoutingContext rc);

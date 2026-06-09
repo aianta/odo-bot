@@ -6,6 +6,7 @@ import org.neo4j.driver.types.Node;
 public class ClickNode extends XpathAndBasePathNode {
 
 
+
     private String text;
 
     public static ClickNode fromRecord(Record record){
@@ -16,9 +17,13 @@ public class ClickNode extends XpathAndBasePathNode {
 
         result.setText(n.get("text").asString());
 
+
+
         return result;
 
     }
+
+
 
     public String getText() {
         return text;

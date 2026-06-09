@@ -3,6 +3,7 @@ package ca.ualberta.odobot.semanticflow.model;
 
 import ca.ualberta.odobot.semanticflow.extraction.terms.SourceFunctions;
 import ca.ualberta.odobot.semanticflow.extraction.terms.impl.BasicStanfordNLPStrategy;
+import ca.ualberta.odobot.semanticflow.navmodel.DynamicXPath;
 import ca.ualberta.odobot.semanticflow.ranking.terms.impl.DistanceToTarget;
 import ca.ualberta.odobot.semanticflow.ranking.terms.impl.NoRanking;
 import io.vertx.core.json.JsonObject;
@@ -12,6 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
+import java.util.Set;
 
 public class ClickEvent extends AbstractArtifact implements TimelineEntity {
 
@@ -27,6 +29,8 @@ public class ClickEvent extends AbstractArtifact implements TimelineEntity {
     private InteractionType type;
 
     private String resourceAnnotation;
+
+
 
     public String getResourceAnnotation() {
         return resourceAnnotation;
@@ -46,6 +50,8 @@ public class ClickEvent extends AbstractArtifact implements TimelineEntity {
 
         return json;
     }
+
+
 
     @Override
     public long timestamp() {

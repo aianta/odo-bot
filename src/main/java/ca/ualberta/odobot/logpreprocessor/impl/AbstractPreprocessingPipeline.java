@@ -255,6 +255,43 @@ public abstract class AbstractPreprocessingPipeline implements PreprocessingPipe
         rc.next();
     }
 
+    public void detectDxPathHandler(RoutingContext rc){
+        BasicExecution execution = rc.get("metadata");
+        if(execution != null){
+            execution.status().data().put("step", "detectDxPathHandler");
+        }
+        List<Timeline> timelines = rc.get("timelines");
+        log.info("Detecting dynamicXpaths in timelines");
+
+        Future<Timeline> f = null;
+
+        Iterator<Timeline> it = timelines.iterator();
+        while (it.hasNext()) {
+            Timeline curr = it.next();
+            if(f == null){
+                f = vertx.getDelegate().<Timeline>executeBlocking(blocking->detectDynamicXpaths(curr)
+                        .onSuccess(done->blocking.complete(done))
+                        .onFailure(err->blocking.fail(err)));
+
+            }else{
+                f = f.compose(
+                        (done)->vertx.getDelegate().<Timeline>executeBlocking(blocking->detectDynamicXpaths(curr)
+                                .onSuccess(d->blocking.complete(d))
+                                .onFailure(err->blocking.fail(err))
+                        )
+                );
+            }
+        }
+
+        f.onSuccess(d->log.info("Successfully completed dynamic xpath detection."))
+                .onFailure(err->log.error(err.getMessage(), err))
+                .onComplete(r->{
+                    rc.next();
+                });
+
+
+    }
+
     public void navModelHandler(RoutingContext rc){
 
         //Update bookkeeping for this execution

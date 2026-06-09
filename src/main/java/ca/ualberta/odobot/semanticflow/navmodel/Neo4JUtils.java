@@ -584,17 +584,20 @@ public class Neo4JUtils {
 
 
 
-    public ClickNode processClick(String clickText, String clickXpath, String eventId, String basePath){
+    public ClickNode processClick(String clickText, String clickXpath, String eventId, String basePath, String dynamicXpaths){
 
         //If a click node for this event already exists in the database, this supplier will be used to retrieve it.
         Supplier<ClickNode> existingClickNodeSupplier = ()->getClickNode(clickXpath, clickText, basePath);
+        if(dynamicXpaths != null){
+            existingClickNodeSupplier = ()->getClickNode(dynamicXpaths);
+        }
 
         //Invoke generic processing logic.
         return processNode(
                 eventId,
                 ClickNode.class,
                 existingClickNodeSupplier, //If a click node for this event already exists in the database, this supplier will be used to retrieve it.
-                newClickNodeSupplier(clickText, clickXpath, eventId, basePath), //If no click node could be found, this supplier will be used to create one
+                newClickNodeSupplier(clickText, clickXpath, eventId, basePath, dynamicXpaths), //If no click node could be found, this supplier will be used to create one
                 processClickQueryFunction()
         );
     }
@@ -613,13 +616,14 @@ public class Neo4JUtils {
      *  Supplies new click nodes
      * @return
      */
-    private Supplier<ClickNode> newClickNodeSupplier(String clickText, String clickXpath, String eventId, String basePath){
+    private Supplier<ClickNode> newClickNodeSupplier(String clickText, String clickXpath, String eventId, String basePath, String dynamicXpaths){
         Supplier<ClickNode> newClickNodeSupplier = ()->{
             ClickNode clickNode = new ClickNode();
             clickNode.setId(UUID.randomUUID());
             clickNode.setText(clickText);
             clickNode.setXpath(clickXpath);
             clickNode.setBasePath(basePath);
+            clickNode.setDynamicXpaths(dynamicXpaths);
             clickNode.setInstances(Set.of(eventId));
             return clickNode;
         };
@@ -638,6 +642,13 @@ public class Neo4JUtils {
             props.put("text", clickNode.getText());
             props.put("id", clickNode.getId().toString());
             props.put("instances", clickNode.getInstances());
+
+            if(clickNode.getDynamicXpaths() != null){
+                props.put("dynamicXpaths", clickNode.getDynamicXpaths());
+
+                return makeGenericMergeQuery("ClickNode", clickNode, props, "dynamicXpaths", clickNode.getDynamicXpaths(), "props", props);
+            }
+
 
             return makeGenericMergeQuery("ClickNode", clickNode, props, "xpath", clickNode.getXpath(), "text", clickNode.getText(), "props", props);
 
@@ -786,7 +797,7 @@ public class Neo4JUtils {
         String clickText = clickEvent.getTriggerElement() != null?clickEvent.getTriggerElement().text():"";
         String clickXpath = clickEvent.getXpath();
 
-        return processClick(clickText, clickXpath, entityTimelineId, clickEvent.getBasePath());
+        return processClick(clickText, clickXpath, entityTimelineId, clickEvent.getBasePath(), clickEvent.getDynamicXPathsAsString());
     }
 
     public void processEffect(Timeline timeline, Effect effect){
@@ -904,6 +915,10 @@ public class Neo4JUtils {
         TimelineEntity target = timeline.get(index);
         if (target instanceof ClickEvent){
             ClickEvent clickEvent = (ClickEvent)target;
+            if(clickEvent.getDynamicXPaths() != null){
+                log.info("ClickEvent {}#{} has dynamicXpaths:\n{}", timeline.getId().toString(), index, clickEvent.getDynamicXPathsAsString());
+                return getClickNode(clickEvent.getDynamicXPathsAsString());
+            }
             return getClickNode(clickEvent.getXpath(), clickEvent.getTriggerElement() != null ? clickEvent.getTriggerElement().text():"", clickEvent.getBasePath());
         }
 
@@ -1275,6 +1290,12 @@ public class Neo4JUtils {
         var stmt = makeSimplePropertyBasedMatchQueryString("ResourceParameterNode", "name");
         var query = new Query(stmt, parameters("name", resourceName));
         return readNode(query, ResourceParameterNode.class);
+    }
+
+    private ClickNode getClickNode(String dynamicXpaths){
+        var stmt = makeSimplePropertyBasedMatchQueryString("ClickNode", "dynamicXpaths");
+        var query = new Query(stmt, parameters("dynamicXpaths", dynamicXpaths));
+        return readNode(query, ClickNode.class);
     }
 
     private ClickNode getClickNode(String xpath, String text, String basePath){

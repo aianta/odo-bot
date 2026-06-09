@@ -1,6 +1,8 @@
 package ca.ualberta.odobot.semanticflow.model;
 
 import ca.ualberta.odobot.common.Xpath;
+import ca.ualberta.odobot.semanticflow.navmodel.DynamicXPath;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -12,6 +14,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.time.ZonedDateTime;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -30,6 +33,7 @@ public abstract class AbstractArtifact {
     private String htmlId; //HTML id if provided
     private String tag;
     private URL baseURI; // The absolute base URL of the document containing the node:  https://developer.mozilla.org/en-US/docs/Web/API/Node/baseURI
+    private Set<DynamicXPath> dynamicXPaths;
 
     public JsonObject getSemanticArtifacts() {
         return semanticArtifacts;
@@ -45,6 +49,19 @@ public abstract class AbstractArtifact {
 
     public void setHtmlId(String htmlId) {
         this.htmlId = htmlId;
+    }
+
+    public Set<DynamicXPath> getDynamicXPaths() {
+        return dynamicXPaths;
+    }
+
+    public String getDynamicXPathsAsString(){
+        return getDynamicXPaths() != null?getDynamicXPaths().stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll).encode():null;
+    }
+
+    public AbstractArtifact setDynamicXPaths(Set<DynamicXPath> dynamicXPaths) {
+        this.dynamicXPaths = dynamicXPaths;
+        return this;
     }
 
     public String getXpath() {

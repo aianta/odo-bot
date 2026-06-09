@@ -4,6 +4,7 @@ import ca.ualberta.odobot.common.Utils;
 import ca.ualberta.odobot.extractors.SemanticArtifactExtractor;
 import ca.ualberta.odobot.semanticflow.SemanticSequencer;
 import ca.ualberta.odobot.semanticflow.model.*;
+import ca.ualberta.odobot.semanticflow.navmodel.DynamicXPath;
 import ca.ualberta.odobot.semanticflow.navmodel.nodes.*;
 import edu.stanford.nlp.ling.CoreAnnotations;
 import edu.stanford.nlp.ling.CoreLabel;
@@ -13,10 +14,16 @@ import edu.stanford.nlp.util.CoreMap;
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;
 import io.vertx.rxjava3.core.Vertx;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.select.Elements;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.stream.Collectors;
+
+import static ca.ualberta.odobot.modelconstruction.ModelConstructionVerticle.expandValidationXpaths;
 
 public class MinimalPipeline extends SimplePreprocessingPipeline{
 
@@ -82,6 +89,129 @@ public class MinimalPipeline extends SimplePreprocessingPipeline{
 
         return Future.succeededFuture(timeline);
     }
+
+    public Future<Timeline> detectDynamicXpaths(Timeline timeline){
+
+        return sqliteService.getUniqueCommonSubstructureContainers()
+                .compose(substructures->{
+
+                    ListIterator<TimelineEntity> it = timeline.listIterator();
+
+                    while (it.hasNext()){
+                        TimelineEntity entity = it.next();
+
+                        if (entity instanceof AbstractArtifact event && event.getXpath() != null){
+
+                            Set<DynamicXPath> dxPaths = computeDynamicXpaths(event.getXpath(), substructures);
+                            if (!dxPaths.isEmpty()){
+                                log.info("Found {} dynamic xpaths for {}", dxPaths.size(), timeline.getId() + "#" + it.previousIndex());
+
+                                event.setDynamicXPaths(dxPaths);
+                            }
+                        }
+                    }
+
+                    return Future.succeededFuture(timeline);
+
+                });
+
+    }
+
+    private Set<DynamicXPath> computeDynamicXpaths(String xpath, Set<JsonObject> substructures){
+        if(!xpath.startsWith("//") && xpath.startsWith("/")){
+            xpath = "/" + xpath;
+
+        }
+      List<JsonObject> matchedSubStructures = new ArrayList<>();
+      Set<String> htmlOfFalsePositives = new  HashSet<>();
+
+      //First find matching substructures.
+      for(JsonObject substructure: substructures){
+        String prefixAndDynamicTag = substructure.getString("prefix") + "/" + substructure.getString("dynamic_tag");
+        if(xpath.startsWith(prefixAndDynamicTag)){
+            matchedSubStructures.add(substructure);
+        }
+      }
+
+        String finalXpath = xpath;
+        Set<DynamicXPath> dxpaths = matchedSubStructures.stream()
+              .map(structure->{
+                  DynamicXPath dxpath = new DynamicXPath();
+                  dxpath.setPrefix(structure.getString("prefix"));
+                  dxpath.setDynamicTag(structure.getString("dynamic_tag"));
+
+                  String prefixAndDynamicTag = structure.getString("prefix") + "/" + structure.getString("dynamic_tag");
+                  if(!finalXpath.startsWith(prefixAndDynamicTag)){
+                      //If this model path wasn't a match for this particular sub-structure, we cannot compute a dxpath for it.
+                      //Although I don't think this should be possible at this stage.
+                      return null;
+                  }
+
+                  /**
+                   * The suffix is what is left of the model xpath after we remove the prefix, the dynamic tag and any dynamic tag index.
+                   */
+                  String suffix = finalXpath.substring(prefixAndDynamicTag.length()); //Start after the dynamic tag
+
+                  if (suffix.contains("/")){
+                      suffix = suffix.substring(suffix.indexOf("/") + 1); //And after any index associated with the dynamic tag in the model xpath
+                      dxpath.setSuffixPattern(DynamicXPath.toSuffixPattern(List.of(suffix)));
+                      dxpath.setKnownSuffixes(List.of(suffix));
+                  }else{
+                      /*
+                       * Sometimes there is no further suffix, the dynamic tag is all there is. Consider:
+                       * /div/button[1]
+                       * /div/button[2]
+                       * /div/button[3]
+                       *
+                       * The dynamic tag is the button and there is no further suffix.
+                       */
+
+                      suffix = null;
+                  }
+
+                  log.info("prefix: {}", structure.getString("prefix"));
+                  log.info("dynamicTag: {}", structure.getString("dynamic_tag"));
+                  log.info("suffix: {}", suffix);
+
+                  /*
+                   * Validate the match to this sub-structure by ensuring that the computed suffix exists in the sub-structure's reference HTML.
+                   */
+
+                  Document structureHTMLSnippet = Jsoup.parseBodyFragment(structure.getString("html"));
+                  String validationXpath = "//" + structure.getString("dynamic_tag");
+                  if(suffix != null){
+                      validationXpath += "/" + suffix;
+                  }
+                  Elements matchedSnippetElements = structureHTMLSnippet.selectXpath(validationXpath);
+
+                  if(matchedSnippetElements.size() > 0){
+                      return dxpath;
+                  }else{
+
+                      //Before giving up, try expanding the validation xpath.
+                      List<String> otherCandidates = expandValidationXpaths(validationXpath);
+                      for(String otherCandidate: otherCandidates){
+                          matchedSnippetElements = structureHTMLSnippet.selectXpath(otherCandidate);
+                          // Be stricter with these hypothetical xpath candidates and require them to resolve to a single element.
+                          if(matchedSnippetElements.size() == 1){
+                              return dxpath;
+                          }
+                      }
+
+                      htmlOfFalsePositives.add(structure.getString("html"));
+                      return null;
+                  }
+
+
+              })
+              .filter(Objects::nonNull)
+              .collect(Collectors.toSet());
+
+
+      return dxpaths;
+
+    }
+
 
     public Future<Void> buildNavModel(Timeline timeline){
 
