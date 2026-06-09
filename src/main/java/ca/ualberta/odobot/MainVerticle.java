@@ -24,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 
 public class MainVerticle extends ConfigurableVerticle {
     private static final Logger log = LoggerFactory.getLogger(MainVerticle.class);
+    public static String ELASTICSEARCH_HOST = "localhost";
 
 
     @Override
@@ -40,6 +41,10 @@ public class MainVerticle extends ConfigurableVerticle {
     public Completable onStart() {
 
         log.info("MainVerticle starting!");
+
+        if(_config.containsKey("elasticsearchHost")){
+            ELASTICSEARCH_HOST = _config.getString("elasticsearchHost");
+        }
 
         if(_config.getBoolean("LogPreProcessor")){
             LogPreprocessor logPreprocessor = new LogPreprocessor();

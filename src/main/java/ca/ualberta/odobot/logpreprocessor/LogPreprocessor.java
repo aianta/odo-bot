@@ -45,6 +45,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 
+import static ca.ualberta.odobot.MainVerticle.ELASTICSEARCH_HOST;
 import static ca.ualberta.odobot.logpreprocessor.Constants.*;
 
 public class LogPreprocessor extends AbstractVerticle {
@@ -130,7 +131,7 @@ public class LogPreprocessor extends AbstractVerticle {
             snippetExtractorService = snippetExtractorServiceProxyBuilder.build(SnippetExtractorService.class);
 
             //Init Elasticsearch Service
-            elasticsearchService = ElasticsearchService.create(vertx.getDelegate(), "localhost", 9200, snippetExtractorService);
+            elasticsearchService = ElasticsearchService.create(vertx.getDelegate(), ELASTICSEARCH_HOST, 9200, snippetExtractorService);
             new ServiceBinder(vertx.getDelegate())
                     .setAddress(ELASTICSEARCH_SERVICE_ADDRESS)
                     .setTimeoutSeconds(86400)

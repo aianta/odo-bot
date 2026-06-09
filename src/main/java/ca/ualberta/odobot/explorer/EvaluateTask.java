@@ -187,7 +187,7 @@ public class EvaluateTask implements Runnable{
 
                         if (Files.exists(Path.of(taskEventsFile))){
                             ProcessBuilder pb = new ProcessBuilder(
-                                    "python",
+                                    "python3",
                                     "-X", "utf8",
                                     evalScriptPath,
                                     "-t", datasetPath,

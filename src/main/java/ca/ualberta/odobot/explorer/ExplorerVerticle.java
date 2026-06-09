@@ -1119,7 +1119,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                     String experimentResultsFile = experimentResultsFolderPath + "/" + experimentId + "-results.json";
 
                     ProcessBuilder pb = new ProcessBuilder(
-                            "python",
+                            "python3",
                             "-X", "utf8",
                             evalScriptPath,
                             "-t", datasetPath,

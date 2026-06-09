@@ -21,7 +21,7 @@ import co.elastic.clients.transport.ElasticsearchTransport;
 import co.elastic.clients.transport.rest_client.RestClientTransport;
 import co.elastic.clients.util.BinaryData;
 import co.elastic.clients.util.ContentType;
-import io.vertx.core.CompositeFuture;
+
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
@@ -37,7 +37,7 @@ import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
+
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.EXECUTIONS_INDEX;
 
@@ -59,6 +59,7 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
     private Vertx vertx;
 
     public ElasticsearchServiceImpl(Vertx vertx, String host, int port, SnippetExtractorService snippetExtractorService){
+        log.info("Starting ES connection {}:{}", host, port);
         this.snippetExtractorService = snippetExtractorService;
         log.info("Initializing Elasticsearch client");
         restClient = RestClient.builder(new HttpHost(host, port)).build();
@@ -66,6 +67,10 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
         client = new ElasticsearchClient(transport);
         this.vertx = vertx;
         executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(6);
+
+        saveIntoIndex(List.of(new JsonObject().put("test", "data")), "test_index")
+                .onSuccess(done->log.info("Successfully connected to ES! "))
+                .onFailure(err->log.error("Error connecting to ES: {}", err.getMessage(), err));
 
     }
 
@@ -320,7 +325,7 @@ public class ElasticsearchServiceImpl implements ElasticsearchService {
     }
 
     @Override
-    public Future<Void> saveIntoIndex(List<JsonObject> items, String index) {
+    public Future<Void>  saveIntoIndex(List<JsonObject> items, String index) {
         try{
 
             boolean indexExists = client.indices().exists(e->e.index(index)).value();

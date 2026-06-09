@@ -3,7 +3,7 @@
 # Building Docker Image 
 
 ```
-docker build --progress=plain -t ca.ualberta/odobot -f docker-gradle/Dockerfile .    
+docker build --progress=plain -t aianta/odobot -f docker-gradle/Dockerfile .    
 ```
 
 # Running OdoBot via Docker
@@ -20,5 +20,9 @@ docker build --progress=plain -t ca.ualberta/odobot -f docker-gradle/Dockerfile 
 * `7080`: This is the port on which OdoBot exposes its guidance service
 
 ```
-docker run -p 8076:8076 -p 7080:7080 -v ./config:/application/config -v ./execution_events:/application/execution_events -v ./libs:/application/libs -v ./db:/application/db  --name odobot ca.ualberta/odobot
+docker run -p 8076:8076 -p 7080:7080 -v ./config:/application/config -v ./execution_events:/application/execution_events -v ./libs:/application/libs -v ./db:/application/db  --name odobot aianta/odobot
 ```
+
+# Running Experiments
+
+`git clone --recurse-submodules git@github.com:aianta/odo-bot.git`
