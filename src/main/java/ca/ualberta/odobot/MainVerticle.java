@@ -1,6 +1,8 @@
 package ca.ualberta.odobot;
 
 
+import ca.ualberta.odobot.common.AbstractOpenAIStrategy;
+import ca.ualberta.odobot.guidance.TokenUsageRecord;
 import ca.ualberta.odobot.modelconstruction.ModelConstructionVerticle;
 import ca.ualberta.odobot.common.ConfigurableVerticle;
 import ca.ualberta.odobot.dataentry2label.DataEntry2LabelVerticle;
@@ -137,6 +139,7 @@ public class MainVerticle extends ConfigurableVerticle {
             vertx.deployVerticle(telemetryVerticle);
         }
 
+        AbstractOpenAIStrategy.activeTokenUsageRecord = new TokenUsageRecord();
         return Completable.complete();
     }
 }

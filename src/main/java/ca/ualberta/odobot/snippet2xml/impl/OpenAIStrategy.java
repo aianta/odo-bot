@@ -9,7 +9,7 @@ import ca.ualberta.odobot.snippet2xml.impl.validators.IsValidXML;
 import ca.ualberta.odobot.snippet2xml.impl.validators.PassesSchemaValidation;
 import ca.ualberta.odobot.snippet2xml.impl.validators.SchemaValidatesXMLObjects;
 import ca.ualberta.odobot.snippets.Snippet;
-import com.azure.ai.openai.OpenAIClient;
+
 import com.azure.ai.openai.OpenAIClientBuilder;
 import com.azure.ai.openai.models.*;
 import com.azure.core.credential.KeyCredential;

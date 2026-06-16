@@ -1,14 +1,12 @@
 package ca.ualberta.odobot.modelconstruction;
 
-import ca.ualberta.odobot.common.Predicates;
-import ca.ualberta.odobot.common.RobulaPlus;
-import ca.ualberta.odobot.common.Utils;
+import ca.ualberta.odobot.common.*;
+import ca.ualberta.odobot.guidance.TokenUsageRecord;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import ca.ualberta.odobot.mind2web.HTMLCleaningTools;
 import ca.ualberta.odobot.modelconstruction.eventlabeling.EventDescription;
 import ca.ualberta.odobot.modelconstruction.eventlabeling.LabelTrajectoryTask;
 import ca.ualberta.odobot.modelconstruction.impl.TagAndAttributeStrategy;
-import ca.ualberta.odobot.common.HttpServiceVerticle;
 import ca.ualberta.odobot.elasticsearch.ElasticsearchService;
 
 import ca.ualberta.odobot.modelconstruction.impl.visitors.BlankRemovingVisitor;
@@ -141,6 +139,14 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
 
         stateLabelingService = StateLabelingService.create(vertx.getDelegate(), _config);
 
+
+        api.route().method(HttpMethod.DELETE).path("/tokenUsage").handler(rc->{
+            AbstractOpenAIStrategy.activeTokenUsageRecord = new TokenUsageRecord();
+            rc.getDelegate().response().setStatusCode(200).end(AbstractOpenAIStrategy.activeTokenUsageRecord.toJson().encodePrettily());
+        });
+        api.route().method(HttpMethod.GET).path("/tokenUsage").handler(rc->{
+            rc.getDelegate().response().setStatusCode(200).end(AbstractOpenAIStrategy.activeTokenUsageRecord.toJson().encodePrettily());
+        });
 
         api.route().method(HttpMethod.GET).path("/sampleDOMSnapshot").handler(this::sampleDOMSnapshot);
         api.route().method(HttpMethod.POST).path("/clean").handler(this::clean);

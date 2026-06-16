@@ -12,3 +12,4 @@ DataEntry2Label: true
 TaskPlanner: true
 ModelConstruction: true
 Telemetry: true
+elasticsearchHost: "localhost"
