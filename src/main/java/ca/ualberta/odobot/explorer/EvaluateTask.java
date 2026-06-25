@@ -32,6 +32,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.*;
+import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
 import static ca.ualberta.odobot.explorer.ExploreTask.*;
 import static ca.ualberta.odobot.explorer.WebDriverUtils.*;
@@ -86,13 +87,14 @@ public class EvaluateTask implements Runnable{
         this.exploreVerticleConfig = exploreVerticleConfig;
     }
 
-    @Override
-    public void run() {
-        try{
+    private void setupEnvironment() throws MalformedURLException {
+        try {
+
+
             AbstractOpenAIStrategy.activeTokenUsageRecord = tokenUsageRecord;
 
             FirefoxOptions options = new FirefoxOptions();
-            if(headless){
+            if (headless) {
                 log.info("Running in headless mode");
 //            options.addArguments("--firefox-arg=\"--headless\"");
                 options.addArguments("--headless");
@@ -113,18 +115,16 @@ public class EvaluateTask implements Runnable{
 //                    .build();
 
 
-            if (config.containsKey("firefoxDockerGridURL")){
+            if (config.containsKey("firefoxDockerGridURL")) {
                 driver = new RemoteWebDriver(new URL(config.getString("firefoxDockerGridURL")), options);
                 WebDriver _augmentedDriver = new Augmenter().augment(driver);
                 String extensionId = ((HasExtensions) _augmentedDriver).installExtension(Paths.get(config.getString(EvaluationTaskRequestFields.ODOSIGHT_PATH.field)));
                 log.info("Installed extension with id {}", extensionId);
 
-             }else{
-                driver = new FirefoxDriver( options);
-                ((FirefoxDriver)driver).installExtension(Path.of(config.getString(EvaluationTaskRequestFields.ODOSIGHT_PATH.field)),true);
+            } else {
+                driver = new FirefoxDriver(options);
+                ((FirefoxDriver) driver).installExtension(Path.of(config.getString(EvaluationTaskRequestFields.ODOSIGHT_PATH.field)), true);
             }
-
-
 
 
             //Load Evaluation Canvas State
@@ -140,12 +140,26 @@ public class EvaluateTask implements Runnable{
             log.info("OdoX connected to Guidance Subsystem");
 
             odoXClient = WebSocketConnection.clientMap.entrySet().iterator().next().getValue();
+        }catch (NoSuchElementException e){
+            cleanUp();
+            setupEnvironment();
+        }
+    }
+
+    @Override
+    public void run() {
+        try{
+
+            setupEnvironment();
 
             startTask(task);
         }catch (MalformedURLException e){
             log.error(e.getMessage(), e);
-        }catch (Exception e){
+            cleanUp();
+        }
+        catch (Exception e){
             log.error(e.getMessage(), e);
+            cleanUp();
         }
 
 
@@ -187,7 +201,7 @@ public class EvaluateTask implements Runnable{
 
                         if (Files.exists(Path.of(taskEventsFile))){
                             ProcessBuilder pb = new ProcessBuilder(
-                                    "python3",
+                                    "python",
                                     "-X", "utf8",
                                     evalScriptPath,
                                     "-t", datasetPath,
@@ -309,9 +323,12 @@ public class EvaluateTask implements Runnable{
     public void cleanUp(){
 
         //Close the browser
-        driver.close();
-        driver.quit();
-        driver = null;
+        try{
+            driver.close();
+            driver.quit();
+        }catch (NoSuchSessionException e) {
+            driver = null;
+        }
 
         //Clear client map
         WebSocketConnection.clientMap.clear();

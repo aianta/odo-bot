@@ -25,6 +25,7 @@ public class Utils {
     private static final Logger log = LoggerFactory.getLogger(Utils.class);
 
     private static final Set<String> verbPOS = Set.of("VB","VBD","VBG","VBN","VBP","VBZ");
+    private static final Set<String> excludedGraphQLOperations = Set.of("UpdateDiscussionEntriesReadState");
 
     public static Predicate<NetworkEvent> networkEventPredicate = (networkEvent) ->{
         if (networkEvent.getMethod().toLowerCase().equals("get")){
@@ -41,7 +42,11 @@ public class Utils {
          * */
         if(graphQLOperation.isPresent()){
             String operationName = graphQLOperation.get();
+            if (excludedGraphQLOperations.contains(operationName)) {
+                return false;
+            }
             operationName = ca.ualberta.odobot.common.Utils.splitCamelCase(operationName).toLowerCase();
+
             operationName = operationName.replaceAll("update", "update the"); //Add "the" after "update" to make it more likely to be recognized as a verb by the POS tagger. Stupid context sensitive grammer rules...
 
             Annotation document = new Annotation(operationName);

@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.common;
 
+import ca.ualberta.odobot.MainVerticle;
 import ca.ualberta.odobot.guidance.RequestManager;
 import ca.ualberta.odobot.guidance.TokenUsageRecord;
 import com.azure.ai.openai.OpenAIClient;
@@ -38,7 +39,12 @@ public abstract class AbstractOpenAIStrategy {
 
     public AbstractOpenAIStrategy(JsonObject config){
         this.config = config.getJsonObject("openAI");
-        this.model = this.config.getString("model");
+        if (MainVerticle.MODEL_OVERRIDE != null){
+            this.model = MainVerticle.MODEL_OVERRIDE;
+        }else{
+            this.model = this.config.getString("model");
+        }
+
 
         client = new OpenAIClientBuilder()
                 .credential(new KeyCredential(this.config.getString("secretKey")))

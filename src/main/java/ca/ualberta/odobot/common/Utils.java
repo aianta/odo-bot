@@ -20,7 +20,16 @@ public class Utils {
     }
 
     public static String normalizeBaseUri(String baseUri) {
-        return baseUri.replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*");
+
+        try{
+            URL url = new URL(baseUri);
+            String path = url.getPath();
+            return path.replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*");
+        }catch (MalformedURLException e){
+            return baseUri.replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*");
+        }
+
+
     }
 
     public static String splitCamelCase(String s) {

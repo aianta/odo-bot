@@ -135,7 +135,8 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
                     }).compose(options->{
 
                         //Pick the correct task from a list of likely options.
-                        return this.strategy.pickMostRelevantTask(taskDescription, options.stream().map(JsonObject.class::cast).toList());
+                        return this.strategy.pickMostRelevantTask(taskDescription, options.stream().map(JsonObject.class::cast).toList())
+                                .compose(chosenTaskAndAPICalls->this.processTargetingResults(taskDescription, new JsonArray().add(chosenTaskAndAPICalls) ));
                     });
 
                 })
@@ -154,7 +155,7 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
                         log.info("Got resource parameters mappings");
                         List<JsonObject> resourceParameters = compositeFuture.resultAt(1);
                         log.info("Got API target query results");
-                        JsonArray apiCalls = new JsonArray().add(compositeFuture.resultAt(2));
+                        JsonArray apiCalls = compositeFuture.resultAt(2);
 
 
 
@@ -162,7 +163,7 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
                         JsonObject result =  new JsonObject();
                         result.put("id", task.getString("id"));
                         result.put("userLocation", task.getString("userLocation"));
-                        result.put("targets", processTargetingResults(apiCalls));
+                        result.put("targets", apiCalls);
 
                         //Compute input parameters in task format for odobot.
                         JsonArray parameters = inputParameterMappings.stream()
@@ -272,7 +273,7 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
 
     }
 
-    private JsonArray processTargetingResults(JsonArray queryResults){
+    private Future<JsonArray> processTargetingResults(String originalQueryTaskDescription,  JsonArray queryResults){
 
         //Expect top-1 match
         assert queryResults.size() == 1;
@@ -280,55 +281,60 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
         JsonObject matchedTask = queryResults.getJsonObject(0);
         JsonArray apiCalls = matchedTask.getJsonArray("apiCalls");
 
-        //TODO: This is a hack, I am ignoring the login API call that is returned. We need proper task composition support to do this right.
-        //I am also picking the last API call. Thus our trajectories must end on the API call that completes the task.
-        apiCalls = new JsonArray().add(apiCalls.getJsonObject(apiCalls.size()-1));
-        //apiCalls = apiCalls.stream().map(JsonObject.class::cast).filter(call->!call.getString("path").equals("/login/canvas")).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+//        //TODO: This is a hack, I am ignoring the login API call that is returned. We need proper task composition support to do this right.
+//        //I am also picking the last API call. Thus our trajectories must end on the API call that completes the task.
+//        apiCalls = new JsonArray().add(apiCalls.getJsonObject(apiCalls.size()-1));
+//        //apiCalls = apiCalls.stream().map(JsonObject.class::cast).filter(call->!call.getString("path").equals("/login/canvas")).collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
 
-        assert apiCalls.size() == 1;
+        return this.getRelevantAPICalls(originalQueryTaskDescription, apiCalls.stream().map(JsonObject.class::cast).collect(Collectors.toList()))
+                .compose(chosenAPICalls->{
+                    assert chosenAPICalls.size() == 1;
+                    List<JsonObject> modelAPICalls = neo4j.getAllAPINodes()
+                            .stream()
+                            .map(apiNode -> new JsonObject()
+                                    .put("method", apiNode.getMethod())
+                                    .put("path", apiNode.getPath())
+                                    .put("id", apiNode.getId().toString())
+                            ).collect(Collectors.toList());
 
-        List<JsonObject> modelAPICalls = neo4j.getAllAPINodes()
-                .stream()
-                .map(apiNode -> new JsonObject()
-                        .put("method", apiNode.getMethod())
-                        .put("path", apiNode.getPath())
-                        .put("id", apiNode.getId().toString())
-                ).collect(Collectors.toList());
+                    modelAPICalls.addAll(
+                            neo4j.getAllGraphQLNodes()
+                                    .stream()
+                                    .map(graphQLNode -> new JsonObject()
+                                            .put("method", graphQLNode.getMethod())
+                                            .put("path", graphQLNode.getPath())
+                                            .put("operationName", graphQLNode.getOperationName())
+                                            .put("id", graphQLNode.getId().toString())
+                                    ).toList()
+                    );
 
-        modelAPICalls.addAll(
-                neo4j.getAllGraphQLNodes()
-                        .stream()
-                        .map(graphQLNode -> new JsonObject()
-                                .put("method", graphQLNode.getMethod())
-                                .put("path", graphQLNode.getPath())
-                                .put("operationName", graphQLNode.getOperationName())
-                                .put("id", graphQLNode.getId().toString())
-                        ).toList()
-        );
+                    JsonObject targetAPICall = chosenAPICalls.get(0);
 
-        JsonObject targetAPICall = apiCalls.getJsonObject(0);
+                    //Look through the api calls in the model and find the one that matches the one returned by the targeting mechanism.
+                    JsonObject targetModelAPICall = modelAPICalls.stream().filter(modelCall->{
+                        if(targetAPICall.containsKey("operationName")){
+                            //If there is no operationName key in the model call it cannot match a targetAPI call that does specify one.
+                            if(!modelCall.containsKey("operationName")){
+                                return false;
+                            }
 
-        //Look through the api calls in the model and find the one that matches the one returned by the targeting mechanism.
-        JsonObject targetModelAPICall = modelAPICalls.stream().filter(modelCall->{
-            if(targetAPICall.containsKey("operationName")){
-                //If there is no operationName key in the model call it cannot match a targetAPI call that does specify one.
-                if(!modelCall.containsKey("operationName")){
-                    return false;
-                }
+                            return modelCall.getString("operationName").equals(targetAPICall.getString("operationName")) &&
+                                    modelCall.getString("method").equals(targetAPICall.getString("method")) &&
+                                    modelCall.getString("path").equals(targetAPICall.getString("path"));
+                        }else{
+                            return modelCall.getString("method").equals(targetAPICall.getString("method")) &&
+                                    modelCall.getString("path").equals(targetAPICall.getString("path"));
+                        }
+                    }).findFirst().get();
 
-                return modelCall.getString("operationName").equals(targetAPICall.getString("operationName")) &&
-                        modelCall.getString("method").equals(targetAPICall.getString("method")) &&
-                                modelCall.getString("path").equals(targetAPICall.getString("path"));
-            }else{
-                return modelCall.getString("method").equals(targetAPICall.getString("method")) &&
-                        modelCall.getString("path").equals(targetAPICall.getString("path"));
-            }
-        }).findFirst().get();
+                    targetModelAPICall.put("targetingTaskId", matchedTask.getString("id"))
+                            .put("targetingTaskResult", matchedTask.getString("task"));
 
-        targetModelAPICall.put("targetingTaskId", matchedTask.getString("id"))
-                .put("targetingTaskResult", matchedTask.getString("task"));
+                    return Future.succeededFuture(new JsonArray().add(targetModelAPICall));
 
-        return new JsonArray().add(targetModelAPICall);
+                });
+
+
     }
 
     public Future<List<JsonObject>> getRelevantResourceParameters(String taskDescription){
@@ -409,6 +415,10 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
                         return Future.succeededFuture(chosenParameters);
                     });
 
+    }
+
+    public Future<List<JsonObject>> getRelevantAPICalls(String taskDescription, List<JsonObject> apiCalls){
+        return this.strategy.getTaskAPICalls(taskDescription, apiCalls);
     }
 
     @Override

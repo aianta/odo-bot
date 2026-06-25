@@ -277,7 +277,7 @@ public class NavPathsConstructor {
     }
 
     public List<NavPath> constructV3(Transaction tx, String startingNodeId, Set<String> resourceParameters, Set<String> inputParameters, Set<String> apiCalls, Set<String> excludedNodeIds ){
-
+        log.info("Path construction starting from node: {}", startingNodeId);
         if(apiCalls.size() != 1){
             throw new RuntimeException("Cannot construct path to multiple different API call targets!");
         }
@@ -286,7 +286,7 @@ public class NavPathsConstructor {
         Node srcNode =  fetchNodeById(tx, startingNodeId);
 
 
-        log.info("Path construction starting from node: {}", startingNodeId);
+
 
 
 
@@ -307,6 +307,7 @@ public class NavPathsConstructor {
         TraversalDescription traversal = tx.traversalDescription()
                 .breadthFirst()
                 .uniqueness(Uniqueness.NODE_PATH)
+                //.uniqueness(Uniqueness.RELATIONSHIP_PATH)
                 .expand(pathExpander)
                 .evaluator(evaluator);
 

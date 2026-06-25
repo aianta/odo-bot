@@ -287,8 +287,10 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
                 ()->_selectPath(paths, taskDescription, telemetry),
                 List.of((output)->{
                     try{
-                        UUID.fromString(output);
-                        return true;
+                        UUID uuid = UUID.fromString(output);
+                        Set<UUID> validOptions  = paths.stream().map(Map.Entry::getKey).map(UUID::fromString).collect(Collectors.toSet());
+                        return validOptions.contains(uuid);
+                        //return true;
                     }catch (IllegalArgumentException e){
                         return false;
                     }
@@ -301,6 +303,7 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
             return Future.succeededFuture(telemetry);
         }
 
+        log.error("{}", telemetry.encodePrettily());
         return Future.failedFuture("Failed to select a nav path!");
 
     }
@@ -402,7 +405,7 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
                 genericEntry = genericEntry.formatted("GraphQL");
                 sb.append(genericEntry + " " +  curr.getString("operationName") + "\n");
             }else{
-                genericEntry = genericEntry.formatted("API");
+                genericEntry = genericEntry.formatted("REST API");
                 sb.append(genericEntry + " " +  methodAndPath + "\n");
             }
 

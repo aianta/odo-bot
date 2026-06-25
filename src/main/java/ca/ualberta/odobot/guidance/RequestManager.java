@@ -577,6 +577,10 @@ public class RequestManager {
                             .onFailure(err->log.error(err.getMessage(),err));
 
                 }else{
+                    if(navPaths.isEmpty()){
+                        evaluationComplete.tryFail("Could not find new nav path in recovery attempt!");
+                        return;
+                    }
                     navPaths = List.of(navPaths.get(0));
 
                     NavPath.saveNavPath("%s/%s-navpath-%d.txt".formatted(this.experimentFolderPath, evalId, request.getPathRecomputations()).replaceAll("\\|","-"), navPaths.get(0));
@@ -720,7 +724,8 @@ public class RequestManager {
 
                     if(lastInstruction == null){
                         log.error("Last instruction is null!");
-                        throw new RuntimeException("Last instruction was null!");
+                        evaluationComplete.tryComplete();
+                        //throw new RuntimeException("Last instruction was null!");
                     }
 
                     if (lastInstruction instanceof EnterDataTinymce){
@@ -909,6 +914,10 @@ public class RequestManager {
                                 .onFailure(err->log.error(err.getMessage(), err));
 
                     }else{
+                        if (navPaths.isEmpty()){
+                            evaluationComplete.tryFail("Could not find nav path in recovery attempt!");
+                            return;
+                        }
                         navPaths = List.of(navPaths.get(0)); //Only return/use the first path for execution.
 
                         //Write the new path down for debugging

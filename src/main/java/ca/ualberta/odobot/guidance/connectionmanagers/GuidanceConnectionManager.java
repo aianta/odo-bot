@@ -48,6 +48,11 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
 
     private JsonObject executionInstruction = null;
 
+    private void printActivePromises(){
+        log.info("ActivePromises:");
+        activePromises.forEach((key,v)->log.info("{}:{}", key,v));
+    }
+
     public GuidanceConnectionManager(OdoClient client){
         super(client);
     }
@@ -65,8 +70,16 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                 super.addHistory(message);
                 break;
             case  "EXECUTION_RESULT":
+                printActivePromises();
+                // Capture the promise object currently associated with the awaitng execution result.
+                final Promise _promise = activePromises.get("EXECUTION_RESULT");
+                // Let any listeners know that the execution result they're waiting for is complete.
                 activePromises.get("EXECUTION_RESULT").complete(message);
-                activePromises.remove("EXECUTION_RESULT");
+                if (_promise == activePromises.get("EXECUTION_RESULT")){
+                    // If those listeners replaced the execution result promise with some new object, don't remove it.
+                    // But if the listeners didn't touch the execution result promise go ahead and remove it now.
+                    activePromises.remove("EXECUTION_RESULT");
+                }
                 super.addHistory(message);
                 break;
 
@@ -118,6 +131,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
 
         Promise<JsonObject> promise = Promise.promise();
         activePromises.put("CLEAR_NAVIGATION_OPTIONS_RESULT", promise);
+        printActivePromises();
 
         send(clearNavigationOptionsRequest);
 
@@ -128,6 +142,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
         JsonObject notifyPathCompleteRequest = makeNotifyPathCompleteRequest(SOURCE);
         Promise<JsonObject> promise = Promise.promise();
         activePromises.put("PATH_COMPLETE_ACK", promise);
+        printActivePromises();
 
         send(notifyPathCompleteRequest);
         return promise.future();
@@ -142,6 +157,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
 
         Promise<JsonObject> promise = Promise.promise();
         activePromises.put("NAVIGATION_OPTIONS_SHOW_RESULT", promise);
+        printActivePromises();
         try {
             Thread.sleep(1000);
         } catch (InterruptedException e) {
@@ -205,6 +221,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                         log.info("Generated input field value: {} for instruction @ sourceNodeId: {}", inputData, executionRequest.getString("sourceNodeId"));
                         log.info("Sending instruction to OdoX!");
                         activePromises.put("EXECUTION_RESULT", promise);
+                        printActivePromises();
                         try {
                             Thread.sleep(1000);
                         }catch (InterruptedException e){
@@ -263,6 +280,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                                                     .put("xpath", _state.getString("xpath"));
 
                                             activePromises.put("EXECUTION_RESULT", Promise.promise());
+                                            printActivePromises();
                                             try {
                                                 Thread.sleep(1000);
                                             }catch (InterruptedException e){
@@ -296,6 +314,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                                                     .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString());
 
                                             activePromises.put("EXECUTION_RESULT", Promise.promise());
+                                            printActivePromises();
                                             try {
                                                 Thread.sleep(1000);
                                             }catch (InterruptedException e){
@@ -340,6 +359,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                                                     .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString());
 
                                             activePromises.put("EXECUTION_RESULT", Promise.promise());
+                                            printActivePromises();
                                             try {
                                                 Thread.sleep(1000);
                                             }catch (InterruptedException e){
@@ -386,6 +406,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                                                     .put("xpath", _state.getString("xpath"));
 
                                             activePromises.put("EXECUTION_RESULT", Promise.promise());
+                                            printActivePromises();
                                             try {
                                                 Thread.sleep(1000);
                                             }catch (InterruptedException e){
@@ -474,6 +495,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                                     .put("sourceNodeId", sourceNodeId);
 
                             activePromises.put("EXECUTION_RESULT", Promise.promise());
+                            printActivePromises();
                             try {
                                 Thread.sleep(1000);
                             }catch (InterruptedException e){
@@ -520,6 +542,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                                         .put("xpath", option.getString("xpath"));
 
                                 activePromises.put("EXECUTION_RESULT", Promise.promise());
+                                printActivePromises();
                                 //Log how this query dom operation went for debugging, troubleshooting and sanity checking.
                                 saveQueryDomResult(client, executionRequest, response.getJsonArray("queryResults"), sourceNodeId, clickRequest);
                                 try{
@@ -577,6 +600,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                                         .put("xpath", option);
 
                                 activePromises.put("EXECUTION_RESULT", Promise.promise());
+                                printActivePromises();
 
                                 try{
                                     Thread.sleep(1000);
@@ -601,6 +625,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
 
         log.info("Added EXECUTION_RESULT promise.");
         activePromises.put("EXECUTION_RESULT", promise);
+        printActivePromises();
         try{
             Thread.sleep(3000);
         }catch (InterruptedException e){
@@ -622,7 +647,11 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
             data.put("delayed", true);
             if(executionInstruction != null){
                 log.error("Fatal Error, previous instruction was still waiting to be sent!");
-                System.exit(1);
+                GuidanceVerticle._vertx.setTimer(executionInstructionDelay, timer->{
+                    send(data);
+                });
+                return false;
+
             }
             executionInstruction = data;
             return true;

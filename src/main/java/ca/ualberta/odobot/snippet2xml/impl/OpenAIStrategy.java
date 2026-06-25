@@ -141,7 +141,7 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         sb.append(taskDescription + "\n");
 
         if(naturalLanguageGuidance != null){
-            sb.append("A similar step from a similar task:\n");
+            sb.append("Step Objective:\n");
             sb.append(naturalLanguageGuidance + "\n");
         }
 

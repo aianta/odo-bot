@@ -792,7 +792,9 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                             for(String xpath: xpaths){
                                 for(JsonObject substructure: substructures){
                                     String prefixAndDynamicTag = substructure.getString("prefix") + "/" + substructure.getString("dynamic_tag");
-                                    if(xpath.startsWith(prefixAndDynamicTag)){
+                                    String starredPrefixAndDynamicTag = prefixAndDynamicTag.replaceAll("[0-9]+", "*");
+                                    String starredXpath = xpath.replaceAll("[0-9]+", "*");
+                                    if(xpath.startsWith(prefixAndDynamicTag) || starredXpath.startsWith(starredPrefixAndDynamicTag)){
 
                                         if(matches.containsKey(nodeId)){
                                             //Update matches for this node id
@@ -861,7 +863,10 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                                                 String prefixAndDynamicTag = structure.getString("prefix") + "/" + structure.getString("dynamic_tag");
                                                 log.info("\tprefixAndDynamicTag: {}", prefixAndDynamicTag);
 
-                                                if(!modelXpath.startsWith(prefixAndDynamicTag)){
+                                                String starredPrefixAndDynamicTag = prefixAndDynamicTag.replaceAll("[0-9]+", "*");
+                                                String starredXpath = modelXpath.replaceAll("[0-9]+", "*");
+
+                                                if(!modelXpath.startsWith(prefixAndDynamicTag) && !starredXpath.startsWith(starredPrefixAndDynamicTag)){
                                                     //If this model path wasn't a match for this particular sub-structure, we cannot compute a dxpath for it.
                                                     return null;
                                                 }
@@ -897,7 +902,15 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                                                  * Validate the match to this sub-structure by ensuring that the computed suffix exists in the sub-structure's reference HTML.
                                                  */
 
-                                                Document structureHTMLSnippet = Jsoup.parseBodyFragment(structure.getString("html"));
+                                                /**
+                                                 * Need more careful handling for sub-structures in tables, as JSOUP doesn't parse those directly.
+                                                 */
+                                                String rawStructureHTML = structure.getString("html");
+                                                if(rawStructureHTML.startsWith("<tr>") && rawStructureHTML.endsWith("</tr>")){
+                                                    rawStructureHTML = "<table>%s</table>".formatted(rawStructureHTML);
+                                                }
+
+                                                Document structureHTMLSnippet = Jsoup.parseBodyFragment(rawStructureHTML);
                                                 String validationXpath = "//" + structure.getString("dynamic_tag");
                                                 if(suffix != null){
                                                     validationXpath += "/" + suffix;
@@ -1045,12 +1058,19 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
         sqliteService.getDistinctHrefValues()
                 .onSuccess(hrefs->{
 
+                    Set<String> seenNormalizedHrefs = new HashSet<>();
+
                     Future.all(
                             hrefs.stream()
                                     .peek(href->log.info("{}", href))
                                     .filter(href->!href.contains("#") && !href.contains("?") && !href.contains("{") && !href.contains("%") && !href.contains("javascript") &&  !href.isBlank())
                                     .map(href->{
                                         String normalizedHref = Utils.normalizeBaseUri(href);
+                                        if(seenNormalizedHrefs.contains(normalizedHref)){
+                                            return Future.succeededFuture();
+                                        }
+                                        seenNormalizedHrefs.add(normalizedHref);
+
                                         return linkLabelingService.labelLink(href, normalizedHref)
                                                 .compose(result->{
                                                     if(result.containsKey("type")){

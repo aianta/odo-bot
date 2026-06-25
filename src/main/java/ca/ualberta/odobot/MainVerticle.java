@@ -27,6 +27,7 @@ import java.util.concurrent.TimeUnit;
 public class MainVerticle extends ConfigurableVerticle {
     private static final Logger log = LoggerFactory.getLogger(MainVerticle.class);
     public static String ELASTICSEARCH_HOST = "localhost";
+    public static String MODEL_OVERRIDE = null;
 
 
     @Override
@@ -41,6 +42,10 @@ public class MainVerticle extends ConfigurableVerticle {
 
     @Override
     public Completable onStart() {
+
+        if(_config.containsKey("modelOverride")){
+            MODEL_OVERRIDE = _config.getString("modelOverride");
+        }
 
         log.info("MainVerticle starting!");
 
