@@ -32,6 +32,6 @@ public interface AIStrategy {
 
     Future<JsonObject> resolveSelectAction(JsonArray state, String taskDescription, String inputElementHTML, String htmlContext, String label, String description);
 
-    Future<Boolean> resolveCheckboxAction(JsonObject state, String taskDescription);
+    Future<Boolean> resolveCheckboxAction(JsonObject state, String taskDescription, String label, String description);
 
 }

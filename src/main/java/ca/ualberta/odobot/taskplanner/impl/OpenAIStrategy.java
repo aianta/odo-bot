@@ -169,8 +169,50 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
     }
 
     @Override
-    public Future<Boolean> resolveCheckboxAction(JsonObject state, String taskDescription) {
-        return null;
+    public Future<Boolean> resolveCheckboxAction(JsonObject state, String taskDescription, String label, String description) {
+        Optional<String> result = generateWithValidation(
+                ()-> _generateCheckboxValue(state, taskDescription, label, description),
+                List.of((output)->{
+                    try{
+                        var checkedValue = Boolean.parseBoolean(output);
+                        return true;
+                    }catch (Exception e){
+                        return false;
+                    }
+                }),
+                config.getJsonObject("resolveCheckboxValue").getInteger("maxAttempts")
+        );
+
+        if(result.isPresent()) {
+            return Future.succeededFuture(Boolean.parseBoolean(result.get()));
+        }else{
+            return Future.failedFuture("Failed to choose a checked state for the checkbox.");
+        }
+
+
+    }
+
+    private String _generateCheckboxValue(JsonObject state, String taskDescription, String label, String description){
+        List<ChatRequestMessage> chatMessages = new ArrayList<>();
+        String prompt = config.getJsonObject("resolveCheckboxValue").getString("systemPrompt");
+        chatMessages.add(new ChatRequestSystemMessage(prompt));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("\nCheckbox Element Information:\n");
+        sb.append("\tInput HTML Element: %s\n".formatted(state.getString("html")));
+        sb.append("\tInferred Semantic Label:\n%s\n".formatted(label));
+        sb.append("\tInferred Semantic Description:\n%s\n".formatted(description));
+        sb.append("\n\n");
+        sb.append("Task Description:\n%s\n".formatted(taskDescription));
+        sb.append("Current state of the checkbox:\nchecked=%s\n".formatted(state.getString("checked")));
+
+        sb.append("\n");
+        sb.append("Output:\n");
+        log.info("{}", prompt + sb.toString());
+        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+
+        return executeChatCompletion(chatMessages);
+
     }
 
     public Future<String> generateNodeAnnotation(List<String> descriptions){
@@ -401,12 +443,13 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
             String genericEntry = (it.previousIndex() + 1) + ". [%s]";
             String methodAndPath =  curr.getString("method") + " - " + curr.getString("path");
 
+
             if(curr.containsKey("operationName")){
                 genericEntry = genericEntry.formatted("GraphQL");
-                sb.append(genericEntry + " " +  curr.getString("operationName") + "\n");
+                sb.append(genericEntry + " " +  curr.getString("operationName") + " - %s\n".formatted(curr.getString("description")));
             }else{
                 genericEntry = genericEntry.formatted("REST API");
-                sb.append(genericEntry + " " +  methodAndPath + "\n");
+                sb.append(genericEntry + " " +  methodAndPath + " - %s\n".formatted(curr.getString("description")));
             }
 
         }

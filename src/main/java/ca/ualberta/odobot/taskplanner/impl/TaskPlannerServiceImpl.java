@@ -99,7 +99,7 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
                         log.info("Rewrote task:\n{}\nto:\n{}", taskDescription, rewrittenTask);
                         task.put("rewrittenTo", rewrittenTask);
                         return Future.all(
-                                vectorService.topK(5, rewrittenTask),
+                                vectorService.topK(15, rewrittenTask),
                                 Future.succeededFuture(syntheticTasks)
                         );
                         }
@@ -115,6 +115,9 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
                     matchedTasks.stream().forEach(mTask->{
                         mTask.put("distance",hits.stream().filter(hit->hit.getString("trajectoryId").equals(mTask.getString("id"))).findFirst().get().getFloat("distance"));;
                     });
+
+                    log.info("Matched Tasks:");
+                    matchedTasks.stream().forEach(mTask->log.info(mTask.encodePrettily()));
 
                     return Future.all(
                             matchedTasks.stream()
@@ -522,6 +525,22 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
 
     @Override
     public Future<Boolean> resolveCheckboxAction(JsonObject state, String taskDescription, String inputParameterId) {
-        return null;
+        //Figure out the xpath of the input parameter we're talking about
+        String inputParameterXpath = neo4j.getAllInputParameterNodes().stream().filter(inputParameterNode->inputParameterNode.get("id").asString().equals(inputParameterId))
+                .map(node->node.get("xpath").asString())
+                .findFirst().get();
+
+        //Use that xpath to retrieve all known info about that data entry, combine that with the task description and ask the LLM to spit out an appropriate value.
+        return sqlite.getAllDataEntryInfoForXpath(inputParameterXpath)
+                .compose(dataEntryInfo->{
+                    return this.strategy.resolveCheckboxAction(
+                            state,
+                            taskDescription,
+                            dataEntryInfo.getString("label"),
+                            dataEntryInfo.getString("description")
+                    );
+
+                });
+
     }
 }

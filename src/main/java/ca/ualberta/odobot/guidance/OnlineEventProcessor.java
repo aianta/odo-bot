@@ -46,6 +46,12 @@ public class OnlineEventProcessor {
 
     private List<JsonObject> rawEvents = new ArrayList<>();
 
+    public void injectNoOp(){
+        if(line != null){
+            line.add(new NoOpEvent());
+        }
+    }
+
     public void clearRawEvents(){
         rawEvents.clear();
     }

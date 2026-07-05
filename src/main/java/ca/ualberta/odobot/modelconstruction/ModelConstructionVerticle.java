@@ -751,7 +751,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                     JsonObject matches = new JsonObject();
 
                     try(var tx =  LogPreprocessor.graphDB.db.beginTx();
-                        var result = tx.execute("MATCH (n:ClickNode) return n;");
+                        var result = tx.execute("MATCH (n) where n:ClickNode OR n:CheckboxNode return n;");
                         ResourceIterator<Node> it = result.columnAs("n");
                     ){
 
@@ -956,7 +956,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
                                     try(var tx = LogPreprocessor.graphDB.db.beginTx();
 
                                     ){
-                                        tx.execute("MATCH (n:ClickNode) WHERE n.id = '%s' SET n.dynamicXpaths = %s RETURN n;".formatted(nodeId,  dxpathsPropertyValue));
+                                        tx.execute("MATCH (n) WHERE n.id = '%s' SET n.dynamicXpaths = %s RETURN n;".formatted(nodeId,  dxpathsPropertyValue));
                                         tx.commit();
                                     }
                                 }

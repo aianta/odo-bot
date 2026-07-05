@@ -271,13 +271,18 @@ public class NavPath {
 
                     if(node.hasLabel(Label.label("CheckboxNode"))){
                         log.info("Instruction is a checkbox node!");
+                        GetUIControlState _instruction = new GetUIControlState();
+                        _instruction.xpath = nodeToXPath(node);
+                        _instruction.type = GetUIControlState.Type.CHECKBOX;
+                        _instruction.parameterId = LogPreprocessor.neo4j.getAssociatedParameterId((String)node.getProperty("id"));
+                        instruction = _instruction;
                         /**
                          * TODO: proper checkbox support should probably be explicit on whether the checkbox in question should be
                          * checked or not.
                          */
-                        DoClick _instruction = new DoClick();
-                        _instruction.xpath = nodeToXPath(node);
-                        instruction = _instruction;
+//                        DoClick _instruction = new DoClick();
+//                        _instruction.xpath = nodeToXPath(node);
+//                        instruction = _instruction;
                     }
 
                     if(node.hasLabel(Label.label("SelectOptionNode"))){

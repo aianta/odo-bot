@@ -728,6 +728,10 @@ public class RequestManager {
                         //throw new RuntimeException("Last instruction was null!");
                     }
 
+                    if(lastInstruction instanceof NoOp){
+                        return true;
+                    }
+
                     if (lastInstruction instanceof EnterDataTinymce){
                         if(observedEditorId == null){
                             return false;

@@ -323,7 +323,63 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                                             send(selectInstruction);
                                         });
                             }
-                            case CHECKBOX -> {}
+                            case CHECKBOX -> {
+
+                                TaskPlannerVerticle.service.resolveCheckboxAction(
+                                        state.getJsonObject(0),
+                                        client.getRequestManager().getActiveExecutionRequest().getTaskDescription(),
+                                        executionRequest.getString("parameterId")
+                                ).onFailure(err->log.error(err.getMessage(), err))
+                                        .onSuccess(targetCheckboxState->{
+
+                                            //Determine if the checkbox' state needs to change.
+                                            if(targetCheckboxState != state.getJsonObject(0).getBoolean("checked")){
+
+
+
+                                                //If the target state of the checkbox is different from its current state. Toggle it.
+                                                //Perform a DoClick on the checkbox.
+                                                DoClick _instruction = new DoClick();
+                                                _instruction.xpath = state.getJsonObject(0).getString("xpath");
+                                                _instruction.setSourceNodeId(executionRequest.getString("sourceNodeId"));
+
+                                                client.getRequestManager().getNavPaths().forEach(path->{
+                                                    if(path.lastInstruction() instanceof GetUIControlState){
+                                                        path.updateLastInstruction(_instruction);
+                                                    }
+                                                });
+
+                                                JsonObject clickInstruction = _instruction.toJson();
+                                                clickInstruction.put("type", "EXECUTE")
+                                                        .put("source", SOURCE)
+                                                        .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString());
+                                                ;
+                                                activePromises.put("EXECUTION_RESULT", Promise.promise());
+                                                printActivePromises();
+                                                try{
+                                                    Thread.sleep(1000);
+                                                }catch (InterruptedException e){
+                                                    throw new RuntimeException(e);
+                                                }
+                                                send(clickInstruction);
+
+                                            }else{
+                                                //No change in the checkbox state is needed advance to the next step in the path.
+
+                                                //Set the last instruction for all get UIControlState paths to NoOp
+                                                client.getRequestManager().getNavPaths().forEach(path->{
+                                                    if(path.lastInstruction() instanceof GetUIControlState){
+                                                        path.updateLastInstruction(new NoOp());
+                                                    }
+                                                });
+                                                //Trigger a no-op on the timeline
+                                                client.getEventConnectionManager().getEventProcessor().injectNoOp();
+
+                                            }
+
+                                        });
+
+                            }
                             case RADIO_BUTTON -> {
 
                                 TaskPlannerVerticle.service.resolveRadioButtonAction(

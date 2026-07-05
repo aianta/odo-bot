@@ -196,7 +196,11 @@ public class SqliteServiceImpl implements SqliteService {
         Promise<List<JsonObject>> promise = Promise.promise();
 
         pool.preparedQuery("""
-            SELECT * FROM trajectory_api_calls WHERE trajectory_id = ?;
+            select * from
+            (
+            Select t1.trajectory_id, t1.event_index, t1.path, t1.method, t1.source_index, t1.operation_name, t1.request, t1.response, description from trajectory_api_calls t1
+            right join trajectory_event_descriptions t2 on t1.trajectory_id = t2.trajectory_id and t1.event_index = t2.event_index )
+            where trajectory_id = ?;
         """).execute(Tuple.of(trajectoryId))
                 .onFailure(err->{
                     log.error(err.getMessage(),err);
@@ -210,7 +214,9 @@ public class SqliteServiceImpl implements SqliteService {
                                .put("eventIndex", row.getInteger("event_index"))
                                .put("path", row.getString("path"))
                                .put("method", row.getString("method"))
-                               .put("sourceIndex", row.getString("source_index"));
+                               .put("sourceIndex", row.getString("source_index"))
+                               .put("description", row.getString("description"));
+
 
                        if(row.getString("operation_name") != null){
                            apiCall.put("operationName", row.getString("operation_name"));
