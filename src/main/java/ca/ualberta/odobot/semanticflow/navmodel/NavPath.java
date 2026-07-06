@@ -271,11 +271,29 @@ public class NavPath {
 
                     if(node.hasLabel(Label.label("CheckboxNode"))){
                         log.info("Instruction is a checkbox node!");
-                        GetUIControlState _instruction = new GetUIControlState();
-                        _instruction.xpath = nodeToXPath(node);
-                        _instruction.type = GetUIControlState.Type.CHECKBOX;
-                        _instruction.parameterId = LogPreprocessor.neo4j.getAssociatedParameterId((String)node.getProperty("id"));
-                        instruction = _instruction;
+
+                        if(node.hasProperty("dynamicXpaths")){
+                            String [] _dxpaths = (String[])node.getProperty("dynamicXpaths");
+                            Set<DynamicXPath> dxpaths = Arrays.stream(_dxpaths)
+                                    .map(JsonObject::new)
+                                    .map(DynamicXPath::fromJson)
+                                    .collect(Collectors.toSet());
+                            QueryDom _instruction = new QueryDom();
+                            _instruction.dynamicXPaths = dxpaths;
+                            if(nodeToNaturalLanguage(node) != null){
+                                _instruction.naturalLanguageGuidance = nodeToNaturalLanguage(node);
+                            }
+                            instruction = _instruction;
+
+                        }else{
+                            GetUIControlState _instruction = new GetUIControlState();
+                            _instruction.xpath = nodeToXPath(node);
+                            _instruction.type = GetUIControlState.Type.CHECKBOX;
+                            _instruction.parameterId = LogPreprocessor.neo4j.getAssociatedParameterId((String)node.getProperty("id"));
+                            instruction = _instruction;
+                        }
+
+
                         /**
                          * TODO: proper checkbox support should probably be explicit on whether the checkbox in question should be
                          * checked or not.

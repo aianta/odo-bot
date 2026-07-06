@@ -589,24 +589,87 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                     Snippet2XMLVerticle.snippet2XML.pickValue(queryResults, client.getRequestManager().getActiveExecutionRequest().getTaskDescription(), executionRequest.getString("naturalLanguageGuidance"))
                             .onSuccess(option->{
                                 log.info("Picked option: {}", option);
-                                JsonObject clickRequest = new JsonObject()
-                                        .put("type", "EXECUTE")
-                                        .put("source", SOURCE)
-                                        .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString())
-                                        .put("action", "click")
-                                        .put("sourceNodeId", sourceNodeId)
-                                        .put("xpath", option.getString("xpath"));
 
-                                activePromises.put("EXECUTION_RESULT", Promise.promise());
-                                printActivePromises();
-                                //Log how this query dom operation went for debugging, troubleshooting and sanity checking.
-                                saveQueryDomResult(client, executionRequest, response.getJsonArray("queryResults"), sourceNodeId, clickRequest);
-                                try{
-                                    Thread.sleep(1000);
-                                }catch (InterruptedException e){
-                                    throw new RuntimeException(e);
+                                if(option.containsKey("checkboxHTML")){
+                                    //If the dynamicXpath resolved to a checkbox we have a bit more work to do in determining what the state of the checkbox should be.
+                                    JsonObject checkboxState = new JsonObject();
+                                    checkboxState.put("xpath", option.getString("xpath"));
+                                    checkboxState.put("checked", option.getBoolean("checked"));
+                                    checkboxState.put("html",  option.getString("html"));
+                                    TaskPlannerVerticle.service.resolveCheckboxAction(
+                                            checkboxState,
+                                            client.getRequestManager().getActiveExecutionRequest().getTaskDescription(),
+                                            LogPreprocessor.neo4j.getAssociatedParameterId(sourceNodeId)
+                                            ).onFailure(err->log.error(err.getMessage(), err))
+                                            .onSuccess(targetCheckboxState->{
+
+                                                if(targetCheckboxState != checkboxState.getBoolean("checked")){
+                                                    //If the target state of the checkbox is different from its current state. Toggle it.
+                                                    //Perform a DoClick on the checkbox.
+                                                    DoClick _instruction = new DoClick();
+                                                    _instruction.xpath = checkboxState.getString("xpath");
+                                                    _instruction.setSourceNodeId(sourceNodeId);
+
+                                                    client.getRequestManager().getNavPaths().forEach(path->{
+                                                        if(path.lastInstruction() instanceof QueryDom){
+                                                            path.updateLastInstruction(_instruction);
+                                                        }
+                                                    });
+
+                                                    JsonObject clickInstruction = _instruction.toJson();
+                                                    clickInstruction.put("type", "EXECUTE")
+                                                            .put("source", SOURCE)
+                                                            .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString());
+                                                    ;
+                                                    activePromises.put("EXECUTION_RESULT", Promise.promise());
+                                                    printActivePromises();
+                                                    saveQueryDomResult(client, executionRequest, response.getJsonArray("queryResults"), sourceNodeId, clickInstruction);
+                                                    try{
+                                                        Thread.sleep(1000);
+                                                    }catch (InterruptedException e){
+                                                        throw new RuntimeException(e);
+                                                    }
+                                                    send(clickInstruction);
+                                                }else{
+                                                    log.info("Checkbox does not need to be toggled! Applying NoOP.");
+                                                    //No change in the checkbox state is needed advance to the next step in the path.
+                                                    saveQueryDomResult(client, executionRequest, response.getJsonArray("queryResults"), sourceNodeId, new JsonObject().put("NOOP", "NOOP"));
+
+                                                    //Set the last instruction for all get UIControlState paths to NoOp
+                                                    client.getRequestManager().getNavPaths().forEach(path->{
+                                                        if(path.lastInstruction() instanceof QueryDom){
+                                                            path.updateLastInstruction(new NoOp());
+                                                        }
+                                                    });
+                                                    //Trigger a no-op on the timeline
+                                                    client.getEventConnectionManager().getEventProcessor().injectNoOp();
+                                                }
+
+                                            });
+
+                                }else{
+                                    //Handle click on chosen object.
+                                    JsonObject clickRequest = new JsonObject()
+                                            .put("type", "EXECUTE")
+                                            .put("source", SOURCE)
+                                            .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString())
+                                            .put("action", "click")
+                                            .put("sourceNodeId", sourceNodeId)
+                                            .put("xpath", option.getString("xpath"));
+
+                                    activePromises.put("EXECUTION_RESULT", Promise.promise());
+                                    printActivePromises();
+                                    //Log how this query dom operation went for debugging, troubleshooting and sanity checking.
+                                    saveQueryDomResult(client, executionRequest, response.getJsonArray("queryResults"), sourceNodeId, clickRequest);
+                                    try{
+                                        Thread.sleep(1000);
+                                    }catch (InterruptedException e){
+                                        throw new RuntimeException(e);
+                                    }
+                                    send(clickRequest);
                                 }
-                                send(clickRequest);
+
+
                             })
                             .onFailure(err->{
                                 log.error("Error while handling queryDom execution result!");

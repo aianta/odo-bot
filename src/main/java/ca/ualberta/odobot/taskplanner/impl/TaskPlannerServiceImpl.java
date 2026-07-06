@@ -81,9 +81,11 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
 
         return Future.all(
                 //Resolve input parameter mappings for the task.
-                this.getInputParameterMappings(taskDescription),
+                //this.getInputParameterMappings(taskDescription),
+                Future.succeededFuture(List.of()),
                 //Resolve resource parameter mappings for the task.
-                this.getRelevantResourceParameters(taskDescription),
+//                this.getRelevantResourceParameters(taskDescription),
+                Future.succeededFuture(List.of()),
                 //Resolve target API calls for the task.
 
                 sqlite.getSyntheticTasks().compose(syntheticTasks->{

@@ -32,7 +32,7 @@ public class EventConnectionManager extends AbstractConnectionManager implements
         super(client);
 
         eventProcessor.setOnEntity(entity -> log.info("online timeline got: {}", entity.symbol()));
-        eventProcessor.setOnEntity(client.getRequestManager()::instructionWatcher, entity -> entity instanceof DataEntry || entity instanceof ClickEvent || entity instanceof CheckboxEvent || entity instanceof NetworkEvent || entity instanceof ApplicationLocationChange || entity instanceof SelectEvent);
+        eventProcessor.setOnEntity(client.getRequestManager()::instructionWatcher, entity -> entity instanceof DataEntry || entity instanceof ClickEvent || entity instanceof CheckboxEvent || entity instanceof NetworkEvent || entity instanceof ApplicationLocationChange || entity instanceof SelectEvent || entity instanceof NoOpEvent);
         eventProcessor.setOnEntity(client.getRequestManager()::pathCompletionWatcher, entity -> entity instanceof NetworkEvent);
         eventProcessor.setOnEntity(entity -> {
             client.getGuidanceConnectionManager().resetExecutionInstructionDelay();
