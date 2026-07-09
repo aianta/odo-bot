@@ -42,7 +42,7 @@ public class NavPath {
     private Iterator<Node> iterator = null;
     private int _cursor = 0;
 
-    private JsonArray taskParameters;
+
     private List<String> naturalLanguageDescription;
 
     //These are the nodes that produce instructions.
@@ -80,6 +80,15 @@ public class NavPath {
 
     public Path getPath() {
         return path;
+    }
+
+    public Set<String> getPathNodeIds(){
+        if(path!= null){
+            Set<String> nodeIds = new HashSet<>();
+            path.nodes().forEach(node->nodeIds.add((String) node.getProperty("id")));
+            return nodeIds;
+        }
+        return Set.of();
     }
 
     public void setPath(Path path) {
@@ -698,8 +707,8 @@ public class NavPath {
 
     }
 
-    public List<String> toNaturalLanguage(JsonArray parameters){
-        this.taskParameters = parameters;
+    public List<String> toNaturalLanguage(){
+
         printNavPaths(List.of(this), 10);
 
         List<String> result = new ArrayList<>();
@@ -719,7 +728,7 @@ public class NavPath {
     }
 
     /**
-     * For use in {@link #toNaturalLanguage(JsonArray)}
+     * For use in {@link #toNaturalLanguage()}
      * @param id
      * @param parameters
      * @return
@@ -730,7 +739,7 @@ public class NavPath {
     }
 
     /**
-     * For use in {@link #toNaturalLanguage(JsonArray)}
+     * For use in {@link #toNaturalLanguage()}
      * @param node
      * @return
      */

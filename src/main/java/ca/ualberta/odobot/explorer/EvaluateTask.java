@@ -41,6 +41,7 @@ public class EvaluateTask implements Runnable{
 
     private static final Logger log = LoggerFactory.getLogger(EvaluateTask.class);
     private static final String ADDON_ID = "odosight@ualberta.ca";
+    private static final int MIN_NETWORK_EVENTS = 3;
 
     Agent agent;
     UUID dynamicAddonId = UUID.randomUUID();
@@ -61,6 +62,7 @@ public class EvaluateTask implements Runnable{
     boolean headless;
     String experimentFolderPath;
     String experimentResultsFolderPath;
+    ExecutionRequest.PathSelectionMode pathSelectionMode;
 
     TokenUsageRecord tokenUsageRecord = new TokenUsageRecord();
 
@@ -78,6 +80,11 @@ public class EvaluateTask implements Runnable{
 
         this.taskTimeout = config.getLong("timeout", 180000L);
         this.headless = config.getBoolean("headless", true);
+        this.pathSelectionMode = ExecutionRequest.PathSelectionMode.HYBRID;
+
+        if(config.containsKey("pathSelectionMode")){
+            this.pathSelectionMode = ExecutionRequest.PathSelectionMode.valueOf(config.getString("pathSelectionMode"));
+        }
 
         this.odoXControlsUrl = "moz-extension://"+dynamicAddonId.toString()+"/popup/bot/bot.html";
         this.odoXOptionsUrl = "moz-extension://"+dynamicAddonId.toString()+"/options/options.html";
@@ -183,6 +190,15 @@ public class EvaluateTask implements Runnable{
                 .onSuccess(executionRequest->{
             Promise<Void> evaluationPromise = Promise.promise();
             evaluationPromise.future().onComplete((done)->{
+
+//                if (odoXClient.getEventConnectionManager().getEventProcessor().countNetworkEvents() < MIN_NETWORK_EVENTS){
+//                    log.info("{} network events observed", odoXClient.getEventConnectionManager().getEventProcessor().countNetworkEvents());
+//                    //If we have fewer than MIN_NETWORK_EVENTS network events some sort of connection issue has occurred, restart this task.
+//                    cleanUp();
+//                    promise.tryFail("BAD NETWORK");
+//                    return;
+//                }
+
                 odoXClient.getGuidanceConnectionManager().dumpHistory();
                 odoXClient.getEventConnectionManager().getEventProcessor().saveRawEvents("%s/%s.json".formatted(this.experimentFolderPath, odoXClient.getRequestManager().getEvalId()).replaceAll("\\|","-"));
 
@@ -223,6 +239,7 @@ public class EvaluateTask implements Runnable{
                             JsonObject taskResult = new JsonObject(Buffer.buffer(Files.readAllBytes(Path.of(taskInstanceResultFile))));
                             taskResultTelemetry.setDetails(taskResult.getJsonArray("details").getJsonObject(0));
                             taskResultTelemetry.setResult(taskResult.getInteger("correct") == 1?"PASS":"FAIL");
+                            taskResultTelemetry.setNumNetworkRequests(taskResult.getInteger("num_network_requests"));
                         }else{
                             taskResultTelemetry.setResult("MISSING EVENTS");
                         }
@@ -356,6 +373,11 @@ public class EvaluateTask implements Runnable{
                         executionRequest.setId(UUID.fromString(definedTask.getString("id")));
                         executionRequest.setUserLocation(definedTask.getString("userLocation"));
                         executionRequest.setType(ExecutionRequest.Type.NL);
+
+                        assert definedTask.getJsonArray("targets").size() == 1;
+                        String similarTaskId = definedTask.getJsonArray("targets").getJsonObject(0).getString("targetingTaskId");
+                        executionRequest.setSimilarTaskId(similarTaskId);
+                        executionRequest.setPathSelectionMode(this.pathSelectionMode);
 
                         JsonArray targets = definedTask.getJsonArray("targets");
                         executionRequest.setTargets(targets.stream()

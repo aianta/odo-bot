@@ -26,6 +26,8 @@ public interface SqliteService {
         return new SqliteServiceVertxEBProxy(vertx, address);
     }
 
+    Future<Set<String>> getModelNodeIdsForTrajectory(String trajectoryId);
+
     Future<Set<String>> getModelNodeIdsBySymbol(String symbol);
 
     Future<Set<JsonObject>> getEventDescriptionsForNodeId(String nodeId);
@@ -35,6 +37,8 @@ public interface SqliteService {
     Future<List<JsonObject>> getSyntheticTasks();
 
     Future<Void> saveTrainingMaterial(JsonObject json);
+
+    Future<String> getTaskDescription(String trajectoryId);
 
     Future<JsonArray> loadTrainingMaterialsForDataset(String dataset);
 

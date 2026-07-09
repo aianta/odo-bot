@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.guidance;
 
+import ca.ualberta.odobot.explorer.ExplorerVerticle;
 import ca.ualberta.odobot.guidance.execution.ExecutionParameter;
 import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
 import ca.ualberta.odobot.guidance.instructions.*;
@@ -8,6 +9,7 @@ import ca.ualberta.odobot.semanticflow.model.*;
 import ca.ualberta.odobot.semanticflow.navmodel.NavPath;
 import ca.ualberta.odobot.taskplanner.TaskPlannerService;
 import ca.ualberta.odobot.taskplanner.TaskPlannerVerticle;
+import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.json.JsonArray;
@@ -23,11 +25,15 @@ import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
+import static java.util.Map.Entry.comparingByValue;
+import static java.util.stream.Collectors.toMap;
+
 public class RequestManager {
 
     private static final Logger log = LoggerFactory.getLogger(RequestManager.class);
 
     private OnlineEventProcessor eventProcessor = new OnlineEventProcessor();
+
 
     private Promise<Void> evaluationComplete;
 
@@ -195,7 +201,7 @@ public class RequestManager {
                 Iterator<NavPath> pathIt = navPaths.iterator();
                 while (pathIt.hasNext()){
                     NavPath p = pathIt.next();
-                    JsonArray nlPath = p.toNaturalLanguage(parameters).stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+                    JsonArray nlPath = p.toNaturalLanguage().stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
                     int prevSize = uniqueNavPaths.size();
                     uniqueNavPaths.add(nlPath.encode());
                     if(prevSize == uniqueNavPaths.size()){
@@ -301,7 +307,7 @@ public class RequestManager {
                 Iterator<NavPath> pathIt = navPaths.iterator();
                 while (pathIt.hasNext()){
                     NavPath p = pathIt.next();
-                    JsonArray nlPath = p.toNaturalLanguage(parameters).stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
+                    JsonArray nlPath = p.toNaturalLanguage().stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
                     int prevSize = uniqueNavPaths.size();
                     uniqueNavPaths.add(nlPath.encode());
                     if(prevSize == uniqueNavPaths.size()){
@@ -976,45 +982,106 @@ public class RequestManager {
         }
     }
 
+
+
     private Future<NavPath> naturalLanguagePathSelection(List<NavPath> navPaths, ExecutionRequest request){
-        //Now we prompt the LLM to decide between the paths we were able to find. This is where/how the system decides between create/edit paths for example.
 
-        //Create a JsonObject containing all the different path options.
-        //Each entry in the object is going to be <navPathID> : <Natural language steps in JsonArray>
-        JsonObject paths = new JsonObject();
-        JsonArray parameters = request.getParameterAsJson();
-
-        navPaths.forEach(navPath -> paths.put(navPath.getId().toString(), navPath.toNaturalLanguage(parameters).stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll)));
-        return TaskPlannerVerticle.service.selectPath(paths, request.getTaskDescription())
-                .onFailure(err->log.error(err.getMessage(), err))
-                .compose(chosenPathInfo->{
-                    String chosenPathId = chosenPathInfo.getString("chosenPathId");
-                    TaskPlannerService.saveChosenPathTelemetry("%s/%s-path-selection-result-%d.txt".formatted(this.experimentFolderPath, evalId, request.getPathRecomputations()).replaceAll("\\|","-"), chosenPathInfo);
-                    Optional<NavPath> _chosenPath = navPaths.stream().filter(navPath->navPath.getId().equals(UUID.fromString(chosenPathId))).findFirst();
-                    if(_chosenPath.isPresent()){
-                        NavPath chosenPath = _chosenPath.get();
-                        NavPath.saveNavPath("%s/%s-navpath-%d.txt".formatted(this.experimentFolderPath, evalId, request.getPathRecomputations()).replaceAll("\\|","-"), chosenPath);
-
-                        /**
-                         * We still need a target node so that the execution mechanism can determine when the task has been completed.
-                         * All paths produced using the new path construction logic will end in an API node.
-                         *
-                         * I think, in practice, we ultimately end up following the first path's instructions. So the last node in the first path should effectively
-                         * be our target node.
-                         */
-                        var targetNodeId = UUID.fromString(chosenPath.getPath().endNode().getProperty("id").toString());
-                        _input.setTargetNode(targetNodeId.toString());
-                        request.setTarget(targetNodeId);
-
-                        return Future.succeededFuture(chosenPath);
-                    }else{
-                        return Future.failedFuture("No chosen path was present!");
-                    }
+        switch (request.getPathSelectionMode()){
+            //In heuristic mode, the path whose nodes most overlap with the selected similar task is used. In case of ties the first entry is chosen.
+            case HEURISTIC:
+                //First, compute how many vertices the selected high-level trajectory covers from the given paths, and include this information in the path selection context.
+                return ExplorerVerticle.sqliteService.getModelNodeIdsForTrajectory(request.getSimilarTaskId())
+                        .onFailure(err->log.error(err.getMessage(), err))
+                        .compose(nodeIdsForTrajectory->{
+                            LinkedHashMap<NavPath, Long> pathCoverageMap =
+                                    navPaths.stream()
+                                        .map(navPath->Map.entry(navPath, navPath.getPathNodeIds().stream().filter(nodeIdsForTrajectory::contains).count()))
+                                        .sorted(Collections.reverseOrder(Map.Entry.comparingByValue()))
+                                        .collect(toMap(Map.Entry::getKey, Map.Entry::getValue, (e1,e2)->e2, LinkedHashMap::new));
 
 
+                            return !pathCoverageMap.isEmpty()?Future.succeededFuture(pathCoverageMap.entrySet().iterator().next().getKey()):Future.failedFuture("No path coverage entries!");
+                        })
+                ;
+            case HYBRID:
+                //Compute the coverage map for the chosen similar task, and include that information when asking the LLM to select the path.
+                return Future.all(
+                        ExplorerVerticle.sqliteService.getModelNodeIdsForTrajectory(request.getSimilarTaskId()),
+                        ExplorerVerticle.sqliteService.getTaskDescription(request.getSimilarTaskId())
+                )
+                        .onFailure(err->log.error(err.getMessage(), err))
+                        .compose(compositeFuture->{
+                            Set<String> nodeIdsForTrajectory = compositeFuture.resultAt(0);
+                            String similarTaskDescription =  compositeFuture.resultAt(1);
 
-                });
+                            LinkedHashMap<NavPath, Long> pathCoverageMap =
+                                    navPaths.stream()
+                                            .map(navPath->Map.entry(navPath, navPath.getPathNodeIds().stream().filter(nodeIdsForTrajectory::contains).count()))
+                                            .sorted(Collections.reverseOrder(Map.Entry.comparingByValue()))
+                                            .collect(toMap(Map.Entry::getKey, Map.Entry::getValue, (e1,e2)->e2, LinkedHashMap::new));
+
+                            JsonObject paths = new JsonObject();
+                            pathCoverageMap.entrySet().stream().forEach(entry->{
+                                NavPath navPath = entry.getKey();
+                                long coverage = entry.getValue(); //How many vertices of this navpath does the similar trajectory cover?
+                                paths.put(navPath.getId().toString(), new JsonObject()
+                                        .put("coverage", coverage)
+                                                .put("length", navPath.getPath().length())
+                                        .put("steps", navPath.toNaturalLanguage().stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll))
+                                );
+                            });
+
+                            return TaskPlannerVerticle.service.selectPath(paths, request.getTaskDescription(), similarTaskDescription)
+                                    .onFailure(err->log.error(err.getMessage(), err))
+                                    .compose(chosenPathInfo->handleChosenPathResult(chosenPathInfo, request));
+
+
+
+                        });
+
+            case LLM:
+                //Have the LLM decide entirely by itself which path best fits the task description.
+                //Now we prompt the LLM to decide between the paths we were able to find. This is where/how the system decides between create/edit paths for example.
+
+                //Create a JsonObject containing all the different path options.
+                //Each entry in the object is going to be <navPathID> : <Natural language steps in JsonArray>
+                JsonObject paths = new JsonObject();
+
+                navPaths.forEach(navPath -> paths.put(navPath.getId().toString(), navPath.toNaturalLanguage().stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll)));
+                return TaskPlannerVerticle.service.selectPath(paths, request.getTaskDescription(), null)
+                        .onFailure(err->log.error(err.getMessage(), err))
+                        .compose(chosenPathInfo->handleChosenPathResult(chosenPathInfo, request));
+
+
+            default:
+                return Future.failedFuture("Unknown path selection mode!");
+        }
+
     }
 
+    private Future<NavPath> handleChosenPathResult(JsonObject chosenPathInfo, ExecutionRequest request){
+        String chosenPathId = chosenPathInfo.getString("chosenPathId");
+        TaskPlannerService.saveChosenPathTelemetry("%s/%s-path-selection-result-%d.txt".formatted(this.experimentFolderPath, evalId, request.getPathRecomputations()).replaceAll("\\|","-"), chosenPathInfo);
+        Optional<NavPath> _chosenPath = navPaths.stream().filter(navPath->navPath.getId().equals(UUID.fromString(chosenPathId))).findFirst();
+        if(_chosenPath.isPresent()){
+            NavPath chosenPath = _chosenPath.get();
+            NavPath.saveNavPath("%s/%s-navpath-%d.txt".formatted(this.experimentFolderPath, evalId, request.getPathRecomputations()).replaceAll("\\|","-"), chosenPath);
+
+            /**
+             * We still need a target node so that the execution mechanism can determine when the task has been completed.
+             * All paths produced using the new path construction logic will end in an API node.
+             *
+             * I think, in practice, we ultimately end up following the first path's instructions. So the last node in the first path should effectively
+             * be our target node.
+             */
+            var targetNodeId = UUID.fromString(chosenPath.getPath().endNode().getProperty("id").toString());
+            _input.setTargetNode(targetNodeId.toString());
+            request.setTarget(targetNodeId);
+
+            return Future.succeededFuture(chosenPath);
+        }else{
+            return Future.failedFuture("No chosen path was present!");
+        }
+    }
 
 }

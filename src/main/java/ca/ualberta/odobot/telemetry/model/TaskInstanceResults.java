@@ -34,6 +34,12 @@ public class TaskInstanceResults extends JsonObject {
     private JsonObject details;
     private String taskDescription;
     private String model;
+    private int numNetworkRequests;
+
+    public TaskInstanceResults setNumNetworkRequests(int numNetworkRequests) {
+        put("NumNetworkRequests", numNetworkRequests);
+        return this;
+    }
 
     public TaskInstanceResults setModel(String model) {
         put("Model", model);

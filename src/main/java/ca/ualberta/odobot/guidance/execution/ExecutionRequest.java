@@ -19,6 +19,12 @@ public class ExecutionRequest {
         PREDEFINED, NL
     }
 
+    public enum PathSelectionMode{
+        HEURISTIC, LLM, HYBRID
+    }
+
+    private PathSelectionMode pathSelectionMode;
+
     private String taskDescription;
 
     private int pathRecomputations = 0;
@@ -32,6 +38,8 @@ public class ExecutionRequest {
     private Set<String> targets;
 
     private String userLocation;
+
+    private String similarTaskId;
 
     private List<ExecutionParameter> parameters;
 
@@ -47,6 +55,24 @@ public class ExecutionRequest {
     private String targetMethod;
     private String targetPath;
     private String targetOperationName;
+
+    public PathSelectionMode getPathSelectionMode() {
+        return pathSelectionMode;
+    }
+
+    public ExecutionRequest setPathSelectionMode(PathSelectionMode pathSelectionMode) {
+        this.pathSelectionMode = pathSelectionMode;
+        return this;
+    }
+
+    public String getSimilarTaskId() {
+        return similarTaskId;
+    }
+
+    public ExecutionRequest setSimilarTaskId(String similarTaskId) {
+        this.similarTaskId = similarTaskId;
+        return this;
+    }
 
     public String getTargetOperationName() {
         return targetOperationName;

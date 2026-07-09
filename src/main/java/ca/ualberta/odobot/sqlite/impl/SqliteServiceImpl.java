@@ -112,6 +112,23 @@ public class SqliteServiceImpl implements SqliteService {
         return promise.future();
     }
 
+    public Future<Set<String>> getModelNodeIdsForTrajectory(String trajectoryId){
+        Promise<Set<String>> promise = Promise.promise();
+
+        pool.preparedQuery("""
+            SELECT node_id FROM event_node_index WHERE trajectory_id = ?;
+        """).execute(Tuple.of(trajectoryId))
+                .onFailure(err->promise.fail(err))
+                .onSuccess(results->{
+
+                    Set<String> nodeIds = new HashSet<>();
+                    results.forEach(row->nodeIds.add(row.getString("node_id")));
+
+                    promise.complete(nodeIds);
+                });
+        return promise.future();
+    };
+
     public Future<Set<String>> getModelNodeIdsBySymbol(String symbol){
         Promise<Set<String>> promise = Promise.promise();
 
@@ -160,6 +177,18 @@ public class SqliteServiceImpl implements SqliteService {
                 });
 
 
+        return promise.future();
+    }
+
+    public Future<String> getTaskDescription(String trajectoryId){
+        Promise<String> promise = Promise.promise();
+        pool.preparedQuery("""
+            SELECT task from synthetic_tasks WHERE trajectory_id = ?;
+        """).execute(Tuple.of(trajectoryId))
+                .onFailure(err->promise.fail(err))
+                .onSuccess(result->{
+                    promise.complete(result.iterator().next().getString("task"));
+                });
         return promise.future();
     }
 

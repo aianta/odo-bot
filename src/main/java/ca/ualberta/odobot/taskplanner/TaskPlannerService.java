@@ -68,7 +68,7 @@ public interface TaskPlannerService {
      * @param taskDescription
      * @return
      */
-    Future<JsonObject> selectPath(JsonObject paths, String taskDescription);
+    Future<JsonObject> selectPath(JsonObject paths, String taskDescription, String similarTaskDescription);
 
     Future<JsonObject> pickMostRelevantTask(String queryTask, List<JsonObject> options);
 

@@ -5,6 +5,7 @@ import ca.ualberta.odobot.dataentry2label.impl.DataEntry2LabelServiceImpl;
 import ca.ualberta.odobot.guidance.RequestManager;
 import ca.ualberta.odobot.guidance.TokenUsageRecord;
 import ca.ualberta.odobot.snippet2xml.impl.Snippet2XMLServiceImpl;
+import ca.ualberta.odobot.sqlite.SqliteService;
 import ca.ualberta.odobot.taskplanner.TaskPlannerService;
 import ca.ualberta.odobot.taskplanner.impl.TaskPlannerServiceImpl;
 import ca.ualberta.odobot.telemetry.TelemetryVerticle;
@@ -13,20 +14,14 @@ import io.reactivex.rxjava3.core.Completable;
 
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
-import io.vertx.core.Vertx;
+
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.eventbus.DeliveryOptions;
 import io.vertx.core.http.HttpMethod;
-import io.vertx.core.http.HttpServerOptions;
 import io.vertx.core.json.DecodeException;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
-import io.vertx.rxjava3.core.AbstractVerticle;
-import io.vertx.rxjava3.core.http.HttpServer;
-import io.vertx.rxjava3.ext.web.Router;
 import io.vertx.rxjava3.ext.web.RoutingContext;
-import io.vertx.rxjava3.ext.web.handler.BodyHandler;
-import io.vertx.rxjava3.ext.web.handler.LoggerHandler;
 import io.vertx.serviceproxy.ServiceProxyBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,6 +39,7 @@ import java.util.*;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import static ca.ualberta.odobot.logpreprocessor.Constants.SQLITE_SERVICE_ADDRESS;
 import static ca.ualberta.odobot.logpreprocessor.Constants.TASK_PLANNER_SERVICE_ADDRESS;
 
 /**
@@ -57,6 +53,8 @@ public class ExplorerVerticle extends HttpServiceVerticle {
     private static final Logger log = LoggerFactory.getLogger(ExplorerVerticle.class);
 
     private static TaskPlannerService taskPlannerService;
+
+    public static SqliteService sqliteService;
 
     public String serviceName(){return "Data Generation (Explorer) Service";}
 
@@ -81,6 +79,9 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                     .setAddress(TASK_PLANNER_SERVICE_ADDRESS)
                     .setOptions(new DeliveryOptions().setSendTimeout(3600000)); //1hr timeout - sometimes chat completions take a hot second.
             taskPlannerService = taskplannerServiceProxyBuilder.build(TaskPlannerService.class);
+
+            //Init proxy to sqlite service
+            sqliteService = SqliteService.createProxy(vertx.getDelegate(), SQLITE_SERVICE_ADDRESS);
 
             api.route(HttpMethod.POST, "/explore").handler(this::exploreValidationHandler);
             api.route(HttpMethod.POST, "/explore").handler(this::exploreHandler);

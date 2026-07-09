@@ -56,6 +56,18 @@ public class OnlineEventProcessor {
         rawEvents.clear();
     }
 
+    public int countNetworkEvents(){
+        int count = 0;
+        Iterator<TimelineEntity> it = line.iterator();
+        while (it.hasNext()){
+            TimelineEntity t = it.next();
+            if(t instanceof NetworkEvent){
+                count++;
+            }
+        }
+        return count;
+    }
+
     public void saveRawEvents(String filename){
 //        log.info("raw events size before save: {}", rawEvents.size());
         File fout = new File(filename);

@@ -321,12 +321,12 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
     }
 
 
-    public Future<JsonObject> selectPath(JsonObject paths, String taskDescription){
+    public Future<JsonObject> selectPath(JsonObject paths, String taskDescription, String similarTaskDescription){
         log.info("Selecting from nav path options...");
 
         JsonObject telemetry = new JsonObject();
         Optional<String> result = generateWithValidation(
-                ()->_selectPath(paths, taskDescription, telemetry),
+                ()->_selectPath(paths, taskDescription, similarTaskDescription, telemetry),
                 List.of((output)->{
                     try{
                         UUID uuid = UUID.fromString(output);
@@ -377,9 +377,15 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
     }
 
 
-    private String _selectPath(JsonObject paths, String taskDescription, JsonObject telemetry){
+    private String _selectPath(JsonObject paths, String taskDescription, String similarTaskDescription, JsonObject telemetry){
         List<ChatRequestMessage> chatMessages = new ArrayList<>();
-        String prompt = config.getJsonObject("selectPath").getString("systemPrompt").formatted(taskDescription);
+        String prompt = null;
+        if(similarTaskDescription == null){
+            prompt = config.getJsonObject("selectPath").getString("systemPrompt").formatted(taskDescription);
+        }else{
+            prompt = config.getJsonObject("selectPath").getString("systemPromptWithSimilarPath").formatted(taskDescription, similarTaskDescription);
+        }
+
         chatMessages.add(new ChatRequestSystemMessage(prompt));
 
         StringBuilder sb = new StringBuilder();
@@ -388,8 +394,26 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         while (it.hasNext()){
             Map.Entry<String, Object> entry = it.next();
             String navPathId = entry.getKey();
-            JsonArray steps = (JsonArray)entry.getValue();
-            sb.append("Path[id: %s]:\n".formatted(navPathId));
+            JsonArray steps = null;
+            Long coverage = null;
+            Double coveragePercent = null;
+            if(similarTaskDescription != null){
+                JsonObject pathInfo = (JsonObject) entry.getValue();
+                steps = pathInfo.getJsonArray("steps");
+                coverage = pathInfo.getLong("coverage");
+                int length = pathInfo.getInteger("length");
+                coveragePercent = (coverage.doubleValue()/length)*100;
+            }else{
+                steps = (JsonArray) entry.getValue();
+            }
+
+            String pathHeader = null;
+            if(similarTaskDescription != null){
+                pathHeader = "Path[id: %s | Overlap with known high-level task path: %.2f%%]:\n".formatted(navPathId, coveragePercent);
+            }else{
+                pathHeader = "Path[id: %s]:\n".formatted(navPathId);
+            }
+            sb.append(pathHeader);
 
             //Write out all the steps in a path
             Iterator<String> stepIterator = steps.stream().map(o->(String)o).iterator();
