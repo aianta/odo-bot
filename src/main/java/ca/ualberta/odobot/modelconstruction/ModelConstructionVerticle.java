@@ -47,6 +47,7 @@ import org.neo4j.graphdb.ResourceIterator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -158,6 +159,8 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
         //Not sure if this handler's logic still holds after numShingles changes...
         api.route().method(HttpMethod.GET).path("/computeAnnotations").handler(this::computeAnnotations);
 
+        api.route().method(HttpMethod.GET).path("/analyzeTopK").handler(this::analyzeTopK);
+
         api.route().method(HttpMethod.GET).path("/loadDOMSnapshots").handler(this::loadDOMSnapshots);
         api.route().method(HttpMethod.GET).path("/processHrefs").handler(this::processHrefs);
         api.route().method(HttpMethod.GET).path("/detectDxpaths").handler(this::detectDxpaths);
@@ -201,6 +204,39 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
         return Completable.complete();
 
     }
+
+    private void analyzeTopK(RoutingContext rc){
+
+        List<String> inputFolders = rc.getDelegate().queryParam("folder");
+        inputFolders = inputFolders.stream()
+                .map("./execution_events/%s"::formatted)
+                .collect(Collectors.toList());
+
+        AnalyzeTopK analyzeTopK = new AnalyzeTopK(sqliteVectorService, Path.of("./topk-instance-trajectory-map.json"));
+        analyzeTopK.analyzeTopK(inputFolders)
+                .onSuccess(histogram->{
+                    int sum = 0;
+
+                    Iterator<Map.Entry<String,Object>> entryIterator = histogram.iterator();
+                    while (entryIterator.hasNext()) {
+                        Map.Entry<String, Object> entry = entryIterator.next();
+                        if(entry.getValue() instanceof Integer){
+                            sum += (Integer)entry.getValue();
+                        }
+                    }
+
+                    histogram.put("total", sum);
+                    histogram.put("totalMismatches", histogram.getJsonArray("mismatches").size());
+
+                    rc.getDelegate().response().setStatusCode(200).end(histogram.encodePrettily());
+                })
+        ;
+
+
+
+    }
+
+
 
     private void describeModel(RoutingContext rc){
 
