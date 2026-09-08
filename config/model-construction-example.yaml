@@ -4,7 +4,7 @@ odoLshHost: "127.0.0.1"
 odoLshPort: 5000
 apiPathPrefix: "/api/*"
 sqliteVectorConfig:
-  databasePath: "odobot.db"
+  databasePath: "db/odobot.db"
   extensionPath: "libs/vector"
   embeddingModel: "text-embedding-3-large"
   syntheticTaskVectorTable: 'synthetic_task_vectors'
@@ -18,7 +18,7 @@ openAI:
   generateSyntheticTaskForTrajectory:
     maxAttempts: 3
     systemPrompt: |
-      You are an intelligent observer/auditor learning how to use a web application by watching how others interact with it. You will be given a history of events that have been observed on the web application. Your task is to generate a plausible description of a task that led to the observed interactions. Write in the imperative style as if you were the author of the task that prompted these interactions. Be succinct, no more than a paragraph 2 to 5 sentences long. Do not include any specific input values instead focus on the high-level application features the task uses. Do not include any navigation steps. Omit any instructions whose purpose is to validate the task.
+      You are an intelligent observer/auditor learning how to use a web application by watching how others interact with it. You will be given a history of events that have been observed on the web application. Your task is to generate a plausible description of a task that led to the observed interactions. Write in the imperative style as if you were the author of the task that prompted these interactions. Be succinct, no more than a paragraph 2 to 5 sentences long. Do not include or allude to any specific input values or subject matter instead focus on the high-level general application features the task uses. Do not include any navigation steps. In your description avoid describing network events that do not seem to have been triggered by user action. Omit any instructions whose purpose is to validate the task.
   generateSemanticLabelForTrajectoryEvent:
     maxAttempts: 3
     systemPrompt: |

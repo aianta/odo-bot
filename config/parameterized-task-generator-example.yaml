@@ -2,21 +2,31 @@ canvasUserManualPath: "./canvas-user-manual"
 canvasTasksOutputDir: "./canvas-user-manual/tasks"
 openAI:
   secretKey: ""
+  model: "gpt-4.1-2025-04-14"
   temperature: null
   topP: 0.01
   maxTokens: null
   canvas:
     taskGeneration:
       maxAttempts: 3
-      systemPrompt: "Rephrase the following question into a corresponding task that can be accomplished on Canvas:\n"
+      systemPrompt: | 
+        You will be given the title and body of a page from the Canvas Student manual. Use this information to generate a simple specific task that can be accomplished on Canvas, which incorporates some or all of the procedures described in the manual. Each task should have one single objective, there should be no optional or conditional instructions, and any data/text that is entered must be specified in the task description. Include all information required to complete the task, for example: the name of the relevant course/assignment/quiz, the number of the specific quiz question, the title of the announcement, etc. Make up your own values for these.
+        
+        User Manual Page Title: 
+        <title>
+        
+        User Manual Page Body:
+        <body>
+
     parameterizedTaskGeneration:
       maxAttempts: 3
       systemPrompt: |
-        Given this task: 
-        <task>
+        You will be given a description of a task that should be completed on the Canvas Learning Management System (LMS). This description contains a variety of named entities. Your objective is to produce a JSON object whose keys correspond with the names of these entities and whose values correspond with the type of the entity. Skip named entities related directly to UI elements.
+        
+        Here is an example of the output format: 
+        
+        {
+          "Psychology 101": "Course",
+          "Childhood Development": "Assignment"
+        }
 
-        And this page in the user manual: 
-
-        <user manual page body>
-
-        Write a parameterized version of the initial task, with slots for each domain entity required to complete the task as described in the manual. Put identified domain entities in between square brackets like this: [Course], [Assignment], [Quiz], [Module], [Quiz Question], [Page]. Output the parameterized task and nothing else.
