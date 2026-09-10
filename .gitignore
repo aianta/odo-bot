@@ -21,6 +21,7 @@ crawljax_out
 *.xpi
 *.state
 *.txt
+!LICENSE.txt
 *.html
 neo4j-logs/*
 neo4j-plugins/*
