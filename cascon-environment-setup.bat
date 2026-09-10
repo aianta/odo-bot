@@ -385,12 +385,12 @@ if exist "cascon-experiment-smoke-test.json"            echo   cascon-experiment
 if exist "cascon-experiment-agent-e-smoke-test.json"    echo   cascon-experiment.bat cascon-experiment-agent-e-smoke-test.json 1 --agent agent-e
 if exist "cascon-experiment-webvoyager-smoke-test.jsonl" echo   cascon-experiment.bat cascon-experiment-webvoyager-smoke-test.jsonl 1 --agent webvoyager
 echo.
-echo Then run the full experiment ^(46 tasks, hours per instance^):
+echo Then run the full experiment ^(45 tasks, hours per instance^):
 if exist "cascon-experiment.json"            echo   cascon-experiment.bat cascon-experiment.json 5
 if exist "cascon-experiment-agent-e.json"    echo   cascon-experiment.bat cascon-experiment-agent-e.json 5 --agent agent-e
 if exist "cascon-experiment-webvoyager.jsonl" echo   cascon-experiment.bat cascon-experiment-webvoyager.jsonl 5 --agent webvoyager
 echo.
-echo All three agents run the same 46 task instances and write their evaluation
+echo All three agents run the same 45 task instances and write their evaluation
 echo report to execution_events\^<experimentId^>\results\, so runs are comparable.
 echo.
 
