@@ -1,8 +1,7 @@
 # OdoBot 
 Odobot is a web task execution system that reduces token use by AI agents for known tasks.
-This project has evolved and accrued substantial technical debt over time and is not currently ready for use by 3rd parties. 
 
-However, the experiment described in the 'Token Efficient Task Execution via Application Behavior Modeling for Web Agents' paper submitted to [CASCON 2026](https://conf.researchr.org/home/cascon-2026), is fully reproducible using this repository. 
+The experiment described in the 'Token Efficient Task Execution via Application Behavior Modeling for Web Agents' paper submitted to [CASCON 2026](https://conf.researchr.org/home/cascon-2026), is fully reproducible using this repository. 
 
 The paper's raw results are [available on Zenodo](https://zenodo.org/records/21344539). 
 
@@ -17,12 +16,18 @@ The paper's raw results are [available on Zenodo](https://zenodo.org/records/213
 
 
 ## Work in progress 
-- [ ] Collecting your own trajectories using the OdoX browser extension.
+The functionality described below is implemented, but not yet matured into documented reusable features, as such they require manual invocation of various sub-components of OdoBot and other auxiliary software artifacts.
+
+A high-level overview of OdoBot's (messy, evolving) internals can be found [here](./docs/odobot-architecture-manifest.md). 
+
+- [ ] Collecting your own trajectories using the OdoX browser extension. 
 - [ ] Constructing custom application behavioral models using your own trajectories.
 - [ ] Generating new simulated course/assignment/page/quiz/instructor/student/discussion data to create variations of the Canvas evaluation environment.
 
 > [!NOTE]
-> Environment setup and experiment runner scripts were created with the help of Claude Code. For brevity and clarity, instructions below are human curated, with optional AI generated details hidden in collapsable sections.
+> Environment setup and experiment runner scripts were created with the help of Claude Code, and human validated. 
+> 
+>For brevity and clarity, instructions below are human curated, with optional AI generated details hidden in collapsable sections.
 
 
 # Requirements
@@ -33,6 +38,7 @@ To reproduce the CASCON 2026 experiment you need:
 * GIT
 * Python 3.9 or newer on `PATH`.
 * OpenAI API Key and credits.
+* Windows 11  
 
 # Installation (Windows)
 

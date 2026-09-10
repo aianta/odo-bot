@@ -597,10 +597,6 @@ field and the proxy than via HTTP:
 `resolveDataEntryValue`, `resolveRadioButtonAction`, `resolveSelectAction`,
 `resolveCheckboxAction`, plus a static `saveChosenPathTelemetry` helper.
 
-> ⚠️ **Secrets:** `config/taskplanner.yaml`, `config/snippet2xml.yaml`,
-> `config/dataentry2label.yaml`, and `config/model-construction.yaml` contain live OpenAI API
-> keys committed to the repository. Every one of these should be rotated and moved to
-> environment variables; the `*-example.yaml` siblings exist for exactly this purpose.
 
 ---
 
