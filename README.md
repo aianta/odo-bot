@@ -33,11 +33,13 @@ The `cascon-environment-setup` script does the following:
 Run `cascon-experiment.bat <TASK FILE> <NUM INSTANCES> [--agent NAME] [--logs|--no-logs]`.
 * `TASK FILE`: The tasks to run. The format depends on the agent:
 
-  | `--agent` | Task file |
-  |---|---|
-  | `odobot` (default) | `cascon-experiment.json`, or `cascon-experiment-smoke-test.json` for a 1-task smoke test |
-  | `agent-e` | `cascon-experiment-agent-e.json` |
-  | `webvoyager` | `cascon-experiment-webvoyager.jsonl` |
+  | `--agent` | Full run (46 tasks) | Smoke test (2 tasks) |
+  |---|---|---|
+  | `odobot` (default) | `cascon-experiment.json` | `cascon-experiment-smoke-test.json` |
+  | `agent-e` | `cascon-experiment-agent-e.json` | `cascon-experiment-agent-e-smoke-test.json` |
+  | `webvoyager` | `cascon-experiment-webvoyager.jsonl` | `cascon-experiment-webvoyager-smoke-test.jsonl` |
+
+  All three smoke test files cover the same two task instances, so a smoke run is comparable across agents. Use one to check the plumbing before committing to a full run, which takes hours.
 
 * `NUM INSTANCES`: The number of times the experiment will be repeated. The environment is reset between instances.
 * `--agent NAME`: `odobot` (the default), `agent-e`, or `webvoyager`.
