@@ -493,18 +493,6 @@
     },
     {
         "sites": null,
-        "task_id": "4913209a-2b56-48ed-b275-2712186727b6",
-        "require_login": false,
-        "storage_state": null,
-        "start_url": "http://localhost:8088",
-        "geolocation": null,
-        "intent_template": "Use the username: harper.bellingham@publicfutures.edu and password: Gt9rXv2Qz8L! to login to Canvas.\nTask: In the course \"Speculative Design for Public Futures 318\" find the announcement titled \"Public Futures 318 Project Brief Release\" in your Course Activity Stream and remove this notification from your activity stream.",
-        "instantiation_dict": {},
-        "intent": "Use the username: harper.bellingham@publicfutures.edu and password: Gt9rXv2Qz8L! to login to Canvas.\nTask: In the course \"Speculative Design for Public Futures 318\" find the announcement titled \"Public Futures 318 Project Brief Release\" in your Course Activity Stream and remove this notification from your activity stream.",
-        "require_reset": false
-    },
-    {
-        "sites": null,
         "task_id": "38cc06f6-3b5b-4cdc-93c9-44b13cffc45d",
         "require_login": false,
         "storage_state": null,

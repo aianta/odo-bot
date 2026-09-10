@@ -107,6 +107,25 @@ public class EvaluateTask implements Runnable{
                 options.addArguments("--headless");
             }
 
+            /**
+             * IMPORTANT: the browser this driver connects to must be started with
+             * MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1 in its environment.
+             *
+             * Since Firefox 152, WebDriver refuses to navigate to any URL whose scheme is not one of
+             * ["blob", "file", "http", "https"], and refuses to evaluate scripts against privileged
+             * browsing contexts. See isWebdriverSafeNavigationURL() in BrowsingContextUtils.sys.mjs
+             * and navigateTo() in marionette/driver.sys.mjs. Driving OdoX needs both, since its
+             * options and bot control pages are moz-extension:// URLs. Without it, setupOdoX() fails:
+             *   Navigation to "moz-extension://[...]/options/options.html" is not allowed in this context
+             *
+             * Both restrictions are lifted when RemoteAgent.allowSystemAccess is set, which the above
+             * environment variable does. It cannot be set from here: geckodriver rejects both
+             * "--remote-allow-system-access" and the environment variable itself when they arrive via
+             * capabilities ("... can't be set via capabilities"). So for the docker grid it has to be
+             * passed to the container:
+             *   docker run -e MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1 ... selenium/standalone-firefox:dev
+             * and for a local driver, set it in OdoBot's own environment before starting.
+             */
             options.addPreference("network.dns.disableIPv6", true);
             FirefoxProfile profile = buildProfile();
             profile.addExtension(new File(config.getString(EvaluationTaskRequestFields.ODOSIGHT_PATH.field)));
@@ -579,6 +598,7 @@ public class EvaluateTask implements Runnable{
         profile.setAcceptUntrustedCertificates(true); //LogUI Server is likely running locally over a self-signed cert.
         profile.setPreference("extensions.webextensions.uuids", addonIdPreference.encode());
         profile.setPreference("xpinstall.signatures.required", false);
+        profile.setPreference("remote.active-protocols", 2);
         profile.setPreference("browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features", false);
         profile.setPreference("browser.aboutwelcome.enabled", false);
         profile.setPreference("browser.messaging-system.whatsNewPanel.enabled", false);
