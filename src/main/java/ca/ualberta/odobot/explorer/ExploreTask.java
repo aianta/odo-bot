@@ -180,6 +180,12 @@ public class ExploreTask implements Runnable{
                 FirefoxOptions options = new FirefoxOptions();
                 options.addArguments("--headless");
 
+                /**
+                 * From Firefox 152 onward, navigating to OdoSight's moz-extension:// pages requires
+                 * MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1 in this process' environment (it is inherited by
+                 * geckodriver and then by Firefox). See the longer comment in
+                 * EvaluateTask#setupEnvironment().
+                 */
                 options.setProfile(buildProfile());
 
 
