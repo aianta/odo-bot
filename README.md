@@ -8,7 +8,10 @@ The paper's raw results are [available on Zenodo](https://zenodo.org/records/213
 ## Reproducible Functionalities
 - [x] Host a Canvas LMS environment seeded with data to support the execution of 45 agent evaluation tasks.
   
-  Details on the evaluation tasks can be found [here](https://github.com/aianta/canvas-evaluation-scripts/blob/main/sample_generated_data/cascon-2026/README.md). 
+  Details on the evaluation tasks can be found [here](https://github.com/aianta/canvas-evaluation-scripts/blob/main/sample_generated_data/cascon-2026/README.md).
+
+  To run the environment standalone at port 8088 for the evaluation of your own agent use the command: `docker run -d --name canvas-bench -p 8088:80 aianta/canvas-bench:cascon-2026` 
+
 - [x] Recreate the CASCON 2026 experimental results.
   - [x] Execute OdoBot with the [application behavioral model](https://zenodo.org/records/22666468) used to produce the CASCON 2026 paper results on the Canvas LMS environment.
   - [x] Execute Agent-E on the Canvas environment using the 45 tasks used to produce the results in the CASCON 2026 paper.
