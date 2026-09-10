@@ -15,3 +15,10 @@ gradle.properties
 *.png
 test_task
 *.csv
+*.sql
+*.bat
+*.xes
+*.html
+*.sh
+*.ttl
+*.csv
