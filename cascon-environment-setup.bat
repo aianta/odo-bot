@@ -27,10 +27,22 @@ REM ---------------------------------------------------------------------------
 REM  Configuration
 REM ---------------------------------------------------------------------------
 
-REM TODO: replace with the real Zenodo record id once the artifact is published.
-set "ZENODO_RECORD_ID=REPLACE_WITH_ZENODO_RECORD_ID"
+REM The published application behavioural model:
+REM   "OdoBot CASCON 2026 Application Behavioral Model"
+REM   https://doi.org/10.5281/zenodo.22666468   (CC-BY-4.0)
+REM
+REM 22666468 is the version-specific record. Use it rather than the concept DOI
+REM (22666467), which always resolves to the newest version and would silently
+REM change which model the experiment runs against.
+set "ZENODO_RECORD_ID=22666468"
 set "MODEL_ARCHIVE=odobot-model.zip"
 set "ZENODO_URL=https://zenodo.org/records/%ZENODO_RECORD_ID%/files/%MODEL_ARCHIVE%?download=1"
+
+REM Checked after the download. The archive is ~290 MB, so a truncated or
+REM interrupted transfer is a real possibility, and a partial zip fails during
+REM extraction with a much less obvious error than a checksum mismatch.
+set "MODEL_ARCHIVE_MD5=aa09e959c72807f30885e8f5314c8967"
+set "MODEL_ARCHIVE_SIZE=303333559"
 
 REM The submodule holding evaluation_script.py, core.py and the cascon-2026
 REM dataset. .gitmodules records the SSH URL; a reviewer cloning without a
@@ -236,15 +248,13 @@ echo   ok   regex, tzdata
 REM ---------------------------------------------------------------------------
 REM  Step 3 - Application behavioural model (Zenodo)
 REM
-REM  *** DRAFT - UNTESTED ***
-REM  The Zenodo artifact has not been uploaded yet, so ZENODO_RECORD_ID above is
-REM  still a placeholder and this step has never been run end to end. Once the
-REM  record exists, set ZENODO_RECORD_ID and verify the download + extraction.
+REM  %MODEL_ARCHIVE% holds "odobot.db" and the "graphdb" directory at its root,
+REM  so it unpacks directly into .\db. The download is verified against
+REM  %MODEL_ARCHIVE_MD5% before extraction.
 REM
-REM  %MODEL_ARCHIVE% is expected to contain "odobot.db" and the "graphdb"
-REM  directory at its root, so it unpacks directly into .\db. If the archive
-REM  ends up with a top level folder instead, extract to a temp dir and move the
-REM  contents into .\db.
+REM  Only OdoBot needs this. Agent-E and WebVoyager drive Canvas through the
+REM  browser and never read the behavioural model, so a failure here does not
+REM  block the baseline runs.
 REM ---------------------------------------------------------------------------
 
 :model
@@ -260,16 +270,7 @@ if exist "db\odobot.db" if exist "db\graphdb" (
 )
 
 if not exist "db\%MODEL_ARCHIVE%" (
-    if "%ZENODO_RECORD_ID%"=="REPLACE_WITH_ZENODO_RECORD_ID" (
-        echo   [WARN] The Zenodo record id has not been filled in yet, and
-        echo          db\%MODEL_ARCHIVE% is not present locally.
-        echo          Skipping the model download - edit ZENODO_RECORD_ID in this
-        echo          script, or drop %MODEL_ARCHIVE% into .\db manually.
-        echo          Only OdoBot needs this; the baseline agents do not.
-        goto :images
-    )
-
-    echo   Downloading %MODEL_ARCHIVE% ^(several hundred MB, this will take a while^)...
+    echo   Downloading %MODEL_ARCHIVE% ^(~290 MB, this will take a while^)...
     echo   %ZENODO_URL%
 
     where curl.exe >nul 2>&1
@@ -446,12 +447,13 @@ function Write-TextFile($path, $lines) {
 try {
     $root = $env:ODO_SETUP_ROOT
     $db = Join-Path $root 'db'
-    $archive = Join-Path $db 'odobot-model.zip'
+    $archive = Join-Path $db $env:MODEL_ARCHIVE
 
     switch ($env:ODO_SETUP_STEP) {
 
-        # ---- DRAFT: not exercised yet, the Zenodo record does not exist ------
         'download' {
+            # Only reached when curl.exe is unavailable; the batch side prefers
+            # curl because it can show a progress bar for a download this size.
             $ProgressPreference = 'SilentlyContinue'
             try {
                 Invoke-WebRequest -Uri $env:ZENODO_URL -OutFile $archive -UseBasicParsing
@@ -461,20 +463,44 @@ try {
             }
         }
 
-        # ---- DRAFT: the real archive has not been published yet --------------
         'extract' {
+            # Verify before extracting. A truncated download is the likely failure
+            # for a ~290 MB transfer, and it surfaces as a confusing "End of
+            # Central Directory record could not be found" rather than an
+            # obviously incomplete file. This also catches a stale or partial
+            # archive left in .\db by an earlier interrupted run.
+            if ($env:MODEL_ARCHIVE_SIZE) {
+                $actualSize = (Get-Item -LiteralPath $archive).Length
+                if ($actualSize -ne [long]$env:MODEL_ARCHIVE_SIZE) {
+                    throw ("{0} is {1:N0} bytes, expected {2:N0}. The download is incomplete - delete it and re-run this script." -f $env:MODEL_ARCHIVE, $actualSize, [long]$env:MODEL_ARCHIVE_SIZE)
+                }
+            }
+            if ($env:MODEL_ARCHIVE_MD5) {
+                Write-Host '  Verifying checksum...'
+                $actualMd5 = (Get-FileHash -LiteralPath $archive -Algorithm MD5).Hash.ToLower()
+                if ($actualMd5 -ne $env:MODEL_ARCHIVE_MD5.ToLower()) {
+                    throw ("Checksum mismatch for {0}.`n           expected md5 {1}`n           got      md5 {2}`n           Delete .\db\{0} and re-run this script." -f $env:MODEL_ARCHIVE, $env:MODEL_ARCHIVE_MD5, $actualMd5)
+                }
+                Write-Host ("  ok   md5 {0}" -f $actualMd5)
+            }
+
             # Expand-Archive is slow on a multi-hundred-MB archive but is always
             # available; `tar -xf <zip> -C db` is a faster alternative on
             # Windows 10 1803+.
             Expand-Archive -LiteralPath $archive -DestinationPath $db -Force
 
+            $missing = $false
             foreach ($expected in @('odobot.db', 'graphdb')) {
                 $p = Join-Path $db $expected
                 if (Test-Path -LiteralPath $p) {
                     Write-Host ("  ok   db\{0}" -f $expected)
                 } else {
                     Write-Host ("  [WARN] db\{0} not found after extraction - check the archive layout." -f $expected)
+                    $missing = $true
                 }
+            }
+            if ($missing) {
+                throw "The archive did not unpack into the expected layout. cascon-experiment.bat requires db\odobot.db and db\graphdb to run OdoBot."
             }
         }
 
