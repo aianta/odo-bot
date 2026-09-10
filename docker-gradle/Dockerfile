@@ -12,8 +12,13 @@ ENV LAUNCHER_CLASS=ca.ualberta.odobot.Launcher
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Setup python for evaluation scripts
+# python-is-python3 provides /usr/bin/python. The evaluation step shells out to
+# "python" (see ExplorerVerticle/EvaluateTask), which on Ubuntu does not otherwise
+# exist - without it every run ends in
+# 'Cannot run program "python": error=2, No such file or directory' and the
+# /api/evaluate request returns HTTP 500 after the tasks have already executed.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends python3 python3-pip && \
+    apt-get install -y --no-install-recommends python3 python3-pip python-is-python3 && \
     rm -rf /var/lib/apt/lists/*
 
 
