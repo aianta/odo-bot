@@ -375,11 +375,23 @@ echo   Agent-E    -^> %AGENTE_IMAGE%
 echo   WebVoyager -^> %WEBVOYAGER_IMAGE%
 echo   Browser    -^> %SELENIUM_IMAGE%
 echo   Config     -^> .\config\*.yaml, .\agents_llm_config.json
+REM Smoke tests first: a full instance takes hours per agent, so it is worth
+REM spending a few minutes proving the plumbing before committing to one. The
+REM `if exist` guards keep this honest - cascon-experiment-smoke-test.json is not
+REM tracked in the repository, so it is absent from a fresh clone.
 echo.
-echo Run an experiment with:
-echo   cascon-experiment.bat cascon-experiment.json 1
-echo   cascon-experiment.bat cascon-experiment-agent-e.json 1 --agent agent-e
-echo   cascon-experiment.bat cascon-experiment-webvoyager.jsonl 1 --agent webvoyager
+echo Smoke test each agent first ^(2 tasks each, minutes rather than hours^):
+if exist "cascon-experiment-smoke-test.json"            echo   cascon-experiment.bat cascon-experiment-smoke-test.json 1
+if exist "cascon-experiment-agent-e-smoke-test.json"    echo   cascon-experiment.bat cascon-experiment-agent-e-smoke-test.json 1 --agent agent-e
+if exist "cascon-experiment-webvoyager-smoke-test.jsonl" echo   cascon-experiment.bat cascon-experiment-webvoyager-smoke-test.jsonl 1 --agent webvoyager
+echo.
+echo Then run the full experiment ^(46 tasks, hours per instance^):
+if exist "cascon-experiment.json"            echo   cascon-experiment.bat cascon-experiment.json 5
+if exist "cascon-experiment-agent-e.json"    echo   cascon-experiment.bat cascon-experiment-agent-e.json 5 --agent agent-e
+if exist "cascon-experiment-webvoyager.jsonl" echo   cascon-experiment.bat cascon-experiment-webvoyager.jsonl 5 --agent webvoyager
+echo.
+echo All three agents run the same 46 task instances and write their evaluation
+echo report to execution_events\^<experimentId^>\results\, so runs are comparable.
 echo.
 
 popd
