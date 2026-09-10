@@ -84,7 +84,7 @@ The `cascon-environment-setup` script does the following:
 </details>
 
 # Running Experiments (Windows)
-
+An experiment is the exection of all tasks specified in a task file by an agent. 
 ```
 .\cascon-experiment.bat <TASK FILE> <NUM INSTANCES> [--agent NAME] [--logs|--no-logs]
 ```
