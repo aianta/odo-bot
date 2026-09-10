@@ -40,11 +40,11 @@ REM ---------------------------------------------------------------------------
 REM  Configuration
 REM ---------------------------------------------------------------------------
 
-set "ODOBOT_IMAGE=aianta/odobot:latest"
+set "ODOBOT_IMAGE=aianta/odobot:cascon-2026"
 set "CANVAS_IMAGE=aianta/canvas-bench:cascon-2026"
 set "SELENIUM_IMAGE=selenium/standalone-firefox@sha256:a17bbdea03f99f61d3ecf8f7b425a8e6dd7fb22dc1926bea454780fc3719cec2"
-set "AGENTE_IMAGE=aianta/agent-e-cascon:latest"
-set "WEBVOYAGER_IMAGE=aianta/webvoyager-cascon:latest"
+set "AGENTE_IMAGE=aianta/agent-e-cascon:cascon-2026"
+set "WEBVOYAGER_IMAGE=aianta/webvoyager-cascon:cascon-2026"
 
 REM All containers share a user-defined bridge network so they can reach each
 REM other directly. Addresses on this network are what get written into the

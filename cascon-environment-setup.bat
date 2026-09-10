@@ -56,7 +56,7 @@ REM
 REM NOTE: pulling this replaces whatever "aianta/odobot:latest" refers to locally. If you
 REM have built the image yourself (docker build -t aianta/odobot -f docker-gradle/Dockerfile .)
 REM your local build loses the tag and is left dangling.
-set "ODOBOT_IMAGE=aianta/odobot:latest"
+set "ODOBOT_IMAGE=aianta/odobot:cascon-2026"
 
 set "CANVAS_IMAGE=aianta/canvas-bench:cascon-2026"
 
@@ -68,15 +68,13 @@ REM ":latest" is a moving tag. As of 2026-09-10 it resolves to
 REM   sha256:8579c7e5ee815c0231d1c1d1129fbf07244bbb669fd2f251cb3e44410ba09af0
 REM which is the image the CASCON 2026 Agent-E results were produced with. Pin the digest
 REM here instead if the tag moves.
-set "AGENTE_IMAGE=aianta/agent-e-cascon:latest"
+set "AGENTE_IMAGE=aianta/agent-e-cascon:cascon-2026"
 
 REM WebVoyager, the other baseline. Run it with:
 REM   cascon-experiment.bat cascon-experiment-webvoyager.jsonl <N> --agent webvoyager
 REM
-REM ":latest" is a moving tag. Pin it by digest here if it moves away from the image the
 REM CASCON 2026 WebVoyager results were produced with:
-REM   docker image inspect aianta/webvoyager-cascon:latest --format "{{index .RepoDigests 0}}"
-set "WEBVOYAGER_IMAGE=aianta/webvoyager-cascon:latest"
+set "WEBVOYAGER_IMAGE=aianta/webvoyager-cascon:cascon-2026"
 
 REM The browser OdoBot drives during experiments. The Dev Edition channel is required:
 REM OdoX is installed unsigned as a permanent add-on, and Firefox only honours
