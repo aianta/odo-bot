@@ -47,6 +47,7 @@ To reproduce the CASCON 2026 experiment you need:
 * Python 3.9 or newer on `PATH`.
 * OpenAI API Key and credits.
 * Windows 11 - Environment setup and experiment runner scripts are .bat 
+* Multi-core processor and ~16GB of available RAM to run docker containers for the evaluation environment, browser environment, and agent. 
 
 # Installation 
 
