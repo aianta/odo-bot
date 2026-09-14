@@ -5,6 +5,8 @@ The experiment described in the 'Token Efficient Task Execution via Application 
 
 The paper's raw results are [available on Zenodo](https://zenodo.org/records/21344539). 
 
+A copy of the paper submission can be found [in this repository](/odobot_cascon_2026.pdf).
+
 ## Reproducible Functionalities
 - [x] Host a Canvas LMS environment seeded with data to support the execution of 45 agent evaluation tasks.
   
