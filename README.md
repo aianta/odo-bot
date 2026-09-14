@@ -14,6 +14,9 @@ The paper's raw results are [available on Zenodo](https://zenodo.org/records/213
 
   `docker run -d --name canvas-bench -p 8088:80 aianta/canvas-bench:cascon-2026` 
 
+  See instruction for evaluating custom agents [below](#evaluating-custom-agents).
+
+
 - [x] Recreate the CASCON 2026 experimental results.
   - [x] Execute OdoBot with the [application behavioral model](https://zenodo.org/records/22666468) used to produce the CASCON 2026 paper results on the Canvas LMS environment.
   - [x] Execute Agent-E on the Canvas environment using the 45 tasks used to produce the results in the CASCON 2026 paper.
@@ -43,9 +46,9 @@ To reproduce the CASCON 2026 experiment you need:
 * GIT
 * Python 3.9 or newer on `PATH`.
 * OpenAI API Key and credits.
-* Windows 11  
+* Windows 11 - Environment setup and experiment runner scripts are .bat 
 
-# Installation (Windows)
+# Installation 
 
 
 1. Clone this git repository.
@@ -83,7 +86,7 @@ The `cascon-environment-setup` script does the following:
 
 </details>
 
-# Running Experiments (Windows)
+# Running Experiments 
 An experiment is the exection of all tasks specified in a task file by an agent. 
 ```
 .\cascon-experiment.bat <TASK FILE> <NUM INSTANCES> [--agent NAME] [--logs|--no-logs]
@@ -188,11 +191,59 @@ python -X utf8 evaluation_script.py ^
 
 </details>
 
+# Evaluating Custom Agents
+To evaluate your own agent against the provided Canvas benchmark you must:
+
+* Instrument your agent to log network requests as it performs a task.
+* Save network logs in a file following the naming convention `<task-instance-id>_network_logs.json`
+* Put all network log files in a single folder.
+
+Execute the evaluation script with the following command:
+
+`python -X utf8 evaluation_script.py -t canvas-evaluation-scripts/sample_generated_data/cascon-2026/tasks.json -o custom-agent-results.json --agent-e-network-logs /path/to/your/network/logs`
+
+This will output a `custom-agent-results.json` file with your agent's performance on the benchmark.
+
+>[!NOTE] The task instance ids should match those found in `canvas-evaluation-scripts/sample_generated_data/cascon-2026/tasks.json`
+
+Format expected inside `<task-instance-id>_network_logs.json`
+
+```json
+{
+        "method": "POST",
+        "url": "http://172.23.0.2/courses/8/assignments/284/submissions/27",
+        "postData": "submission%5Bassignment_id%5D=284&submission%5Bgroup_comment%5D=0&submission%5Buser_id%5D=27&submission%5Bcomment%5D=Thank+you+for+the+feedback!&_method=PUT&authenticity_token=WrsBO2SQUJozH2AX4RGSW0oUolV9BSWy4npxVqcuhgoOj3VtT8QjsURaB3%2FOYsZpE2LzBTpjUNyoHwkR1UzMYA%3D%3D",
+        "postDataJson": {
+            "submission[assignment_id]": "284",
+            "submission[group_comment]": "0",
+            "submission[user_id]": "27",
+            "submission[comment]": "Thank you for the feedback!",
+            "_method": "PUT",
+            "authenticity_token": "WrsBO2SQUJozH2AX4RGSW0oUolV9BSWy4npxVqcuhgoOj3VtT8QjsURaB3/OYsZpE2LzBTpjUNyoHwkR1UzMYA=="
+        }
+    }
+```
+
+<details>
+<summary>AI Generated Details for network event format</summary>
+
+`method` &rarr;  HTTP verb, compared verbatim against ground truth ("GET", "POST", "PUT", "DELETE") 
+
+`url` &rarr;  Full URL. Parsed with urlparse; path and query are rejoined as path?query to match the ground-truth api_path
+
+`postDataJson` &rarr;  Already-parsed body. Must be an object — a list is coerced to {}; a scalar (string/number) raises RuntimeError: request_body must be a dict
+
+`postData` &rarr; Raw body string. Only consulted when postDataJson is absent or null. Tried as JSON first; on failure falls back to parse_qs, which yields `{"key": ["value"]}`
+
+</details>
+
+
+
 >[!WARNING]
 > End of CASCON 2026 experiment reproduction instructions.
 
 
-# Development Documentation
+# Development 
 
 Documentation below is for development work on OdoBot.
 
