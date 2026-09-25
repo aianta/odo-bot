@@ -51,6 +51,10 @@ public class RequestManager {
 
     private Transaction tx;
 
+    public void onInstruction(Instruction instruction) {
+        client.getGuidanceConnectionManager().sendExecutionInstruction(instruction.toJson());
+    }
+
     public List<NavPath> getNavPaths() {
         return navPaths;
     }
