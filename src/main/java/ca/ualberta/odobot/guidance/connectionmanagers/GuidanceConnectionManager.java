@@ -1,38 +1,22 @@
 package ca.ualberta.odobot.guidance.connectionmanagers;
 
-import ca.ualberta.odobot.common.Utils;
 import ca.ualberta.odobot.guidance.GuidanceVerticle;
 import ca.ualberta.odobot.guidance.OdoClient;
-import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
-import ca.ualberta.odobot.guidance.execution.ResourceParameter;
-import ca.ualberta.odobot.guidance.execution.SchemaParameter;
-import ca.ualberta.odobot.guidance.instructions.*;
-import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
-import ca.ualberta.odobot.semanticflow.model.TinymceEvent;
-import ca.ualberta.odobot.semanticflow.navmodel.NavPath;
-import ca.ualberta.odobot.snippet2xml.SemanticObject;
-import ca.ualberta.odobot.snippet2xml.Snippet2XMLService;
-import ca.ualberta.odobot.snippet2xml.Snippet2XMLVerticle;
-import ca.ualberta.odobot.taskplanner.TaskPlannerService;
-import ca.ualberta.odobot.taskplanner.TaskPlannerVerticle;
+import ca.ualberta.odobot.guidance.WebSocketConnection;
+import ca.ualberta.odobot.guidance.feedback.AlternateXpath;
+import ca.ualberta.odobot.guidance.feedback.UnresolvableXpath;
+import ca.ualberta.odobot.guidance.instructions.Instruction;
+import ca.ualberta.odobot.guidance.instructions.MultiStepInstruction;
+import io.vertx.core.Context;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
-import io.vertx.core.json.JsonArray;
+import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
-import org.jsoup.Jsoup;
-import org.jsoup.nodes.Document;
-import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
 import java.util.*;
-import java.util.stream.Collectors;
-
-import static ca.ualberta.odobot.semanticflow.Utils.computeXpathNoRoot;
+import java.util.function.Consumer;
 
 public class GuidanceConnectionManager extends AbstractConnectionManager implements ConnectionManager {
 
@@ -53,8 +37,19 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
         activePromises.forEach((key,v)->log.info("{}:{}", key,v));
     }
 
+    /**
+     * The context this socket's messages are handled on. Agent logic runs on it as well.
+     */
+    private Context context = null;
+
     public GuidanceConnectionManager(OdoClient client){
         super(client);
+    }
+
+    @Override
+    public void updateConnection(WebSocketConnection connection) {
+        super.updateConnection(connection);
+        context = Vertx.currentContext();
     }
 
     public void onMessage(JsonObject message){
@@ -89,33 +84,26 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
 
                 log.info("{}", message.encodePrettily());
                 super.addHistory(message);
-                client.getRequestManager().recoverFromFailedNode(failedNodeId);
+                client.getRequestManager().onObservation(new UnresolvableXpath(message.getString("xpath"), failedNodeId));
 
 
                 break;
             case "REGISTER_ALTERNATE_XPATH":
                 //During the execution of certain instructions, the exact xpath sent to OdoX by the server might differ from the one OdoX had to use to actually execute the instruction.
-                //When this happens, we add the new xpath OdoX used to the corresponding instruction so that the RequestManager#instructionWatcher can properly identify that the expected instruciton was executed.
+                //When this happens, the agent adds the new xpath OdoX used to the corresponding instruction so that it can properly identify that the expected instruciton was executed.
                 //TODO: eventually, these new xpaths should be merged into the nav model.
                 String alternateXpath = message.getString("alternateXpath");
                 String sourceNodeId = message.getString("sourceNodeId");
 
-                log.info("Attempting to register alternate xpath: {} for sourceNodeId: {}", alternateXpath, sourceNodeId);
-                Optional<Instruction> _instruction = client.getRequestManager().getNavPaths().stream().map(NavPath::lastInstruction)
-                        .filter(lastInstruction -> lastInstruction.getSourceNodeId().equals(sourceNodeId))
-                        .findAny();
-
-                if(_instruction.isPresent()){
-                    _instruction.get().addAlternateXpath(alternateXpath);
-                    log.info("Successfully registered alternate xpath: {}", alternateXpath);
-                }
+                log.info("OdoX reported alternate xpath: {} for sourceNodeId: {}", alternateXpath, sourceNodeId);
+                client.getRequestManager().onObservation(new AlternateXpath(alternateXpath, sourceNodeId));
 
                 super.addHistory(message);
 
                 JsonObject confirmation = new JsonObject()
                         .put("type", "ALTERNATE_XPATH_CONFIRMED")
                         .put("source", SOURCE)
-                        .put("pathsRequestId", client.getRequestManager().getActiveExecutionRequest().getId().toString())
+                        .put("pathsRequestId", client.getRequestManager().getExecutionId().toString())
                         .put("alternateXpath", alternateXpath); //Confirm which xpath was registered.
                 send(confirmation);
 
@@ -127,7 +115,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
         JsonObject clearNavigationOptionsRequest = new JsonObject()
                 .put("type", "CLEAR_NAVIGATION_OPTIONS")
                 .put("source", SOURCE)
-                .put("pathsRequestId", client.getRequestManager().getActiveExecutionRequest().getId().toString());
+                .put("pathsRequestId", client.getRequestManager().getExecutionId().toString());
 
         Promise<JsonObject> promise = Promise.promise();
         activePromises.put("CLEAR_NAVIGATION_OPTIONS_RESULT", promise);
@@ -152,7 +140,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
         JsonObject showNavigationOptionsRequest = new JsonObject()
                 .put("type", "SHOW_NAVIGATION_OPTIONS")
                 .put("source", SOURCE)
-                .put("pathsRequestId", client.getRequestManager().getActiveExecutionRequest().getId().toString())
+                .put("pathsRequestId", client.getRequestManager().getExecutionId().toString())
                 .mergeIn(navigationOptions);
 
         Promise<JsonObject> promise = Promise.promise();
@@ -185,568 +173,65 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
         });
     }
 
-    public Future<JsonObject> sendExecutionInstruction(JsonObject instruction){
+    /**
+     * (Re)start the task timeout. The task fails if the timeout elapses before the next reset.
+     */
+    public void resetTimeout(){
+        //Keep the timeout on the event loop that runs the agent, so the two never run concurrently.
+        if(context != null && Vertx.currentContext() != context){
+            context.runOnContext(v->resetTimeout());
+            return;
+        }
 
-        //Reset the timeout timer.
         if(timeoutTimer != -1l){ //Only if it hasn't yet been set.
             GuidanceVerticle._vertx.cancelTimer(timeoutTimer);
         }
 
-        timeoutTimer = GuidanceVerticle._vertx.setTimer(client.getRequestManager().getActiveExecutionRequest().getTimeout(), id->{
+        timeoutTimer = GuidanceVerticle._vertx.setTimer(client.getRequestManager().getTimeout(), id->{
             //timeoutTimer = id;
             log.info("Task execution timed out!");
             client.getRequestManager().getEvaluationComplete().tryFail("Timeout!");
         });
+    }
+
+    /**
+     * Send an instruction to OdoX for execution.
+     *
+     * @param instruction the instruction to execute.
+     * @param followUp true if the instruction was produced by the follow-up logic of a {@link MultiStepInstruction}.
+     *                 Follow-ups do not reset the task timeout, and are sent after a shorter pause.
+     * @param next if the instruction is a {@link MultiStepInstruction}, receives the follow-up instructions it produces
+     *             from its EXECUTION_RESULT.
+     * @return a future that completes with the EXECUTION_RESULT for the instruction.
+     */
+    public Future<JsonObject> sendExecutionInstruction(Instruction instruction, boolean followUp, Consumer<Instruction> next){
+
+        if(!followUp){
+            resetTimeout();
+        }
 
         JsonObject executionRequest = new JsonObject()
                 .put("type", "EXECUTE")
                 .put("source", SOURCE)
-                .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString())
-                .mergeIn(instruction);
+                .put("executionId", client.getRequestManager().getExecutionId().toString())
+                .mergeIn(instruction.toJson());
 
         Promise<JsonObject> promise = Promise.promise();
 
-
-        //Handle execution-time data entry input resolution
-        if(executionRequest.getString("action").equals("input") && !executionRequest.containsKey("data")){
-            log.info("Execution Instruction action for sourceNodeId: {} was 'input' with no defined data. Attempting real-time data entry resolution!", executionRequest.getString("sourceNodeId"));
-            TaskPlannerVerticle.service.resolveDataEntryValue(
-                    client.getRequestManager().getActiveExecutionRequest().getTaskDescription(),
-                    executionRequest.getString("parameterId"),
-                    ""
-                    )
-                    .onFailure(err->log.error(err.getMessage(), err))
-                    .onSuccess(inputData->{
-                        executionRequest.put("data", inputData);
-                        log.info("Generated input field value: {} for instruction @ sourceNodeId: {}", inputData, executionRequest.getString("sourceNodeId"));
-                        log.info("Sending instruction to OdoX!");
-                        activePromises.put("EXECUTION_RESULT", promise);
-                        printActivePromises();
-                        try {
-                            Thread.sleep(1000);
-                        }catch (InterruptedException e){
-                            throw new RuntimeException(e);
-                        }
-                        send(executionRequest);
-            });
-
-            return promise.future();
-
-        }
-
-        //Handle getUIControlState processing
-        if(executionRequest.getString("action").equals("getUIControlState")){
-            log.info("Configuring handling the response for getUIControlState instruction.");
+        //Multi-step instructions produce follow-up instructions from their execution result.
+        if(instruction instanceof MultiStepInstruction multiStepInstruction){
+            log.info("Configuring handling the response for {} instruction.", executionRequest.getString("action"));
 
             promise.future()
                     .onFailure(err->log.error(err.getMessage(), err))
-                    .onSuccess(response->{
-                        log.info("Received control state: \n {}\n for instruction with sourceNodeId: {}",response.encodePrettily(), executionRequest.getString("sourceNodeId"));
-
-                        GetUIControlState.Type type = GetUIControlState.Type.valueOf(response.getString("uiControlType"));
-                        JsonArray state = response.getJsonArray("state");
-
-                        switch (type){
-                            case TEXT -> {
-                                JsonObject _state = state.getJsonObject(0);
-                                TaskPlannerVerticle.service.resolveDataEntryValue(
-                                        client.getRequestManager().getActiveExecutionRequest().getTaskDescription(),
-                                        executionRequest.getString("parameterId"),
-                                        _state.getString("value")
-                                ).onFailure(err->log.error(err.getMessage(), err))
-                                        .onSuccess(inputData->{
-
-                                            //Create an instruction object to update the nav path's last instruction.
-                                            EnterData _instruction = new EnterData();
-                                            _instruction.xpath = _state.getString("xpath");
-                                            _instruction.setSourceNodeId(executionRequest.getString("sourceNodeId"));
-                                            _instruction.data = inputData;
-                                            _instruction.parameterId = executionRequest.getString("parameterId");
-
-                                            client.getRequestManager().getNavPaths().forEach(path->{
-                                                //TODO: is checking that the last instruction is a GetUIControlState sufficient?
-                                                if(path.lastInstruction() instanceof GetUIControlState){
-                                                    path.updateLastInstruction(_instruction);
-                                                }
-                                            });
-
-                                            JsonObject inputInstruction = new JsonObject()
-                                                    .put("type", "EXECUTE")
-                                                    .put("source", SOURCE)
-                                                    .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString())
-                                                    .put("action", "input")
-                                                    .put("data", inputData)
-                                                    .put("sourceNodeId", executionRequest.getString("sourceNodeId"))
-                                                    .put("xpath", _state.getString("xpath"));
-
-                                            activePromises.put("EXECUTION_RESULT", Promise.promise());
-                                            printActivePromises();
-                                            try {
-                                                Thread.sleep(1000);
-                                            }catch (InterruptedException e){
-                                                throw new RuntimeException(e);
-                                            }
-                                            send(inputInstruction);
-                                        });
-                            }
-                            case SELECT -> {
-
-                                TaskPlannerVerticle.service.resolveSelectAction(state, client.getRequestManager().getActiveExecutionRequest().getTaskDescription(), executionRequest.getString("parameterId"))
-                                        .onFailure(err->log.error(err.getMessage(), err))
-                                        .onSuccess(selectedOption->{
-
-                                            //Create an instruction object to update the nav path's last instruction.
-                                            SelectOption _instruction = new SelectOption();
-                                            _instruction.xpath = state.getJsonObject(0).getString("xpath");
-                                            _instruction.setSourceNodeId(executionRequest.getString("sourceNodeId"));
-                                            _instruction.value = selectedOption.getString("value");
-                                            _instruction.parameterId = executionRequest.getString("parameterId");
-
-                                            client.getRequestManager().getNavPaths().forEach(path->{
-                                                if(path.lastInstruction() instanceof GetUIControlState){
-                                                    path.updateLastInstruction(_instruction);
-                                                }
-                                            });
-
-                                            JsonObject selectInstruction = _instruction.toJson();
-                                            selectInstruction.put("type", "EXECUTE")
-                                                    .put("source", SOURCE)
-                                                    .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString());
-
-                                            activePromises.put("EXECUTION_RESULT", Promise.promise());
-                                            printActivePromises();
-                                            try {
-                                                Thread.sleep(1000);
-                                            }catch (InterruptedException e){
-                                                throw new RuntimeException(e);
-                                            }
-                                            send(selectInstruction);
-                                        });
-                            }
-                            case CHECKBOX -> {
-
-                                TaskPlannerVerticle.service.resolveCheckboxAction(
-                                        state.getJsonObject(0),
-                                        client.getRequestManager().getActiveExecutionRequest().getTaskDescription(),
-                                        executionRequest.getString("parameterId")
-                                ).onFailure(err->log.error(err.getMessage(), err))
-                                        .onSuccess(targetCheckboxState->{
-
-                                            //Determine if the checkbox' state needs to change.
-                                            if(targetCheckboxState != state.getJsonObject(0).getBoolean("checked")){
-
-
-
-                                                //If the target state of the checkbox is different from its current state. Toggle it.
-                                                //Perform a DoClick on the checkbox.
-                                                DoClick _instruction = new DoClick();
-                                                _instruction.xpath = state.getJsonObject(0).getString("xpath");
-                                                _instruction.setSourceNodeId(executionRequest.getString("sourceNodeId"));
-
-                                                client.getRequestManager().getNavPaths().forEach(path->{
-                                                    if(path.lastInstruction() instanceof GetUIControlState){
-                                                        path.updateLastInstruction(_instruction);
-                                                    }
-                                                });
-
-                                                JsonObject clickInstruction = _instruction.toJson();
-                                                clickInstruction.put("type", "EXECUTE")
-                                                        .put("source", SOURCE)
-                                                        .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString());
-                                                ;
-                                                activePromises.put("EXECUTION_RESULT", Promise.promise());
-                                                printActivePromises();
-                                                try{
-                                                    Thread.sleep(1000);
-                                                }catch (InterruptedException e){
-                                                    throw new RuntimeException(e);
-                                                }
-                                                send(clickInstruction);
-
-                                            }else{
-                                                //No change in the checkbox state is needed advance to the next step in the path.
-
-                                                //Set the last instruction for all get UIControlState paths to NoOp
-                                                client.getRequestManager().getNavPaths().forEach(path->{
-                                                    if(path.lastInstruction() instanceof GetUIControlState){
-                                                        path.updateLastInstruction(new NoOp());
-                                                    }
-                                                });
-                                                //Trigger a no-op on the timeline
-                                                client.getEventConnectionManager().getEventProcessor().injectNoOp();
-
-                                            }
-
-                                        });
-
-                            }
-                            case RADIO_BUTTON -> {
-
-                                TaskPlannerVerticle.service.resolveRadioButtonAction(
-                                        state,
-                                        client.getRequestManager().getActiveExecutionRequest().getTaskDescription(),
-                                        executionRequest.getString("parameterId")
-                                ).onFailure(err->log.error(err.getMessage(), err))
-                                        .onSuccess(selectedButton->{
-
-                                            //Create an instruction object to update the nav paths's last instruction so instruction watcher can match it properly.
-                                            //The instruction we want to report to instruction watcher is an EnterData instruction, because the click on the radio button will be observed as a DataEntry.
-                                            EnterData _mockInstruction = new EnterData(); //We use an EnterData instruction here just to hold the alternate xpath for the radio button, since the instruction watcher only checks for matching xpaths when identifying whether an instruction was executed or not, and doesn't actually check that the instruction is an instance of ClickInstruction. This is a bit hacky but it works given the current implementation of the instruction watcher. A more robust long-term solution would be to refactor the instruction watcher to check for matching instruction types as well as matching xpaths.
-                                            _mockInstruction.xpath = selectedButton.getString("xpath");
-                                            _mockInstruction.setSourceNodeId(executionRequest.getString("sourceNodeId"));
-
-
-                                            client.getRequestManager().getNavPaths().forEach(path->{
-                                                if(path.lastInstruction() instanceof GetUIControlState){
-                                                    path.updateLastInstruction(_mockInstruction);
-                                                }
-                                            });
-
-                                            //The instruction we actually want to execute is a click.
-                                            DoClick _instruction = new DoClick();
-                                            _instruction.xpath = selectedButton.getString("xpath");
-                                            _instruction.setSourceNodeId(executionRequest.getString("sourceNodeId"));
-
-
-
-                                            JsonObject clickInstruction = _instruction.toJson();
-                                            clickInstruction.put("type", "EXECUTE")
-                                                    .put("source", SOURCE)
-                                                    .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString());
-
-                                            activePromises.put("EXECUTION_RESULT", Promise.promise());
-                                            printActivePromises();
-                                            try {
-                                                Thread.sleep(1000);
-                                            }catch (InterruptedException e){
-                                                throw new RuntimeException(e);
-                                            }
-                                            send(clickInstruction);
-
-                                        });
-
-                            }
-                            case TINY_MCE_EDITOR -> {
-                                JsonObject _state = state.getJsonObject(0);
-                                TaskPlannerVerticle.service.resolveDataEntryValue(
-                                                client.getRequestManager().getActiveExecutionRequest().getTaskDescription(),
-                                                executionRequest.getString("parameterId"),
-                                                _state.getString("value")
-                                        ).onFailure(err->log.error(err.getMessage(), err))
-                                        .onSuccess(inputData->{
-
-                                            //Create an instruction object to update the nav path's last instruction.
-                                            EnterDataTinymce _instruction = new EnterDataTinymce();
-                                            _instruction.xpath = _state.getString("xpath");
-                                            _instruction.editorId = _state.getString("id");
-                                            _instruction.setSourceNodeId(executionRequest.getString("sourceNodeId"));
-                                            _instruction.data = inputData;
-                                            _instruction.parameterId = executionRequest.getString("parameterId");
-
-                                            client.getRequestManager().getNavPaths().forEach(path->{
-                                                //TODO: is checking that the last instruction is a GetUIControlState sufficient?
-                                                if(path.lastInstruction() instanceof GetUIControlState){
-                                                    path.updateLastInstruction(_instruction);
-                                                }
-                                            });
-
-
-                                            JsonObject inputInstruction = new JsonObject()
-                                                    .put("type", "EXECUTE")
-                                                    .put("source", SOURCE)
-                                                    .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString())
-                                                    .put("action", "input")
-                                                    .put("data", inputData)
-                                                    .put("editorId", _state.getString("id") )
-                                                    .put("sourceNodeId", executionRequest.getString("sourceNodeId"))
-                                                    .put("xpath", _state.getString("xpath"));
-
-                                            activePromises.put("EXECUTION_RESULT", Promise.promise());
-                                            printActivePromises();
-                                            try {
-                                                Thread.sleep(1000);
-                                            }catch (InterruptedException e){
-                                                throw new RuntimeException(e);
-                                            }
-                                            send(inputInstruction);
-                                        });
-                            }
-                            case INPUT_COMBO_BOX -> {}
-                        }
-                    });
-        }
-
-        //Handle getDOMSnapshot processing
-        if(executionRequest.getString("action").equals("getDOMSnapshot")){
-            log.info("Configuring handling for getDOMSnapshot instruction.");
-
-            //GetDOMSnapshot is an instruction that returns a snapshot of the current DOM from OdoX.
-            //We send this instruction to resolve resource parameters. When we have a click instruction that is meant to click on a particular kind of resource
-            //we first get the DOM snapshot and find all <a> tags linking to that kind of resource on the page. Each such <a> tag is an option for the LLM to consider in the context
-            //of the task being executed.
-            promise.future()
-                    .onFailure(err->{
-                        log.error("Error while handling getDOMSnapshot instruction result.");
-                        log.error(err.getMessage(), err);
-                    })
-                    .onSuccess(response->{
-                log.info("Handling getDOMSnapshot result");
-
-                String domSnapshot = response.getString("domSnapshot");
-                String sourceNodeId = response.getString("sourceNodeId");
-
-                Snippet2XMLVerticle.sqliteService.getNormalizedHrefsByLabel(executionRequest.getString("parameterName"))
-                        .compose(labelHrefs -> {
-
-                            //labelHrefs are a set of normalized href values that correspond with this parameter label.
-                            //So our next job is to identify all <a> tags whose 'href' attribute values, after normalization match any of the hrefs in the set labelHrefs.
-                            Document document = Jsoup.parse(domSnapshot);
-
-                            List<Element> options = new ArrayList<>();
-
-                            document.selectXpath("//a")
-                                    .stream()
-                                    .filter(aTag -> aTag.hasAttr("href"))
-                                    .forEach(aTag->{
-                                String normalizedHref = Utils.normalizeBaseUri(aTag.attr("href"));
-
-                                if(labelHrefs.contains(normalizedHref)){
-                                    options.add(aTag);
-                                }
-                            });
-
-                            List<JsonObject> optionsData = options.stream()
-                                    .map(element-> new JsonObject()
-                                                .put("html", element.outerHtml())
-                                                .put("xpath", computeXpathNoRoot(element))
-                                    ).toList();
-
-                            ExecutionRequest request = client.getRequestManager().getActiveExecutionRequest();
-
-                            ResourceParameter resourceParameter = (ResourceParameter)request.getParameter(executionRequest.getString("parameterId"));
-
-                            return Future.all(
-                                    Snippet2XMLVerticle.snippet2XML.pickResourceParameterValue(optionsData, resourceParameter!=null?resourceParameter.getQuery():request.getTaskDescription(), request.getTaskDescription()),
-                                    Future.succeededFuture(document)
-                            );
-
-
-
-
-                        }).onSuccess(compositeFuture->{
-
-                            JsonObject pickedValue = (JsonObject) compositeFuture.list().get(0);
-                            Document document = (Document) compositeFuture.list().get(1);
-
-
-                            Element selectedOption = document.selectXpath(pickedValue.getString("xpath")).get(0);
-                            String selectedOptionXpath = pickedValue.getString("xpath");
-
-                            JsonObject clickRequest = new JsonObject()
-                                    .put("type", "EXECUTE")
-                                    .put("source", SOURCE)
-                                    .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString())
-                                    .put("action", "click")
-                                    .put("xpath", selectedOptionXpath)
-                                    .put("sourceNodeId", sourceNodeId);
-
-                            activePromises.put("EXECUTION_RESULT", Promise.promise());
-                            printActivePromises();
-                            try {
-                                Thread.sleep(1000);
-                            }catch (InterruptedException e){
-                                throw new RuntimeException(e);
-                            }
-                            send(clickRequest);
-                        })
-                        .onFailure(err->{
-                            log.error("Error while handling getDOMSnapshot");
-                            log.error(err.getMessage(), err);
-                        });
-            });
-        }
-
-
-        //Handle Query DOM Processing
-        if(executionRequest.getString("action").equals("queryDom")){
-            //queryDom requests will respond with a bunch of HTML elements, from which we need to pick one to convert to a click action.
-
-            promise.future().onSuccess(response->{
-
-                String sourceNodeId = executionRequest.getString("sourceNodeId");
-
-                List<JsonObject> queryResults = response.getJsonArray("queryResults").stream().map(o->(JsonObject)o).collect(Collectors.toList());
-
-                //If the query failed to find any candidates for OdoBot to consider clicking on, try recovering by recomputing a new path avoiding the node that prompted this.
-                if (queryResults.isEmpty()){
-                    client.getRequestManager().recoverFromFailedNode(sourceNodeId);
-                    return;
-                }
-
-                log.info("Last result: \n{}", queryResults.get(queryResults.size()-1).getString("html"));
-
-                if(!executionRequest.containsKey("parameterId")){
-                    Snippet2XMLVerticle.snippet2XML.pickValue(queryResults, client.getRequestManager().getActiveExecutionRequest().getTaskDescription(), executionRequest.getString("naturalLanguageGuidance"))
-                            .onSuccess(option->{
-                                log.info("Picked option: {}", option);
-
-                                if(option.containsKey("checkboxHTML")){
-                                    //If the dynamicXpath resolved to a checkbox we have a bit more work to do in determining what the state of the checkbox should be.
-                                    JsonObject checkboxState = new JsonObject();
-                                    checkboxState.put("xpath", option.getString("xpath"));
-                                    checkboxState.put("checked", option.getBoolean("checked"));
-                                    checkboxState.put("html",  option.getString("html"));
-                                    TaskPlannerVerticle.service.resolveCheckboxAction(
-                                            checkboxState,
-                                            client.getRequestManager().getActiveExecutionRequest().getTaskDescription(),
-                                            LogPreprocessor.neo4j.getAssociatedParameterId(sourceNodeId)
-                                            ).onFailure(err->log.error(err.getMessage(), err))
-                                            .onSuccess(targetCheckboxState->{
-
-                                                if(targetCheckboxState != checkboxState.getBoolean("checked")){
-                                                    //If the target state of the checkbox is different from its current state. Toggle it.
-                                                    //Perform a DoClick on the checkbox.
-                                                    DoClick _instruction = new DoClick();
-                                                    _instruction.xpath = checkboxState.getString("xpath");
-                                                    _instruction.setSourceNodeId(sourceNodeId);
-
-                                                    client.getRequestManager().getNavPaths().forEach(path->{
-                                                        if(path.lastInstruction() instanceof QueryDom){
-                                                            path.updateLastInstruction(_instruction);
-                                                        }
-                                                    });
-
-                                                    JsonObject clickInstruction = _instruction.toJson();
-                                                    clickInstruction.put("type", "EXECUTE")
-                                                            .put("source", SOURCE)
-                                                            .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString());
-                                                    ;
-                                                    activePromises.put("EXECUTION_RESULT", Promise.promise());
-                                                    printActivePromises();
-                                                    saveQueryDomResult(client, executionRequest, response.getJsonArray("queryResults"), sourceNodeId, clickInstruction);
-                                                    try{
-                                                        Thread.sleep(1000);
-                                                    }catch (InterruptedException e){
-                                                        throw new RuntimeException(e);
-                                                    }
-                                                    send(clickInstruction);
-                                                }else{
-                                                    log.info("Checkbox does not need to be toggled! Applying NoOP.");
-                                                    //No change in the checkbox state is needed advance to the next step in the path.
-                                                    saveQueryDomResult(client, executionRequest, response.getJsonArray("queryResults"), sourceNodeId, new JsonObject().put("NOOP", "NOOP"));
-
-                                                    //Set the last instruction for all get UIControlState paths to NoOp
-                                                    client.getRequestManager().getNavPaths().forEach(path->{
-                                                        if(path.lastInstruction() instanceof QueryDom){
-                                                            path.updateLastInstruction(new NoOp());
-                                                        }
-                                                    });
-                                                    //Trigger a no-op on the timeline
-                                                    client.getEventConnectionManager().getEventProcessor().injectNoOp();
-                                                }
-
-                                            });
-
-                                }else{
-                                    //Handle click on chosen object.
-                                    JsonObject clickRequest = new JsonObject()
-                                            .put("type", "EXECUTE")
-                                            .put("source", SOURCE)
-                                            .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString())
-                                            .put("action", "click")
-                                            .put("sourceNodeId", sourceNodeId)
-                                            .put("xpath", option.getString("xpath"));
-
-                                    activePromises.put("EXECUTION_RESULT", Promise.promise());
-                                    printActivePromises();
-                                    //Log how this query dom operation went for debugging, troubleshooting and sanity checking.
-                                    saveQueryDomResult(client, executionRequest, response.getJsonArray("queryResults"), sourceNodeId, clickRequest);
-                                    try{
-                                        Thread.sleep(1000);
-                                    }catch (InterruptedException e){
-                                        throw new RuntimeException(e);
-                                    }
-                                    send(clickRequest);
-                                }
-
-
-                            })
-                            .onFailure(err->{
-                                log.error("Error while handling queryDom execution result!");
-                                log.error(err.getMessage(), err);
-                            });
-                }else{
-                    String schemaId = LogPreprocessor.neo4j.getSchemaId(executionRequest.getString("parameterId"));
-
-                    Snippet2XMLVerticle.sqliteService.getSemanticSchemaById(schemaId)
-                            .compose(schema -> {
-                                return Future.join(
-                                        queryResults.stream()
-                                                .map(html->Snippet2XMLVerticle.snippet2XML.getObjectFromHTMLIgnoreSchemaIssues(html.getString("html"), schema).compose(semanticObject -> {
-                                                    return Future.succeededFuture(new JsonObject().put("semanticObject", semanticObject.toJson()).put("xpath", html.getString("xpath")));
-                                                }, err->Future.succeededFuture(null)))
-                                                .collect(Collectors.toList())
-                                );
-                            })
-                            .compose(compositeFuture -> {
-                                List<JsonObject> objects = compositeFuture.list().stream()
-                                        .filter(Objects::nonNull) //It's possible some html will fail to resolve to proper xml objects.
-                                        .map(o->(JsonObject)o).collect(Collectors.toList());
-
-                                Map<String, String> objectMap = new HashMap<>();
-                                objects.forEach(object->{
-                                    SemanticObject semanticObject = new SemanticObject(object.getJsonObject("semanticObject"));
-                                    objectMap.put(semanticObject.getObject(), object.getString("xpath"));
-                                });
-
-                                List<SemanticObject> options = objects.stream().map(json->new SemanticObject(json.getJsonObject("semanticObject"))).collect(Collectors.toList());
-
-                                ExecutionRequest request = client.getRequestManager().getActiveExecutionRequest();
-
-                                return Snippet2XMLVerticle.snippet2XML.pickParameterValue(options, ((SchemaParameter)request.getParameter(executionRequest.getString("parameterId"))).getQuery())
-                                        //Resolve the picked semantic object to its corresponding xpath...
-                                        .compose(semanticObject -> Future.succeededFuture(objectMap.get(semanticObject.getObject())))
-                                        ;
-
-                            })
-                            .onSuccess(option->{
-                                log.info("Picked option: {}", option);
-                                JsonObject clickRequest = new JsonObject()
-                                        .put("type", "EXECUTE")
-                                        .put("source", SOURCE)
-                                        .put("executionId", client.getRequestManager().getActiveExecutionRequest().getId().toString())
-                                        .put("action", "click")
-                                        .put("xpath", option);
-
-                                activePromises.put("EXECUTION_RESULT", Promise.promise());
-                                printActivePromises();
-
-                                try{
-                                    Thread.sleep(1000);
-                                }catch (InterruptedException e){
-                                    throw new RuntimeException(e);
-                                }
-                                send(clickRequest);
-                            })
-                            .onFailure(err->{
-                                log.error("Error while handling queryDom execution result!");
-                                log.error(err.getMessage(), err);
-                            })
-                    ;
-                }
-
-
-
-            });
-
-
+                    .onSuccess(response->multiStepInstruction.onExecutionResult(executionRequest, response, next));
         }
 
         log.info("Added EXECUTION_RESULT promise.");
         activePromises.put("EXECUTION_RESULT", promise);
         printActivePromises();
         try{
-            Thread.sleep(3000);
+            Thread.sleep(followUp?1000:3000);
         }catch (InterruptedException e){
             throw new RuntimeException(e);
         }
@@ -783,27 +268,4 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
         super.history.clear();
     }
 
-    private static void saveQueryDomResult(OdoClient client, JsonObject executionRequest, JsonArray queryResults, String sourceNodeId, JsonObject clickRequest){
-        String filename = "%s/%s-query-dom-%s.txt".formatted(client.getRequestManager().getExperimentFolderPath(), client.getRequestManager().getEvalId(),sourceNodeId).replaceAll("\\|","-");
-        File fout = new File(filename);
-        try(FileWriter fw = new FileWriter(fout);
-            BufferedWriter bw = new BufferedWriter(fw);
-        ){
-            StringBuilder sb = new StringBuilder();
-            sb.append("Source Node ID: %s\n".formatted(sourceNodeId));
-            sb.append("Cypher Query:\nMATCH (n) where n.id = '%s' RETURN n;\n".formatted(sourceNodeId));
-            sb.append("QueryDom Instruction Execution Request:\n%s\n".formatted(executionRequest.encodePrettily()));
-            sb.append("Query Results:\n%s\n".formatted(queryResults.encodePrettily()));
-            sb.append("Task Description:\n%s\n".formatted(client.getRequestManager().getActiveExecutionRequest().getTaskDescription()));
-            sb.append("Resulting Click Request:\n%s\n".formatted(clickRequest.encodePrettily()));
-
-            bw.write(sb.toString());
-            bw.flush();
-
-        }catch(IOException e){
-            log.error("Error while saving query dom result!");
-            log.error(e.getMessage(), e);
-
-        }
-    }
 }

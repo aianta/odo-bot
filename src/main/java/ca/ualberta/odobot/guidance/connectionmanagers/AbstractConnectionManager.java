@@ -2,7 +2,6 @@ package ca.ualberta.odobot.guidance.connectionmanagers;
 
 import ca.ualberta.odobot.guidance.OdoClient;
 import ca.ualberta.odobot.guidance.WebSocketConnection;
-import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
@@ -90,7 +89,7 @@ public abstract class AbstractConnectionManager implements ConnectionManager {
                 .put("type", "PATH_COMPLETE")
                 .put("source", source)
                 //resolve the paths request id, this can either be a guidance request (Request) or execution request (ExecutionRequest) TODO: refactor this
-                .put("pathsRequestId", client.getRequestManager().getActiveExecutionRequest().getId().toString());
+                .put("pathsRequestId", client.getRequestManager().getExecutionId().toString());
 
         return notifyPathCompleteRequest;
     }

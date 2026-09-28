@@ -1,6 +1,8 @@
 package ca.ualberta.odobot.semanticflow.mappers.impl;
 
 import ca.ualberta.odobot.semanticflow.mappers.JsonMapper;
+import ca.ualberta.odobot.semanticflow.model.BoundingBox;
+import ca.ualberta.odobot.semanticflow.model.Screenshot;
 import ca.ualberta.odobot.semanticflow.model.SelectEvent;
 import io.vertx.core.json.JsonObject;
 import org.jsoup.Jsoup;
@@ -21,6 +23,9 @@ public class LogUISelectEventMapper extends JsonMapper<SelectEvent> {
         selectEvent.setXpath(eventDetails.getString("xpath"));
         selectEvent.setTag(elementData.getString("localName"));
         selectEvent.setSelectElement(selectEvent.getDomSnapshot().selectXpath(selectEvent.getXpath()).first());
+
+        selectEvent.setScreenshot(new Screenshot(eventDetails.getString("screenshot")));
+        selectEvent.setBoundingBox(new BoundingBox(eventDetails.getJsonObject("boundingBox")));
 
         return selectEvent;
     }

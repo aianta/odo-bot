@@ -145,6 +145,7 @@ public class OnlineEventProcessor {
                         case DOM_EFFECT -> processDomEffect(event);
                         case NETWORK_EVENT -> processNetworkEvent(event);
                         case INPUT -> processInputChange(event);
+                        case OBSERVATION -> processObservation(event);
                     }
                     break;
             }
@@ -169,6 +170,16 @@ public class OnlineEventProcessor {
     private ZonedDateTime parseTimestamp(JsonObject event){
         String timestampString = event.getJsonObject("timestamps").getString("eventTimestamp");
         return ZonedDateTime.parse(timestampString, timeFormatter);
+    }
+
+    private void processObservation(JsonObject event){
+        JsonArray localContext = event.getJsonObject("eventDetails").getJsonArray("localContext", new JsonArray());
+        long timestamp = event.containsKey("timestamps")? parseTimestamp(event).toInstant().toEpochMilli() : Instant.now().toEpochMilli();
+        Observation observation = new Observation(localContext, timestamp);
+
+        log.info("Observation with local context of size {}", localContext.size());
+
+        line.add(observation);
     }
 
     private void processNetworkEvent(JsonObject event){

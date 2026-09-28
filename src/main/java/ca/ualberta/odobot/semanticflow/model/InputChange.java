@@ -12,6 +12,18 @@ public class InputChange extends AbstractArtifact{
     private Element inputElement;
     private String value;
     private String placeholderText;
+    private Screenshot screenshot;
+    private BoundingBox boundingBox;
+
+    public InputChange setScreenshot(Screenshot screenshot) {
+        this.screenshot = screenshot;
+        return this;
+    }
+
+    public InputChange setBoundingBox(BoundingBox boundingBox) {
+        this.boundingBox = boundingBox;
+        return this;
+    }
 
     private String outerHTML;
 

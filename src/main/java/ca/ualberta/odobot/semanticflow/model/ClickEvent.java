@@ -26,6 +26,19 @@ public class ClickEvent extends AbstractArtifact implements TimelineEntity {
    private Document minimumDomTree; //A pruned DOM coning strictly the parents that contain the trigger element and their parents, leading up to the root.
     private InteractionType type;
 
+    private BoundingBox boundingBox;
+    private Screenshot screenshot;
+
+    public ClickEvent setBoundingBox(BoundingBox boundingBox) {
+        this.boundingBox = boundingBox;
+        return this;
+    }
+
+    public ClickEvent setScreenshot(Screenshot screenshot) {
+        this.screenshot = screenshot;
+        return this;
+    }
+
     private String resourceAnnotation;
 
     public String getResourceAnnotation() {

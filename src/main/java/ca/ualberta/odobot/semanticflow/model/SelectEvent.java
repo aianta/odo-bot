@@ -15,6 +15,18 @@ public class SelectEvent extends AbstractArtifact implements TimelineEntity{
     private static final Logger log = LoggerFactory.getLogger(SelectEvent.class);
 
     private Element selectElement;
+    private BoundingBox boundingBox;
+    private Screenshot screenshot;
+
+    public SelectEvent setScreenshot(Screenshot  screenshot) {
+        this.screenshot = screenshot;
+        return this;
+    }
+
+    public SelectEvent setBoundingBox(BoundingBox boundingBox) {
+        this.boundingBox = boundingBox;
+        return this;
+    }
 
     public SelectEvent setSelectElement(Element selectElement) {
         this.selectElement = selectElement;

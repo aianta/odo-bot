@@ -1,8 +1,10 @@
 package ca.ualberta.odobot.semanticflow.mappers.impl;
 
 import ca.ualberta.odobot.semanticflow.mappers.JsonMapper;
+import ca.ualberta.odobot.semanticflow.model.BoundingBox;
 import ca.ualberta.odobot.semanticflow.model.ClickEvent;
 import ca.ualberta.odobot.semanticflow.model.InteractionType;
+import ca.ualberta.odobot.semanticflow.model.Screenshot;
 import io.vertx.core.json.JsonObject;
 import org.jsoup.Jsoup;
 import org.slf4j.Logger;
@@ -29,6 +31,8 @@ public class LogUIClickEventMapper extends JsonMapper<ClickEvent> {
         result.setHtmlId(elementData.getString("id"));
         result.setTriggerElement(result.getDomSnapshot().selectXpath(result.getXpath()).first());
         result.setType(InteractionType.CLICK);
+        result.setScreenshot(new Screenshot(eventDetails.getString("screenshot")));
+        result.setBoundingBox(new BoundingBox(eventDetails.getJsonObject("boundingBox")));
 
         return result;
     }

@@ -17,7 +17,7 @@ REM
 REM  OdoBot is driven through its HTTP API and evaluates itself inside its own
 REM  container. The two baselines are driven with `docker run` and scored here,
 REM  because OdoBot's /api/evaluate endpoint only understands odoBot/odoBotNL
-REM  (see EvaluateTask.taskToExecutionRequest) - there is no way to hand it an
+REM  (see EvaluateTask.startTask) - there is no way to hand it an
 REM  Agent-E or WebVoyager run.
 REM
 REM  All three agents run the same 46 Side-effect task instances and produce the
@@ -40,7 +40,9 @@ REM ---------------------------------------------------------------------------
 REM  Configuration
 REM ---------------------------------------------------------------------------
 
-set "ODOBOT_IMAGE=aianta/odobot:cascon-2026"
+REM The OdoBot image can be overridden, e.g. to run a locally built image:
+REM   set ODOBOT_IMAGE=aianta/odobot:latest
+if not defined ODOBOT_IMAGE set "ODOBOT_IMAGE=aianta/odobot:cascon-2026"
 set "CANVAS_IMAGE=aianta/canvas-bench:cascon-2026"
 set "SELENIUM_IMAGE=selenium/standalone-firefox@sha256:a17bbdea03f99f61d3ecf8f7b425a8e6dd7fb22dc1926bea454780fc3719cec2"
 set "AGENTE_IMAGE=aianta/agent-e-cascon:cascon-2026"

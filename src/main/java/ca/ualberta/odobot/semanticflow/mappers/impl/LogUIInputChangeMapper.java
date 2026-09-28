@@ -1,10 +1,7 @@
 package ca.ualberta.odobot.semanticflow.mappers.impl;
 
 import ca.ualberta.odobot.semanticflow.mappers.JsonMapper;
-import ca.ualberta.odobot.semanticflow.model.CheckboxEvent;
-import ca.ualberta.odobot.semanticflow.model.InputChange;
-import ca.ualberta.odobot.semanticflow.model.RadioButtonEvent;
-import ca.ualberta.odobot.semanticflow.model.TinymceEvent;
+import ca.ualberta.odobot.semanticflow.model.*;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.jsoup.Jsoup;
@@ -80,6 +77,8 @@ public class LogUIInputChangeMapper extends JsonMapper<InputChange> {
         result.setXpath(eventDetails.getString("xpath"));
         result.setTag(elementData.getString("localName"));
         result.setBaseURI(elementData.getString("baseURI"));
+        result.setBoundingBox(new BoundingBox(eventDetails.getJsonObject("boundingBox")));
+        result.setScreenshot(new Screenshot(eventDetails.getString("screenshot")));
 
 
 

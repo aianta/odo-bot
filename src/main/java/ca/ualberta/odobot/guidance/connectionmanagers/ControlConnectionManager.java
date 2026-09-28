@@ -55,7 +55,8 @@ public class ControlConnectionManager extends AbstractConnectionManager implemen
                         .map(ExecutionParameter::fromJson)
                         .collect(Collectors.toList()));
 
-                client.getRequestManager().addNewRequest(executionRequest);
+                //TODO -> OdoX initiated execution requests are not supported by the agent/harness split yet.
+                log.warn("Unsupported: OdoX initiated EXECUTION_REQUEST {} was ignored.", executionRequest.getId());
 
                 break;
             case "STOP_GUIDANCE_REQUEST":

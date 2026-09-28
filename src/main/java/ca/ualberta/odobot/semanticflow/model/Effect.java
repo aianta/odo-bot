@@ -25,6 +25,13 @@ public class Effect extends ArrayList<DomEffect> implements TimelineEntity {
 
     private JsonObject semanticArtifacts = new JsonObject();
 
+    private Screenshot screenshot;
+
+    public Effect setScreenshot(Screenshot screenshot) {
+        this.screenshot = screenshot;
+        return this;
+    }
+
     public String symbol(){
         return "E";
     }
