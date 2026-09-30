@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.guidance.feedback;
 
+import ca.ualberta.odobot.semanticflow.model.Screenshot;
 import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
 import io.vertx.core.json.JsonObject;
 
@@ -36,6 +37,11 @@ public class UnresolvableXpath implements TimelineEntity {
     @Override
     public String symbol() {
         return "UXP";
+    }
+
+    @Override
+    public Screenshot getScreenshot() {
+        throw new UnsupportedOperationException("Not supported yet.");
     }
 
     @Override

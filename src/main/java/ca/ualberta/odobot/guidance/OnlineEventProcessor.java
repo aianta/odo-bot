@@ -44,12 +44,48 @@ public class OnlineEventProcessor {
     private JsonMapper<InputChange> inputChangeMapper = new LogUIInputChangeMapper();
     private OnlineTimeline line = new OnlineTimeline();
 
+    /**
+     * The observations that feed uncharted agents: the one OdoX sends when transmission starts, which is also on {@link #line}, and one
+     * per uncharted step, see {@link UnchartedStepObserver}.
+     */
+    private OnlineTimeline unchartedLine = new OnlineTimeline();
+
+    /**
+     * The uncharted timeline is only built in {@link ExecutionMode#UNCHARTED} mode.
+     */
+    private boolean unchartedTimelineEnabled = false;
+
     private List<JsonObject> rawEvents = new ArrayList<>();
 
     public void injectNoOp(){
         if(line != null){
             line.add(new NoOpEvent());
         }
+    }
+
+    /**
+     * @param listener called with every observation added to the uncharted timeline.
+     */
+    public void setOnUnchartedObservation(Consumer<Observation> listener){
+        unchartedLine.addListener(entity->listener.accept((Observation) entity));
+    }
+
+    /**
+     * Adds an observation of an uncharted step to the uncharted timeline only.
+     */
+    public void addUnchartedObservation(Observation observation){
+        if(!unchartedTimelineEnabled){
+            log.warn("The uncharted timeline is disabled, dropping an observation of an uncharted step.");
+            return;
+        }
+        unchartedLine.add(observation);
+    }
+
+    /**
+     * @param enabled whether to build the uncharted timeline, which is only done in {@link ExecutionMode#UNCHARTED} mode.
+     */
+    public void setUnchartedTimelineEnabled(boolean enabled){
+        this.unchartedTimelineEnabled = enabled;
     }
 
     public void clearRawEvents(){
@@ -173,13 +209,31 @@ public class OnlineEventProcessor {
     }
 
     private void processObservation(JsonObject event){
-        JsonArray localContext = event.getJsonObject("eventDetails").getJsonArray("localContext", new JsonArray());
+        JsonObject eventDetails = event.getJsonObject("eventDetails");
+
+        //OdoX versions that predate triggers only send observations on START_TRANSMISSION.
+        Observation.Trigger trigger = Observation.Trigger.valueOf(eventDetails.getString("trigger", Observation.Trigger.START_TRANSMISSION.name()));
+        JsonObject triggerDetails = eventDetails.getJsonObject("triggerDetails");
+        if(trigger == Observation.Trigger.UNCHARTED_ACTION && triggerDetails == null){
+            log.warn("Observation triggered by an uncharted action carries no triggerDetails.");
+        }
+
+        String userLocation = eventDetails.getString("userLocation");
+        Screenshot screenshot = Screenshot.fromBase64(eventDetails.getString("screenshot"));
+
         long timestamp = event.containsKey("timestamps")? parseTimestamp(event).toInstant().toEpochMilli() : Instant.now().toEpochMilli();
-        Observation observation = new Observation(localContext, timestamp);
+        Observation observation = new Observation(trigger, triggerDetails, userLocation, screenshot, timestamp);
 
-        log.info("Observation with local context of size {}", localContext.size());
+        log.info("Observation triggered by {} at user location {}, with{} screenshot", trigger,
+                userLocation != null? userLocation: "N/A", screenshot != null? "": "out");
 
-        line.add(observation);
+        //Observations of uncharted actions only feed the uncharted agent, so they never split an Effect or a DataEntry.
+        if(trigger == Observation.Trigger.START_TRANSMISSION){
+            line.add(observation);
+        }
+        if(unchartedTimelineEnabled){
+            unchartedLine.add(observation);
+        }
     }
 
     private void processNetworkEvent(JsonObject event){

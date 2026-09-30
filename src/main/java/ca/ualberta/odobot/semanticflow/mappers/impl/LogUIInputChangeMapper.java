@@ -77,8 +77,10 @@ public class LogUIInputChangeMapper extends JsonMapper<InputChange> {
         result.setXpath(eventDetails.getString("xpath"));
         result.setTag(elementData.getString("localName"));
         result.setBaseURI(elementData.getString("baseURI"));
-        result.setBoundingBox(new BoundingBox(eventDetails.getJsonObject("boundingBox")));
-        result.setScreenshot(new Screenshot(eventDetails.getString("screenshot")));
+        //LogUI sends TinyMCE edits as custom events, which carry no bounding box.
+        JsonObject boundingBox = eventDetails.getJsonObject("boundingBox");
+        result.setBoundingBox(boundingBox != null? new BoundingBox(boundingBox): null);
+        result.setScreenshot(Screenshot.fromBase64(eventDetails.getString("screenshot")));
 
 
 

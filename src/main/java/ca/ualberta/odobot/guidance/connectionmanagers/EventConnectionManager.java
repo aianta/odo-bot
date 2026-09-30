@@ -1,17 +1,18 @@
 package ca.ualberta.odobot.guidance.connectionmanagers;
 
+import ca.ualberta.odobot.guidance.GuidanceVerticle;
 import ca.ualberta.odobot.guidance.OdoClient;
 import ca.ualberta.odobot.guidance.OnlineEventProcessor;
+import ca.ualberta.odobot.guidance.UnchartedStepObserver;
 import ca.ualberta.odobot.semanticflow.model.*;
+import io.vertx.core.Context;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
-import io.vertx.core.json.JsonArray;
+import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.*;
-import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -24,6 +25,13 @@ public class EventConnectionManager extends AbstractConnectionManager implements
 
     private OnlineEventProcessor eventProcessor = new OnlineEventProcessor();
 
+    private final UnchartedStepObserver stepObserver;
+
+    /**
+     * The context OdoX's messages arrive on. The step observer runs there.
+     */
+    private Context eventContext = null;
+
     public OnlineEventProcessor getEventProcessor(){
         return eventProcessor;
     }
@@ -33,28 +41,45 @@ public class EventConnectionManager extends AbstractConnectionManager implements
 
         eventProcessor.setOnEntity(entity -> log.info("online timeline got: {}", entity.symbol()));
         eventProcessor.setOnEntity(client.getRequestManager()::onObservation);
+        eventProcessor.setOnUnchartedObservation(client.getRequestManager()::onUnchartedObservation);
+
+        stepObserver = new UnchartedStepObserver(GuidanceVerticle._vertx, this::requestScreenshot, eventProcessor::addUnchartedObservation);
+    }
+
+    /**
+     * Observes an uncharted step that has just been sent to OdoX, see {@link UnchartedStepObserver}.
+     * @param step the step instruction as sent.
+     */
+    public void observeUnchartedStep(JsonObject step){
+        onEventContext(()->stepObserver.observe(step));
+    }
+
+    public void stopObservingUnchartedSteps(){
+        onEventContext(stepObserver::stop);
+    }
+
+    private void onEventContext(Runnable action){
+        if(eventContext != null && Vertx.currentContext() != eventContext){
+            eventContext.runOnContext(v->action.run());
+        }else{
+            action.run();
+        }
+    }
+
+    private void requestScreenshot(){
+        send(new JsonObject()
+                .put("type", "GET_SCREENSHOT")
+                .put("source", SOURCE));
     }
 
 
 
     public void onMessage(JsonObject message){
         //log.info("EventConnectionManager got {}", message.getString("type"));
+        if(eventContext == null){
+            eventContext = Vertx.currentContext();
+        }
         switch (message.getString("type")){
-            case "LOCAL_CONTEXT":
-                Promise promise = activePromises.get("LOCAL_CONTEXT");
-                promise.complete(message);
-                try(FileOutputStream fos = new FileOutputStream(new File("local-context.json"));
-                    BufferedOutputStream bos = new BufferedOutputStream(fos);
-                ){
-                    bos.write(message.encodePrettily().getBytes(StandardCharsets.UTF_8));
-
-                } catch (FileNotFoundException e) {
-                    throw new RuntimeException(e);
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-                activePromises.remove("LOCAL_CONTEXT");
-                break;
             case "TRANSMISSION_STARTED":
                 activePromises.get("TRANSMISSION_STARTED").complete(message);
                 activePromises.remove("TRANSMISSION_STARTED");
@@ -68,9 +93,13 @@ public class EventConnectionManager extends AbstractConnectionManager implements
                 activePromises.get("PATH_COMPLETE_ACK").complete(message);
                 activePromises.remove("PATH_COMPLETE_ACK");
                 break;
+            case "SCREENSHOT":
+                stepObserver.onScreenshot(message.getString("screenshot"), message.getString("userLocation"));
+                break;
             case "EVENT":
 
                 JsonObject event = message.getJsonObject("event");
+                stepObserver.onEvent();
                 eventProcessor.process(event);
 
 
@@ -84,27 +113,6 @@ public class EventConnectionManager extends AbstractConnectionManager implements
         activePromises.put("PATH_COMPLETE_ACK", promise);
         send(notifyPathCompleteRequest);
         return promise.future();
-    }
-
-    public Future<JsonArray> getLocalContext(){
-
-        JsonObject localContextRequest = new JsonObject()
-                .put("type", "GET_LOCAL_CONTEXT")
-                .put("source", "EventConnectionManager");
-
-
-        if(client.getRequestManager().getExecutionId() != null){
-            localContextRequest.put("pathsRequestId", client.getRequestManager().getExecutionId().toString());
-        }
-
-        Promise<JsonObject> promise = Promise.promise();
-        activePromises.put("LOCAL_CONTEXT", promise);
-
-        log.info("Sending local context request!");
-
-        send(localContextRequest);
-
-        return promise.future().compose( response-> Future.succeededFuture(response.getJsonArray("localContext")));
     }
 
     public Future<Void> startTransmitting(){

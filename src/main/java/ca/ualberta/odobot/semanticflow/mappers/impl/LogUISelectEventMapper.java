@@ -24,7 +24,7 @@ public class LogUISelectEventMapper extends JsonMapper<SelectEvent> {
         selectEvent.setTag(elementData.getString("localName"));
         selectEvent.setSelectElement(selectEvent.getDomSnapshot().selectXpath(selectEvent.getXpath()).first());
 
-        selectEvent.setScreenshot(new Screenshot(eventDetails.getString("screenshot")));
+        selectEvent.setScreenshot(Screenshot.fromBase64(eventDetails.getString("screenshot")));
         selectEvent.setBoundingBox(new BoundingBox(eventDetails.getJsonObject("boundingBox")));
 
         return selectEvent;

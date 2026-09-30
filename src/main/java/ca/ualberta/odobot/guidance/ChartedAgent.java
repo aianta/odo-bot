@@ -52,11 +52,6 @@ public class ChartedAgent extends AbstractAgent{
     private Snippet2XMLService snippet2XML;
 
     /**
-     * Processes the local context of the first observation.
-     */
-    private OnlineEventProcessor eventProcessor = new OnlineEventProcessor();
-
-    /**
      * True once the first observation has been received.
      */
     private boolean started = false;
@@ -67,8 +62,6 @@ public class ChartedAgent extends AbstractAgent{
     private ExecutionRequest request = null;
 
     private List<NavPath> navPaths = null;
-
-    private PathsRequestInput _input = null;
 
     private Transaction tx;
 
@@ -231,7 +224,7 @@ public class ChartedAgent extends AbstractAgent{
     private void onObservation(Observation observation){
 
         if(!started){
-            //First observation: interpret the task, then plan from the local context.
+            //First observation: interpret the task, then plan from the user's location.
             started = true;
             interpretTask()
                     .onFailure(err->{
@@ -240,7 +233,7 @@ public class ChartedAgent extends AbstractAgent{
                     })
                     .onSuccess(executionRequest->{
                         request = executionRequest;
-                        plan(observation.localContext());
+                        plan(observation);
                     });
             return;
         }
@@ -250,13 +243,23 @@ public class ChartedAgent extends AbstractAgent{
             return;
         }
 
-        //Re-plan from the current page, this happens when control is handed back to this agent.
+        //Re-plan, this happens when control is handed back to this agent.
         stopped = false;
-        plan(observation.localContext());
+        plan(observation);
     }
 
-    private void plan(JsonArray localContext){
-        getExecutionPath(request, localContext)
+    /**
+     * Plans from the page the observation was made on. Falls back on the task's user location when the observation
+     * carries none.
+     */
+    private void plan(Observation observation){
+        String userLocation = observation.getUserLocation();
+        if(userLocation == null){
+            log.warn("Observation carries no user location, planning from the task's user location instead.");
+            userLocation = request.getUserLocation();
+        }
+
+        getExecutionPath(request, userLocation)
                 .onSuccess(instruction->{
                     if(instruction == null){
                         log.error("Error occurred while processing execution request");
@@ -420,30 +423,12 @@ public class ChartedAgent extends AbstractAgent{
         }
     }
 
-    private Future<Instruction> getExecutionPath(ExecutionRequest request, JsonArray localContext){
+    private Future<Instruction> getExecutionPath(ExecutionRequest request, String userLocation){
 
-        log.info("Processing localContext[size:{}] into ExecutionPathsRequestInput", localContext.size());
-
-        eventProcessor.setOnEntity(this::buildPathsRequestInput, (entity)-> entity instanceof DataEntry || entity instanceof ClickEvent || entity instanceof CheckboxEvent);
-        eventProcessor.process(localContext);
-
-        log.info("Done processing local context!");
         try{
-            if(_input == null){
-                //This happens when there is no meaningful local context. IE: local context that doesn't include a data entry or click event
-                _input = new PathsRequestInput();
-            }
+            log.info("User Location: {}", userLocation != null? userLocation: "N/A");
 
-            _input.setUserLocation(request.getUserLocation());
-
-            _input.setPathRequestId(request.getId().toString());
-
-            log.info("LastEntity: {}", _input.getLastEntity() != null?_input.lastEntity.symbol(): "N/A");
-            log.info("URL: {}", _input.getUrl() != null? _input.getUrl(): "N/A");
-            log.info("DOM: {}", _input.getDom() != null? _input.dom.toString().substring(0, Math.min(_input.dom.toString().length(), 150)): "N/A");
-            log.info("User Location: {}",  _input.getUserLocation() != null? _input.getUserLocation(): "N/A");
-
-            Optional<UUID> startingNode = localizer.resolveStartingNode(_input);
+            Optional<UUID> startingNode = localizer.resolveStartingNode(userLocation);
             log.info("Found starting node? {}", startingNode.isPresent());
 
             UUID src = startingNode.get();
@@ -546,7 +531,6 @@ public class ChartedAgent extends AbstractAgent{
                  * be our target node.
                  */
                 var targetNodeId = UUID.fromString(navPaths.get(0).getPath().endNode().getProperty("id").toString());
-                _input.setTargetNode(targetNodeId.toString());
                 request.setTarget(targetNodeId);
 
                 log.info("Found {} execution paths", navPaths.size());
@@ -554,8 +538,7 @@ public class ChartedAgent extends AbstractAgent{
 
             //Handle tasks that have been pre-defined in terms of the navigational model.
             if(request.getType() == ExecutionRequest.Type.PREDEFINED){
-                _input.setTargetNode(request.getTarget().toString());
-                log.info("TargetNode: {}", _input.targetNode);
+                log.info("TargetNode: {}", request.getTarget());
 
                 UUID tgt = request.getTarget();
 
@@ -649,7 +632,6 @@ public class ChartedAgent extends AbstractAgent{
                  * be our target node.
                  */
                 var targetNodeId = UUID.fromString(navPaths.get(0).getPath().endNode().getProperty("id").toString());
-                _input.setTargetNode(targetNodeId.toString());
                 request.setTarget(targetNodeId);
 
                 log.info("Found {} execution paths", navPaths.size());
@@ -681,32 +663,6 @@ public class ChartedAgent extends AbstractAgent{
         }
     }
 
-
-    private void buildPathsRequestInput(TimelineEntity entity){
-
-        PathsRequestInput result = new PathsRequestInput();
-        result.setLastEntity(entity);
-
-        if(entity instanceof ClickEvent){
-            ClickEvent clickEvent = (ClickEvent) entity;
-            result.setDom(clickEvent.getDomSnapshot());
-            result.setUrl(clickEvent.getBaseURI().toString());
-        }
-
-        if(entity instanceof DataEntry){
-            DataEntry dataEntry = (DataEntry) entity;
-            result.setDom(dataEntry.lastChange().getDomSnapshot());
-            result.setUrl(dataEntry.lastChange().getBaseURI().toString());
-        }
-
-        if(entity instanceof CheckboxEvent){
-            CheckboxEvent checkboxEvent = (CheckboxEvent) entity;
-            result.setDom(checkboxEvent.getDomSnapshot());
-            result.setUrl(checkboxEvent.getBaseURI().toString());
-        }
-
-        _input = result;
-    }
 
     private Instruction buildExecutionInstruction(List<NavPath> paths){
 
@@ -1357,7 +1313,6 @@ public class ChartedAgent extends AbstractAgent{
              * be our target node.
              */
             var targetNodeId = UUID.fromString(chosenPath.getPath().endNode().getProperty("id").toString());
-            _input.setTargetNode(targetNodeId.toString());
             request.setTarget(targetNodeId);
 
             return Future.succeededFuture(chosenPath);

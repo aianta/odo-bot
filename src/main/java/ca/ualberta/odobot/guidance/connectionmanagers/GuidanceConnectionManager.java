@@ -263,6 +263,21 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
 
     }
 
+    /**
+     * Tells the harness when an EXECUTE message has actually reached OdoX. A message queued while OdoX is disconnected is reported
+     * when the connection comes back and the queue is flushed.
+     */
+    @Override
+    protected void onSent(String data){
+        if(!data.contains("\"EXECUTE\"")){
+            return;
+        }
+        JsonObject message = new JsonObject(data);
+        if("EXECUTE".equals(message.getString("type"))){
+            client.getRequestManager().onExecutionInstructionSent(message);
+        }
+    }
+
     public void dumpHistory(){
         super.saveHistory(SOURCE);
         super.history.clear();

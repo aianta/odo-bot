@@ -32,6 +32,10 @@ public class Effect extends ArrayList<DomEffect> implements TimelineEntity {
         return this;
     }
 
+    public Screenshot getScreenshot() {
+        return screenshot;
+    }
+
     public String symbol(){
         return "E";
     }

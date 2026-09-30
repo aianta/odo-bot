@@ -27,6 +27,14 @@ public class Screenshot {
         }
     }
 
+    /**
+     * @param base64 a base64 encoded image, or null, e.g. when OdoX could not capture the tab.
+     * @return the screenshot, or null if there is no image.
+     */
+    public static Screenshot fromBase64(String base64){
+        return base64 == null ? null : new Screenshot(base64);
+    }
+
     public BufferedImage crop(BoundingBox boundingBox){
         if(image==null){
             log.error("Cannot crop because image is null");
@@ -39,6 +47,10 @@ public class Screenshot {
                 boundingBox.getHeight()
         );
         return croppedImage;
+    }
+
+    public BufferedImage getImage(){
+        return image;
     }
 
     public byte[] asBytes(){

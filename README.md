@@ -103,7 +103,7 @@ An experiment is the exection of all tasks specified in a task file by an agent.
   | `webvoyager` | `cascon-experiment-webvoyager.jsonl` | `cascon-experiment-webvoyager-smoke-test.jsonl` |
 
 * `NUM INSTANCES`: The number of times the experiment will be repeated. The environment is reset between instances.
-* `--agent NAME`: `odobot` (the default), `agent-e`, or `webvoyager`.
+* `--agent NAME`: `odobot` (the default), `odobot-uncharted`, `odobot-hybrid`, `agent-e`, or `webvoyager`. `odobot` is OdoBot's charted mode; `odobot-uncharted` and `odobot-hybrid` run its other [execution modes](#task-execution-modes).
 * `--logs` / `--no-logs`: For OdoBot only, captures container logs to a file.
 
 <details>
@@ -114,7 +114,7 @@ An experiment is the exection of all tasks specified in a task file by an agent.
 For each instance the script resets the environment, builds a per-instance copy of the task file, runs the agent, and writes an evaluation report. What it starts depends on the agent:
 
 * **OdoBot** needs the Canvas, Selenium Firefox and OdoBot containers. The experiment definition is POSTed to OdoBot's `/api/evaluate` endpoint, and OdoBot evaluates itself using the copy of the evaluation scripts baked into its own image. A `-{INSTANCE}` suffix is appended to the `experimentId` field from the JSON file.
-* **Agent-E and WebVoyager** need only the Canvas container — both bundle their own browser — and are launched with `docker run`. Their experiment id is derived from the task file's name, so `cascon-experiment-agent-e.json` produces `cascon-agent-e-1`, `cascon-agent-e-2`, and so on. They are scored after the run by this script, because OdoBot's `/api/evaluate` endpoint only understands `odoBot` and `odoBotNL` and cannot be handed a baseline run.
+* **Agent-E and WebVoyager** need only the Canvas container — both bundle their own browser — and are launched with `docker run`. Their experiment id is derived from the task file's name, so `cascon-experiment-agent-e.json` produces `cascon-agent-e-1`, `cascon-agent-e-2`, and so on. They are scored after the run by this script, because OdoBot's `/api/evaluate` endpoint only executes OdoBot's own agents (see [Task Execution Modes](#task-execution-modes)) and cannot be handed a baseline run.
 
 >Note: Experiment results appear in `execution_events/{experimentId}-{INSTANCE}`, with the evaluation script's output in its `results` subfolder, for every agent.
 
@@ -134,6 +134,7 @@ While an OdoBot experiment is running you can watch the browser at `http://local
 
 ```
  .\cascon-experiment.bat cascon-experiment-smoke-test.json 1
+ .\cascon-experiment.bat cascon-experiment-uncharted-smoke-test.json 1 --agent odobot-uncharted
  .\cascon-experiment.bat cascon-experiment-agent-e-smoke-test.json 1 --agent agent-e
  .\cascon-experiment.bat cascon-experiment-webvoyager-smoke-test.jsonl 1 --agent webvoyager
 ```
@@ -147,6 +148,65 @@ While an OdoBot experiment is running you can watch the browser at `http://local
  .\cascon-experiment.bat cascon-experiment-agent-e.json 5 --agent agent-e
  .\cascon-experiment.bat cascon-experiment-webvoyager.jsonl 5 --agent webvoyager
 ```
+
+## Task Execution Modes
+
+OdoBot executes tasks in one of three modes, chosen with the `agent` query parameter of `POST /api/evaluate`. The parameter also selects which field of each task entry is read.
+
+| `agent=` | Task field | Mode | Agent |
+|---|---|---|---|
+| `odoBot` (default) | `odoBot` | charted | `ChartedAgent`, tasks predefined in terms of the navigation model |
+| `odoBotNL` | `odoBotNL` | charted | `ChartedAgent`, natural language tasks. This is the CASCON 2026 evaluation, and what `cascon-experiment.bat` sends. |
+| `uncharted` | `odoBotNL` | uncharted | `Qwen38Agent`, which acts on screenshots of the page |
+| `hybrid` | `odoBotNL` | hybrid | Not implemented yet: the agent gives up on its first observation. |
+
+Charted mode runs as it did for the CASCON evaluation, with three deliberate changes: the starting node is localized from the URL of the page OdoX reports when transmission starts; OdoX no longer sends the events it recorded before transmission started; and TinyMCE edits reach the timeline again, with screenshots.
+
+Every mode builds the main timeline from OdoX's events. It is saved to `execution_events/<experimentId>/<task>.json` and evaluated the same way in every mode, so charted and uncharted runs are scored alike.
+
+Uncharted mode also builds a second, uncharted observation timeline, which is the only thing the Qwen agent sees. It holds the observation OdoX sends when transmission starts, then one observation per step. After a step is sent, the harness waits until OdoX has sent no event for 1.5 s (15 s at most, and never before a `wait` action ends), then asks OdoX for a screenshot (`UnchartedStepObserver`). These observations never enter the main timeline.
+
+<details>
+<summary>Uncharted mode settings</summary>
+
+The Qwen agent talks to an OpenAI-compatible server. Its settings go in an optional `qwen` object in the body of the evaluate request, next to `tasks`; missing keys take the defaults of OSWorld's `run_multienv_qwen3_8.py`:
+
+```json
+{
+  "experimentId": "uncharted-smoke-test",
+  "evaluationDatasetPath": "sample_generated_data/cascon-2026/tasks.json",
+  "qwen": {
+    "model": "qwen3.8-27b",
+    "base_url": "http://host.docker.internal:8080/v1",
+    "api_key": "dummy"
+  },
+  "tasks": [ ... ]
+}
+```
+
+| Key | Default | |
+|---|---|---|
+| `model` | `qwen3.8-27b` | Model name sent to the server. |
+| `base_url` | `http://127.0.0.1:8080/v1` | Base URL of the server, including `/v1`. |
+| `api_key` | `dummy` | Local servers accept any value. |
+| `max_tokens` | `4096` | Completion token limit. |
+| `temperature`, `top_p` | `1.0`, `0.95` | Sampling. |
+| `top_k`, `presence_penalty` | `20`, omitted | Non-standard body fields; `null` omits them. |
+| `history_n` | `5` | Steps replayed as conversation turns. |
+| `image_max`, `fold_size` | `5`, `2` | Screenshots kept before older ones are collapsed, and how many are collapsed at a time. |
+| `coord` | `relative` | `relative` (a 1000x1000 grid) or `absolute` (resized screenshot pixels). |
+| `collapse_text` | `This screenshot has been collapsed.` | Replaces a collapsed screenshot. |
+| `timeout_seconds`, `max_attempts` | `130`, `5` | Per request timeout, and attempts per model call. |
+
+OdoBot runs in a container, where `127.0.0.1` is the container itself: a model server running on the host is reached at `host.docker.internal`, as in the example above and in `cascon-experiment-uncharted-smoke-test.json`.
+
+Invalid settings are rejected with `400` before anything is launched. `cascon-experiment.bat --agent odobot-uncharted` runs a task file in uncharted mode; it only changes the `agent` query parameter it sends, so the file must hold `odoBotNL` tasks and, unless the defaults suit, a `qwen` object.
+
+The agent writes `<task>-qwen38-trajectory.jsonl` and `<task>-qwen38-messages-step-<n>.json` next to the task's events.
+
+>**Known gap:** the Qwen agent's token usage is not counted yet. The input, output and combined token counts reported for uncharted tasks and experiments, in telemetry and in the experiment results, only cover the charted services (task planner, Snippet2XML, DataEntry2Label), which uncharted mode does not use, so they are 0. The model names reported are also those of the charted services.
+
+</details>
 
 
 
@@ -175,6 +235,7 @@ The three agents produce different artifacts, so the script passes a different f
 | Agent | Artifacts | Evaluation flag |
 |---|---|---|
 | OdoBot | `execution_events/<experimentId>/*.json` | `--odobot-execution-events` (run inside the OdoBot container) |
+| OdoBot, uncharted mode | `execution_events/<experimentId>/*.json` | `--odobot-uncharted-execution-events`: the same evaluation, without the check of the target the charted agent's task query construction chose |
 | Agent-E | `<experimentId>/artifacts/logs/test_results_for_<experimentId>/network_logs/` | `--agent-e-network-logs` |
 | WebVoyager | `<experimentId>/webvoyager/<timestamp>/` | `--wv-network-logs` |
 

@@ -4,6 +4,8 @@ import ca.ualberta.odobot.common.AbstractOpenAIStrategy;
 import ca.ualberta.odobot.dataentry2label.impl.DataEntry2LabelServiceImpl;
 import ca.ualberta.odobot.guidance.*;
 import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
+import ca.ualberta.odobot.guidance.uncharted.Qwen38Agent;
+import ca.ualberta.odobot.guidance.uncharted.QwenAgentConfig;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import ca.ualberta.odobot.snippet2xml.Snippet2XMLVerticle;
 import ca.ualberta.odobot.snippet2xml.impl.Snippet2XMLServiceImpl;
@@ -198,26 +200,13 @@ public class EvaluateTask implements Runnable{
         log.info("Starting task {}", task.getString("_evalId"));
         this.startTime = Instant.now();
 
-        if(agent != Agent.ODO_BOT && agent != Agent.ODO_BOT_NL){
+        if(agent.getMode() == null){
             log.error("Unknown or unsupported agent type!");
             taskComplete();
             return;
         }
 
-        ChartedAgent chartedAgent = new ChartedAgent.Builder()
-                .mode(agent == Agent.ODO_BOT_NL? ExecutionRequest.Type.NL : ExecutionRequest.Type.PREDEFINED)
-                .pathSelectionMode(this.pathSelectionMode)
-                .localizer(LogPreprocessor.localizer)
-                .pathsConstructor(LogPreprocessor.pathsConstructor)
-                .taskPlanner(taskPlannerService)
-                .snippet2XML(Snippet2XMLVerticle.snippet2XML)
-                .graphDb(LogPreprocessor.graphDB)
-                .neo4J(LogPreprocessor.neo4j)
-                .sqlite(ExplorerVerticle.sqliteService)
-                .task(task)
-                .artifactDir(this.experimentFolderPath)
-                .evalId(task.getString("_evalId"))
-                .build();
+        IAgent taskAgent = buildAgent(task);
 
         Promise<Void> evaluationPromise = Promise.promise();
         evaluationPromise.future().onComplete((done)->{
@@ -247,17 +236,28 @@ public class EvaluateTask implements Runnable{
                     TaskInstanceResults taskResultTelemetry = new TaskInstanceResults();
 
                     if (Files.exists(Path.of(taskEventsFile))){
-                        ProcessBuilder pb = new ProcessBuilder(
+                        List<String> command = new ArrayList<>(List.of(
                                 "python",
                                 "-X", "utf8",
                                 evalScriptPath,
                                 "-t", datasetPath,
-                                "-o", taskInstanceResultFile,
-                                "--single-odobot-execution-events",
-                                taskEventsFile,
-                                "--single-odobot-task-query-construction",
-                                "%s/%s-task-query-construction-result.json".formatted(this.experimentFolderPath, odoXClient.getRequestManager().getEvalId()).replaceAll("\\|","-")
-                        );
+                                "-o", taskInstanceResultFile
+                        ));
+                        if(agent.getMode() == ExecutionMode.CHARTED){
+                            command.addAll(List.of(
+                                    "--single-odobot-execution-events",
+                                    taskEventsFile,
+                                    "--single-odobot-task-query-construction",
+                                    "%s/%s-task-query-construction-result.json".formatted(this.experimentFolderPath, odoXClient.getRequestManager().getEvalId()).replaceAll("\\|","-")
+                            ));
+                        }else{
+                            //Only the charted agent constructs a task query, so there is no target to check.
+                            command.addAll(List.of(
+                                    "--single-odobot-uncharted-execution-events",
+                                    taskEventsFile
+                            ));
+                        }
+                        ProcessBuilder pb = new ProcessBuilder(command);
 
                         StringBuilder commandSb = new StringBuilder();
                         pb.command().forEach(part->commandSb.append(part + " "));
@@ -332,9 +332,52 @@ public class EvaluateTask implements Runnable{
         odoXClient.getRequestManager().setExperimentId(config.containsKey("experimentId")?config.getString("experimentId"):"default");
         odoXClient.getRequestManager().setExperimentFolderPath(this.experimentFolderPath);
         odoXClient.getRequestManager().setEvalId(task.getString("_evalId")); //Set the evaluationId for this execution.
-        odoXClient.getRequestManager().startTask(chartedAgent, UUID.fromString(task.getString("id")), taskTimeout);
+        odoXClient.getRequestManager().startTask(taskAgent, agent.getMode(), UUID.fromString(task.getString("id")), taskTimeout);
 
 
+    }
+
+    /**
+     * Builds the agent that executes the task in the agent's {@link ExecutionMode}.
+     */
+    private IAgent buildAgent(JsonObject task){
+        return switch (agent.getMode()){
+            case CHARTED -> new ChartedAgent.Builder()
+                    .mode(agent == Agent.ODO_BOT_NL? ExecutionRequest.Type.NL : ExecutionRequest.Type.PREDEFINED)
+                    .pathSelectionMode(this.pathSelectionMode)
+                    .localizer(LogPreprocessor.localizer)
+                    .pathsConstructor(LogPreprocessor.pathsConstructor)
+                    .taskPlanner(taskPlannerService)
+                    .snippet2XML(Snippet2XMLVerticle.snippet2XML)
+                    .graphDb(LogPreprocessor.graphDB)
+                    .neo4J(LogPreprocessor.neo4j)
+                    .sqlite(ExplorerVerticle.sqliteService)
+                    .task(task)
+                    .artifactDir(this.experimentFolderPath)
+                    .evalId(task.getString("_evalId"))
+                    .build();
+            case UNCHARTED -> new Qwen38Agent.Builder()
+                    .config(qwenConfig(config))
+                    .task(task)
+                    .artifactDir(this.experimentFolderPath)
+                    .evalId(task.getString("_evalId"))
+                    .build();
+            case HYBRID -> new HybridAgent.Builder()
+                    .task(task)
+                    .artifactDir(this.experimentFolderPath)
+                    .evalId(task.getString("_evalId"))
+                    .build();
+        };
+    }
+
+    /**
+     * The settings of the Qwen3.8 agent, from the {@code qwen} object of the evaluate request. Missing keys take the defaults of
+     * {@link QwenAgentConfig#fromJson}.
+     *
+     * @throws IllegalArgumentException if the settings are invalid.
+     */
+    static QwenAgentConfig qwenConfig(JsonObject evaluateRequest){
+        return QwenAgentConfig.fromJson(evaluateRequest.getJsonObject("qwen", new JsonObject()));
     }
 
     private String resolveTaskIdFromInstanceIdAndDatasetPath(String datasetPath, String instanceId){

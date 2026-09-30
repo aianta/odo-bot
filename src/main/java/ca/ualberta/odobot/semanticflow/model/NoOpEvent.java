@@ -30,6 +30,10 @@ public class NoOpEvent implements TimelineEntity{
         return timestamp;
     }
 
+    public Screenshot getScreenshot(){
+        throw new UnsupportedOperationException("Not supported yet.");
+    }
+
     @Override
     public JsonObject getSemanticArtifacts() {
         return new JsonObject();

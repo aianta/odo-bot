@@ -36,6 +36,11 @@ public class RequestManager {
     private IAgent activeAgent = null;
 
     /**
+     * How the current task is executed. It decides which timeline feeds the active agent.
+     */
+    private ExecutionMode mode = ExecutionMode.CHARTED;
+
+    /**
      * True once the task has completed, failed or timed out. Instructions are dropped after that.
      */
     private boolean ended = false;
@@ -90,6 +95,7 @@ public class RequestManager {
         });
         this.evaluationComplete.future().onComplete(done->{
             ended = true;
+            client.getEventConnectionManager().stopObservingUnchartedSteps();
             if(activeAgent != null){
                 activeAgent.stop();
             }
@@ -107,14 +113,20 @@ public class RequestManager {
 
     /**
      * Start executing a task with the given agent. OdoX answers START_TRANSMISSION with an Observation, which
-     * reaches the agent through the timeline as its first observation.
+     * reaches the agent through its timeline as its first observation.
+     *
+     * @param mode how the task is executed. The main timeline is built in every mode; the uncharted observation timeline,
+     *             which feeds the agent in {@link ExecutionMode#UNCHARTED} mode, only in that mode.
      */
-    public void startTask(IAgent agent, UUID executionId, long timeout){
+    public void startTask(IAgent agent, ExecutionMode mode, UUID executionId, long timeout){
         this.executionId = executionId;
         this.timeout = timeout;
         this.activeAgent = agent;
+        this.mode = mode;
         this.ended = false;
         this.firstInstructionSent = false;
+
+        client.getEventConnectionManager().getEventProcessor().setUnchartedTimelineEnabled(mode == ExecutionMode.UNCHARTED);
 
         agent.setInstructionConsumer(instruction->onInstruction(agent, instruction));
 
@@ -130,7 +142,8 @@ public class RequestManager {
     }
 
     /**
-     * Receives every timeline entity and every piece of OdoX feedback, and routes it to the active agent.
+     * Receives every timeline entity and every piece of OdoX feedback, and routes it to the active agent, except in
+     * {@link ExecutionMode#UNCHARTED} mode, where the agent is fed from the uncharted timeline instead, see {@link #onUnchartedObservation}.
      */
     public void onObservation(TimelineEntity entity){
 
@@ -139,8 +152,27 @@ public class RequestManager {
             client.getGuidanceConnectionManager().resetExecutionInstructionDelay();
         }
 
-        if(activeAgent != null){
+        if(activeAgent != null && mode != ExecutionMode.UNCHARTED){
             activeAgent.observationHandler(entity);
+        }
+    }
+
+    /**
+     * Receives the observations of the uncharted timeline, which is only built in {@link ExecutionMode#UNCHARTED} mode: the one OdoX
+     * sends when transmission starts, and one per uncharted step.
+     */
+    public void onUnchartedObservation(Observation observation){
+        if(activeAgent != null && mode == ExecutionMode.UNCHARTED){
+            activeAgent.observationHandler(observation);
+        }
+    }
+
+    /**
+     * An EXECUTE message has just been sent to OdoX. Uncharted steps are observed from here, see {@link UnchartedStepObserver}.
+     */
+    public void onExecutionInstructionSent(JsonObject instruction){
+        if("uncharted_step".equals(instruction.getString("action"))){
+            client.getEventConnectionManager().observeUnchartedStep(instruction);
         }
     }
 

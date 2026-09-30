@@ -1,9 +1,6 @@
 package ca.ualberta.odobot.semanticflow.navmodel;
 
-import ca.ualberta.odobot.guidance.PathsRequestInput;
 import ca.ualberta.odobot.semanticflow.model.ApplicationLocationChange;
-import ca.ualberta.odobot.semanticflow.model.ClickEvent;
-import ca.ualberta.odobot.semanticflow.model.DataEntry;
 import ca.ualberta.odobot.semanticflow.model.NetworkEvent;
 import org.neo4j.graphdb.*;
 import org.slf4j.Logger;
@@ -173,43 +170,24 @@ public class Localizer {
     }
 
 
-    public Optional<UUID> resolveStartingNode(PathsRequestInput input){
+    /**
+     * Resolves the node an execution starts from, using the location of the user's url.
+     * @param userLocation the url of the page the user is on.
+     * @return the id of the LocationNode matching the url's location, or empty if the url cannot be parsed or no node matches.
+     */
+    public Optional<UUID> resolveStartingNode(String userLocation){
+        //TODO -> this is a hard coded implementation for normalizing specifically canvas paths, need to refactor this for generalization purposes.
+        try{
+            URL url = new URL(userLocation);
+            String location = url.getPath().replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*");
 
+            return findNodeByLocation(location);
 
-        if(input.getLastEntity() == null){
-            //No last entity because of sparse/minimal/empty local context. Need to resolve using url.
-            //TODO -> make sure URL is sent even without local context.
-            //TODO -> implement a method for resolving using location.
-            //TODO -> this is a hard coded implementation for normalizing specifically canvas paths, need to refactor this for generalization purposes.
-            try{
-               URL url = new URL(input.getUserLocation());
-               String location = url.getPath().replaceAll("[0-9]+", "*").replaceAll("(?<=pages\\/)[\\s\\S]+", "*");
-
-               return findNodeByLocation(location);
-
-            }catch (MalformedURLException e){
-                log.error("Failed to parse userLocation: {}", input.getUserLocation());
-                log.error(e.getMessage(), e);
-                return Optional.empty();
-            }
+        }catch (MalformedURLException e){
+            log.error("Failed to parse userLocation: {}", userLocation);
+            log.error(e.getMessage(), e);
+            return Optional.empty();
         }
-
-        String xpath = null;
-        if(input.getLastEntity() instanceof ClickEvent){
-            //Last entity was a click event
-            ClickEvent entity = (ClickEvent) input.getLastEntity();
-            xpath = entity.getXpath();
-        }
-
-        if(input.getLastEntity() instanceof DataEntry){
-            //Last entity was a data entry
-            DataEntry entity = (DataEntry) input.getLastEntity();
-            xpath = entity.lastChange().getXpath();
-        }
-
-        log.info("Localizing via xpath: {}", xpath);
-
-        return findNodeIdByXPath(xpath);
     }
 
     private Optional<UUID> findNodeByLocation(String location){

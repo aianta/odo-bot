@@ -64,6 +64,7 @@ public abstract class AbstractConnectionManager implements ConnectionManager {
 
             log.info("Message sent over websocket! {}", getClass().getName());
             connection.send(data);
+            onSent(data);
             return true;
         }else{
 
@@ -71,6 +72,13 @@ public abstract class AbstractConnectionManager implements ConnectionManager {
             log.info("added message to queue! Queue size: {} {}", queue.size(), getClass().getName());
             return false;
         }
+    }
+
+    /**
+     * Called once a message has gone out over the websocket, including a queued message sent when the connection comes back.
+     * @param data the message as sent.
+     */
+    protected void onSent(String data){
     }
 
     protected void addHistory(JsonObject data){

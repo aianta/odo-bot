@@ -425,7 +425,7 @@ The **experiment driver**. Everything that runs a browser end-to-end goes throug
 | GET | `/health` | Liveness. |
 
 Supporting model, all under `explorer/`:
-- `Agent` enum — `ODO_BOT`, `ODO_BOT_NL`, `WEB_VOYAGER`; selects which task field an evaluation reads.
+- `Agent` enum — `ODO_BOT`, `ODO_BOT_NL`, `UNCHARTED`, `HYBRID`, `WEB_VOYAGER`; the `agent` query parameter of `/evaluate`. Selects which task field an evaluation reads and the `guidance.ExecutionMode` (`CHARTED`, `UNCHARTED`, `HYBRID`) it runs in; see "Task Execution Modes" in the README.
 - `*RequestFields` classes — request-body validation constants.
 - `WebDriverUtils` — Selenium/Firefox helpers.
 - `canvas/operations/` — scripted Canvas operations (`Login`, `Logout`, `CourseOperations`,

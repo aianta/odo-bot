@@ -57,6 +57,10 @@ public class DataEntry extends ArrayList<InputChange> implements TimelineEntity 
         return isEmpty()?null:get(size()-1);
     }
 
+    public Screenshot getScreenshot(){
+        return isEmpty()?null:get(size()-1).getScreenshot();
+    }
+
     public String symbol(){
         return "DE";
     }

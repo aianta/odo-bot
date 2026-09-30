@@ -16,9 +16,14 @@ REM    4. Scores the run and writes results\<experimentId>-results.json
 REM
 REM  OdoBot is driven through its HTTP API and evaluates itself inside its own
 REM  container. The two baselines are driven with `docker run` and scored here,
-REM  because OdoBot's /api/evaluate endpoint only understands odoBot/odoBotNL
+REM  because OdoBot's /api/evaluate endpoint only executes OdoBot's own agents
 REM  (see EvaluateTask.startTask) - there is no way to hand it an
 REM  Agent-E or WebVoyager run.
+REM
+REM  OdoBot runs in charted mode (the CASCON 2026 evaluation) unless --agent
+REM  odobot-uncharted or odobot-hybrid picks another of its execution modes, see
+REM  "Task Execution Modes" in the README. The modes differ only in the agent
+REM  query parameter sent to /api/evaluate.
 REM
 REM  All three agents run the same 46 Side-effect task instances and produce the
 REM  same results\<experimentId>-results.json schema, so runs are comparable.
@@ -107,7 +112,7 @@ shift
 if "%~1"=="" goto :parse_done
 if /i "%~1"=="--agent" (
     if "%~2"=="" (
-        echo [ERROR] --agent needs a value: odobot, agent-e or webvoyager.
+        echo [ERROR] --agent needs a value: odobot, odobot-uncharted, odobot-hybrid, agent-e or webvoyager.
         goto :fail
     )
     set "AGENT=%~2"
@@ -129,6 +134,17 @@ echo [ERROR] Unknown option: %~1
 goto :usage
 :parse_done
 
+REM OdoBot's execution modes all run the OdoBot containers and differ only in
+REM the agent query parameter of /api/evaluate: odoBotNL (charted), uncharted
+REM (the Qwen3.8 agent, configured by the "qwen" object of the task file) or
+REM hybrid (not implemented yet).
+set "ODOBOT_AGENT=odoBotNL"
+if /i "%AGENT%"=="odobot-uncharted" set "ODOBOT_AGENT=uncharted"
+if /i "%AGENT%"=="uncharted" set "ODOBOT_AGENT=uncharted"
+if /i "%AGENT%"=="odobot-hybrid" set "ODOBOT_AGENT=hybrid"
+if /i "%AGENT%"=="hybrid" set "ODOBOT_AGENT=hybrid"
+if not "%ODOBOT_AGENT%"=="odoBotNL" set "AGENT=odobot"
+
 REM Accept a few spellings so the agent names from the README and the docker
 REM image tags both work.
 if /i "%AGENT%"=="odoBot" set "AGENT=odobot"
@@ -142,6 +158,9 @@ if /i "%AGENT%"=="odobot" (
     set "AGENT=odobot"
     set "AGENT_LABEL=OdoBot"
 )
+REM No parentheses in labels: they are echoed inside parenthesised blocks.
+if "%ODOBOT_AGENT%"=="uncharted" set "AGENT_LABEL=OdoBot uncharted"
+if "%ODOBOT_AGENT%"=="hybrid" set "AGENT_LABEL=OdoBot hybrid"
 if /i "%AGENT%"=="agent-e" (
     set "AGENT=agent-e"
     set "AGENT_LABEL=Agent-E"
@@ -156,7 +175,7 @@ if /i "%AGENT%"=="webvoyager" (
 )
 if not defined AGENT_LABEL (
     echo [ERROR] Unknown agent: %AGENT%
-    echo         Expected one of: odobot, agent-e, webvoyager
+    echo         Expected one of: odobot, odobot-uncharted, odobot-hybrid, agent-e, webvoyager
     goto :fail
 )
 
@@ -170,6 +189,17 @@ if errorlevel 1 (
     echo [ERROR] NUM INSTANCES must be a positive integer, got: %NUM_INSTANCES%
     goto :fail
 )
+
+REM The FIRST_INSTANCE environment variable numbers the instances from a value
+REM other than 1, e.g. to add instance 2 to an experiment whose instance 1 has
+REM already run. The instance number is the suffix of the experimentId.
+if not defined FIRST_INSTANCE set "FIRST_INSTANCE=1"
+echo %FIRST_INSTANCE%| findstr /r /c:"^[1-9][0-9]*$" >nul
+if errorlevel 1 (
+    echo [ERROR] FIRST_INSTANCE must be a positive integer, got: %FIRST_INSTANCE%
+    goto :fail
+)
+set /a LAST_INSTANCE=FIRST_INSTANCE+NUM_INSTANCES-1
 
 REM ---------------------------------------------------------------------------
 REM  Preflight
@@ -217,7 +247,7 @@ REM ---------------------------------------------------------------------------
 REM  Run each instance
 REM ---------------------------------------------------------------------------
 
-for /L %%I in (1,1,%NUM_INSTANCES%) do (
+for /L %%I in (%FIRST_INSTANCE%,1,%LAST_INSTANCE%) do (
     call :run_instance %%I
     if errorlevel 1 goto :fail
 )
@@ -225,9 +255,9 @@ for /L %%I in (1,1,%NUM_INSTANCES%) do (
 echo.
 echo All %NUM_INSTANCES% instance^(s^) complete.
 if "%NUM_INSTANCES%"=="1" (
-    echo Artifacts are under .\execution_events\%BASE_EXPERIMENT_ID%-1\
+    echo Artifacts are under .\execution_events\%BASE_EXPERIMENT_ID%-%FIRST_INSTANCE%\
 ) else (
-    echo Artifacts are under .\execution_events\%BASE_EXPERIMENT_ID%-1\ .. .\execution_events\%BASE_EXPERIMENT_ID%-%NUM_INSTANCES%\
+    echo Artifacts are under .\execution_events\%BASE_EXPERIMENT_ID%-%FIRST_INSTANCE%\ .. .\execution_events\%BASE_EXPERIMENT_ID%-%LAST_INSTANCE%\
 )
 echo Each instance's evaluation report is in its results\ subfolder.
 if "%CAPTURE_AGENT_LOGS%"=="1" echo Each instance's agent log is in its logs\ subfolder.
@@ -326,7 +356,7 @@ set "INSTANCE=%~1"
 
 echo.
 echo ============================================================
-echo  Instance %INSTANCE% of %NUM_INSTANCES%  ^(%AGENT_LABEL%^)
+echo  Instance %INSTANCE% of %LAST_INSTANCE%  ^(%AGENT_LABEL%^)
 echo ============================================================
 
 if "%AGENT%"=="odobot" goto :run_instance_odobot
@@ -374,7 +404,7 @@ if "%CAPTURE_AGENT_LOGS%"=="1" (
 
 echo.
 echo [4/4] Submitting experiment to OdoBot and waiting for completion...
-echo   POST http://localhost:%ODOBOT_API_PORT%/api/evaluate?agent=odoBotNL
+echo   POST http://localhost:%ODOBOT_API_PORT%/api/evaluate?agent=%ODOBOT_AGENT%
 echo   ^(this runs every task in the definition and can take a long time^)
 echo.
 echo   Watch it live in the browser : http://localhost:%SELENIUM_VNC_PORT%   ^(password: secret^)
@@ -391,7 +421,7 @@ REM checked below - otherwise a failed experiment looks like a successful one.
 set "RESP_FILE=%INSTANCE_DIR%\current-response.txt"
 set "CODE_FILE=%INSTANCE_DIR%\current-httpcode.txt"
 
-curl.exe -s -S -X POST "http://localhost:%ODOBOT_API_PORT%/api/evaluate?agent=odoBotNL" ^
+curl.exe -s -S -X POST "http://localhost:%ODOBOT_API_PORT%/api/evaluate?agent=%ODOBOT_AGENT%" ^
     -H "Content-Type: application/json" ^
     --data-binary "@%INSTANCE_FILE%" ^
     -o "%RESP_FILE%" ^
@@ -636,9 +666,16 @@ if not "%AGENT%"=="odobot" goto :reset_wait
 
 REM MOZ_REMOTE_ALLOW_SYSTEM_ACCESS lets WebDriver drive OdoX's moz-extension://
 REM pages. Without it OdoBot fails during setup on Firefox 152+. See README.
+REM
+REM SE_NODE_SESSION_TIMEOUT is how long, in seconds, the grid keeps a session
+REM that receives no WebDriver command (300 by default). OdoBot only uses
+REM WebDriver to set Firefox up, then drives it through OdoX, so with the
+REM default the grid closes Firefox 5 minutes into a task. 24 hours; a stuck
+REM task is still ended by OdoBot's own task timeout.
 echo   starting %SELENIUM_NAME%
 docker run -d --name %SELENIUM_NAME% --network %NETWORK% --shm-size=2g ^
     -e MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1 ^
+    -e SE_NODE_SESSION_TIMEOUT=86400 ^
     -p %SELENIUM_PORT%:4444 -p %SELENIUM_VNC_PORT%:7900 %SELENIUM_IMAGE% >nul
 if errorlevel 1 (
     echo   [ERROR] Could not start %SELENIUM_NAME%.
@@ -755,11 +792,19 @@ echo.
 echo   TASK FILE          The tasks to run. The format depends on --agent:
 echo                        odobot      cascon-experiment.json
 echo                                    ^(or cascon-experiment-smoke-test.json^)
+echo                        odobot-uncharted
+echo                                    cascon-experiment-uncharted-smoke-test.json
+echo                                    ^(odoBotNL tasks plus a "qwen" object^)
 echo                        agent-e     cascon-experiment-agent-e.json
 echo                        webvoyager  cascon-experiment-webvoyager.jsonl
 echo   NUM INSTANCES      How many times to repeat the experiment. The
-echo                      environment is reset between instances.
-echo   --agent NAME       odobot ^(default^), agent-e, or webvoyager.
+echo                      environment is reset between instances. Set the
+echo                      FIRST_INSTANCE environment variable to number them
+echo                      from another value than 1.
+echo   --agent NAME       odobot ^(default^), odobot-uncharted, odobot-hybrid,
+echo                      agent-e, or webvoyager. odobot is OdoBot's charted
+echo                      mode; odobot-uncharted runs its Qwen3.8 agent, and
+echo                      odobot-hybrid its hybrid mode ^(not implemented yet^).
 echo   --logs ^| --no-logs Capture the agent container's output into
 echo                      execution_events\^<experimentId^>\logs\. On by default;
 echo                      OdoBot is chatty, so --no-logs skips it. A failing
@@ -771,6 +816,7 @@ echo their runs with host python. cascon-environment-setup.bat configures both.
 echo.
 echo Examples:
 echo   cascon-experiment.bat cascon-experiment.json 5
+echo   cascon-experiment.bat cascon-experiment-uncharted-smoke-test.json 1 --agent odobot-uncharted
 echo   cascon-experiment.bat cascon-experiment-agent-e.json 5 --agent agent-e
 echo   cascon-experiment.bat cascon-experiment-webvoyager.jsonl 1 --agent webvoyager --no-logs
 echo.

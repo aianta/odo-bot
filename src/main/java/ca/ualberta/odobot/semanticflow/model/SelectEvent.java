@@ -28,6 +28,21 @@ public class SelectEvent extends AbstractArtifact implements TimelineEntity{
         return this;
     }
 
+    /**
+     * @return the screenshot OdoX attached to the event, or null if it sent none.
+     */
+    @Override
+    public Screenshot getScreenshot() {
+        return screenshot;
+    }
+
+    /**
+     * @return the bounding box of the element, or null if the event carried none.
+     */
+    public BoundingBox getBoundingBox() {
+        return boundingBox;
+    }
+
     public SelectEvent setSelectElement(Element selectElement) {
         this.selectElement = selectElement;
         return this;

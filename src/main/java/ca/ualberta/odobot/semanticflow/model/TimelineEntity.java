@@ -16,6 +16,8 @@ public interface TimelineEntity {
 
     JsonObject toJson();
 
+    Screenshot getScreenshot();
+
     long timestamp();
 
     JsonObject getSemanticArtifacts();

@@ -2,6 +2,7 @@ package ca.ualberta.odobot.explorer;
 
 import ca.ualberta.odobot.common.HttpServiceVerticle;
 import ca.ualberta.odobot.dataentry2label.impl.DataEntry2LabelServiceImpl;
+import ca.ualberta.odobot.guidance.ExecutionMode;
 import ca.ualberta.odobot.guidance.RequestManager;
 import ca.ualberta.odobot.guidance.TokenUsageRecord;
 import ca.ualberta.odobot.snippet2xml.impl.Snippet2XMLServiceImpl;
@@ -1031,7 +1032,23 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
 
         String _agent = rc.request().getParam("agent", "odoBot");
-        Agent agent = Agent.fromField(_agent);
+        Agent agent;
+        try{
+            agent = Agent.fromField(_agent);
+        }catch (RuntimeException e){
+            rc.response().setStatusCode(400).end("Unknown agent '%s'.".formatted(_agent));
+            return;
+        }
+
+        //Fail before launching anything if the uncharted agent's settings are invalid.
+        if(agent.getMode() == ExecutionMode.UNCHARTED){
+            try{
+                EvaluateTask.qwenConfig(config);
+            }catch (RuntimeException e){
+                rc.response().setStatusCode(400).end("Invalid 'qwen' settings: %s".formatted(e.getMessage()));
+                return;
+            }
+        }
 
         JsonArray tasks = getTasks(config.getJsonArray("tasks"), agent);
         Instant experimentStartTime = Instant.now();
@@ -1119,13 +1136,14 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                     String datasetPath = "%s/%s".formatted(_config.getString("evaluationScriptsPath"), finalConfig1.getString("evaluationDatasetPath"));
                     String experimentResultsFile = experimentResultsFolderPath + "/" + experimentId + "-results.json";
 
+                    //Only the charted agent constructs task queries, so the other modes are evaluated without the target check.
                     ProcessBuilder pb = new ProcessBuilder(
                             "python",
                             "-X", "utf8",
                             evalScriptPath,
                             "-t", datasetPath,
                             "-o", experimentResultsFile,
-                            "--odobot-execution-events",
+                            agent.getMode() == ExecutionMode.CHARTED? "--odobot-execution-events": "--odobot-uncharted-execution-events",
                             "%s".formatted(experimentFolderPath)
                     );
 

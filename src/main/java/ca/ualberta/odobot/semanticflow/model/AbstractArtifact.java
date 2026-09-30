@@ -31,6 +31,10 @@ public abstract class AbstractArtifact {
     private String tag;
     private URL baseURI; // The absolute base URL of the document containing the node:  https://developer.mozilla.org/en-US/docs/Web/API/Node/baseURI
 
+    public Screenshot getScreenshot(){
+        throw  new UnsupportedOperationException("Not supported yet.");
+    }
+
     public JsonObject getSemanticArtifacts() {
         return semanticArtifacts;
     }

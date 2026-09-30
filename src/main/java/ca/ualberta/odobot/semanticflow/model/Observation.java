@@ -1,27 +1,67 @@
 package ca.ualberta.odobot.semanticflow.model;
 
-import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
 /**
- * A snapshot of the page that OdoX sends as its first event after START_TRANSMISSION. It is the first
- * observation an agent receives.
+ * A snapshot of the page sent by OdoX. The first one arrives right after START_TRANSMISSION and is the first
+ * observation an agent receives. OdoX also sends one after an uncharted action that produces no other event
+ * carrying a screenshot.
  */
 public class Observation implements TimelineEntity{
 
-    private final JsonArray localContext;
+    /**
+     * What made OdoX send the observation.
+     */
+    public enum Trigger {
+        START_TRANSMISSION,
+        UNCHARTED_ACTION
+    }
+
+    private final Trigger trigger;
+    private final JsonObject triggerDetails;
+    private final String userLocation;
+    private final Screenshot screenshot;
     private final long timestamp;
 
-    public Observation(JsonArray localContext, long timestamp){
-        this.localContext = localContext;
+    /**
+     * @param triggerDetails the uncharted action that triggered the observation, or null.
+     * @param userLocation the url in the browser's address bar, or null.
+     * @param screenshot the screenshot of the page, or null.
+     */
+    public Observation(Trigger trigger, JsonObject triggerDetails, String userLocation, Screenshot screenshot, long timestamp){
+        this.trigger = trigger;
+        this.triggerDetails = triggerDetails;
+        this.userLocation = userLocation;
+        this.screenshot = screenshot;
         this.timestamp = timestamp;
     }
 
+    public Trigger getTrigger(){
+        return trigger;
+    }
+
     /**
-     * @return the events OdoX recorded locally before transmission started.
+     * @return the JSON of the uncharted action that triggered the observation when the trigger is
+     * {@link Trigger#UNCHARTED_ACTION}, otherwise null.
      */
-    public JsonArray localContext(){
-        return localContext;
+    public JsonObject getTriggerDetails(){
+        return triggerDetails;
+    }
+
+    /**
+     * @return the url of the page the user was on when the observation was made, as shown in the browser's address
+     * bar, or null if OdoX did not send one.
+     */
+    public String getUserLocation(){
+        return userLocation;
+    }
+
+    /**
+     * @return the screenshot of the page when the observation was made, or null if OdoX did not send one.
+     */
+    @Override
+    public Screenshot getScreenshot(){
+        return screenshot;
     }
 
     @Override
@@ -36,7 +76,10 @@ public class Observation implements TimelineEntity{
 
     @Override
     public JsonObject toJson() {
-        return new JsonObject().put("localContext", localContext);
+        return new JsonObject()
+                .put("trigger", trigger.name())
+                .put("triggerDetails", triggerDetails)
+                .put("userLocation", userLocation);
     }
 
     @Override

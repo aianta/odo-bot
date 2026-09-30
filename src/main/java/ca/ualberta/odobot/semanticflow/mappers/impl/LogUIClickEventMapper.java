@@ -31,7 +31,7 @@ public class LogUIClickEventMapper extends JsonMapper<ClickEvent> {
         result.setHtmlId(elementData.getString("id"));
         result.setTriggerElement(result.getDomSnapshot().selectXpath(result.getXpath()).first());
         result.setType(InteractionType.CLICK);
-        result.setScreenshot(new Screenshot(eventDetails.getString("screenshot")));
+        result.setScreenshot(Screenshot.fromBase64(eventDetails.getString("screenshot")));
         result.setBoundingBox(new BoundingBox(eventDetails.getJsonObject("boundingBox")));
 
         return result;
