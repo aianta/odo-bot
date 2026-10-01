@@ -167,15 +167,15 @@ Every mode builds the main timeline from OdoX's events. It is saved to `executio
 Uncharted mode also builds a second, uncharted observation timeline, which is the only thing the Qwen agent sees. It holds the observation OdoX sends when transmission starts, then one observation per step. After a step is sent, the harness waits until OdoX has sent no event for 1.5 s (15 s at most, and never before a `wait` action ends), then asks OdoX for a screenshot (`UnchartedStepObserver`). These observations never enter the main timeline.
 
 <details>
-<summary>Uncharted mode settings</summary>
+<summary>LLM settings (both modes)</summary>
 
-The Qwen agent talks to an OpenAI-compatible server. Its settings go in an optional `qwen` object in the body of the evaluate request, next to `tasks`; missing keys take the defaults of OSWorld's `run_multienv_qwen3_8.py`:
+Both agents talk to an OpenAI-compatible server through one set of client settings: an optional `llm` object in the body of the evaluate request, next to `tasks`. Missing keys take the defaults of OSWorld's `run_multienv_qwen3_8.py`; a key set to `null` is not sent.
 
 ```json
 {
-  "experimentId": "uncharted-smoke-test",
+  "experimentId": "local-llm-smoke-test",
   "evaluationDatasetPath": "sample_generated_data/cascon-2026/tasks.json",
-  "qwen": {
+  "llm": {
     "model": "qwen3.8-27b",
     "base_url": "http://host.docker.internal:8080/v1",
     "api_key": "dummy"
@@ -187,24 +187,53 @@ The Qwen agent talks to an OpenAI-compatible server. Its settings go in an optio
 | Key | Default | |
 |---|---|---|
 | `model` | `qwen3.8-27b` | Model name sent to the server. |
-| `base_url` | `http://127.0.0.1:8080/v1` | Base URL of the server, including `/v1`. |
-| `api_key` | `dummy` | Local servers accept any value. |
-| `max_tokens` | `4096` | Completion token limit. |
+| `base_url` | `http://127.0.0.1:8080/v1` | Base URL of the server, including `/v1`. `null` (or `https://api.openai.com/v1`) is the OpenAI API. |
+| `api_key` | see below | Local servers accept any value. |
+| `max_tokens` | `4096` | Completion token limit, sent as `max_completion_tokens` to the OpenAI API and as `max_tokens` to other servers. |
 | `temperature`, `top_p` | `1.0`, `0.95` | Sampling. |
-| `top_k`, `presence_penalty` | `20`, omitted | Non-standard body fields; `null` omits them. |
+| `top_k`, `presence_penalty` | `20`, omitted | Non-standard body fields. |
+| `extra_body` | `{}` | Fields merged into the request body as they are, e.g. `{"chat_template_kwargs": {"enable_thinking": false}}`. |
+| `timeout_seconds`, `max_attempts` | `130`, `5` | Per request timeout, and attempts per model call. |
+
+- **Uncharted mode** always uses these settings, with the defaults when there is no `llm` object.
+- **Charted mode** uses them for every chat completion of the task planner, Snippet2XML and DataEntry2Label services while a task runs, instead of the services' yaml `openAI` settings. Without an `llm` object those yaml settings apply, as before. The similar-task search keeps using OpenAI embeddings (`sqliteVectorConfig` in `config/model-construction.yaml`), because `db/odobot.db` holds `text-embedding-3-large` vectors, so a charted run needs an OpenAI key even against a local server. Any `<think>` block a server returns inside an answer is removed before the services read it.
+
+To use an OpenAI model, set `base_url` to `null` and omit the settings OpenAI does not accept, as `cascon-experiment.json` and `cascon-experiment-smoke-test.json` do:
+
+```json
+"llm": { "model": "gpt-5.6-luna", "base_url": null, "max_tokens": null, "temperature": null, "top_p": null, "top_k": null, "timeout_seconds": 600, "max_attempts": 3 }
+```
+
+Without an `api_key`, requests to the OpenAI API use the `secretKey` of each service's yaml `openAI` settings, so task files need not hold the key. Other servers never get that key; without an `api_key` they get `dummy`. `max_tokens: null` sends no limit, since GPT-5 models count their reasoning against it; the timeout and attempts match the client library's defaults, which the yaml settings use.
+
+OdoBot runs in a container, where `127.0.0.1` is the container itself: a model server running on the host is reached at `host.docker.internal`, as in the example above and in `cascon-experiment-local-llm-smoke-test.json` (charted) and `cascon-experiment-uncharted-smoke-test.json` (uncharted).
+
+The Qwen agent's own settings go in an optional `qwen` object:
+
+| Key | Default | |
+|---|---|---|
 | `history_n` | `5` | Steps replayed as conversation turns. |
 | `image_max`, `fold_size` | `5`, `2` | Screenshots kept before older ones are collapsed, and how many are collapsed at a time. |
 | `coord` | `relative` | `relative` (a 1000x1000 grid) or `absolute` (resized screenshot pixels). |
 | `collapse_text` | `This screenshot has been collapsed.` | Replaces a collapsed screenshot. |
-| `timeout_seconds`, `max_attempts` | `130`, `5` | Per request timeout, and attempts per model call. |
 
-OdoBot runs in a container, where `127.0.0.1` is the container itself: a model server running on the host is reached at `host.docker.internal`, as in the example above and in `cascon-experiment-uncharted-smoke-test.json`.
+Older task files that put the client keys in `qwen` still work; `llm` takes precedence when both set a key.
 
-Invalid settings are rejected with `400` before anything is launched. `cascon-experiment.bat --agent odobot-uncharted` runs a task file in uncharted mode; it only changes the `agent` query parameter it sends, so the file must hold `odoBotNL` tasks and, unless the defaults suit, a `qwen` object.
+Invalid settings are rejected with `400` before anything is launched. `cascon-experiment.bat --agent odobot-uncharted` runs a task file in uncharted mode; it only changes the `agent` query parameter it sends, so the file must hold `odoBotNL` tasks.
 
-The agent writes `<task>-qwen38-trajectory.jsonl` and `<task>-qwen38-messages-step-<n>.json` next to the task's events.
+The Qwen agent writes `<task>-qwen38-trajectory.jsonl` and `<task>-qwen38-messages-step-<n>.json` next to the task's events.
 
->**Known gap:** the Qwen agent's token usage is not counted yet. The input, output and combined token counts reported for uncharted tasks and experiments, in telemetry and in the experiment results, only cover the charted services (task planner, Snippet2XML, DataEntry2Label), which uncharted mode does not use, so they are 0. The model names reported are also those of the charted services.
+</details>
+
+<details>
+<summary>Token usage</summary>
+
+The harness counts the tokens and LLM calls of every task, whichever agent runs it, broken down by kind (`chat_completion` or `embedding`), by call type (e.g. `path-selection`, `element-pick`, `uncharted-step`) and by agent. Each call type also gets the min, max and mean tokens of a single call.
+
+- `execution_events/<experimentId>/<task>-tokens.json`: the usage of one task, written when it completes, fails or times out.
+- `execution_events/<experimentId>/results/<experimentId>-tokens.json`: the experiment summary over every `*-tokens.json` in the experiment folder (so a resumed experiment includes earlier runs): per task min, max, mean and sum of input, output and total tokens and LLM calls, and per call type and kind the totals, per call stats and per task stats (tasks without that call type count as 0).
+
+Telemetry reports the task totals and LLM calls, and the experiment totals and per task min, max and mean.
 
 </details>
 

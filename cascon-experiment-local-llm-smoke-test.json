@@ -8,7 +8,7 @@
     "logUIHost": "172.26.128.1:8000",
     "guidanceServiceHost": "172.26.128.1:7080",
     "firefoxDockerGridURL": "http://localhost:4444",
-    "experimentId": "smoketest-odobot-uncharted",
+    "experimentId": "smoketest-odobot-local-llm",
     "evaluationDatasetPath": "sample_generated_data/cascon-2026/tasks.json",
     "llm": {
         "model": "qwen3.8-27b",

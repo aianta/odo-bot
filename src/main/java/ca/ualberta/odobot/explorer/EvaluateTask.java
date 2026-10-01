@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.explorer;
 
+import ca.ualberta.odobot.common.LlmClientConfig;
 import ca.ualberta.odobot.dataentry2label.impl.DataEntry2LabelServiceImpl;
 import ca.ualberta.odobot.guidance.*;
 import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
@@ -32,6 +33,7 @@ import java.nio.file.Paths;
 import java.time.Instant;
 import java.util.*;
 import java.util.NoSuchElementException;
+import java.util.stream.Collectors;
 import static ca.ualberta.odobot.explorer.ExploreTask.*;
 import static ca.ualberta.odobot.explorer.WebDriverUtils.*;
 
@@ -284,21 +286,7 @@ public class EvaluateTask implements Runnable{
                         taskResultTelemetry.setLlmCalls(tokenUsage.llmCalls);
                     }
 
-                    //Compute a string that details the OpenAI models used to compute this task.
-                    Set<String> modelInfo = new HashSet<>();
-                    modelInfo.add(Snippet2XMLServiceImpl.model);
-                    modelInfo.add(DataEntry2LabelServiceImpl.model);
-                    modelInfo.add(TaskPlannerServiceImpl.model);
-                    StringBuilder modelSb = new StringBuilder();
-                    Iterator<String> modelStringsIt = modelInfo.iterator();
-                    while (modelStringsIt.hasNext()) {
-                        String modelString = modelStringsIt.next();
-                        modelSb.append(modelString);
-                        if(modelStringsIt.hasNext()){
-                            modelSb.append(", ");
-                        }
-                    }
-                    taskResultTelemetry.setModel(modelSb.toString());
+                    taskResultTelemetry.setModel(modelDescription(agent, config));
 
 
                     String parentTaskId = resolveTaskIdFromInstanceIdAndDatasetPath(datasetPath, task.getString("id"));
@@ -325,6 +313,7 @@ public class EvaluateTask implements Runnable{
 
         });
 
+        odoXClient.getRequestManager().setLlmConfig(llmConfig(config));
         odoXClient.getRequestManager().setExperimentId(config.containsKey("experimentId")?config.getString("experimentId"):"default");
         odoXClient.getRequestManager().setExperimentFolderPath(this.experimentFolderPath);
         odoXClient.getRequestManager().setEvalId(task.getString("_evalId")); //Set the evaluationId for this execution.
@@ -373,7 +362,39 @@ public class EvaluateTask implements Runnable{
      * @throws IllegalArgumentException if the settings are invalid.
      */
     static QwenAgentConfig qwenConfig(JsonObject evaluateRequest){
-        return QwenAgentConfig.fromJson(evaluateRequest.getJsonObject("qwen", new JsonObject()));
+        return QwenAgentConfig.fromJson(evaluateRequest.getJsonObject("qwen", new JsonObject()), evaluateRequest.getJsonObject("llm", new JsonObject()));
+    }
+
+    /**
+     * The OpenAI client settings of both agents, from the {@code llm} object of the evaluate request. Missing keys take
+     * the defaults of {@link LlmClientConfig#fromJson}.
+     *
+     * @return null if the request has no {@code llm} object, in which case the charted services keep their own
+     * configuration.
+     * @throws IllegalArgumentException if the settings are invalid.
+     */
+    static LlmClientConfig llmConfig(JsonObject evaluateRequest){
+        JsonObject llm = evaluateRequest.getJsonObject("llm");
+        return llm == null? null : LlmClientConfig.fromJson(llm);
+    }
+
+    /**
+     * @return the models that answer the LLM calls of a task, for telemetry.
+     */
+    static String modelDescription(Agent agent, JsonObject evaluateRequest){
+        if(agent.getMode() == ExecutionMode.UNCHARTED){
+            return qwenConfig(evaluateRequest).client().model();
+        }
+        LlmClientConfig llm = llmConfig(evaluateRequest);
+        if(llm != null){
+            return llm.model();
+        }
+        //The charted services' own models.
+        Set<String> modelInfo = new LinkedHashSet<>();
+        modelInfo.add(Snippet2XMLServiceImpl.model);
+        modelInfo.add(DataEntry2LabelServiceImpl.model);
+        modelInfo.add(TaskPlannerServiceImpl.model);
+        return modelInfo.stream().map(String::valueOf).collect(Collectors.joining(", "));
     }
 
     private String resolveTaskIdFromInstanceIdAndDatasetPath(String datasetPath, String instanceId){

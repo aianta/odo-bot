@@ -10,19 +10,25 @@ import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 
 public abstract class AbstractOpenAIStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractOpenAIStrategy.class);
 
-    //Clients are shared across strategy instances (keyed by api key + base url) since each one owns its own connection pool and threads.
+    //Clients are shared across strategy instances (keyed by their settings) since each one owns its own connection pool and threads.
     private static final Map<String, OpenAIClient> clients = new ConcurrentHashMap<>();
+
+    //Reasoning some servers return inside the answer; the same patterns as QwenResponseParser.stripReasoning.
+    private static final Pattern THINK_BLOCK = Pattern.compile("<think>.*?</think>", Pattern.DOTALL);
+    private static final Pattern UNCLOSED_THINK = Pattern.compile("<think>.*\\z", Pattern.DOTALL);
 
     private OpenAIClient client;
 
@@ -57,16 +63,29 @@ public abstract class AbstractOpenAIStrategy {
             this.model = this.config.getString("model");
         }
 
-        String apiKey = this.config.getString("secretKey");
-        String baseUrl = this.config.getString("baseUrl"); //Optional, defaults to the OpenAI API
-        client = clients.computeIfAbsent(apiKey + "@" + baseUrl, key->{
+        //baseUrl is optional, defaults to the OpenAI API
+        client = sharedClient(this.config.getString("secretKey"), this.config.getString("baseUrl"), null, null);
+
+    }
+
+    /**
+     * @param timeout    null for the client library's default.
+     * @param maxRetries null for the client library's default.
+     */
+    private static OpenAIClient sharedClient(String apiKey, String baseUrl, Duration timeout, Integer maxRetries){
+        return clients.computeIfAbsent(String.join("|", apiKey, String.valueOf(baseUrl), String.valueOf(timeout), String.valueOf(maxRetries)), key->{
             OpenAIOkHttpClient.Builder builder = OpenAIOkHttpClient.builder().apiKey(apiKey);
             if(baseUrl != null){
                 builder.baseUrl(baseUrl);
             }
+            if(timeout != null){
+                builder.timeout(timeout);
+            }
+            if(maxRetries != null){
+                builder.maxRetries(maxRetries);
+            }
             return builder.build();
         });
-
     }
 
 
@@ -79,21 +98,31 @@ public abstract class AbstractOpenAIStrategy {
      */
     protected String executeChatCompletion(LlmCallType callType, List<ChatMessage> chatMessages){
         ChatCompletionCreateParams.Builder params = ChatCompletionCreateParams.builder()
-                .model(model)
                 .n(1); //Only generate one choice
 
-        //Sampling options are often absent or explicitly null in config, in which case they are left out of the request.
-        Double temperature = config.getDouble("temperature");
-        if(temperature != null){
-            params.temperature(temperature);
-        }
-        Double topP = config.getDouble("topP");
-        if(topP != null){
-            params.topP(topP);
-        }
-        Integer maxTokens = config.getInteger("maxTokens");
-        if(maxTokens != null){
-            params.maxCompletionTokens(maxTokens);
+        //The task being executed may set the client settings, otherwise they come from this service's configuration.
+        LlmClientConfig taskConfig = LlmClientConfig.active;
+        OpenAIClient callClient;
+        if(taskConfig != null){
+            taskConfig.applyTo(params);
+            callClient = sharedClient(taskConfig.resolveApiKey(config.getString("secretKey")), taskConfig.baseUrl(), taskConfig.timeout(), taskConfig.maxAttempts() - 1);
+        }else{
+            params.model(model);
+
+            //Sampling options are often absent or explicitly null in config, in which case they are left out of the request.
+            Double temperature = config.getDouble("temperature");
+            if(temperature != null){
+                params.temperature(temperature);
+            }
+            Double topP = config.getDouble("topP");
+            if(topP != null){
+                params.topP(topP);
+            }
+            Integer maxTokens = config.getInteger("maxTokens");
+            if(maxTokens != null){
+                params.maxCompletionTokens(maxTokens);
+            }
+            callClient = client;
         }
 
         for(ChatMessage message: chatMessages){
@@ -103,7 +132,7 @@ public abstract class AbstractOpenAIStrategy {
             }
         }
 
-        ChatCompletion chatCompletion = client.chat().completions().create(params.build());
+        ChatCompletion chatCompletion = callClient.chat().completions().create(params.build());
 
         //Record token usage if there is an active token usage record
         chatCompletion.usage().ifPresent(usage->
@@ -111,10 +140,22 @@ public abstract class AbstractOpenAIStrategy {
 
 
         log.info("Got chat completion ({})@{}", chatCompletion.id(), chatCompletion.created());
-        String content = chatCompletion.choices().get(0).message().content().orElse("");
+        String content = stripReasoning(chatCompletion.choices().get(0).message().content().orElse(""));
         log.info("{}", content);
 
         return content;
+    }
+
+    /**
+     * Remove any reasoning a server returned inside the answer, since callers expect the bare answer.
+     */
+    static String stripReasoning(String content){
+        if(!content.contains("<think>")){
+            return content;
+        }
+        String text = THINK_BLOCK.matcher(content).replaceAll("");
+        text = UNCLOSED_THINK.matcher(text).replaceAll("");
+        return text.strip();
     }
 
     /**

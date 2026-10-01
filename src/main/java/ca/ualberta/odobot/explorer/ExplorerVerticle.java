@@ -1,13 +1,10 @@
 package ca.ualberta.odobot.explorer;
 
 import ca.ualberta.odobot.common.HttpServiceVerticle;
-import ca.ualberta.odobot.dataentry2label.impl.DataEntry2LabelServiceImpl;
 import ca.ualberta.odobot.guidance.ExecutionMode;
 import ca.ualberta.odobot.guidance.RequestManager;
-import ca.ualberta.odobot.snippet2xml.impl.Snippet2XMLServiceImpl;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import ca.ualberta.odobot.taskplanner.TaskPlannerService;
-import ca.ualberta.odobot.taskplanner.impl.TaskPlannerServiceImpl;
 import ca.ualberta.odobot.telemetry.TelemetryVerticle;
 import ca.ualberta.odobot.telemetry.model.ExperimentResults;
 import io.reactivex.rxjava3.core.Completable;
@@ -1036,7 +1033,13 @@ public class ExplorerVerticle extends HttpServiceVerticle {
             return;
         }
 
-        //Fail before launching anything if the uncharted agent's settings are invalid.
+        //Fail before launching anything if the LLM client or uncharted agent settings are invalid.
+        try{
+            EvaluateTask.llmConfig(config);
+        }catch (RuntimeException e){
+            rc.response().setStatusCode(400).end("Invalid 'llm' settings: %s".formatted(e.getMessage()));
+            return;
+        }
         if(agent.getMode() == ExecutionMode.UNCHARTED){
             try{
                 EvaluateTask.qwenConfig(config);
@@ -1172,21 +1175,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                     experimentResults.setEvaluatedTasks(experimentResult.getInteger("correct") + experimentResult.getInteger("incorrect"));
                     experimentResults.setEvaluationDatasetId(finalConfig1.getString("evaluationDatasetPath"));
 
-                    //Compute a string that details the OpenAI models used to compute this task.
-                    Set<String> modelInfo = new HashSet<>();
-                    modelInfo.add(Snippet2XMLServiceImpl.model);
-                    modelInfo.add(DataEntry2LabelServiceImpl.model);
-                    modelInfo.add(TaskPlannerServiceImpl.model);
-                    StringBuilder modelSb = new StringBuilder();
-                    Iterator<String> modelStringsIt = modelInfo.iterator();
-                    while (modelStringsIt.hasNext()) {
-                        String modelString = modelStringsIt.next();
-                        modelSb.append(modelString);
-                        if(modelStringsIt.hasNext()){
-                            modelSb.append(", ");
-                        }
-                    }
-                    experimentResults.setModel(modelSb.toString());
+                    experimentResults.setModel(EvaluateTask.modelDescription(agent, finalConfig1));
 
                     if (finalConfig1.containsKey("notes")){
                         experimentResults.setNotes(finalConfig1.getString("notes"));

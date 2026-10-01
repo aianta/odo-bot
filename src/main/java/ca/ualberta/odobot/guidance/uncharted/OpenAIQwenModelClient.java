@@ -71,11 +71,11 @@ public class OpenAIQwenModelClient implements QwenModelClient {
                 })
                 .onFailure(err -> {
                     Throwable cause = unwrap(err);
-                    if (!isRetryable(cause) || attempt >= config.maxAttempts()) {
+                    if (!isRetryable(cause) || attempt >= config.client().maxAttempts()) {
                         promise.tryFail(cause);
                         return;
                     }
-                    log.warn("[Qwen38Agent] call_llm failed attempt {}/{}: {}", attempt, config.maxAttempts(), cause.toString());
+                    log.warn("[Qwen38Agent] call_llm failed attempt {}/{}: {}", attempt, config.client().maxAttempts(), cause.toString());
                     long delayMs = (long) (Math.min(5.0 * attempt, 30.0) * 1000);
                     context.owner().setTimer(delayMs, id -> attempt(context, params, attempt + 1, promise));
                 });
@@ -106,9 +106,9 @@ public class OpenAIQwenModelClient implements QwenModelClient {
     private synchronized OpenAIClientAsync client() {
         if (client == null) {
             client = OpenAIOkHttpClientAsync.builder()
-                    .baseUrl(config.baseUrl())
-                    .apiKey(config.apiKey())
-                    .timeout(config.timeout())
+                    .baseUrl(config.client().baseUrl())
+                    .apiKey(config.client().resolveApiKey(null))
+                    .timeout(config.client().timeout())
                     // Retries are handled in attempt(), with OSWorld's schedule.
                     .maxRetries(0)
                     .build();
@@ -118,19 +118,8 @@ public class OpenAIQwenModelClient implements QwenModelClient {
 
     ChatCompletionCreateParams buildParams(JsonArray messages) {
         ChatCompletionCreateParams.Builder builder = ChatCompletionCreateParams.builder()
-                .model(config.model())
-                .messages(toMessageParams(messages))
-                .maxTokens(config.maxTokens())
-                .temperature(config.temperature())
-                .topP(config.topP());
-        // Not part of the OpenAI schema; local servers read them straight off the request body.
-        if (config.topK() != null) {
-            builder.putAdditionalBodyProperty("top_k", JsonValue.from(config.topK()));
-        }
-        if (config.presencePenalty() != null) {
-            builder.putAdditionalBodyProperty("presence_penalty", JsonValue.from(config.presencePenalty()));
-        }
-        return builder.build();
+                .messages(toMessageParams(messages));
+        return config.client().applyTo(builder).build();
     }
 
     static List<ChatCompletionMessageParam> toMessageParams(JsonArray messages) {

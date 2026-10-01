@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.guidance;
 
+import ca.ualberta.odobot.common.LlmClientConfig;
 import ca.ualberta.odobot.guidance.instructions.*;
 import ca.ualberta.odobot.semanticflow.model.*;
 import io.vertx.core.Future;
@@ -62,6 +63,19 @@ public class RequestManager {
 
     private boolean tokenUsageFinished = false;
 
+    /**
+     * The OpenAI client settings of the task, or null to leave each service's own configuration in place. They are
+     * the active {@link LlmClientConfig} while the task runs.
+     */
+    private LlmClientConfig llmConfig = null;
+
+    /**
+     * The active client settings from before the task started, restored when it ends.
+     */
+    private LlmClientConfig previousLlmConfig = null;
+
+    private boolean llmConfigInstalled = false;
+
     public RequestManager(OdoClient client){
         this.client = client;
         this.client.setRequestManager(this);
@@ -111,6 +125,7 @@ public class RequestManager {
         this.evaluationComplete.future().onComplete(done->{
             ended = true;
             finishTokenUsage(done.succeeded()? "completed" : "failed: " + done.cause().getMessage());
+            restoreLlmConfig();
             client.getEventConnectionManager().stopObservingUnchartedSteps();
             if(activeAgent != null){
                 activeAgent.stop();
@@ -125,6 +140,23 @@ public class RequestManager {
 
     public long getTimeout() {
         return timeout;
+    }
+
+    /**
+     * @param llmConfig the OpenAI client settings for the next task, or null to use each service's own configuration.
+     */
+    public RequestManager setLlmConfig(LlmClientConfig llmConfig) {
+        this.llmConfig = llmConfig;
+        return this;
+    }
+
+    private void restoreLlmConfig(){
+        if(llmConfigInstalled){
+            llmConfigInstalled = false;
+            if(LlmClientConfig.active == llmConfig){
+                LlmClientConfig.active = previousLlmConfig;
+            }
+        }
     }
 
     /**
@@ -193,6 +225,13 @@ public class RequestManager {
         this.previousTokenUsage = TokenUsageRecord.active;
         this.tokenUsageFinished = false;
         TokenUsageRecord.active = this.taskTokenUsage;
+
+        //Every chat completion made while the task runs uses the task's client settings, if it has any.
+        if(llmConfig != null){
+            this.previousLlmConfig = LlmClientConfig.active;
+            LlmClientConfig.active = llmConfig;
+            this.llmConfigInstalled = true;
+        }
 
         client.getEventConnectionManager().getEventProcessor().setUnchartedTimelineEnabled(mode == ExecutionMode.UNCHARTED);
 

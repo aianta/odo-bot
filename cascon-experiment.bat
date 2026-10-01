@@ -137,7 +137,8 @@ goto :usage
 REM OdoBot's execution modes all run the OdoBot containers and differ only in
 REM the agent query parameter of /api/evaluate: odoBotNL (charted), uncharted
 REM (the Qwen3.8 agent, configured by the "qwen" object of the task file) or
-REM hybrid (not implemented yet).
+REM hybrid (not implemented yet). In every mode, an "llm" object in the task
+REM file sets the model server, see "LLM settings" in the README.
 set "ODOBOT_AGENT=odoBotNL"
 if /i "%AGENT%"=="odobot-uncharted" set "ODOBOT_AGENT=uncharted"
 if /i "%AGENT%"=="uncharted" set "ODOBOT_AGENT=uncharted"
@@ -791,10 +792,12 @@ echo Usage: cascon-experiment.bat ^<TASK FILE^> ^<NUM INSTANCES^> [--agent NAME]
 echo.
 echo   TASK FILE          The tasks to run. The format depends on --agent:
 echo                        odobot      cascon-experiment.json
-echo                                    ^(or cascon-experiment-smoke-test.json^)
+echo                                    ^(or cascon-experiment-smoke-test.json, or
+echo                                    cascon-experiment-local-llm-smoke-test.json
+echo                                    for the local model server^)
 echo                        odobot-uncharted
 echo                                    cascon-experiment-uncharted-smoke-test.json
-echo                                    ^(odoBotNL tasks plus a "qwen" object^)
+echo                                    ^(odoBotNL tasks plus an "llm" object^)
 echo                        agent-e     cascon-experiment-agent-e.json
 echo                        webvoyager  cascon-experiment-webvoyager.jsonl
 echo   NUM INSTANCES      How many times to repeat the experiment. The
