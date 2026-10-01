@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.guidance.uncharted;
 
+import ca.ualberta.odobot.guidance.TokenUsageRecord;
 import ca.ualberta.odobot.guidance.uncharted.QwenModelClient.QwenCompletion;
 import io.vertx.core.Context;
 import io.vertx.core.Vertx;
@@ -41,6 +42,10 @@ class OpenAIQwenModelClientTest {
                     .put("created", 0)
                     .put("model", "qwen3.8-27b")
                     .put("hidden_states_path", "/tmp/hidden/42.pt")
+                    .put("usage", new JsonObject()
+                            .put("prompt_tokens", 1200)
+                            .put("completion_tokens", 80)
+                            .put("total_tokens", 1280))
                     .put("choices", new JsonArray().add(new JsonObject()
                             .put("index", 0)
                             .put("finish_reason", "stop")
@@ -71,6 +76,9 @@ class OpenAIQwenModelClientTest {
                 .add(QwenHistory.message("assistant", new JsonArray().add(QwenHistory.textPart("prev"))))
                 .add(QwenHistory.message("user", new JsonArray().add(QwenHistory.textPart("<tool_response>\n"))));
 
+        TokenUsageRecord usage = new TokenUsageRecord();
+        TokenUsageRecord.active = usage;
+
         Context context = vertx.getOrCreateContext();
         CompletableFuture<QwenCompletion> result = new CompletableFuture<>();
         context.runOnContext(v -> client.complete(context, messages)
@@ -78,10 +86,23 @@ class OpenAIQwenModelClientTest {
                 .onFailure(result::completeExceptionally));
 
         // One 500, a 5 s back-off, then success.
-        QwenCompletion completion = result.get(30, TimeUnit.SECONDS);
+        QwenCompletion completion;
+        try {
+            completion = result.get(30, TimeUnit.SECONDS);
+        } finally {
+            TokenUsageRecord.active = null;
+        }
         client.close();
 
         assertEquals(2, calls.get());
+
+        // Only the successful attempt has usage to count.
+        JsonObject step = usage.toJson().getJsonObject("byCallType").getJsonObject("uncharted-step");
+        assertEquals(1, step.getInteger("llmCalls"));
+        assertEquals(1200, step.getInteger("inputTokens"));
+        assertEquals(80, step.getInteger("outputTokens"));
+        assertEquals(1280, step.getInteger("totalTokens"));
+        assertEquals("chat_completion", step.getString("kind"));
         assertEquals("<think>\nI should click.\n</think>\n\nAction: Click.\n<tool_call>{}</tool_call>", completion.text());
         assertEquals("chatcmpl-42", completion.requestId());
         assertEquals("/tmp/hidden/42.pt", completion.hiddenStatesPath());

@@ -2,9 +2,6 @@ package ca.ualberta.odobot.taskgenerator.canvas;
 
 import ca.ualberta.odobot.common.AbstractOpenAIStrategy;
 import ca.ualberta.odobot.sqlite.SqliteService;
-import com.azure.ai.openai.models.ChatRequestMessage;
-import com.azure.ai.openai.models.ChatRequestSystemMessage;
-import com.azure.ai.openai.models.ChatRequestUserMessage;
 import io.vertx.config.ConfigRetriever;
 import io.vertx.config.ConfigRetrieverOptions;
 import io.vertx.config.ConfigStoreOptions;
@@ -178,10 +175,10 @@ public class GenerateParameterizedTasks extends AbstractOpenAIStrategy {
             StringBuilder promptAudit = new StringBuilder();
             promptAudit.append(systemPrompt);
 
-            List<ChatRequestMessage> chatMessages = new ArrayList<>();
+            List<ChatMessage> chatMessages = new ArrayList<>();
 
-            chatMessages.add(new ChatRequestSystemMessage(systemPrompt));
-            chatMessages.add(new ChatRequestUserMessage(task.getPlainTask()));
+            chatMessages.add(system(systemPrompt));
+            chatMessages.add(user(task.getPlainTask()));
             promptAudit.append("\n");
             promptAudit.append(task.getPlainTask());
 
@@ -210,9 +207,9 @@ public class GenerateParameterizedTasks extends AbstractOpenAIStrategy {
             systemPrompt = systemPrompt.replaceAll("<title>", page.getTitle());
             systemPrompt = systemPrompt.replaceAll("<body>", page.getBody());
 
-            List<ChatRequestMessage> chatMessages = new ArrayList<>();
+            List<ChatMessage> chatMessages = new ArrayList<>();
 
-            chatMessages.add(new ChatRequestSystemMessage(systemPrompt));
+            chatMessages.add(system(systemPrompt));
 
             String output = executeChatCompletion(chatMessages);
 

@@ -1,13 +1,13 @@
 package ca.ualberta.odobot.sqlite.impl;
 
+import ca.ualberta.odobot.common.LlmCallType;
+import ca.ualberta.odobot.guidance.TokenUsageRecord;
 import ca.ualberta.odobot.sqlite.SqliteVectorService;
-import com.azure.ai.openai.OpenAIClient;
-import com.azure.ai.openai.OpenAIClientBuilder;
-import com.azure.ai.openai.models.EmbeddingItem;
-import com.azure.ai.openai.models.Embeddings;
-import com.azure.ai.openai.models.EmbeddingsOptions;
-import com.azure.ai.openai.models.EmbeddingsUsage;
-import com.azure.core.credential.KeyCredential;
+import com.openai.client.OpenAIClient;
+import com.openai.client.okhttp.OpenAIOkHttpClient;
+import com.openai.models.embeddings.CreateEmbeddingResponse;
+import com.openai.models.embeddings.Embedding;
+import com.openai.models.embeddings.EmbeddingCreateParams;
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -39,9 +39,9 @@ public class SqliteVectorServiceImpl  implements SqliteVectorService {
 
         log.info("Setting up openAI client...");
         //Setup the OpenAI client for generating vector embeddings.
-        openAIClient = new OpenAIClientBuilder()
-                .credential(new KeyCredential(this.config.getString("secretKey")))
-                .buildClient();
+        openAIClient = OpenAIOkHttpClient.builder()
+                .apiKey(this.config.getString("secretKey"))
+                .build();
 
         //Setup SQLite with the vector extension.
         try {
@@ -104,13 +104,11 @@ public class SqliteVectorServiceImpl  implements SqliteVectorService {
 
     public Future<List<JsonObject>> topK(int k, String queryString){
 
-        EmbeddingsOptions options = new EmbeddingsOptions(List.of(queryString));
-        options.setDimensions(config.getInteger("dimensions"));
-        Embeddings embeddings = openAIClient.getEmbeddings(config.getString("embeddingModel"), options);
-        EmbeddingItem item = embeddings.getData().get(0);
+        CreateEmbeddingResponse embeddings = createEmbeddings(LlmCallType.SIMILAR_TASK_EMBEDDING, queryString);
+        Embedding item = embeddings.data().get(0);
 
-        ByteBuffer byteBuffer = ByteBuffer.allocate(item.getEmbedding().size()*4);
-        for(Float f: item.getEmbedding()){
+        ByteBuffer byteBuffer = ByteBuffer.allocate(item.embedding().size()*4);
+        for(Float f: item.embedding()){
             byteBuffer.putFloat(f);
         }
         byte[] queryVector = byteBuffer.array();
@@ -122,7 +120,7 @@ public class SqliteVectorServiceImpl  implements SqliteVectorService {
                     """.formatted(config.getString("syntheticTaskVectorTable"), config.getString("syntheticTaskVectorTable"));
         log.info("{}", sql);
         try(PreparedStatement stmt = connection.prepareStatement(sql);){
-            stmt.setString(1, item.getEmbedding().stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll ).encode());
+            stmt.setString(1, item.embedding().stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll ).encode());
             stmt.setInt(2, k);
 
             ResultSet rs = stmt.executeQuery();
@@ -150,15 +148,13 @@ public class SqliteVectorServiceImpl  implements SqliteVectorService {
     public Future<Void> embedSyntheticTask(String trajectoryId, String task) {
         log.info("Computing embedding for synthetic task for trajectory {}:\n{}", trajectoryId, task);
 
-        EmbeddingsOptions options = new EmbeddingsOptions(List.of(task));
-        options.setDimensions(config.getInteger("dimensions"));
-        Embeddings embeddings = openAIClient.getEmbeddings(config.getString("embeddingModel"), options);
+        CreateEmbeddingResponse embeddings = createEmbeddings(LlmCallType.OTHER_EMBEDDING, task);
 
-        for (EmbeddingItem item : embeddings.getData()) {
-            log.info("Embedding vector of length: {}", item.getEmbedding().size());
-            log.info("Got embedding: {}", item.getEmbedding().subList(0,10));
-            var byteBuffer = ByteBuffer.allocate(item.getEmbedding().size()*4);
-            for (float f :item.getEmbedding()){
+        for (Embedding item : embeddings.data()) {
+            log.info("Embedding vector of length: {}", item.embedding().size());
+            log.info("Got embedding: {}", item.embedding().subList(0,10));
+            var byteBuffer = ByteBuffer.allocate(item.embedding().size()*4);
+            for (float f :item.embedding()){
                 byteBuffer.putFloat(f);
             }
             byte [] vector = byteBuffer.array();
@@ -168,7 +164,7 @@ public class SqliteVectorServiceImpl  implements SqliteVectorService {
                         """.formatted(config.getString("syntheticTaskVectorTable"));
                 var ps = connection.prepareStatement(sql);
                 ps.setString(1, trajectoryId);
-                ps.setString(2, item.getEmbedding().stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll ).encode());
+                ps.setString(2, item.embedding().stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll ).encode());
                 ps.execute();
             }catch (SQLException e){
                 log.error(e.getMessage(), e);
@@ -176,12 +172,27 @@ public class SqliteVectorServiceImpl  implements SqliteVectorService {
             }
         }
 
-        EmbeddingsUsage usage = embeddings.getUsage();
+        CreateEmbeddingResponse.Usage usage = embeddings.usage();
         log.info("Usage: number of prompt token is {}, and number of total tokens in request and response is {}",
-                usage.getPromptTokens(), usage.getPromptTokens());
+                usage.promptTokens(), usage.totalTokens());
 
         return Future.succeededFuture();
 
+    }
+
+    /**
+     * @param callType the context of this call, used to break down token usage.
+     */
+    private CreateEmbeddingResponse createEmbeddings(LlmCallType callType, String input){
+        CreateEmbeddingResponse response = openAIClient.embeddings().create(EmbeddingCreateParams.builder()
+                .model(config.getString("embeddingModel"))
+                .input(input)
+                .dimensions(config.getInteger("dimensions"))
+                .build());
+
+        //Embeddings have no output tokens.
+        TokenUsageRecord.report(callType, response.usage().promptTokens(), 0, response.usage().totalTokens());
+        return response;
     }
 
     private void createSyntheticTaskVectorTable() {

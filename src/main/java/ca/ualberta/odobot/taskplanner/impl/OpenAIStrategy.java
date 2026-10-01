@@ -3,11 +3,9 @@ package ca.ualberta.odobot.taskplanner.impl;
 import ca.ualberta.odobot.common.AIOutputValidators;
 import ca.ualberta.odobot.common.AbstractOpenAIStrategy;
 import ca.ualberta.odobot.common.UsageTelemetry;
+import ca.ualberta.odobot.common.LlmCallType;
 import ca.ualberta.odobot.snippet2xml.SemanticSchema;
 import ca.ualberta.odobot.taskplanner.AIStrategy;
-import com.azure.ai.openai.models.ChatRequestMessage;
-import com.azure.ai.openai.models.ChatRequestSystemMessage;
-import com.azure.ai.openai.models.ChatRequestUserMessage;
 import io.vertx.core.Future;
 import io.vertx.core.json.DecodeException;
 import io.vertx.core.json.JsonArray;
@@ -104,9 +102,9 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
     }
 
     private String _generateRadioValue(JsonArray state, String taskDescription, String htmlContext, String label, String description){
-        List<ChatRequestMessage> chatMessages = new ArrayList<>();
+        List<ChatMessage> chatMessages = new ArrayList<>();
         String prompt = config.getJsonObject("resolveRadioValue").getString("systemPrompt");
-        chatMessages.add(new ChatRequestSystemMessage(prompt));
+        chatMessages.add(system(prompt));
 
         StringBuilder sb = new StringBuilder();
         sb.append("\nRadio Button Element Information:\n");
@@ -131,15 +129,15 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
         log.info("{}", prompt + sb.toString());
 
-        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
-        return executeChatCompletion(chatMessages);
+        chatMessages.add(user(sb.toString()));
+        return executeChatCompletion(LlmCallType.RADIO_OPTION, chatMessages);
     }
 
     private String _generateSelectValue(JsonArray state, String taskDescription, String inputElementHTML, String htmlContext, String label, String description){
 
-        List<ChatRequestMessage> chatMessages = new ArrayList<>();
+        List<ChatMessage> chatMessages = new ArrayList<>();
         String prompt = config.getJsonObject("resolveSelectOption").getString("systemPrompt");
-        chatMessages.add(new ChatRequestSystemMessage(prompt));
+        chatMessages.add(system(prompt));
 
         StringBuilder sb = new StringBuilder();
         sb.append("\nSelect Element Information:\n");
@@ -162,9 +160,9 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
         log.info("{}", prompt + sb.toString());
 
-        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+        chatMessages.add(user(sb.toString()));
 
-        return executeChatCompletion(chatMessages);
+        return executeChatCompletion(LlmCallType.SELECT_OPTION, chatMessages);
 
     }
 
@@ -193,9 +191,9 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
     }
 
     private String _generateCheckboxValue(JsonObject state, String taskDescription, String label, String description){
-        List<ChatRequestMessage> chatMessages = new ArrayList<>();
+        List<ChatMessage> chatMessages = new ArrayList<>();
         String prompt = config.getJsonObject("resolveCheckboxValue").getString("systemPrompt");
-        chatMessages.add(new ChatRequestSystemMessage(prompt));
+        chatMessages.add(system(prompt));
 
         StringBuilder sb = new StringBuilder();
         sb.append("\nCheckbox Element Information:\n");
@@ -209,9 +207,9 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         sb.append("\n");
         sb.append("Output:\n");
         log.info("{}", prompt + sb.toString());
-        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+        chatMessages.add(user(sb.toString()));
 
-        return executeChatCompletion(chatMessages);
+        return executeChatCompletion(LlmCallType.CHECKBOX_STATE, chatMessages);
 
     }
 
@@ -222,10 +220,10 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         descriptions = descriptions.stream().limit(numDescriptions).collect(Collectors.toList());
 
 
-        List<ChatRequestMessage> chatMessages = new ArrayList<>();
+        List<ChatMessage> chatMessages = new ArrayList<>();
         String systemPrompt = config.getJsonObject("generateNodeAnnotation").getString("systemPrompt")
                 .formatted(descriptions.size(), descriptions.size());
-        chatMessages.add(new ChatRequestSystemMessage(systemPrompt));
+        chatMessages.add(system(systemPrompt));
 
         StringBuilder sb = new StringBuilder();
         sb.append("Descriptions for this step:\n");
@@ -238,7 +236,7 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         sb.append("Generated Instruction:\n");
         log.info("{}", systemPrompt + sb.toString());
 
-        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+        chatMessages.add(user(sb.toString()));
 
         return Future.succeededFuture(executeChatCompletion(chatMessages));
 
@@ -263,9 +261,9 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
     }
 
     public String _pickMostRelevantTask(String queryTask, List<JsonObject> options){
-        List<ChatRequestMessage> chatRequestMessages = new ArrayList<>();
+        List<ChatMessage> chatRequestMessages = new ArrayList<>();
         String prompt = config.getJsonObject("selectMostRelevantTask").getString("systemPrompt");
-        chatRequestMessages.add(new ChatRequestSystemMessage(prompt));
+        chatRequestMessages.add(system(prompt));
 
         ListIterator<JsonObject> it = options.listIterator();
         StringBuilder sb = new StringBuilder();
@@ -279,17 +277,17 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         sb.append("Given task:\n");
         sb.append("%s\n".formatted(queryTask));
 
-        chatRequestMessages.add(new ChatRequestUserMessage(sb.toString()));
+        chatRequestMessages.add(user(sb.toString()));
 
         log.info("{}", prompt + sb.toString());
 
-        return executeChatCompletion(chatRequestMessages);
+        return executeChatCompletion(LlmCallType.SIMILAR_TASK_PICK, chatRequestMessages);
 
     }
 
 
     public Future<String> rewriteQueryTaskWithoutSpecificInputs(String queryTask, List<JsonObject> syntheticTasks){
-        List<ChatRequestMessage> chatMessages = new ArrayList<>();
+        List<ChatMessage> chatMessages = new ArrayList<>();
         String prompt = config.getJsonObject("rewriteQueryTaskWithoutSpecificInputs").getString("systemPrompt");
 
         StringBuilder sb = new StringBuilder();
@@ -304,7 +302,7 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
                 });
 
         prompt = prompt.formatted(sb.toString());
-        chatMessages.add(new ChatRequestSystemMessage(prompt));
+        chatMessages.add(system(prompt));
 
         String userMessage = """
       The current task to rewrite:
@@ -315,9 +313,9 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
 
         log.info("{}", prompt + userMessage);
-        chatMessages.add(new ChatRequestUserMessage(userMessage));
+        chatMessages.add(user(userMessage));
 
-        return Future.succeededFuture(executeChatCompletion(chatMessages));
+        return Future.succeededFuture(executeChatCompletion(LlmCallType.TASK_REWRITE, chatMessages));
     }
 
 
@@ -351,9 +349,9 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
     }
 
     private String _generateInputValue(String taskDescription, String inputElementHTML, String htmlContext, List<String> exampleInputs, String label, String description, String currentValue){
-        List<ChatRequestMessage> chatMessages = new ArrayList<>();
+        List<ChatMessage> chatMessages = new ArrayList<>();
         String prompt = config.getJsonObject("resolveDataEntryValue").getString("systemPrompt");
-        chatMessages.add(new ChatRequestSystemMessage(prompt));
+        chatMessages.add(system(prompt));
 
         StringBuilder sb = new StringBuilder();
         sb.append("\nField Information:\n");
@@ -371,14 +369,14 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
         log.info("{}", prompt + sb.toString());
 
-        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+        chatMessages.add(user(sb.toString()));
 
-        return executeChatCompletion(chatMessages);
+        return executeChatCompletion(LlmCallType.TEXT_INPUT_VALUE, chatMessages);
     }
 
 
     private String _selectPath(JsonObject paths, String taskDescription, String similarTaskDescription, JsonObject telemetry){
-        List<ChatRequestMessage> chatMessages = new ArrayList<>();
+        List<ChatMessage> chatMessages = new ArrayList<>();
         String prompt = null;
         if(similarTaskDescription == null){
             prompt = config.getJsonObject("selectPath").getString("systemPrompt").formatted(taskDescription);
@@ -386,7 +384,7 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
             prompt = config.getJsonObject("selectPath").getString("systemPromptWithSimilarPath").formatted(taskDescription, similarTaskDescription);
         }
 
-        chatMessages.add(new ChatRequestSystemMessage(prompt));
+        chatMessages.add(system(prompt));
 
         StringBuilder sb = new StringBuilder();
         sb.append("\n");
@@ -429,11 +427,11 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         }
 
         log.info("\n{}", sb.toString());
-        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+        chatMessages.add(user(sb.toString()));
 
         telemetry.put("prompt", prompt + sb.toString());
 
-        return executeChatCompletion(chatMessages);
+        return executeChatCompletion(LlmCallType.PATH_SELECTION, chatMessages);
     }
 
     public Future<List<JsonObject>> getTaskAPICalls(String taskDescription, List<JsonObject> apiCalls){
@@ -456,8 +454,8 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
     }
 
     private String _getTaskAPICalls(String taskDescription, List<JsonObject> apiCalls) {
-        List<ChatRequestMessage> chatMessages = new ArrayList<>();
-        chatMessages.add(new ChatRequestSystemMessage(config.getJsonObject("getTaskAPICalls").getString("systemPrompt")));
+        List<ChatMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(system(config.getJsonObject("getTaskAPICalls").getString("systemPrompt")));
 
         StringBuilder sb = new StringBuilder();
         sb.append("\n");
@@ -483,9 +481,9 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
         log.info("\n{}", sb.toString());
 
-        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+        chatMessages.add(user(sb.toString()));
 
-        return executeChatCompletion(chatMessages)
+        return executeChatCompletion(LlmCallType.TARGET_API_CALL_PICK, chatMessages)
                 //Sometimes the LLM can't help itself but include the list in square brackets
                 .replaceAll("\\[", "").replaceAll("\\]", "");
     }
@@ -558,8 +556,8 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
     }
 
     private String _getTaskInputParameterMappings(String taskDescription, List<JsonObject> dataEntryAnnotations){
-        List<ChatRequestMessage> chatMessages = new ArrayList<>();
-        chatMessages.add(new ChatRequestSystemMessage(config.getJsonObject("getInputParameterMappings").getString("systemPrompt")));
+        List<ChatMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(system(config.getJsonObject("getInputParameterMappings").getString("systemPrompt")));
 
         StringBuilder sb = new StringBuilder();
         sb.append("\n");
@@ -582,7 +580,7 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
         log.info("\n{}", sb.toString());
 
-        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+        chatMessages.add(user(sb.toString()));
 
         return extractJSONFromResponse(executeChatCompletion(chatMessages));
     }
@@ -644,8 +642,8 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
     private String _getTaskResourceParameters(String taskDescription, List<String> options){
 
-        List<ChatRequestMessage> chatMessages = new ArrayList<>();
-        chatMessages.add(new ChatRequestSystemMessage(config.getJsonObject("getRelevantResourceParameters").getString("systemPrompt")));
+        List<ChatMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(system(config.getJsonObject("getRelevantResourceParameters").getString("systemPrompt")));
 
         StringBuilder sb = new StringBuilder();
         sb.append("\n");
@@ -660,7 +658,7 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
         log.info("\n{}", sb.toString());
 
-        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+        chatMessages.add(user(sb.toString()));
 
         return extractJSONFromResponse(executeChatCompletion(chatMessages));
 
@@ -725,8 +723,8 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
     }
 
     private String _getTaskSchemas(String taskDescription, List<SemanticSchema> options){
-        List<ChatRequestMessage> chatMessages = new ArrayList<>();
-        chatMessages.add(new ChatRequestSystemMessage(config.getJsonObject("getRelevantObjectParameters").getString("systemPrompt")));
+        List<ChatMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(system(config.getJsonObject("getRelevantObjectParameters").getString("systemPrompt")));
 
         StringBuilder sb = new StringBuilder();
         sb.append("\n");
@@ -741,7 +739,7 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
         log.info("\n{}", sb.toString());
 
-        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+        chatMessages.add(user(sb.toString()));
 
         return extractJSONFromResponse(executeChatCompletion(chatMessages));
     }

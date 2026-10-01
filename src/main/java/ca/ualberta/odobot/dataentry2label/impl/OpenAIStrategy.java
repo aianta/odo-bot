@@ -3,9 +3,6 @@ package ca.ualberta.odobot.dataentry2label.impl;
 import ca.ualberta.odobot.common.AbstractOpenAIStrategy;
 import ca.ualberta.odobot.common.UsageTelemetry;
 import ca.ualberta.odobot.dataentry2label.AIStrategy;
-import com.azure.ai.openai.models.ChatRequestMessage;
-import com.azure.ai.openai.models.ChatRequestSystemMessage;
-import com.azure.ai.openai.models.ChatRequestUserMessage;
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
@@ -80,8 +77,8 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
     }
 
     public String _standardizeLabels(List<JsonObject> labels){
-        List<ChatRequestMessage> chatMessages = new ArrayList<>();
-        chatMessages.add(new ChatRequestSystemMessage(config.getJsonObject("standardizeDataEntryLabels").getString("systemPrompt")));
+        List<ChatMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(system(config.getJsonObject("standardizeDataEntryLabels").getString("systemPrompt")));
 
 
         StringBuilder sb = new StringBuilder();
@@ -95,7 +92,7 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
         sb.append("\nOutput:\n");
 
-        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+        chatMessages.add(user(sb.toString()));
 
 
 
@@ -133,8 +130,8 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
     private String generate(JsonObject input){
         JsonArray exampleInputs = input.getJsonArray("enteredData");
 
-        List<ChatRequestMessage> chatMessages = new ArrayList<>();
-        chatMessages.add(new ChatRequestSystemMessage(config.getJsonObject("generateLabelAndDescription").getString("systemPrompt")));
+        List<ChatMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(system(config.getJsonObject("generateLabelAndDescription").getString("systemPrompt")));
 
         StringBuilder sb = new StringBuilder();
         sb.append("Input Element: %s\n".formatted(input.getString("inputElement")));
@@ -144,7 +141,7 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
             sb.append("Example Input Data: %s\n".formatted(exampleInputs.getString(0)));
         }
 
-        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+        chatMessages.add(user(sb.toString()));
 
         return executeChatCompletion(chatMessages);
 

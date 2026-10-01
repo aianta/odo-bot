@@ -2,6 +2,7 @@ package ca.ualberta.odobot.snippet2xml.impl;
 
 import ca.ualberta.odobot.common.AbstractOpenAIStrategy;
 import ca.ualberta.odobot.common.UsageTelemetry;
+import ca.ualberta.odobot.common.LlmCallType;
 import ca.ualberta.odobot.snippet2xml.AIStrategy;
 import ca.ualberta.odobot.snippet2xml.SemanticObject;
 import ca.ualberta.odobot.snippet2xml.SemanticSchema;
@@ -10,9 +11,6 @@ import ca.ualberta.odobot.snippet2xml.impl.validators.PassesSchemaValidation;
 import ca.ualberta.odobot.snippet2xml.impl.validators.SchemaValidatesXMLObjects;
 import ca.ualberta.odobot.snippets.Snippet;
 
-import com.azure.ai.openai.OpenAIClientBuilder;
-import com.azure.ai.openai.models.*;
-import com.azure.core.credential.KeyCredential;
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;
 
@@ -133,8 +131,8 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
     }
 
     public String _pickValue(List<JsonObject> options, String taskDescription, String naturalLanguageGuidance){
-        List<ChatRequestMessage> chatMessages = new ArrayList<>();
-        chatMessages.add(new ChatRequestSystemMessage(config.getJsonObject("pickValue").getString("systemPrompt")));
+        List<ChatMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(system(config.getJsonObject("pickValue").getString("systemPrompt")));
 
         StringBuilder sb = new StringBuilder();
         sb.append("Task Description: \n");
@@ -155,10 +153,10 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         }
         sb.append("\n");
 
-        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+        chatMessages.add(user(sb.toString()));
 
         log.info("Pick value prompt:\n{}", sb.toString());
-        return executeChatCompletion(chatMessages);
+        return executeChatCompletion(LlmCallType.ELEMENT_PICK, chatMessages);
     }
 
     public Future<JsonObject> pickResourceParameterValue(List<JsonObject> options, String query, String taskDescription){
@@ -330,9 +328,9 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
         String xmlObjectExamples = buildXMLExamplesMessageForMakeSchema(xmlObjects);
 
-        List<ChatRequestMessage> chatMessages = new ArrayList<>();
-        chatMessages.add(new ChatRequestSystemMessage(systemPrompt));
-        chatMessages.add(new ChatRequestUserMessage(xmlObjectExamples));
+        List<ChatMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(system(systemPrompt));
+        chatMessages.add(user(xmlObjectExamples));
 
         return executeChatCompletion(chatMessages);
     }
@@ -391,8 +389,8 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
     }
 
     private String pickResourceParameter(List<JsonObject> options, String query, String taskDescription){
-        List<ChatRequestMessage> chatMessages = new ArrayList<>();
-        chatMessages.add(new ChatRequestUserMessage(config.getJsonObject("pickResourceParameterValue").getString("systemPrompt")));
+        List<ChatMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(user(config.getJsonObject("pickResourceParameterValue").getString("systemPrompt")));
 
         StringBuilder sb = new StringBuilder();
         //Include the task description separately only if it is not the same as the query.
@@ -413,18 +411,18 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         }
         sb.append("\n");
 
-        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+        chatMessages.add(user(sb.toString()));
 
         log.info("Pick Resource Parameter prompt:\n{}", sb.toString());
 
-        return executeChatCompletion(chatMessages);
+        return executeChatCompletion(LlmCallType.RESOURCE_LINK_PICK, chatMessages);
 
     }
 
     private String pickParameter(List<SemanticObject> options, String query){
 
-        List<ChatRequestMessage> chatMessages = new ArrayList<>();
-        chatMessages.add(new ChatRequestSystemMessage(config.getJsonObject("pickParameterValue").getString("systemPrompt")));
+        List<ChatMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(system(config.getJsonObject("pickParameterValue").getString("systemPrompt")));
 
         StringBuilder sb = new StringBuilder();
         sb.append("Query:\n");
@@ -436,16 +434,16 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
         log.info("pick param prompt segment: \n{}", sb.toString());
 
-        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+        chatMessages.add(user(sb.toString()));
 
-        return executeChatCompletion(chatMessages);
+        return executeChatCompletion(LlmCallType.PARAMETER_OBJECT_PICK, chatMessages);
 
     }
 
     private String generateXMLObject(String snippet, String schema){
 
-        List<ChatRequestMessage> chatMessages = new ArrayList<>();
-        chatMessages.add(new ChatRequestSystemMessage(config.getJsonObject("generateXMLObject").getString("systemPrompt")));
+        List<ChatMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(system(config.getJsonObject("generateXMLObject").getString("systemPrompt")));
 
         StringBuilder sb = new StringBuilder();
         sb.append("Schema:\n");
@@ -453,9 +451,9 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
         sb.append("HTML Snippet:\n");
         sb.append(snippet);
 
-        chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+        chatMessages.add(user(sb.toString()));
 
-        return executeChatCompletion(chatMessages);
+        return executeChatCompletion(LlmCallType.HTML_TO_XML, chatMessages);
 
     }
 
@@ -468,12 +466,12 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
      */
     private String generateXMLObjectWithoutSchema(Snippet snippet, Collection<String> seedObjects){
 
-        List<ChatRequestMessage> chatMessages = new ArrayList<>();
-        chatMessages.add(new ChatRequestSystemMessage(config.getJsonObject("generateXMLObjectWithoutSchema").getString("systemPrompt")));
+        List<ChatMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(system(config.getJsonObject("generateXMLObjectWithoutSchema").getString("systemPrompt")));
 
         if(seedObjects == null || seedObjects.size() == 0){
             //If no seed objects are provided, simply pass the HTML snippet as the user message and execute the chat completion request.
-            chatMessages.add(new ChatRequestUserMessage(snippet.getSnippet()));
+            chatMessages.add(user(snippet.getSnippet()));
 
         }else{
             //If seed XML objects are provided we constructed a prompt with them included first and then the HTML snippet.
@@ -490,7 +488,7 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
             sb.append("HTML Snippet:\n");
             sb.append(snippet.getSnippet());
 
-            chatMessages.add(new ChatRequestUserMessage(sb.toString()));
+            chatMessages.add(user(sb.toString()));
         }
 
         return executeChatCompletion(chatMessages);

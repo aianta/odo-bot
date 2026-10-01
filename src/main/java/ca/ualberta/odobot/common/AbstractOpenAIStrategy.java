@@ -1,22 +1,19 @@
 package ca.ualberta.odobot.common;
 
 import ca.ualberta.odobot.MainVerticle;
-import ca.ualberta.odobot.guidance.RequestManager;
 import ca.ualberta.odobot.guidance.TokenUsageRecord;
-import com.azure.ai.openai.OpenAIClient;
-import com.azure.ai.openai.OpenAIClientBuilder;
-import com.azure.ai.openai.models.*;
-import com.azure.core.credential.KeyCredential;
+import com.openai.client.OpenAIClient;
+import com.openai.client.okhttp.OpenAIOkHttpClient;
+import com.openai.models.chat.completions.ChatCompletion;
+import com.openai.models.chat.completions.ChatCompletionCreateParams;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.function.Consumer;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
@@ -24,14 +21,29 @@ public abstract class AbstractOpenAIStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(AbstractOpenAIStrategy.class);
 
-    private static final ThreadPoolExecutor executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(6);
-    protected OpenAIClient client;
+    //Clients are shared across strategy instances (keyed by api key + base url) since each one owns its own connection pool and threads.
+    private static final Map<String, OpenAIClient> clients = new ConcurrentHashMap<>();
+
+    private OpenAIClient client;
 
     protected JsonObject config;
 
     protected String model; //The openAI model to use for chat completions
 
-    public static TokenUsageRecord activeTokenUsageRecord;
+    public enum Role {SYSTEM, USER}
+
+    /**
+     * SDK-neutral chat message, so subclasses don't depend on the OpenAI client library.
+     */
+    public record ChatMessage(Role role, String content){}
+
+    protected static ChatMessage system(String content){
+        return new ChatMessage(Role.SYSTEM, content);
+    }
+
+    protected static ChatMessage user(String content){
+        return new ChatMessage(Role.USER, content);
+    }
 
     public String getModel(){
      return model;
@@ -45,41 +57,61 @@ public abstract class AbstractOpenAIStrategy {
             this.model = this.config.getString("model");
         }
 
-
-        client = new OpenAIClientBuilder()
-                .credential(new KeyCredential(this.config.getString("secretKey")))
-                .buildClient();
-
+        String apiKey = this.config.getString("secretKey");
+        String baseUrl = this.config.getString("baseUrl"); //Optional, defaults to the OpenAI API
+        client = clients.computeIfAbsent(apiKey + "@" + baseUrl, key->{
+            OpenAIOkHttpClient.Builder builder = OpenAIOkHttpClient.builder().apiKey(apiKey);
+            if(baseUrl != null){
+                builder.baseUrl(baseUrl);
+            }
+            return builder.build();
+        });
 
     }
 
 
-    protected String executeChatCompletion(List<ChatRequestMessage> chatMessages){
-        ChatCompletionsOptions options = new ChatCompletionsOptions(chatMessages);
+    protected String executeChatCompletion(List<ChatMessage> chatMessages){
+        return executeChatCompletion(LlmCallType.OTHER_CHAT_COMPLETION, chatMessages);
+    }
 
-        options.setN(1); //Only generate one choice
-        options.setTemperature(config.getDouble("temperature"));
-        if( config.containsKey("topP")){
-            options.setTopP(config.getDouble("topP"));
+    /**
+     * @param callType the context of this call, used to break down token usage.
+     */
+    protected String executeChatCompletion(LlmCallType callType, List<ChatMessage> chatMessages){
+        ChatCompletionCreateParams.Builder params = ChatCompletionCreateParams.builder()
+                .model(model)
+                .n(1); //Only generate one choice
+
+        //Sampling options are often absent or explicitly null in config, in which case they are left out of the request.
+        Double temperature = config.getDouble("temperature");
+        if(temperature != null){
+            params.temperature(temperature);
         }
-        if(config.containsKey("maxTokens")){
-            options.setMaxTokens(config.getInteger("maxTokens"));
+        Double topP = config.getDouble("topP");
+        if(topP != null){
+            params.topP(topP);
+        }
+        Integer maxTokens = config.getInteger("maxTokens");
+        if(maxTokens != null){
+            params.maxCompletionTokens(maxTokens);
         }
 
-        ChatCompletions chatCompletions = client.getChatCompletions(model, options);
-        CompletionsUsage usage = chatCompletions.getUsage();
+        for(ChatMessage message: chatMessages){
+            switch (message.role()){
+                case SYSTEM -> params.addSystemMessage(message.content());
+                case USER -> params.addUserMessage(message.content());
+            }
+        }
+
+        ChatCompletion chatCompletion = client.chat().completions().create(params.build());
 
         //Record token usage if there is an active token usage record
-        if(activeTokenUsageRecord != null){
-            activeTokenUsageRecord.addInputTokens(usage.getPromptTokens());
-            activeTokenUsageRecord.addOutputTokens(usage.getCompletionTokens());
-            activeTokenUsageRecord.addTotalTokens(usage.getTotalTokens());
-        }
+        chatCompletion.usage().ifPresent(usage->
+                TokenUsageRecord.report(callType, usage.promptTokens(), usage.completionTokens(), usage.totalTokens()));
 
 
-        log.info("Got chat completion ({})@{}", chatCompletions.getId(), chatCompletions.getCreatedAt());
-        ChatResponseMessage message = chatCompletions.getChoices().get(0).getMessage();
-        String content = message.getContent();
+        log.info("Got chat completion ({})@{}", chatCompletion.id(), chatCompletion.created());
+        String content = chatCompletion.choices().get(0).message().content().orElse("");
         log.info("{}", content);
 
         return content;

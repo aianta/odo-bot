@@ -49,8 +49,9 @@ on event-loop or worker threads, and these settings just suppress the warnings.
 2. Hoists two globals: `MainVerticle.ELASTICSEARCH_HOST` and `MainVerticle.MODEL_OVERRIDE`
    (a global LLM model-name override consumed by `common.AbstractOpenAIStrategy`).
 3. Deploys each verticle whose boolean flag is `true` in `main.yaml`.
-4. Initializes `AbstractOpenAIStrategy.activeTokenUsageRecord` — a **process-global LLM token
-   counter** shared by every OpenAI-backed strategy.
+4. Initializes `TokenUsageRecord.active` — the **process-global LLM token counter** every LLM
+   client reports to (OpenAI-backed strategies, embeddings, the Qwen client). During an evaluation task
+   the `RequestManager` swaps in a per-task `TaskTokenUsage`, which it saves as `<evalId>-tokens.json`.
 
 ### `config/main.yaml` — deployment switches
 
@@ -618,7 +619,7 @@ The **newest and largest** verticle (~1 700 lines). Builds and annotates the nav
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET / DELETE | `/tokenUsage` | Read / reset the global `AbstractOpenAIStrategy.activeTokenUsageRecord`. |
+| GET / DELETE | `/tokenUsage` | Read / reset the global `TokenUsageRecord.active`. |
 | GET | `/sampleDOMSnapshot` | Fetch a sample snapshot. |
 | POST | `/clean` | HTML cleaning via `CleanerService`. |
 | POST | `/nodeLinks` | Convert HTML into the node-link form fed to LSH. |
@@ -871,8 +872,8 @@ by a field within an index.
 
 ### `common` — shared utilities
 `ConfigurableVerticle`, `HttpServiceVerticle`, `AbstractOpenAIStrategy` (base for every
-LLM-backed strategy; honours `MainVerticle.MODEL_OVERRIDE` and updates the global
-`activeTokenUsageRecord`), `AIOutputValidators`, `RobulaPlus` (robust XPath generation),
+LLM-backed strategy; honours `MainVerticle.MODEL_OVERRIDE` and reports each call's tokens, tagged with an
+`LlmCallType`, to `TokenUsageRecord.active`), `AIOutputValidators`, `RobulaPlus` (robust XPath generation),
 `Xpath`/`BasePathAndXpath`, `NormalizeURL`, `Predicates`, `UsageTelemetry`, `AnalyzeTopK`.
 
 ### `extractors` — semantic artifact extractors ⚠️

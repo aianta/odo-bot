@@ -2,8 +2,6 @@ package ca.ualberta.odobot.modelconstruction.linklabeling.impl;
 
 import ca.ualberta.odobot.common.AbstractOpenAIStrategy;
 import ca.ualberta.odobot.modelconstruction.linklabeling.LinkLabelingService;
-import com.azure.ai.openai.models.ChatRequestMessage;
-import com.azure.ai.openai.models.ChatRequestSystemMessage;
 import io.vertx.core.Future;
 import io.vertx.core.json.JsonObject;
 
@@ -36,8 +34,8 @@ public class LinkLabelingServiceImpl extends AbstractOpenAIStrategy implements L
 
     private String generateLabel(String rawHref, String normalizedHref){
 
-        List<ChatRequestMessage> chatMessages = new ArrayList<>();
-        chatMessages.add(new ChatRequestSystemMessage(config.getJsonObject("generateLinkLabel").getString("systemPrompt")));
+        List<ChatMessage> chatMessages = new ArrayList<>();
+        chatMessages.add(system(config.getJsonObject("generateLinkLabel").getString("systemPrompt")));
 
         String input = """
                 Input: 
@@ -45,7 +43,7 @@ public class LinkLabelingServiceImpl extends AbstractOpenAIStrategy implements L
                 
                 Output:
                 """.formatted(rawHref, normalizedHref);
-        chatMessages.add(new ChatRequestSystemMessage(input));
+        chatMessages.add(system(input));
 
         return executeChatCompletion(chatMessages);
 

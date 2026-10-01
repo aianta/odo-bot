@@ -4,7 +4,6 @@ import ca.ualberta.odobot.common.HttpServiceVerticle;
 import ca.ualberta.odobot.dataentry2label.impl.DataEntry2LabelServiceImpl;
 import ca.ualberta.odobot.guidance.ExecutionMode;
 import ca.ualberta.odobot.guidance.RequestManager;
-import ca.ualberta.odobot.guidance.TokenUsageRecord;
 import ca.ualberta.odobot.snippet2xml.impl.Snippet2XMLServiceImpl;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import ca.ualberta.odobot.taskplanner.TaskPlannerService;
@@ -1028,9 +1027,6 @@ public class ExplorerVerticle extends HttpServiceVerticle {
         String experimentFolderPath = _config.getString("outputArtifactsFolder") + "/" + experimentId;
         String experimentResultsFolderPath = experimentFolderPath + "/results";
 
-        TokenUsageRecord experimentTokenUsageRecord = new TokenUsageRecord();
-
-
         String _agent = rc.request().getParam("agent", "odoBot");
         Agent agent;
         try{
@@ -1092,8 +1088,6 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                 f = promise.future();
 
                 EvaluateTask evaluateTask = new EvaluateTask(_config, config, _task, promise, taskPlannerService, agent);
-                //Add task token usage to experiment token usage.
-                promise.future().onComplete(done->experimentTokenUsageRecord.merge(evaluateTask.getTokenUsageRecord()));
                 Thread thread = new Thread(evaluateTask);
                 thread.start();
             }else{
@@ -1105,9 +1099,6 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                             .onFailure(err->serverError(rc, err));
 
                     EvaluateTask evaluateTask = new EvaluateTask(_config, finalConfig, _task, promise, taskPlannerService, agent);
-
-                    //Add task token usage to experiment token usage.
-                    promise.future().onComplete(done->experimentTokenUsageRecord.merge(evaluateTask.getTokenUsageRecord()));
                     Thread thread = new Thread(evaluateTask);
                     thread.start();
 
@@ -1122,6 +1113,11 @@ public class ExplorerVerticle extends HttpServiceVerticle {
         if (f == null){
             f = Future.succeededFuture();
         }
+
+        //Summarize the token usage of every task in the experiment, also when it failed part way. This handler is registered
+        //first so the summary is ready for the experiment telemetry below.
+        JsonObject experimentTokenUsage = new JsonObject();
+        f.onComplete(done->experimentTokenUsage.mergeIn(ExperimentTokenUsage.summarizeAndSave(experimentId, experimentFolderPath, experimentResultsFolderPath)));
 
         JsonObject finalConfig1 = config;
         f.onSuccess(done->{
@@ -1164,9 +1160,13 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                     experimentResults.setAgentVersion(_config.getString("agentVersion"));
                     experimentResults.setSubmittedTasks(tasks.size());
                     experimentResults.setDuration(experimentEndTime.toEpochMilli() - experimentStartTime.toEpochMilli());
-                    experimentResults.setTotalInputTokens(experimentTokenUsageRecord.inputTokens);
-                    experimentResults.setTotalOutputTokens(experimentTokenUsageRecord.outputTokens);
-                    experimentResults.setTotalCombinedTokens(experimentTokenUsageRecord.totalTokens);
+                    experimentResults.setTotalInputTokens(Math.toIntExact(experimentTokenUsage.getJsonObject("inputTokens").getLong("sum")));
+                    experimentResults.setTotalOutputTokens(Math.toIntExact(experimentTokenUsage.getJsonObject("outputTokens").getLong("sum")));
+                    experimentResults.setTotalCombinedTokens(Math.toIntExact(experimentTokenUsage.getJsonObject("totalTokens").getLong("sum")));
+                    experimentResults.setTotalLlmCalls(Math.toIntExact(experimentTokenUsage.getJsonObject("llmCalls").getLong("sum")));
+                    experimentResults.setMinTaskCombinedTokens(experimentTokenUsage.getJsonObject("totalTokens").getInteger("min"));
+                    experimentResults.setMaxTaskCombinedTokens(experimentTokenUsage.getJsonObject("totalTokens").getInteger("max"));
+                    experimentResults.setMeanTaskCombinedTokens(experimentTokenUsage.getJsonObject("totalTokens").getDouble("mean"));
                     experimentResults.setSuccessfulTasks(experimentResult.getInteger("correct"));
                     experimentResults.setFailedTasks(experimentResult.getInteger("incorrect"));
                     experimentResults.setEvaluatedTasks(experimentResult.getInteger("correct") + experimentResult.getInteger("incorrect"));

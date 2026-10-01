@@ -8,6 +8,9 @@ import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedWriter;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.*;
 
 /**
@@ -46,6 +49,18 @@ public class RequestManager {
     private boolean ended = false;
 
     private boolean firstInstructionSent = false;
+
+    /**
+     * Token usage of the current task. It is the active {@link TokenUsageRecord} while the task runs.
+     */
+    private TaskTokenUsage taskTokenUsage = null;
+
+    /**
+     * The active token usage record from before the task started, restored when it ends.
+     */
+    private TokenUsageRecord previousTokenUsage = null;
+
+    private boolean tokenUsageFinished = false;
 
     public RequestManager(OdoClient client){
         this.client = client;
@@ -95,6 +110,7 @@ public class RequestManager {
         });
         this.evaluationComplete.future().onComplete(done->{
             ended = true;
+            finishTokenUsage(done.succeeded()? "completed" : "failed: " + done.cause().getMessage());
             client.getEventConnectionManager().stopObservingUnchartedSteps();
             if(activeAgent != null){
                 activeAgent.stop();
@@ -112,6 +128,52 @@ public class RequestManager {
     }
 
     /**
+     * @return the token usage of the current (or last) task, or null if no task has been started.
+     */
+    public TaskTokenUsage getTokenUsage() {
+        return taskTokenUsage;
+    }
+
+    /**
+     * Stop counting LLM calls toward the task, and save its token usage to {@code <evalId>-tokens.json} in the
+     * experiment folder.
+     */
+    private void finishTokenUsage(String outcome){
+        if(taskTokenUsage == null || tokenUsageFinished){
+            return; //No task was started, or its usage was already finished.
+        }
+        tokenUsageFinished = true;
+        if(TokenUsageRecord.active == taskTokenUsage){
+            TokenUsageRecord.active = previousTokenUsage;
+        }
+
+        JsonObject usage = new JsonObject()
+                .put("evalId", evalId)
+                .put("experimentId", experimentId)
+                .put("executionId", executionId == null? null : executionId.toString())
+                .put("mode", mode.name())
+                .put("outcome", outcome)
+                .mergeIn(taskTokenUsage.toJson());
+
+        log.info("Task {} token usage: {} input, {} output, {} total tokens over {} LLM calls ({})",
+                evalId, taskTokenUsage.inputTokens, taskTokenUsage.outputTokens, taskTokenUsage.totalTokens, taskTokenUsage.llmCalls, outcome);
+
+        if(evalId == null || experimentFolderPath == null){
+            return; //Not an evaluation run, nowhere to save the usage.
+        }
+
+        String fileName = "%s/%s-tokens.json".formatted(experimentFolderPath, evalId).replaceAll("\\|","-");
+        try(FileWriter fw = new FileWriter(fileName);
+            BufferedWriter bw = new BufferedWriter(fw)
+        ){
+            bw.write(usage.encodePrettily());
+            bw.flush();
+        }catch (IOException e){
+            log.error("Failed to save token usage for {}: {}", evalId, e.getMessage());
+        }
+    }
+
+    /**
      * Start executing a task with the given agent. OdoX answers START_TRANSMISSION with an Observation, which
      * reaches the agent through its timeline as its first observation.
      *
@@ -125,6 +187,12 @@ public class RequestManager {
         this.mode = mode;
         this.ended = false;
         this.firstInstructionSent = false;
+
+        //Every LLM call made while the task runs is counted toward it, whichever agent makes it.
+        this.taskTokenUsage = new TaskTokenUsage(()->activeAgent == null? "none" : activeAgent.getClass().getSimpleName());
+        this.previousTokenUsage = TokenUsageRecord.active;
+        this.tokenUsageFinished = false;
+        TokenUsageRecord.active = this.taskTokenUsage;
 
         client.getEventConnectionManager().getEventProcessor().setUnchartedTimelineEnabled(mode == ExecutionMode.UNCHARTED);
 

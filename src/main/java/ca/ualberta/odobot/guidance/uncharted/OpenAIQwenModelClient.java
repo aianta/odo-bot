@@ -1,5 +1,7 @@
 package ca.ualberta.odobot.guidance.uncharted;
 
+import ca.ualberta.odobot.common.LlmCallType;
+import ca.ualberta.odobot.guidance.TokenUsageRecord;
 import com.openai.client.OpenAIClientAsync;
 import com.openai.client.okhttp.OpenAIOkHttpClientAsync;
 import com.openai.core.JsonValue;
@@ -60,6 +62,7 @@ public class OpenAIQwenModelClient implements QwenModelClient {
     private void attempt(Context context, ChatCompletionCreateParams params, int attempt, Promise<QwenCompletion> promise) {
         Future.fromCompletionStage(client().chat().completions().create(params), context)
                 .onSuccess(completion -> {
+                    reportUsage(completion);
                     try {
                         promise.tryComplete(toQwenCompletion(completion));
                     } catch (RuntimeException e) {
@@ -76,6 +79,20 @@ public class OpenAIQwenModelClient implements QwenModelClient {
                     long delayMs = (long) (Math.min(5.0 * attempt, 30.0) * 1000);
                     context.owner().setTimer(delayMs, id -> attempt(context, params, attempt + 1, promise));
                 });
+    }
+
+    /**
+     * Token accounting must never fail a step, so a missing or malformed usage block is only logged.
+     */
+    private static void reportUsage(ChatCompletion completion) {
+        try {
+            completion.usage().ifPresentOrElse(
+                    usage -> TokenUsageRecord.report(LlmCallType.UNCHARTED_STEP,
+                            usage.promptTokens(), usage.completionTokens(), usage.totalTokens()),
+                    () -> log.warn("[Qwen38Agent] completion has no usage block, its tokens are not counted"));
+        } catch (RuntimeException e) {
+            log.warn("[Qwen38Agent] could not read completion usage: {}", e.toString());
+        }
     }
 
     @Override

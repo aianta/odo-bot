@@ -142,11 +142,11 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
 
 
         api.route().method(HttpMethod.DELETE).path("/tokenUsage").handler(rc->{
-            AbstractOpenAIStrategy.activeTokenUsageRecord = new TokenUsageRecord();
-            rc.getDelegate().response().setStatusCode(200).end(AbstractOpenAIStrategy.activeTokenUsageRecord.toJson().encodePrettily());
+            TokenUsageRecord.active = new TokenUsageRecord();
+            rc.getDelegate().response().setStatusCode(200).end(TokenUsageRecord.active.toJson().encodePrettily());
         });
         api.route().method(HttpMethod.GET).path("/tokenUsage").handler(rc->{
-            rc.getDelegate().response().setStatusCode(200).end(AbstractOpenAIStrategy.activeTokenUsageRecord.toJson().encodePrettily());
+            rc.getDelegate().response().setStatusCode(200).end(TokenUsageRecord.active.toJson().encodePrettily());
         });
 
         api.route().method(HttpMethod.GET).path("/sampleDOMSnapshot").handler(this::sampleDOMSnapshot);

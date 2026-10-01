@@ -3,9 +3,6 @@ package ca.ualberta.odobot.modelconstruction.eventlabeling;
 import ca.ualberta.odobot.common.AbstractOpenAIStrategy;
 import ca.ualberta.odobot.semanticflow.model.Timeline;
 import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
-import com.azure.ai.openai.models.ChatRequestMessage;
-import com.azure.ai.openai.models.ChatRequestSystemMessage;
-import com.azure.ai.openai.models.ChatRequestUserMessage;
 import io.vertx.core.Promise;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
@@ -130,10 +127,10 @@ public class LabelTrajectoryTask extends AbstractOpenAIStrategy implements Runna
 
     private String labelTrajectory(List<EventDescription> interactions){
         log.info("Generating synthetic task description for trajectory {}", trajectory.getId());
-        List<ChatRequestMessage> chatRequestMessages = new ArrayList<>();
+        List<ChatMessage> chatRequestMessages = new ArrayList<>();
 
         String systemPrompt = config.getJsonObject("generateSyntheticTaskForTrajectory").getString("systemPrompt");
-        chatRequestMessages.add(new ChatRequestSystemMessage(systemPrompt));
+        chatRequestMessages.add(system(systemPrompt));
 
         String userPromptTemplate = """
         Observed interactions:
@@ -142,16 +139,16 @@ public class LabelTrajectoryTask extends AbstractOpenAIStrategy implements Runna
         Task Description:
         """.formatted(writeEventsAsStory(interactions));
 
-        chatRequestMessages.add(new ChatRequestUserMessage(userPromptTemplate));
+        chatRequestMessages.add(user(userPromptTemplate));
 
         return executeChatCompletion(chatRequestMessages);
     }
 
     private String labelEvent(TimelineEntity entity, List<EventDescription> history) {
         log.info("Labeling event {} from trajectory {}, history size: {}", entity.symbol(), trajectory.getId(), history.size());
-        List<ChatRequestMessage> chatMessages = new ArrayList<>();
+        List<ChatMessage> chatMessages = new ArrayList<>();
         String systemPrompt = config.getJsonObject("generateSemanticLabelForTrajectoryEvent").getString("systemPrompt");
-        chatMessages.add(new ChatRequestSystemMessage(systemPrompt));
+        chatMessages.add(system(systemPrompt));
 
         String encodedEvent = EventEncoder.encode(entity);
         String historyString = buildHistoryString(history);
@@ -182,7 +179,7 @@ public class LabelTrajectoryTask extends AbstractOpenAIStrategy implements Runna
 
 
 
-        chatMessages.add(new ChatRequestUserMessage(userPromptTemplate));
+        chatMessages.add(user(userPromptTemplate));
 
         log.info("{}", systemPrompt + userPromptTemplate);
 

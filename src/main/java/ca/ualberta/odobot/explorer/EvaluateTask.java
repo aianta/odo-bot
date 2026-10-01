@@ -1,6 +1,5 @@
 package ca.ualberta.odobot.explorer;
 
-import ca.ualberta.odobot.common.AbstractOpenAIStrategy;
 import ca.ualberta.odobot.dataentry2label.impl.DataEntry2LabelServiceImpl;
 import ca.ualberta.odobot.guidance.*;
 import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
@@ -63,8 +62,6 @@ public class EvaluateTask implements Runnable{
     String experimentResultsFolderPath;
     ExecutionRequest.PathSelectionMode pathSelectionMode;
 
-    TokenUsageRecord tokenUsageRecord = new TokenUsageRecord();
-
     Promise<Void> promise;
 
     Instant startTime;
@@ -95,9 +92,6 @@ public class EvaluateTask implements Runnable{
 
     private void setupEnvironment() throws MalformedURLException {
         try {
-
-
-            AbstractOpenAIStrategy.activeTokenUsageRecord = tokenUsageRecord;
 
             FirefoxOptions options = new FirefoxOptions();
             if (headless) {
@@ -191,10 +185,6 @@ public class EvaluateTask implements Runnable{
 
     }
 
-    public TokenUsageRecord getTokenUsageRecord(){
-        return tokenUsageRecord;
-    }
-
     public void startTask(JsonObject task){
 
         log.info("Starting task {}", task.getString("_evalId"));
@@ -209,6 +199,9 @@ public class EvaluateTask implements Runnable{
         IAgent taskAgent = buildAgent(task);
 
         Promise<Void> evaluationPromise = Promise.promise();
+        //Hand the promise to the RequestManager first: its completion handlers (which finish the task's token usage and
+        //write <evalId>-tokens.json) must run before the ones below.
+        odoXClient.getRequestManager().setEvaluationComplete(evaluationPromise);
         evaluationPromise.future().onComplete((done)->{
 
 //                if (odoXClient.getEventConnectionManager().getEventProcessor().countNetworkEvents() < MIN_NETWORK_EVENTS){
@@ -283,9 +276,13 @@ public class EvaluateTask implements Runnable{
                     taskResultTelemetry.setTaskDescription(task.getString("task"));
                     taskResultTelemetry.setDuration(endTime.toEpochMilli() - startTime.toEpochMilli());
                     taskResultTelemetry.setEvaluationDatasetId(datasetPath);
-                    taskResultTelemetry.setInputTokens(this.tokenUsageRecord.inputTokens);
-                    taskResultTelemetry.setOutputTokens(this.tokenUsageRecord.outputTokens);
-                    taskResultTelemetry.setCombinedTokens(this.tokenUsageRecord.totalTokens);
+                    TaskTokenUsage tokenUsage = odoXClient.getRequestManager().getTokenUsage();
+                    if(tokenUsage != null){
+                        taskResultTelemetry.setInputTokens(tokenUsage.inputTokens);
+                        taskResultTelemetry.setOutputTokens(tokenUsage.outputTokens);
+                        taskResultTelemetry.setCombinedTokens(tokenUsage.totalTokens);
+                        taskResultTelemetry.setLlmCalls(tokenUsage.llmCalls);
+                    }
 
                     //Compute a string that details the OpenAI models used to compute this task.
                     Set<String> modelInfo = new HashSet<>();
@@ -328,7 +325,6 @@ public class EvaluateTask implements Runnable{
 
         });
 
-        odoXClient.getRequestManager().setEvaluationComplete(evaluationPromise);
         odoXClient.getRequestManager().setExperimentId(config.containsKey("experimentId")?config.getString("experimentId"):"default");
         odoXClient.getRequestManager().setExperimentFolderPath(this.experimentFolderPath);
         odoXClient.getRequestManager().setEvalId(task.getString("_evalId")); //Set the evaluationId for this execution.

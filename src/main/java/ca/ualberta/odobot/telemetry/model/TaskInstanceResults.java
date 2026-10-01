@@ -25,6 +25,7 @@ public class TaskInstanceResults extends JsonObject {
     private int inputTokens;
     private int outputTokens;
     private int combinedTokens;
+    private int llmCalls;
     private long duration;
     private String agent;
     private String agentVersion;
@@ -108,6 +109,11 @@ public class TaskInstanceResults extends JsonObject {
 
     public TaskInstanceResults setCombinedTokens(int combinedTokens) {
         put("CombinedTokens", combinedTokens);
+        return this;
+    }
+
+    public TaskInstanceResults setLlmCalls(int llmCalls) {
+        put("LlmCalls", llmCalls);
         return this;
     }
 

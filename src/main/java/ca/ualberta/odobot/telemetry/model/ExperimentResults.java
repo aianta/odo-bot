@@ -28,6 +28,10 @@ public class ExperimentResults extends JsonObject {
     private int totalInputTokens;
     private int totalOutputTokens;
     private int totalCombinedTokens;
+    private int totalLlmCalls;
+    private int minTaskCombinedTokens;
+    private int maxTaskCombinedTokens;
+    private double meanTaskCombinedTokens;
     private long duration;
     private String model;
     private String rawDataPath;
@@ -108,6 +112,26 @@ public class ExperimentResults extends JsonObject {
 
     public ExperimentResults setTotalCombinedTokens(int totalCombinedTokens) {
         put("TotalCombinedTokens", totalCombinedTokens);
+        return this;
+    }
+
+    public ExperimentResults setTotalLlmCalls(int totalLlmCalls) {
+        put("TotalLlmCalls", totalLlmCalls);
+        return this;
+    }
+
+    public ExperimentResults setMinTaskCombinedTokens(int minTaskCombinedTokens) {
+        put("MinTaskCombinedTokens", minTaskCombinedTokens);
+        return this;
+    }
+
+    public ExperimentResults setMaxTaskCombinedTokens(int maxTaskCombinedTokens) {
+        put("MaxTaskCombinedTokens", maxTaskCombinedTokens);
+        return this;
+    }
+
+    public ExperimentResults setMeanTaskCombinedTokens(double meanTaskCombinedTokens) {
+        put("MeanTaskCombinedTokens", meanTaskCombinedTokens);
         return this;
     }
 
