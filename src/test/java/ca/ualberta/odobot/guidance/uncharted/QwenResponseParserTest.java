@@ -116,6 +116,30 @@ class QwenResponseParserTest {
     }
 
     @Test
+    void terminateCarriesTheAnswer() {
+        ParsedStep answered = parse("<tool_call>{\"name\": \"computer_use\", \"arguments\": {\"action\": \"terminate\", \"status\": \"success\", \"answer\": \" Quest Lumaflex™ Band \"}}</tool_call>");
+        assertEquals(Terminal.DONE, answered.terminal());
+        assertEquals("Quest Lumaflex™ Band", answered.answer());
+
+        ParsedStep xml = parse("""
+                <tool_call>
+                <function=computer_use>
+                <parameter=action>terminate</parameter>
+                <parameter=status>success</parameter>
+                <parameter=answer>hollister</parameter>
+                </function>
+                </tool_call>""");
+        assertEquals("hollister", xml.answer());
+
+        assertNull(parse("<tool_call>{\"name\": \"computer_use\", \"arguments\": {\"action\": \"terminate\", \"status\": \"success\"}}</tool_call>").answer());
+        assertNull(parse("<tool_call>{\"name\": \"computer_use\", \"arguments\": {\"action\": \"terminate\", \"status\": \"success\", \"answer\": \"  \"}}</tool_call>").answer());
+        // Survives the narration that replaces the generic description.
+        assertEquals("6", parse("""
+                Action: Report the count.
+                <tool_call>{"name": "computer_use", "arguments": {"action": "terminate", "status": "success", "answer": 6}}</tool_call>""").answer());
+    }
+
+    @Test
     void actionsAfterTerminateAreDropped() {
         ParsedStep step = parse("""
                 <tool_call>{"name": "computer_use", "arguments": {"action": "wait"}}</tool_call>

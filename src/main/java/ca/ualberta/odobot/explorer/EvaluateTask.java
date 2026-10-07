@@ -470,7 +470,15 @@ public class EvaluateTask implements Runnable{
         guidanceHostInput.sendKeys(config.getString(EvaluationTaskRequestFields.ODOX_OPTIONS_GUIDANCE_SERVICE_HOST.field));
 
         //Get the target application host input field, clear any existing value, then set it to the value specified in the request config.
-        try{
+        if(config.containsKey("targetHosts")){
+            //The hosts whose network events OdoX captures, e.g. ["http://localhost:7770", "http://localhost:7780"], or ["*"] for every host.
+            String targetHosts = config.getJsonArray("targetHosts").stream()
+                    .map(String::valueOf)
+                    .collect(Collectors.joining(","));
+            WebElement targetHostInput = driver.findElement(By.id(ODOSIGHT_OPTIONS_TARGET_HOST_FIELD_ID));
+            targetHostInput.clear();
+            targetHostInput.sendKeys(targetHosts);
+        }else try{
             URL webAppUrl = new URL(config.getString(EvaluationTaskRequestFields.WEB_APP_URL.field));
             WebElement targetHostInput = driver.findElement(By.id(ODOSIGHT_OPTIONS_TARGET_HOST_FIELD_ID));
             targetHostInput.clear();

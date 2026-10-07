@@ -64,6 +64,24 @@ public class OnlineEventProcessor {
     }
 
     /**
+     * Records the answer an agent reported on completing its task: on the timeline, and as a TASK_ANSWER custom event in the
+     * raw events, so that it is saved with them.
+     */
+    public void injectTaskAnswer(String answer){
+        TaskAnswer taskAnswer = new TaskAnswer(answer);
+        if(line != null){
+            line.add(taskAnswer);
+        }
+        rawEvents.add(new JsonObject()
+                .put("eventType", "customEvent")
+                .put("eventDetails", new JsonObject()
+                        .put("name", "TASK_ANSWER")
+                        .put("answer", answer))
+                .put("timestamps", new JsonObject()
+                        .put("eventTimestamp", timeFormatter.format(Instant.ofEpochMilli(taskAnswer.timestamp())))));
+    }
+
+    /**
      * @param listener called with every observation added to the uncharted timeline.
      */
     public void setOnUnchartedObservation(Consumer<Observation> listener){

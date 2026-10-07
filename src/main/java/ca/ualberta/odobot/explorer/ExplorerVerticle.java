@@ -1048,6 +1048,10 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                 return;
             }
         }
+        if(config.containsKey("targetHosts") && !(config.getValue("targetHosts") instanceof JsonArray)){
+            rc.response().setStatusCode(400).end("'targetHosts' must be an array of hosts, or [\"*\"] for every host.");
+            return;
+        }
 
         JsonArray tasks = getTasks(config.getJsonArray("tasks"), agent);
         Instant experimentStartTime = Instant.now();

@@ -299,7 +299,12 @@ public class RequestManager {
             return;
         }
 
-        if(instruction instanceof TaskComplete){
+        if(instruction instanceof TaskComplete taskComplete){
+            if(taskComplete.answer != null){
+                //Record the answer before taskComplete() saves the raw events.
+                log.info("Agent answered: {}", taskComplete.answer);
+                client.getEventConnectionManager().getEventProcessor().injectTaskAnswer(taskComplete.answer);
+            }
             taskComplete();
             return;
         }

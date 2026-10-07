@@ -30,7 +30,8 @@ public final class QwenPrompts {
             * `scroll`: Scroll the page, or the scrollable area at the (x, y) pixel coordinate, vertically.
             * `hscroll`: Scroll the page, or the scrollable area at the (x, y) pixel coordinate, horizontally.
             * `wait`: Wait specified seconds for the change to happen.
-            * `terminate`: Terminate the current task and report its completion status.
+            * `terminate`: Terminate the current task and report its completion status, and the answer if the task \
+            asks for information.
             * `call_user`: Ask user for information or confirmation.""";
 
     static final String[] ACTIONS = {
@@ -92,7 +93,10 @@ public final class QwenPrompts {
                 .put("status", new JsonObject()
                         .put("type", "string")
                         .put("description", "Task status for terminate.")
-                        .put("enum", new JsonArray().add("success").add("failure")));
+                        .put("enum", new JsonArray().add("success").add("failure")))
+                .put("answer", new JsonObject()
+                        .put("type", "string")
+                        .put("description", "Used only by `action=terminate`. If the task asks for information, the answer, stated as concisely as possible."));
 
         return new JsonObject()
                 .put("type", "function")
@@ -146,7 +150,7 @@ public final class QwenPrompts {
                 - Coordinates must address the element's centre, not its edge.
                 - Use `wait` when a page is still loading rather than clicking blindly.
                 - Use `terminate` with status success when the task is complete, or status \
-                failure when it cannot be completed.
+                failure when it cannot be completed. If the task asks for information, give it in `answer`.
                 - Use `call_user` only when you genuinely need information you cannot obtain \
                 from the screen.
                 - If the task is infeasible, say so explicitly and terminate with status failure.

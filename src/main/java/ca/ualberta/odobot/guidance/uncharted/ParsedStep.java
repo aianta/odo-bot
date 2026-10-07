@@ -14,9 +14,10 @@ import java.util.List;
  * @param terminal            whether the step ends the task, and how.
  * @param unsupported         why each tool call that asked for something OdoX cannot do was not executed, e.g.
  *                            "mouse_move is not available: there is no cursor, click elements directly".
+ * @param answer              the answer the model reported with {@code terminate}, or null if it reported none.
  */
 public record ParsedStep(String lowLevelInstruction, UnchartedInstruction action, Terminal terminal,
-                         List<String> unsupported) {
+                         List<String> unsupported, String answer) {
 
     public enum Terminal {
         /**
@@ -37,12 +38,17 @@ public record ParsedStep(String lowLevelInstruction, UnchartedInstruction action
         unsupported = List.copyOf(unsupported);
     }
 
+    public ParsedStep(String lowLevelInstruction, UnchartedInstruction action, Terminal terminal,
+                      List<String> unsupported) {
+        this(lowLevelInstruction, action, terminal, unsupported, null);
+    }
+
     public ParsedStep(String lowLevelInstruction, UnchartedInstruction action, Terminal terminal) {
         this(lowLevelInstruction, action, terminal, List.of());
     }
 
     public ParsedStep withLowLevelInstruction(String lowLevelInstruction) {
-        return new ParsedStep(lowLevelInstruction, action, terminal, unsupported);
+        return new ParsedStep(lowLevelInstruction, action, terminal, unsupported, answer);
     }
 
     /**

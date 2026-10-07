@@ -284,7 +284,7 @@ public final class QwenResponseParser {
             lowLevelInstruction = "FAIL".equals(firstCode) ? "Need user input" : instructionFromFirstCode(firstCode);
         }
 
-        return new ParsedStep(lowLevelInstruction, step.action, step.terminal, step.unsupported);
+        return new ParsedStep(lowLevelInstruction, step.action, step.terminal, step.unsupported, step.answer);
     }
 
     /**
@@ -301,6 +301,7 @@ public final class QwenResponseParser {
         private UnchartedInstruction action;
         private final List<String> unsupported = new ArrayList<>();
         private Terminal terminal = Terminal.NONE;
+        private String answer;
 
         private StepBuilder(CoordinateType coordinateType, int originalWidth, int originalHeight,
                             int processedWidth, int processedHeight, boolean infeasible) {
@@ -371,7 +372,13 @@ public final class QwenResponseParser {
                     }
                 }
                 case "wait" -> add(new Wait(params.containsKey("time") ? parseNumberOrNull(params.get("time")) : null));
-                case "terminate" -> terminal = terminationCode(params.getOrDefault("status", "success"));
+                case "terminate" -> {
+                    terminal = terminationCode(params.getOrDefault("status", "success"));
+                    Object answer = params.get("answer");
+                    if (truthy(answer) && !pyStr(answer).isBlank()) {
+                        this.answer = pyStr(answer).strip();
+                    }
+                }
                 case "call_user" -> terminal = infeasible ? Terminal.FAIL : Terminal.DONE;
                 // Observations come from the harness; a new one follows every step.
                 case "screenshot" -> add(new Wait(null));

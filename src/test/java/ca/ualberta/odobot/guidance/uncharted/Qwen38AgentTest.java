@@ -141,6 +141,26 @@ class Qwen38AgentTest {
     }
 
     @Test
+    void terminateAnswerReachesTaskCompleteAndTrajectory() throws Exception {
+        Promise<QwenCompletion> answer = Promise.promise();
+        answer.complete(new QwenCompletion("""
+                Action: The top search term is hollister.
+                <tool_call>
+                {"name": "computer_use", "arguments": {"action": "terminate", "status": "success", "answer": "hollister"}}
+                </tool_call>""", "req-1", null));
+        model.answers.add(answer);
+
+        deliver(new ScreenshotEntity(1920, 1080));
+        waitUntil(() -> emitted.size() == 1);
+
+        assertEquals(new TaskComplete("hollister"), emitted.get(0));
+
+        Path trajectory = artifactDir.resolve("eval-1-qwen38-trajectory.jsonl");
+        waitUntil(() -> lines(trajectory) == 1);
+        assertEquals("hollister", new JsonObject(Files.readAllLines(trajectory).get(0)).getString("answer"));
+    }
+
+    @Test
     void unsupportedActionWaitsInsteadOfEndingTheTask() throws Exception {
         Promise<QwenCompletion> answer = Promise.promise();
         answer.complete(new QwenCompletion("""

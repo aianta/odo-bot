@@ -240,7 +240,7 @@ public class Qwen38Agent extends UnchartedAgent {
 
         switch (parsed.terminal()) {
             case DONE -> {
-                emit(new TaskComplete());
+                emit(new TaskComplete(parsed.answer()));
                 stopped = true;
             }
             case FAIL -> {
@@ -292,6 +292,7 @@ public class Qwen38Agent extends UnchartedAgent {
                 .put("response", response)
                 .put("low_level_instruction", parsed.lowLevelInstruction())
                 .put("terminal", parsed.terminal().name())
+                .put("answer", parsed.answer())
                 .put("pyautogui", new JsonArray(parsed.pyAutoGuiCodes()))
                 .put("unsupported", new JsonArray(parsed.unsupported()))
                 .put("instruction", step == null ? null : step.toJson())
