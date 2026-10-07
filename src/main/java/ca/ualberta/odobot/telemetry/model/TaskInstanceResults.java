@@ -124,6 +124,43 @@ public class TaskInstanceResults extends JsonObject {
         return this;
     }
 
+    //The phase durations below are null when the task did not reach that phase, e.g. no scoring without an events file.
+
+    public TaskInstanceResults setSetupDuration(Long setupDuration) {
+        put("SetupDurationMs", setupDuration);
+        return this;
+    }
+
+    public TaskInstanceResults setExecutionDuration(Long executionDuration) {
+        put("ExecutionDurationMs", executionDuration);
+        return this;
+    }
+
+    public TaskInstanceResults setArtifactsDuration(Long artifactsDuration) {
+        put("ArtifactsDurationMs", artifactsDuration);
+        return this;
+    }
+
+    public TaskInstanceResults setScoringDuration(Long scoringDuration) {
+        put("ScoringDurationMs", scoringDuration);
+        return this;
+    }
+
+    public TaskInstanceResults setTotalDuration(Long totalDuration) {
+        put("TotalDurationMs", totalDuration);
+        return this;
+    }
+
+    public TaskInstanceResults setBeforeSetupTime(String beforeSetupTime) {
+        put("BeforeSetupTime", beforeSetupTime);
+        return this;
+    }
+
+    public TaskInstanceResults setAfterScoringTime(String afterScoringTime) {
+        put("AfterScoringTime", afterScoringTime);
+        return this;
+    }
+
     public TaskInstanceResults setAgent(String agent) {
         put("Agent", agent);
         return this;

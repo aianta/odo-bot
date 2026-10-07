@@ -142,6 +142,51 @@ public class ExperimentResults extends JsonObject {
         return this;
     }
 
+    public ExperimentResults setMinTaskDuration(long minTaskDuration) {
+        put("MinTaskDurationMs", minTaskDuration);
+        return this;
+    }
+
+    public ExperimentResults setMaxTaskDuration(long maxTaskDuration) {
+        put("MaxTaskDurationMs", maxTaskDuration);
+        return this;
+    }
+
+    public ExperimentResults setMeanTaskDuration(double meanTaskDuration) {
+        put("MeanTaskDurationMs", meanTaskDuration);
+        return this;
+    }
+
+    public ExperimentResults setTotalTaskExecution(long totalTaskExecution) {
+        put("TotalTaskExecutionMs", totalTaskExecution);
+        return this;
+    }
+
+    public ExperimentResults setExperimentScoringDuration(long experimentScoringDuration) {
+        put("ExperimentScoringDurationMs", experimentScoringDuration);
+        return this;
+    }
+
+    public ExperimentResults setSlowestTaskEvalId(String slowestTaskEvalId) {
+        put("SlowestTaskEvalId", slowestTaskEvalId);
+        return this;
+    }
+
+    public ExperimentResults setSkippedTasks(int skippedTasks) {
+        put("SkippedTasks", skippedTasks);
+        return this;
+    }
+
+    public ExperimentResults setExperimentStartTime(String experimentStartTime) {
+        put("ExperimentStartTime", experimentStartTime);
+        return this;
+    }
+
+    public ExperimentResults setExperimentEndTime(String experimentEndTime) {
+        put("ExperimentEndTime", experimentEndTime);
+        return this;
+    }
+
     public ExperimentResults setModel(String model) {
         put("Model", model);
         return this;

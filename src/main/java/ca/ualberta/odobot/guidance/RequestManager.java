@@ -64,6 +64,17 @@ public class RequestManager {
     private boolean tokenUsageFinished = false;
 
     /**
+     * How the current task ended, saved with its token usage.
+     */
+    private String taskOutcome = null;
+
+    /**
+     * Wall clock time of the current task, saved with its token usage. The harness may hand in one that already marks
+     * the setup before the task starts, see {@link #setTaskTiming}.
+     */
+    private TaskTiming taskTiming = null;
+
+    /**
      * The OpenAI client settings of the task, or null to leave each service's own configuration in place. They are
      * the active {@link LlmClientConfig} while the task runs.
      */
@@ -124,6 +135,9 @@ public class RequestManager {
         });
         this.evaluationComplete.future().onComplete(done->{
             ended = true;
+            if(taskTiming != null){
+                taskTiming.markExecutionEnd();
+            }
             finishTokenUsage(done.succeeded()? "completed" : "failed: " + done.cause().getMessage());
             restoreLlmConfig();
             client.getEventConnectionManager().stopObservingUnchartedSteps();
@@ -167,6 +181,22 @@ public class RequestManager {
     }
 
     /**
+     * @return the wall clock time of the current (or last) task, or null if no task has been started.
+     */
+    public TaskTiming getTaskTiming() {
+        return taskTiming;
+    }
+
+    /**
+     * @param taskTiming the timing of the next task, whose setup the harness has already marked. Without one, the next
+     *                   task's timing starts with its execution.
+     */
+    public RequestManager setTaskTiming(TaskTiming taskTiming) {
+        this.taskTiming = taskTiming;
+        return this;
+    }
+
+    /**
      * Stop counting LLM calls toward the task, and save its token usage to {@code <evalId>-tokens.json} in the
      * experiment folder.
      */
@@ -175,8 +205,24 @@ public class RequestManager {
             return; //No task was started, or its usage was already finished.
         }
         tokenUsageFinished = true;
+        taskOutcome = outcome;
         if(TokenUsageRecord.active == taskTokenUsage){
             TokenUsageRecord.active = previousTokenUsage;
+        }
+
+        log.info("Task {} token usage: {} input, {} output, {} total tokens over {} LLM calls ({})",
+                evalId, taskTokenUsage.inputTokens, taskTokenUsage.outputTokens, taskTokenUsage.totalTokens, taskTokenUsage.llmCalls, outcome);
+
+        saveTaskUsage();
+    }
+
+    /**
+     * Save the token usage and timing of the task to {@code <evalId>-tokens.json} in the experiment folder. It is first
+     * saved when the task ends; the harness saves it again once it has finished timing the task (artifacts and scoring).
+     */
+    public void saveTaskUsage(){
+        if(taskTokenUsage == null || evalId == null || experimentFolderPath == null){
+            return; //No task was started, or not an evaluation run, so there is nowhere to save the usage.
         }
 
         JsonObject usage = new JsonObject()
@@ -184,14 +230,10 @@ public class RequestManager {
                 .put("experimentId", experimentId)
                 .put("executionId", executionId == null? null : executionId.toString())
                 .put("mode", mode.name())
-                .put("outcome", outcome)
+                .put("outcome", taskOutcome)
                 .mergeIn(taskTokenUsage.toJson());
-
-        log.info("Task {} token usage: {} input, {} output, {} total tokens over {} LLM calls ({})",
-                evalId, taskTokenUsage.inputTokens, taskTokenUsage.outputTokens, taskTokenUsage.totalTokens, taskTokenUsage.llmCalls, outcome);
-
-        if(evalId == null || experimentFolderPath == null){
-            return; //Not an evaluation run, nowhere to save the usage.
+        if(taskTiming != null){
+            usage.put("timing", taskTiming.toJson());
         }
 
         String fileName = "%s/%s-tokens.json".formatted(experimentFolderPath, evalId).replaceAll("\\|","-");
@@ -224,7 +266,14 @@ public class RequestManager {
         this.taskTokenUsage = new TaskTokenUsage(()->activeAgent == null? "none" : activeAgent.getClass().getSimpleName());
         this.previousTokenUsage = TokenUsageRecord.active;
         this.tokenUsageFinished = false;
+        this.taskOutcome = null;
         TokenUsageRecord.active = this.taskTokenUsage;
+
+        //Use the timing the harness handed in, unless it belongs to an earlier task.
+        if(taskTiming == null || taskTiming.executionStarted()){
+            taskTiming = new TaskTiming();
+        }
+        taskTiming.markExecutionStart();
 
         //Every chat completion made while the task runs uses the task's client settings, if it has any.
         if(llmConfig != null){

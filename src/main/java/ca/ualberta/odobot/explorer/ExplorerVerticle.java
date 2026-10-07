@@ -1055,6 +1055,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
         JsonArray tasks = getTasks(config.getJsonArray("tasks"), agent);
         Instant experimentStartTime = Instant.now();
+        int skippedTasks = 0;
 
         Future f = null;
 
@@ -1079,6 +1080,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                 List<String> taskOutputs = experimentOutputs.stream().filter(path->path.contains(_task.getString("id") + ".json")).toList();
                 if(!taskOutputs.isEmpty()){ //So if we find any of those, skip this task.
                     log.info("Output artifacts for task {} in experiment {} already exist, skipping this task.",_task.getString("id"),  experimentId);
+                    skippedTasks++;
                     continue;
                 }
 
@@ -1121,18 +1123,18 @@ public class ExplorerVerticle extends HttpServiceVerticle {
             f = Future.succeededFuture();
         }
 
-        //Summarize the token usage of every task in the experiment, also when it failed part way. This handler is registered
-        //first so the summary is ready for the experiment telemetry below.
+        //Summarize the token usage and timing of every task in the experiment, also when it failed part way. The experiment
+        //ends here, so its wall clock does not include the experiment level scoring below. This handler is registered first
+        //so the summary is ready for the experiment telemetry below.
         JsonObject experimentTokenUsage = new JsonObject();
-        f.onComplete(done->experimentTokenUsage.mergeIn(ExperimentTokenUsage.summarizeAndSave(experimentId, experimentFolderPath, experimentResultsFolderPath)));
+        int finalSkippedTasks = skippedTasks;
+        f.onComplete(done->experimentTokenUsage.mergeIn(ExperimentTokenUsage.summarizeAndSave(experimentId, experimentStartTime, Instant.now(), finalSkippedTasks, experimentFolderPath, experimentResultsFolderPath)));
 
         JsonObject finalConfig1 = config;
         f.onSuccess(done->{
 
             if(finalConfig1.containsKey("evaluationDatasetPath")){
                 try{
-                    Instant experimentEndTime = Instant.now();
-
 
                     //Evaluate all experiment results
                     String evalScriptPath = "%s/%s".formatted(_config.getString("evaluationScriptsPath"), _config.getString("evaluationScript"));
@@ -1155,10 +1157,13 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                     log.info("{}", commandSb.toString());
 
                     pb.inheritIO();
+                    long scoringStart = System.nanoTime();
                     Process evalProcess = pb.start();
                     evalProcess.waitFor();
+                    long experimentScoringMs = (System.nanoTime() - scoringStart) / 1_000_000;
 
                     JsonObject experimentResult = new JsonObject(Buffer.buffer(Files.readAllBytes(Path.of(experimentResultsFile))));
+                    JsonObject experimentTiming = experimentTokenUsage.getJsonObject("timing");
 
                     //Report Experiment level telemetry
                     ExperimentResults experimentResults = new ExperimentResults();
@@ -1166,7 +1171,17 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                     experimentResults.setAgent(_config.getString("agentName"));
                     experimentResults.setAgentVersion(_config.getString("agentVersion"));
                     experimentResults.setSubmittedTasks(tasks.size());
-                    experimentResults.setDuration(experimentEndTime.toEpochMilli() - experimentStartTime.toEpochMilli());
+                    experimentResults.setDuration(experimentTiming.getLong("wallClockMs"));
+                    experimentResults.setExperimentStartTime(experimentTiming.getString("experimentStart"));
+                    experimentResults.setExperimentEndTime(experimentTiming.getString("experimentEnd"));
+                    experimentResults.setSkippedTasks(experimentTiming.getInteger("skippedTasks"));
+                    //Task durations are execution times, like the Duration of each task's telemetry.
+                    experimentResults.setMinTaskDuration(experimentTiming.getJsonObject("executionMs").getLong("min"));
+                    experimentResults.setMaxTaskDuration(experimentTiming.getJsonObject("executionMs").getLong("max"));
+                    experimentResults.setMeanTaskDuration(experimentTiming.getJsonObject("executionMs").getDouble("mean"));
+                    experimentResults.setTotalTaskExecution(experimentTiming.getJsonObject("executionMs").getLong("sum"));
+                    experimentResults.setSlowestTaskEvalId(experimentTiming.getString("slowestEvalId"));
+                    experimentResults.setExperimentScoringDuration(experimentScoringMs);
                     experimentResults.setTotalInputTokens(Math.toIntExact(experimentTokenUsage.getJsonObject("inputTokens").getLong("sum")));
                     experimentResults.setTotalOutputTokens(Math.toIntExact(experimentTokenUsage.getJsonObject("outputTokens").getLong("sum")));
                     experimentResults.setTotalCombinedTokens(Math.toIntExact(experimentTokenUsage.getJsonObject("totalTokens").getLong("sum")));

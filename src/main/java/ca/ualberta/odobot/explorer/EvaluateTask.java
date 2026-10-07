@@ -30,7 +30,6 @@ import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.time.Instant;
 import java.util.*;
 import java.util.NoSuchElementException;
 import java.util.stream.Collectors;
@@ -66,7 +65,10 @@ public class EvaluateTask implements Runnable{
 
     Promise<Void> promise;
 
-    Instant startTime;
+    /**
+     * Wall clock time of this task, from before the browser is set up until after scoring.
+     */
+    TaskTiming timing = new TaskTiming();
     TaskPlannerService taskPlannerService;
 
     public EvaluateTask(JsonObject exploreVerticleConfig, JsonObject config, JsonObject task, Promise<Void> promise, TaskPlannerService taskPlannerService, Agent agent){
@@ -169,6 +171,7 @@ public class EvaluateTask implements Runnable{
 
     @Override
     public void run() {
+        timing.markBeforeSetup();
         try{
 
             setupEnvironment();
@@ -190,7 +193,6 @@ public class EvaluateTask implements Runnable{
     public void startTask(JsonObject task){
 
         log.info("Starting task {}", task.getString("_evalId"));
-        this.startTime = Instant.now();
 
         if(agent.getMode() == null){
             log.error("Unknown or unsupported agent type!");
@@ -216,11 +218,11 @@ public class EvaluateTask implements Runnable{
 
             odoXClient.getGuidanceConnectionManager().dumpHistory();
             odoXClient.getEventConnectionManager().getEventProcessor().saveRawEvents("%s/%s.json".formatted(this.experimentFolderPath, odoXClient.getRequestManager().getEvalId()).replaceAll("\\|","-"));
+            timing.markArtifactsSaved();
 
             //Perform task evaluation after the task is complete.
             //If a ground truth dataset is specified.
             if(config.containsKey("evaluationDatasetPath")){
-                Instant endTime = Instant.now();
 
                 try{
                     String evalScriptPath = "%s/%s".formatted(exploreVerticleConfig.getString("evaluationScriptsPath"), exploreVerticleConfig.getString("evaluationScript"));
@@ -259,8 +261,10 @@ public class EvaluateTask implements Runnable{
                         log.info("{}", commandSb.toString());
 
                         pb.inheritIO();
+                        timing.markScoringStart();
                         Process evalProcess = pb.start();
                         evalProcess.waitFor();
+                        timing.markScoringEnd();
 
                         JsonObject taskResult = new JsonObject(Buffer.buffer(Files.readAllBytes(Path.of(taskInstanceResultFile))));
                         taskResultTelemetry.setDetails(taskResult.getJsonArray("details").getJsonObject(0));
@@ -269,6 +273,7 @@ public class EvaluateTask implements Runnable{
                     }else{
                         taskResultTelemetry.setResult("MISSING EVENTS");
                     }
+                    timing.markAfterScoring();
 
 
                     taskResultTelemetry.setExperimentId(odoXClient.getRequestManager().getExperimentId());
@@ -276,8 +281,16 @@ public class EvaluateTask implements Runnable{
                     taskResultTelemetry.setAgent(exploreVerticleConfig.getString("agentName"));
                     taskResultTelemetry.setAgentVersion(exploreVerticleConfig.getString("agentVersion"));
                     taskResultTelemetry.setTaskDescription(task.getString("task"));
-                    taskResultTelemetry.setDuration(endTime.toEpochMilli() - startTime.toEpochMilli());
                     taskResultTelemetry.setEvaluationDatasetId(datasetPath);
+                    //Duration keeps its meaning from before the phases were timed: the execution of the task.
+                    taskResultTelemetry.setDuration(timing.executionMs());
+                    taskResultTelemetry.setSetupDuration(timing.setupMs());
+                    taskResultTelemetry.setExecutionDuration(timing.executionMs());
+                    taskResultTelemetry.setArtifactsDuration(timing.artifactsMs());
+                    taskResultTelemetry.setScoringDuration(timing.scoringMs());
+                    taskResultTelemetry.setTotalDuration(timing.totalMs());
+                    taskResultTelemetry.setBeforeSetupTime(timing.beforeSetup().toString());
+                    taskResultTelemetry.setAfterScoringTime(timing.afterScoring().toString());
                     TaskTokenUsage tokenUsage = odoXClient.getRequestManager().getTokenUsage();
                     if(tokenUsage != null){
                         taskResultTelemetry.setInputTokens(tokenUsage.inputTokens);
@@ -308,6 +321,11 @@ public class EvaluateTask implements Runnable{
 
             }
 
+            //Without a dataset, or if scoring failed, the task ends here. Then complete the task's tokens file with the
+            //phases timed since the RequestManager first saved it.
+            timing.markAfterScoring();
+            odoXClient.getRequestManager().saveTaskUsage();
+
             this.taskComplete();
 
 
@@ -317,6 +335,7 @@ public class EvaluateTask implements Runnable{
         odoXClient.getRequestManager().setExperimentId(config.containsKey("experimentId")?config.getString("experimentId"):"default");
         odoXClient.getRequestManager().setExperimentFolderPath(this.experimentFolderPath);
         odoXClient.getRequestManager().setEvalId(task.getString("_evalId")); //Set the evaluationId for this execution.
+        odoXClient.getRequestManager().setTaskTiming(timing); //Already marks the setup, the RequestManager marks the execution.
         odoXClient.getRequestManager().startTask(taskAgent, agent.getMode(), UUID.fromString(task.getString("id")), taskTimeout);
 
 

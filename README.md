@@ -230,10 +230,15 @@ The Qwen agent writes `<task>-qwen38-trajectory.jsonl` and `<task>-qwen38-messag
 
 The harness counts the tokens and LLM calls of every task, whichever agent runs it, broken down by kind (`chat_completion` or `embedding`), by call type (e.g. `path-selection`, `element-pick`, `uncharted-step`) and by agent. Each call type also gets the min, max and mean tokens of a single call.
 
-- `execution_events/<experimentId>/<task>-tokens.json`: the usage of one task, written when it completes, fails or times out.
-- `execution_events/<experimentId>/results/<experimentId>-tokens.json`: the experiment summary over every `*-tokens.json` in the experiment folder (so a resumed experiment includes earlier runs): per task min, max, mean and sum of input, output and total tokens and LLM calls, and per call type and kind the totals, per call stats and per task stats (tasks without that call type count as 0).
+The same files record wall clock time, under `timing`. A task is timed in phases: `setupMs` (browser and OdoX setup, from `beforeSetup`), `executionMs` (the agent running the task, until it completes, fails or times out), `artifactsMs` (saving its history and events), `scoringMs` (the evaluation script, only when a dataset is given) and `totalMs` (`beforeSetup` to `afterScoring`). Durations are taken from a monotonic clock.
 
-Telemetry reports the task totals and LLM calls, and the experiment totals and per task min, max and mean.
+- `execution_events/<experimentId>/<task>-tokens.json`: the usage of one task. It is written when the task completes, fails or times out, and written again with the remaining phases once the task has been scored.
+- `execution_events/<experimentId>/results/<experimentId>-tokens.json`: the experiment summary over every `*-tokens.json` in the experiment folder (so a resumed experiment includes earlier runs):
+  - per task min, max, mean and sum of input, output and total tokens and LLM calls
+  - per call type and kind: the totals, per call stats and per task stats (tasks without that call type count as 0)
+  - under `timing`: min, max, mean and sum of each phase, the fastest and slowest task by execution time, execution time by outcome (completed or failed), and the experiment's `wallClockMs` and `skippedTasks`. The wall clock runs from the request to the end of the last task. Task files from before timing was recorded count toward tokens only.
+
+Telemetry reports the task totals, LLM calls and phase durations, and the experiment totals and per task min, max and mean. Each task's `Duration` is its execution time, and so are the experiment's per task duration stats. The experiment's `Duration` is its wall clock time.
 
 </details>
 

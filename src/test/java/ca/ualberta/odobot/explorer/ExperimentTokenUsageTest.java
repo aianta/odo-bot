@@ -9,6 +9,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 
 import static ca.ualberta.odobot.common.LlmCallType.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -25,6 +26,13 @@ class ExperimentTokenUsageTest {
      * Writes a task file the way the RequestManager does: task metadata merged with a {@link TaskTokenUsage}.
      */
     private void writeTask(String evalId, Call... calls) throws IOException {
+        writeTask(evalId, "completed", null, calls);
+    }
+
+    /**
+     * @param timing the task's {@code timing} object, or null for a task file from before timing was recorded.
+     */
+    private void writeTask(String evalId, String outcome, JsonObject timing, Call... calls) throws IOException {
         TaskTokenUsage usage = new TaskTokenUsage(() -> "ChartedAgent");
         for (Call call : calls) {
             usage.record(call.type(), call.input(), call.output(), call.input() + call.output());
@@ -32,9 +40,31 @@ class ExperimentTokenUsageTest {
         JsonObject task = new JsonObject()
                 .put("evalId", evalId)
                 .put("mode", "CHARTED")
-                .put("outcome", "completed")
+                .put("outcome", outcome)
                 .mergeIn(usage.toJson());
+        if (timing != null) {
+            task.put("timing", timing);
+        }
         Files.writeString(experimentFolder.resolve(evalId + "-tokens.json"), task.encodePrettily());
+    }
+
+    private static JsonObject timing(long setupMs, long executionMs, Long scoringMs, long totalMs) {
+        JsonObject timing = new JsonObject()
+                .put("setupMs", setupMs)
+                .put("executionMs", executionMs)
+                .put("artifactsMs", 10L)
+                .put("totalMs", totalMs);
+        if (scoringMs != null) {
+            timing.put("scoringMs", scoringMs);
+        }
+        return timing;
+    }
+
+    private void writeThreeTimedTasks() throws IOException {
+        writeTask("task-a", "completed", timing(5000, 60000, 2000L, 67010), new Call(TASK_REWRITE, 70, 20));
+        writeTask("task-b", "failed: Timeout!", timing(7000, 180000, 3000L, 190010), new Call(TASK_REWRITE, 100, 10));
+        // Not scored, e.g. its events file was missing.
+        writeTask("task-c", "completed", timing(6000, 30000, null, 36010), new Call(TASK_REWRITE, 200, 30));
     }
 
     private void writeThreeTasks() throws IOException {
@@ -140,11 +170,85 @@ class ExperimentTokenUsageTest {
         writeTask("task-a", new Call(TASK_REWRITE, 100, 20));
         Path results = experimentFolder.resolve("results");
 
-        JsonObject summary = ExperimentTokenUsage.summarizeAndSave("exp", experimentFolder.toString(), results.toString());
+        JsonObject summary = ExperimentTokenUsage.summarizeAndSave("exp", Instant.EPOCH, Instant.EPOCH.plusSeconds(1), 0,
+                experimentFolder.toString(), results.toString());
 
         JsonObject saved = new JsonObject(Files.readString(results.resolve("exp-tokens.json")));
         assertEquals(summary, saved);
         assertEquals("exp", saved.getString("experimentId"));
         assertEquals(1, saved.getInteger("taskCount"));
+    }
+
+    @Test
+    void givesStatsForEachTimedPhase() throws IOException {
+        writeThreeTimedTasks();
+
+        JsonObject timing = ExperimentTokenUsage.summarize(experimentFolder.toString()).getJsonObject("timing");
+
+        assertEquals(3, timing.getInteger("taskCount"));
+        assertStats(timing.getJsonObject("setupMs"), 5000, 7000, 6000.0);
+        assertStats(timing.getJsonObject("executionMs"), 30000, 180000, 90000.0);
+        assertEquals(270000, timing.getJsonObject("executionMs").getLong("sum"));
+        assertStats(timing.getJsonObject("totalMs"), 36010, 190010, 293030.0 / 3);
+        // Only the tasks that were scored count toward scoring.
+        assertStats(timing.getJsonObject("scoringMs"), 2000, 3000, 2500.0);
+        assertEquals("task-c", timing.getString("fastestEvalId"));
+        assertEquals("task-b", timing.getString("slowestEvalId"));
+    }
+
+    @Test
+    void groupsTaskTimingByOutcome() throws IOException {
+        writeThreeTimedTasks();
+
+        JsonObject byOutcome = ExperimentTokenUsage.summarize(experimentFolder.toString())
+                .getJsonObject("timing").getJsonObject("byOutcome");
+
+        assertEquals(2, byOutcome.getJsonObject("completed").getInteger("taskCount"));
+        assertStats(byOutcome.getJsonObject("completed").getJsonObject("executionMs"), 30000, 60000, 45000.0);
+        assertEquals(1, byOutcome.getJsonObject("failed").getInteger("taskCount"));
+        assertStats(byOutcome.getJsonObject("failed").getJsonObject("executionMs"), 180000, 180000, 180000.0);
+    }
+
+    @Test
+    void tasksWithoutTimingStillCountTowardTokens() throws IOException {
+        writeThreeTimedTasks();
+        writeTask("task-d", new Call(TASK_REWRITE, 50, 50));
+
+        JsonObject summary = ExperimentTokenUsage.summarize(experimentFolder.toString());
+
+        assertEquals(4, summary.getInteger("taskCount"));
+        assertEquals(3, summary.getJsonObject("timing").getInteger("taskCount"));
+        assertStats(summary.getJsonObject("timing").getJsonObject("executionMs"), 30000, 180000, 90000.0);
+
+        JsonObject taskA = summary.getJsonArray("tasks").getJsonObject(0);
+        assertEquals("task-a", taskA.getString("evalId"));
+        assertEquals(60000, taskA.getLong("executionMs"));
+        assertEquals(67010, taskA.getLong("totalMs"));
+        JsonObject taskD = summary.getJsonArray("tasks").getJsonObject(3);
+        assertFalse(taskD.containsKey("executionMs"));
+    }
+
+    @Test
+    void emptyFolderGivesZeroTimedTasks() {
+        JsonObject timing = ExperimentTokenUsage.summarize(experimentFolder.toString()).getJsonObject("timing");
+        assertEquals(0, timing.getInteger("taskCount"));
+        assertEquals(0.0, timing.getJsonObject("executionMs").getDouble("mean"));
+        assertFalse(timing.containsKey("slowestEvalId"));
+        assertTrue(timing.getJsonObject("byOutcome").isEmpty());
+    }
+
+    @Test
+    void savesTheExperimentWallClock() throws IOException {
+        writeThreeTimedTasks();
+        Path results = experimentFolder.resolve("results");
+        Instant start = Instant.parse("2026-10-07T12:00:00Z");
+
+        ExperimentTokenUsage.summarizeAndSave("exp", start, start.plusSeconds(300), 2, experimentFolder.toString(), results.toString());
+
+        JsonObject timing = new JsonObject(Files.readString(results.resolve("exp-tokens.json"))).getJsonObject("timing");
+        assertEquals("2026-10-07T12:00:00Z", timing.getString("experimentStart"));
+        assertEquals("2026-10-07T12:05:00Z", timing.getString("experimentEnd"));
+        assertEquals(300000, timing.getLong("wallClockMs"));
+        assertEquals(2, timing.getInteger("skippedTasks"));
     }
 }
