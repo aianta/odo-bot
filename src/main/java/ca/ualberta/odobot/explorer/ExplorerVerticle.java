@@ -1181,6 +1181,9 @@ public class ExplorerVerticle extends HttpServiceVerticle {
                     experimentResults.setMeanTaskDuration(experimentTiming.getJsonObject("executionMs").getDouble("mean"));
                     experimentResults.setTotalTaskExecution(experimentTiming.getJsonObject("executionMs").getLong("sum"));
                     experimentResults.setSlowestTaskEvalId(experimentTiming.getString("slowestEvalId"));
+                    experimentResults.setTotalInference(experimentTiming.getJsonObject("inferenceMs").getLong("sum"));
+                    experimentResults.setMeanTaskInference(experimentTiming.getJsonObject("inferenceMs").getDouble("mean"));
+                    experimentResults.setInferenceShare(experimentTiming.getDouble("inferenceShare"));
                     experimentResults.setExperimentScoringDuration(experimentScoringMs);
                     experimentResults.setTotalInputTokens(Math.toIntExact(experimentTokenUsage.getJsonObject("inputTokens").getLong("sum")));
                     experimentResults.setTotalOutputTokens(Math.toIntExact(experimentTokenUsage.getJsonObject("outputTokens").getLong("sum")));

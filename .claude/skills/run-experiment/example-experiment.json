@@ -1,0 +1,61 @@
+{
+    "odoSightPath": "./odo-sight.xpi",
+    "webAppURL": "http://<SHOPPING_ADMIN_IP>/admin",
+    "targetHosts": [
+        "http://<SHOPPING_ADMIN_IP>",
+        "http://<SHOPPING_IP>",
+        "http://<REDDIT_IP>",
+        "http://<GITLAB_IP>:8023"
+    ],
+    "timeout": 300000,
+    "headless": false,
+    "logUIUsername": "aianta",
+    "logUIPassword": "01134hello",
+    "logUIHost": "172.26.128.1:8000",
+    "guidanceServiceHost": "172.23.0.4:7080",
+    "firefoxDockerGridURL": "http://172.23.0.3:4444",
+    "experimentId": "resource-use-sampling",
+    "llm": {
+        "model": "qwen3.8-27b",
+        "base_url": "http://host.docker.internal:8080/v1",
+        "api_key": "dummy"
+    },
+    "tasks": [
+        {
+            "odoBotNL": {
+                "id": "7aef98f1-2540-5d01-bf97-1dae57cf87b1",
+                "_evalId": "0|OdoBotNL|7aef98f1-2540-5d01-bf97-1dae57cf87b1",
+                "startUrl": "http://<SHOPPING_ADMIN_IP>/admin",
+                "userLocation": "http://<SHOPPING_ADMIN_IP>/admin",
+                "task": "Use the username: admin and password: admin1234 to login to the Magento admin panel.\nTask: What is the top-1 best-selling product in 2022"
+            }
+        },
+        {
+            "odoBotNL": {
+                "id": "cb24d09b-6f98-5676-8d04-5030d3f1ad07",
+                "_evalId": "190|OdoBotNL|cb24d09b-6f98-5676-8d04-5030d3f1ad07",
+                "startUrl": "http://<SHOPPING_IP>",
+                "userLocation": "http://<SHOPPING_IP>",
+                "task": "Use the username: emma.lopez@gmail.com and password: Password.123 to login to the One Stop Market shopping site.\nTask: Tell me the total cost of my latest complete order?"
+            }
+        },
+        {
+            "odoBotNL": {
+                "id": "508a2003-4469-510e-b137-485bad583c6e",
+                "_evalId": "29|OdoBotNL|508a2003-4469-510e-b137-485bad583c6e",
+                "startUrl": "http://<REDDIT_IP>",
+                "userLocation": "http://<REDDIT_IP>",
+                "task": "Use the username: MarvelsGrantMan136 and password: test1234 to login to the Reddit forum.\nTask: Tell me the count of comments that have received more downvotes than upvotes for the user who made the latest post on the DIY forum."
+            }
+        },
+        {
+            "odoBotNL": {
+                "id": "8f941f94-ea28-5115-af1a-010c14d23cea",
+                "_evalId": "308|OdoBotNL|8f941f94-ea28-5115-af1a-010c14d23cea",
+                "startUrl": "http://<GITLAB_IP>:8023",
+                "userLocation": "http://<GITLAB_IP>:8023",
+                "task": "Use the username: byteblaze and password: hello1234 to login to GitLab.\nTask: Tell me who has made the most contributions, in terms of number of commits, to the primer/design project"
+            }
+        }
+    ]
+}

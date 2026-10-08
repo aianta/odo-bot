@@ -12,6 +12,9 @@ import java.time.Instant;
  * ({@link #markScoringStart} to {@link #markScoringEnd}), and the task ends at {@link #markAfterScoring}. Durations come
  * from {@link System#nanoTime()}, so clock adjustments do not skew them; the instants are only for the timestamps.</p>
  *
+ * <p>Execution is further split into the time spent waiting on inference, from the task's {@link TokenUsageRecord},
+ * and the rest of execution: sending instructions, waiting for the application to update, and the harness's own work.</p>
+ *
  * <p>Each mark keeps its first value. Phases whose marks were not taken are left out.</p>
  */
 public class TaskTiming {
@@ -40,6 +43,13 @@ public class TaskTiming {
 
     public synchronized void markExecutionEnd(){
         if(executionEnd == null) executionEnd = Mark.now();
+    }
+
+    /**
+     * @return the {@link System#nanoTime()} execution ended at, or null if it has not.
+     */
+    public synchronized Long executionEndNanos(){
+        return executionEnd == null? null : executionEnd.nanos();
     }
 
     public synchronized void markArtifactsSaved(){
@@ -77,6 +87,24 @@ public class TaskTiming {
     }
 
     /**
+     * @param inferenceMs the time spent waiting on inference during execution.
+     * @return the part of execution spent waiting on inference, at most {@link #executionMs()}, or null if either is unknown.
+     */
+    public synchronized Long inferenceMs(Long inferenceMs){
+        Long executionMs = executionMs();
+        return executionMs == null || inferenceMs == null? null : Math.min(inferenceMs, executionMs);
+    }
+
+    /**
+     * @param inferenceMs the time spent waiting on inference during execution.
+     * @return the rest of execution, or null if either is unknown. It adds up to {@link #executionMs()} with {@link #inferenceMs(Long)}.
+     */
+    public synchronized Long otherExecutionMs(Long inferenceMs){
+        Long inference = inferenceMs(inferenceMs);
+        return inference == null? null : executionMs() - inference;
+    }
+
+    /**
      * @return the time spent saving the history and raw events of the task, or null if not reached.
      */
     public synchronized Long artifactsMs(){
@@ -105,7 +133,14 @@ public class TaskTiming {
         return afterScoring == null? null : afterScoring.at();
     }
 
-    public synchronized JsonObject toJson(){
+    public JsonObject toJson(){
+        return toJson(null);
+    }
+
+    /**
+     * @param inferenceMs the time spent waiting on inference during execution, or null to leave out the split of execution.
+     */
+    public synchronized JsonObject toJson(Long inferenceMs){
         JsonObject json = new JsonObject();
         putInstant(json, "beforeSetup", beforeSetup);
         putInstant(json, "executionStart", executionStart);
@@ -113,6 +148,8 @@ public class TaskTiming {
         putInstant(json, "afterScoring", afterScoring);
         putMs(json, "setupMs", setupMs());
         putMs(json, "executionMs", executionMs());
+        putMs(json, "inferenceMs", inferenceMs(inferenceMs));
+        putMs(json, "otherExecutionMs", otherExecutionMs(inferenceMs));
         putMs(json, "artifactsMs", artifactsMs());
         putMs(json, "scoringMs", scoringMs());
         putMs(json, "totalMs", totalMs());

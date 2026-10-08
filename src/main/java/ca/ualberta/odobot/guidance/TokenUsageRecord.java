@@ -9,10 +9,14 @@ import java.util.EnumMap;
 import java.util.Map;
 
 /**
- * Token usage and LLM call counts, in total and per {@link LlmCallType}.
+ * Token usage, LLM call counts and time spent waiting on inference, in total and per {@link LlmCallType}.
  *
  * <p>LLM clients report every call to {@link #active}, the record the current owner has installed. During task
  * execution that is the {@link RequestManager}'s {@link TaskTokenUsage}.</p>
+ *
+ * <p>Clients also time each call with an {@link InferenceSpan} from {@link #begin}. {@link #inferenceMs()} is the time
+ * at least one call was in flight, so overlapping calls are not counted twice; the per call type {@code inferenceMs}
+ * is the sum of that type's call durations. A call's span covers its retries.</p>
  */
 public class TokenUsageRecord {
 
@@ -34,12 +38,120 @@ public class TokenUsageRecord {
         }
     }
 
+    /**
+     * Start timing one LLM call against the {@link #active} record. The span reports to that record even if another
+     * one is installed before the call ends.
+     */
+    public static InferenceSpan begin(LlmCallType type){
+        TokenUsageRecord record = active;
+        return record == null? InferenceSpan.NONE : new InferenceSpan(record, type, record.callStarted());
+    }
+
+    /**
+     * The timing of one LLM call. Ending it more than once has no effect.
+     */
+    public static class InferenceSpan {
+
+        static final InferenceSpan NONE = new InferenceSpan(null, null, -1);
+
+        private final TokenUsageRecord record;
+        private final LlmCallType type;
+        private final long startNanos;
+        private boolean ended = false;
+
+        private InferenceSpan(TokenUsageRecord record, LlmCallType type, long startNanos){
+            this.record = record;
+            this.type = type;
+            this.startNanos = startNanos;
+        }
+
+        /**
+         * Count a failed attempt that will be retried within this call.
+         */
+        public void attemptFailed(){
+            if(record != null) record.attemptFailed();
+        }
+
+        /**
+         * The call returned.
+         */
+        public void end(){
+            finish(false);
+        }
+
+        /**
+         * The call failed for good.
+         */
+        public void fail(){
+            finish(true);
+        }
+
+        private synchronized void finish(boolean failed){
+            if(record == null || ended) return;
+            ended = true;
+            record.callEnded(type, startNanos, failed);
+        }
+    }
+
     public int inputTokens = 0;
     public int outputTokens = 0;
     public int totalTokens = 0;
     public int llmCalls = 0;
 
+    public int failedCalls = 0;
+    public int failedAttempts = 0;
+
     private final Map<LlmCallType, Counts> byCallType = new EnumMap<>(LlmCallType.class);
+
+    // Calls in flight, and since when at least one has been. -1 for a span begun after the record was frozen.
+    private int inFlight = 0;
+    private long busySinceNanos;
+    private long inferenceNanos = 0;
+    private boolean frozen = false;
+
+    synchronized long callStarted(){
+        if(frozen) return -1;
+        if(inFlight++ == 0) busySinceNanos = System.nanoTime();
+        return System.nanoTime();
+    }
+
+    synchronized void callEnded(LlmCallType type, long startNanos, boolean failed){
+        if(frozen || startNanos < 0) return;
+        long now = System.nanoTime();
+        if(--inFlight == 0) inferenceNanos += now - busySinceNanos;
+
+        Counts counts = byCallType.computeIfAbsent(type, t->new Counts());
+        counts.inferenceNanos += now - startNanos;
+        if(failed){
+            counts.failedCalls++;
+            failedCalls++;
+        }
+    }
+
+    synchronized void attemptFailed(){
+        if(!frozen) failedAttempts++;
+    }
+
+    /**
+     * Stop timing inference at the given {@link System#nanoTime()}: calls still in flight count up to then, and calls
+     * that begin or end afterwards are ignored.
+     */
+    public synchronized void freezeInference(long atNanos){
+        if(frozen) return;
+        frozen = true;
+        if(inFlight > 0){
+            inferenceNanos += Math.max(0, atNanos - busySinceNanos);
+        }
+    }
+
+    /**
+     * @return the time at least one LLM call was in flight.
+     */
+    public synchronized long inferenceMs(){
+        long nanos = inferenceNanos;
+        if(!frozen && inFlight > 0) nanos += System.nanoTime() - busySinceNanos;
+        return nanos / 1_000_000;
+    }
 
     public synchronized void record(LlmCallType type, long inputTokens, long outputTokens, long totalTokens){
         this.inputTokens += Math.toIntExact(inputTokens);
@@ -66,15 +178,20 @@ public class TokenUsageRecord {
                 .put("outputTokens", this.outputTokens)
                 .put("totalTokens", this.totalTokens)
                 .put("llmCalls", this.llmCalls)
+                .put("inferenceMs", inferenceMs())
+                .put("failedCalls", this.failedCalls)
+                .put("failedAttempts", this.failedAttempts)
                 .put("byKind", kinds)
                 .put("byCallType", callTypes);
     }
 
     /**
-     * Call count and token sums of a group of calls, with the min/max/mean tokens of a single call.
+     * Call count, token sums and summed call durations of a group of calls, with the min/max/mean tokens of a single call.
      */
     private static class Counts {
         int llmCalls = 0;
+        int failedCalls = 0;
+        long inferenceNanos = 0;
         final PerCall inputTokens = new PerCall();
         final PerCall outputTokens = new PerCall();
         final PerCall totalTokens = new PerCall();
@@ -88,6 +205,8 @@ public class TokenUsageRecord {
 
         void add(Counts other){
             llmCalls += other.llmCalls;
+            failedCalls += other.failedCalls;
+            inferenceNanos += other.inferenceNanos;
             inputTokens.add(other.inputTokens);
             outputTokens.add(other.outputTokens);
             totalTokens.add(other.totalTokens);
@@ -96,6 +215,8 @@ public class TokenUsageRecord {
         JsonObject toJson(){
             return new JsonObject()
                     .put("llmCalls", llmCalls)
+                    .put("failedCalls", failedCalls)
+                    .put("inferenceMs", inferenceNanos / 1_000_000)
                     .put("inputTokens", inputTokens.sum)
                     .put("outputTokens", outputTokens.sum)
                     .put("totalTokens", totalTokens.sum)

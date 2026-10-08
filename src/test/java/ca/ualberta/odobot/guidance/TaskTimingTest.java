@@ -59,4 +59,32 @@ class TaskTimingTest {
         assertTrue(timing.executionMs() < 20);
         assertTrue(timing.executionStarted());
     }
+
+    @Test
+    void splitsExecutionIntoInferenceAndOtherWork() throws InterruptedException {
+        TaskTiming timing = new TaskTiming();
+        timing.markExecutionStart();
+        Thread.sleep(30);
+        timing.markExecutionEnd();
+
+        long execution = timing.executionMs();
+        JsonObject json = timing.toJson(10L);
+        assertEquals(10L, json.getLong("inferenceMs"));
+        assertEquals(execution, json.getLong("inferenceMs") + json.getLong("otherExecutionMs"));
+
+        // Inference is capped at execution, so the other work never goes negative.
+        assertEquals(execution, timing.inferenceMs(execution + 5));
+        assertEquals(0L, timing.otherExecutionMs(execution + 5));
+
+        assertFalse(timing.toJson().containsKey("inferenceMs"));
+        assertFalse(timing.toJson().containsKey("otherExecutionMs"));
+    }
+
+    @Test
+    void noSplitBeforeExecutionEnds() {
+        TaskTiming timing = new TaskTiming();
+        timing.markExecutionStart();
+        assertNull(timing.inferenceMs(10L));
+        assertFalse(timing.toJson(10L).containsKey("inferenceMs"));
+    }
 }

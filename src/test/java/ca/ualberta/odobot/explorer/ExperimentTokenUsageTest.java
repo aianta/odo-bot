@@ -237,6 +237,37 @@ class ExperimentTokenUsageTest {
         assertTrue(timing.getJsonObject("byOutcome").isEmpty());
     }
 
+    private static JsonObject withInference(JsonObject timing, long inferenceMs) {
+        return timing.put("inferenceMs", inferenceMs).put("otherExecutionMs", timing.getLong("executionMs") - inferenceMs);
+    }
+
+    @Test
+    void splitsExecutionIntoInferenceAndOtherWork() throws IOException {
+        writeTask("task-a", "completed", withInference(timing(5000, 60000, 2000L, 67010), 45000), new Call(UNCHARTED_STEP, 70, 20));
+        writeTask("task-b", "failed: Timeout!", withInference(timing(7000, 180000, 3000L, 190010), 90000), new Call(UNCHARTED_STEP, 100, 10));
+        // From before inference was timed: counts toward execution, but not toward the split.
+        writeTask("task-c", "completed", timing(6000, 30000, null, 36010), new Call(UNCHARTED_STEP, 200, 30));
+
+        JsonObject summary = ExperimentTokenUsage.summarize(experimentFolder.toString());
+        JsonObject timing = summary.getJsonObject("timing");
+
+        assertStats(timing.getJsonObject("inferenceMs"), 45000, 90000, 67500.0);
+        assertEquals(135000, timing.getJsonObject("inferenceMs").getLong("sum"));
+        assertStats(timing.getJsonObject("otherExecutionMs"), 15000, 90000, 52500.0);
+        assertEquals(135000.0 / 240000, timing.getDouble("inferenceShare"), 1e-9);
+        assertStats(timing.getJsonObject("byOutcome").getJsonObject("failed").getJsonObject("inferenceMs"), 90000, 90000, 90000.0);
+        assertEquals(45000, summary.getJsonArray("tasks").getJsonObject(0).getLong("inferenceMs"));
+        assertFalse(summary.getJsonArray("tasks").getJsonObject(2).containsKey("inferenceMs"));
+    }
+
+    @Test
+    void noInferenceSplitGivesZeroShare() throws IOException {
+        writeThreeTimedTasks();
+        JsonObject timing = ExperimentTokenUsage.summarize(experimentFolder.toString()).getJsonObject("timing");
+        assertEquals(0.0, timing.getDouble("inferenceShare"));
+        assertEquals(0, timing.getJsonObject("inferenceMs").getLong("sum"));
+    }
+
     @Test
     void savesTheExperimentWallClock() throws IOException {
         writeThreeTimedTasks();

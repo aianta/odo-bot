@@ -210,8 +210,17 @@ public class RequestManager {
             TokenUsageRecord.active = previousTokenUsage;
         }
 
+        //Inference is only counted during execution, so a call still in flight counts up to the end of execution.
+        Long executionEnd = taskTiming == null? null : taskTiming.executionEndNanos();
+        taskTokenUsage.freezeInference(executionEnd == null? System.nanoTime() : executionEnd);
+
         log.info("Task {} token usage: {} input, {} output, {} total tokens over {} LLM calls ({})",
                 evalId, taskTokenUsage.inputTokens, taskTokenUsage.outputTokens, taskTokenUsage.totalTokens, taskTokenUsage.llmCalls, outcome);
+        if(taskTiming != null && taskTiming.executionMs() != null){
+            log.info("Task {} execution: {} ms waiting on inference, {} ms other work, of {} ms ({} failed LLM attempts, {} failed calls)",
+                    evalId, taskTiming.inferenceMs(taskTokenUsage.inferenceMs()), taskTiming.otherExecutionMs(taskTokenUsage.inferenceMs()),
+                    taskTiming.executionMs(), taskTokenUsage.failedAttempts, taskTokenUsage.failedCalls);
+        }
 
         saveTaskUsage();
     }
@@ -233,7 +242,7 @@ public class RequestManager {
                 .put("outcome", taskOutcome)
                 .mergeIn(taskTokenUsage.toJson());
         if(taskTiming != null){
-            usage.put("timing", taskTiming.toJson());
+            usage.put("timing", taskTiming.toJson(taskTokenUsage.inferenceMs()));
         }
 
         String fileName = "%s/%s-tokens.json".formatted(experimentFolderPath, evalId).replaceAll("\\|","-");

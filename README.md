@@ -162,6 +162,8 @@ OdoBot executes tasks in one of three modes, chosen with the `agent` query param
 
 Charted mode runs as it did for the CASCON evaluation, with three deliberate changes: the starting node is localized from the URL of the page OdoX reports when transmission starts; OdoX no longer sends the events it recorded before transmission started; and TinyMCE edits reach the timeline again, with screenshots.
 
+Before each task the browser opens the experiment's `webAppURL`. A task may set `startUrl` to open another page instead, so one experiment can hold tasks of several applications (see `resource-use-sampling.json`). The address must be reachable from the Firefox container. `userLocation` is not opened, because task files often hold host-side addresses there. OdoX captures the network events of the hosts in the experiment's `targetHosts` (e.g. `["http://172.23.0.2", "http://172.23.0.5:8023"]`, or `["*"]` for every host). Without `targetHosts`, it captures the host of the page the task starts on.
+
 Every mode builds the main timeline from OdoX's events. It is saved to `execution_events/<experimentId>/<task>.json` and evaluated the same way in every mode, so charted and uncharted runs are scored alike.
 
 Uncharted mode also builds a second, uncharted observation timeline, which is the only thing the Qwen agent sees. It holds the observation OdoX sends when transmission starts, then one observation per step. After a step is sent, the harness waits until OdoX has sent no event for 1.5 s (15 s at most, and never before a `wait` action ends), then asks OdoX for a screenshot (`UnchartedStepObserver`). These observations never enter the main timeline.
@@ -232,13 +234,15 @@ The harness counts the tokens and LLM calls of every task, whichever agent runs 
 
 The same files record wall clock time, under `timing`. A task is timed in phases: `setupMs` (browser and OdoX setup, from `beforeSetup`), `executionMs` (the agent running the task, until it completes, fails or times out), `artifactsMs` (saving its history and events), `scoringMs` (the evaluation script, only when a dataset is given) and `totalMs` (`beforeSetup` to `afterScoring`). Durations are taken from a monotonic clock.
 
+Execution is split into `inferenceMs`, the time at least one LLM call was in flight, and `otherExecutionMs`, everything else: sending instructions to OdoX, waiting for the application to update, instruction delays and the harness's own work. They add up to `executionMs`. A call counts from sending the request until it returns or finally fails, including its retries and, for the uncharted agent, the backoff between them; overlapping calls are counted once, and a call still in flight when the task ends counts up to that point. Each call type also gets `inferenceMs` (the sum of its call durations, so call types can overlap) and `failedCalls`, and the task gets `failedAttempts` (retried attempts).
+
 - `execution_events/<experimentId>/<task>-tokens.json`: the usage of one task. It is written when the task completes, fails or times out, and written again with the remaining phases once the task has been scored.
 - `execution_events/<experimentId>/results/<experimentId>-tokens.json`: the experiment summary over every `*-tokens.json` in the experiment folder (so a resumed experiment includes earlier runs):
   - per task min, max, mean and sum of input, output and total tokens and LLM calls
   - per call type and kind: the totals, per call stats and per task stats (tasks without that call type count as 0)
-  - under `timing`: min, max, mean and sum of each phase, the fastest and slowest task by execution time, execution time by outcome (completed or failed), and the experiment's `wallClockMs` and `skippedTasks`. The wall clock runs from the request to the end of the last task. Task files from before timing was recorded count toward tokens only.
+  - under `timing`: min, max, mean and sum of each phase (including `inferenceMs` and `otherExecutionMs`), `inferenceShare` (the fraction of execution spent waiting on inference), the fastest and slowest task by execution time, execution and inference time by outcome (completed or failed), and the experiment's `wallClockMs` and `skippedTasks`. The wall clock runs from the request to the end of the last task. Task files from before timing was recorded count toward tokens only.
 
-Telemetry reports the task totals, LLM calls and phase durations, and the experiment totals and per task min, max and mean. Each task's `Duration` is its execution time, and so are the experiment's per task duration stats. The experiment's `Duration` is its wall clock time.
+Telemetry reports the task totals, LLM calls, phase durations, inference and other execution time and failed LLM attempts, and the experiment totals and per task min, max and mean. Each task's `Duration` is its execution time, and so are the experiment's per task duration stats. The experiment's `Duration` is its wall clock time, and it also reports total and mean task inference time and the inference share.
 
 </details>
 

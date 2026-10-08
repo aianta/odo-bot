@@ -297,6 +297,9 @@ public class EvaluateTask implements Runnable{
                         taskResultTelemetry.setOutputTokens(tokenUsage.outputTokens);
                         taskResultTelemetry.setCombinedTokens(tokenUsage.totalTokens);
                         taskResultTelemetry.setLlmCalls(tokenUsage.llmCalls);
+                        taskResultTelemetry.setInferenceDuration(timing.inferenceMs(tokenUsage.inferenceMs()));
+                        taskResultTelemetry.setOtherExecutionDuration(timing.otherExecutionMs(tokenUsage.inferenceMs()));
+                        taskResultTelemetry.setFailedLlmAttempts(tokenUsage.failedAttempts);
                     }
 
                     taskResultTelemetry.setModel(modelDescription(agent, config));
@@ -464,6 +467,15 @@ public class EvaluateTask implements Runnable{
 
 
     /**
+     * @return the page the browser opens for this task: the task's {@code startUrl} if it has one, so an experiment can
+     * hold tasks of different applications, otherwise the experiment's {@code webAppURL}. A task's {@code userLocation}
+     * is not used here, since task files often hold host-side addresses there that the browser container cannot reach.
+     */
+    private String startUrl(){
+        return task.getString("startUrl", config.getString(EvaluationTaskRequestFields.WEB_APP_URL.field));
+    }
+
+    /**
      * Start up OdoX and connect to Guidance service.
      */
     private void setupOdoX(){
@@ -488,7 +500,8 @@ public class EvaluateTask implements Runnable{
         guidanceHostInput.clear();
         guidanceHostInput.sendKeys(config.getString(EvaluationTaskRequestFields.ODOX_OPTIONS_GUIDANCE_SERVICE_HOST.field));
 
-        //Get the target application host input field, clear any existing value, then set it to the value specified in the request config.
+        //Get the target application host input field, clear any existing value, then set it to the value specified in the request config,
+        //or else to the host of the page this task starts on.
         if(config.containsKey("targetHosts")){
             //The hosts whose network events OdoX captures, e.g. ["http://localhost:7770", "http://localhost:7780"], or ["*"] for every host.
             String targetHosts = config.getJsonArray("targetHosts").stream()
@@ -498,7 +511,7 @@ public class EvaluateTask implements Runnable{
             targetHostInput.clear();
             targetHostInput.sendKeys(targetHosts);
         }else try{
-            URL webAppUrl = new URL(config.getString(EvaluationTaskRequestFields.WEB_APP_URL.field));
+            URL webAppUrl = new URL(startUrl());
             WebElement targetHostInput = driver.findElement(By.id(ODOSIGHT_OPTIONS_TARGET_HOST_FIELD_ID));
             targetHostInput.clear();
             String targetHost = webAppUrl.getProtocol() + "://" + webAppUrl.getHost() + (webAppUrl.getPort() != -1?":"+webAppUrl.getPort():"");
@@ -508,7 +521,7 @@ public class EvaluateTask implements Runnable{
                 log.warn("No protocol specified in web app url, defaulting to http://");
                 URL webAppUrl = null;
                 try {
-                    webAppUrl = new URL("http://" + config.getString(EvaluationTaskRequestFields.WEB_APP_URL.field));
+                    webAppUrl = new URL("http://" + startUrl());
                 } catch (MalformedURLException ex) {
                     throw new RuntimeException(ex);
                 }
@@ -542,7 +555,7 @@ public class EvaluateTask implements Runnable{
         click(driver, submitButton);
 
         //Load the Target application
-        driver.get(config.getString(EvaluationTaskRequestFields.WEB_APP_URL.field));
+        driver.get(startUrl());
 
         //Save the handle to the current tab displaying the target application.
         webAppTabHandle = driver.getWindowHandle();

@@ -132,7 +132,16 @@ public abstract class AbstractOpenAIStrategy {
             }
         }
 
-        ChatCompletion chatCompletion = callClient.chat().completions().create(params.build());
+        //Time the call, including the client's own retries, as time spent waiting on inference.
+        TokenUsageRecord.InferenceSpan span = TokenUsageRecord.begin(callType);
+        ChatCompletion chatCompletion;
+        try{
+            chatCompletion = callClient.chat().completions().create(params.build());
+            span.end();
+        }catch (RuntimeException e){
+            span.fail();
+            throw e;
+        }
 
         //Record token usage if there is an active token usage record
         chatCompletion.usage().ifPresent(usage->

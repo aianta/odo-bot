@@ -184,11 +184,19 @@ public class SqliteVectorServiceImpl  implements SqliteVectorService {
      * @param callType the context of this call, used to break down token usage.
      */
     private CreateEmbeddingResponse createEmbeddings(LlmCallType callType, String input){
-        CreateEmbeddingResponse response = openAIClient.embeddings().create(EmbeddingCreateParams.builder()
-                .model(config.getString("embeddingModel"))
-                .input(input)
-                .dimensions(config.getInteger("dimensions"))
-                .build());
+        TokenUsageRecord.InferenceSpan span = TokenUsageRecord.begin(callType);
+        CreateEmbeddingResponse response;
+        try{
+            response = openAIClient.embeddings().create(EmbeddingCreateParams.builder()
+                    .model(config.getString("embeddingModel"))
+                    .input(input)
+                    .dimensions(config.getInteger("dimensions"))
+                    .build());
+            span.end();
+        }catch (RuntimeException e){
+            span.fail();
+            throw e;
+        }
 
         //Embeddings have no output tokens.
         TokenUsageRecord.report(callType, response.usage().promptTokens(), 0, response.usage().totalTokens());

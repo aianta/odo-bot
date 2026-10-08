@@ -151,6 +151,21 @@ public class TaskInstanceResults extends JsonObject {
         return this;
     }
 
+    public TaskInstanceResults setInferenceDuration(Long inferenceDuration) {
+        put("InferenceDurationMs", inferenceDuration);
+        return this;
+    }
+
+    public TaskInstanceResults setOtherExecutionDuration(Long otherExecutionDuration) {
+        put("OtherExecutionDurationMs", otherExecutionDuration);
+        return this;
+    }
+
+    public TaskInstanceResults setFailedLlmAttempts(int failedLlmAttempts) {
+        put("FailedLlmAttempts", failedLlmAttempts);
+        return this;
+    }
+
     public TaskInstanceResults setBeforeSetupTime(String beforeSetupTime) {
         put("BeforeSetupTime", beforeSetupTime);
         return this;

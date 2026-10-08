@@ -172,6 +172,21 @@ public class ExperimentResults extends JsonObject {
         return this;
     }
 
+    public ExperimentResults setTotalInference(long totalInference) {
+        put("TotalInferenceMs", totalInference);
+        return this;
+    }
+
+    public ExperimentResults setMeanTaskInference(double meanTaskInference) {
+        put("MeanTaskInferenceMs", meanTaskInference);
+        return this;
+    }
+
+    public ExperimentResults setInferenceShare(double inferenceShare) {
+        put("InferenceShare", inferenceShare);
+        return this;
+    }
+
     public ExperimentResults setSkippedTasks(int skippedTasks) {
         put("SkippedTasks", skippedTasks);
         return this;

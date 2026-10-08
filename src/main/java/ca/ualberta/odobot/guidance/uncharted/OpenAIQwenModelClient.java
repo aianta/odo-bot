@@ -55,13 +55,16 @@ public class OpenAIQwenModelClient implements QwenModelClient {
             return Future.failedFuture(e);
         }
         Promise<QwenCompletion> promise = Promise.promise();
-        attempt(context, params, 1, promise);
+        //The span covers every attempt and the backoff between them, since the agent waits on inference throughout.
+        attempt(context, params, 1, TokenUsageRecord.begin(LlmCallType.UNCHARTED_STEP), promise);
         return promise.future();
     }
 
-    private void attempt(Context context, ChatCompletionCreateParams params, int attempt, Promise<QwenCompletion> promise) {
+    private void attempt(Context context, ChatCompletionCreateParams params, int attempt,
+                         TokenUsageRecord.InferenceSpan span, Promise<QwenCompletion> promise) {
         Future.fromCompletionStage(client().chat().completions().create(params), context)
                 .onSuccess(completion -> {
+                    span.end();
                     reportUsage(completion);
                     try {
                         promise.tryComplete(toQwenCompletion(completion));
@@ -72,12 +75,14 @@ public class OpenAIQwenModelClient implements QwenModelClient {
                 .onFailure(err -> {
                     Throwable cause = unwrap(err);
                     if (!isRetryable(cause) || attempt >= config.client().maxAttempts()) {
+                        span.fail();
                         promise.tryFail(cause);
                         return;
                     }
+                    span.attemptFailed();
                     log.warn("[Qwen38Agent] call_llm failed attempt {}/{}: {}", attempt, config.client().maxAttempts(), cause.toString());
                     long delayMs = (long) (Math.min(5.0 * attempt, 30.0) * 1000);
-                    context.owner().setTimer(delayMs, id -> attempt(context, params, attempt + 1, promise));
+                    context.owner().setTimer(delayMs, id -> attempt(context, params, attempt + 1, span, promise));
                 });
     }
 

@@ -30,16 +30,17 @@ public final class ExperimentTokenUsage {
 
     static final String TASK_FILE_SUFFIX = "-tokens.json";
 
-    private static final List<String> METRICS = List.of("inputTokens", "outputTokens", "totalTokens", "llmCalls");
+    private static final List<String> METRICS = List.of("inputTokens", "outputTokens", "totalTokens", "llmCalls", "failedCalls", "failedAttempts");
 
-    private static final List<String> COUNTS = List.of("llmCalls", "inputTokens", "outputTokens", "totalTokens");
+    private static final List<String> COUNTS = List.of("llmCalls", "inputTokens", "outputTokens", "totalTokens", "failedCalls", "inferenceMs");
 
     private static final List<String> TOKEN_METRICS = List.of("inputTokens", "outputTokens", "totalTokens");
 
     /**
-     * The task phases timed by {@link ca.ualberta.odobot.guidance.TaskTiming}.
+     * The task phases timed by {@link ca.ualberta.odobot.guidance.TaskTiming}. Execution is split into
+     * {@code inferenceMs} and {@code otherExecutionMs}.
      */
-    private static final List<String> PHASES = List.of("setupMs", "executionMs", "artifactsMs", "scoringMs", "totalMs");
+    private static final List<String> PHASES = List.of("setupMs", "executionMs", "inferenceMs", "otherExecutionMs", "artifactsMs", "scoringMs", "totalMs");
 
     private ExperimentTokenUsage(){}
 
@@ -74,6 +75,9 @@ public final class ExperimentTokenUsage {
                 timing.getJsonObject("executionMs").getLong("max"),
                 timing.getJsonObject("executionMs").getDouble("mean"),
                 timing.getJsonObject("totalMs").getDouble("mean"));
+        log.info("Experiment {} execution: {} ms waiting on inference, {} ms other work (inference share {})",
+                experimentId, timing.getJsonObject("inferenceMs").getLong("sum"),
+                timing.getJsonObject("otherExecutionMs").getLong("sum"), timing.getDouble("inferenceShare"));
 
         try{
             Files.createDirectories(Path.of(experimentResultsFolderPath));
@@ -117,7 +121,7 @@ public final class ExperimentTokenUsage {
                             .put("llmCalls", task.getInteger("llmCalls", 0));
                     JsonObject timing = task.getJsonObject("timing");
                     if(timing != null){
-                        for(String phase: List.of("executionMs", "totalMs")){
+                        for(String phase: List.of("executionMs", "inferenceMs", "totalMs")){
                             if(timing.containsKey(phase)) entry.put(phase, timing.getLong(phase));
                         }
                     }
@@ -132,8 +136,9 @@ public final class ExperimentTokenUsage {
      * Summarize the timing of the tasks that have one (task files from before timing was recorded have none):
      * <ul>
      *     <li>min, max, mean and sum of each phase, over the tasks that reached it,</li>
+     *     <li>{@code inferenceShare}: the fraction of execution spent waiting on inference, over the tasks that have the split,</li>
      *     <li>the fastest and slowest task by execution time,</li>
-     *     <li>{@code byOutcome}: the task count and execution time stats of completed and failed tasks.</li>
+     *     <li>{@code byOutcome}: the task count, execution time and inference time stats of completed and failed tasks.</li>
      * </ul>
      */
     private static JsonObject summarizeTiming(List<JsonObject> tasks){
@@ -143,6 +148,14 @@ public final class ExperimentTokenUsage {
         for(String phase: PHASES){
             timing.put(phase, phaseStats(timed, phase));
         }
+
+        List<JsonObject> split = timed.stream()
+                .map(task->task.getJsonObject("timing"))
+                .filter(t->t.containsKey("executionMs") && t.containsKey("inferenceMs"))
+                .toList();
+        long splitExecution = split.stream().mapToLong(t->t.getLong("executionMs")).sum();
+        long splitInference = split.stream().mapToLong(t->t.getLong("inferenceMs")).sum();
+        timing.put("inferenceShare", splitExecution == 0? 0.0 : (double) splitInference / splitExecution);
 
         Comparator<JsonObject> byExecution = Comparator.comparingLong(task->task.getJsonObject("timing").getLong("executionMs"));
         List<JsonObject> executed = timed.stream().filter(task->task.getJsonObject("timing").containsKey("executionMs")).toList();
@@ -154,7 +167,8 @@ public final class ExperimentTokenUsage {
                 .collect(Collectors.groupingBy(ExperimentTokenUsage::outcomeGroup, TreeMap::new, Collectors.toList()))
                 .forEach((outcome, group)->byOutcome.put(outcome, new JsonObject()
                         .put("taskCount", group.size())
-                        .put("executionMs", phaseStats(group, "executionMs"))));
+                        .put("executionMs", phaseStats(group, "executionMs"))
+                        .put("inferenceMs", phaseStats(group, "inferenceMs"))));
         timing.put("byOutcome", byOutcome);
 
         return timing;
@@ -180,7 +194,7 @@ public final class ExperimentTokenUsage {
     /**
      * Summarize the groups (call types or kinds) under {@code field} of every task. Each group gets:
      * <ul>
-     *     <li>its call count and token sums over all tasks,</li>
+     *     <li>its call count, failed calls, token sums and summed call durations ({@code inferenceMs}) over all tasks,</li>
      *     <li>{@code perCall}: min, max and mean tokens of a single call,</li>
      *     <li>{@code perTask}: min, max and mean calls and tokens per task, counting tasks without that group as 0.</li>
      * </ul>

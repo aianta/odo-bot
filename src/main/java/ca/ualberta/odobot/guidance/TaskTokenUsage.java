@@ -31,7 +31,24 @@ public class TaskTokenUsage extends TokenUsageRecord {
     @Override
     public synchronized JsonObject toJson() {
         JsonObject agents = new JsonObject();
-        byAgent.forEach((name, record)->agents.put(name, record.toJson()));
+        //Calls are only timed for the task as a whole, so the per agent records have tokens and call counts only.
+        byAgent.forEach((name, record)->agents.put(name, withoutTiming(record.toJson())));
         return super.toJson().put("byAgent", agents);
+    }
+
+    private static JsonObject withoutTiming(JsonObject counts){
+        counts.remove("inferenceMs");
+        counts.remove("failedCalls");
+        counts.remove("failedAttempts");
+        for(String group: new String[]{"byKind", "byCallType"}){
+            JsonObject entries = counts.getJsonObject(group);
+            if(entries == null) continue;
+            entries.forEach(entry->{
+                JsonObject entryCounts = (JsonObject) entry.getValue();
+                entryCounts.remove("inferenceMs");
+                entryCounts.remove("failedCalls");
+            });
+        }
+        return counts;
     }
 }
