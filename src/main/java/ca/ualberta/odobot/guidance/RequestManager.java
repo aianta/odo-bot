@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.*;
 
 /**
@@ -67,6 +68,11 @@ public class RequestManager {
      * How the current task ended, saved with its token usage.
      */
     private String taskOutcome = null;
+
+    /**
+     * What went wrong in the harness after the current task ended, saved with its token usage, or null.
+     */
+    private String harnessError = null;
 
     /**
      * Wall clock time of the current task, saved with its token usage. The harness may hand in one that already marks
@@ -191,6 +197,15 @@ public class RequestManager {
      * @param taskTiming the timing of the next task, whose setup the harness has already marked. Without one, the next
      *                   task's timing starts with its execution.
      */
+    /**
+     * @param harnessError what went wrong in the harness after the task ended (saving its artifacts or scoring it),
+     *                     saved with the task's usage as {@code harnessError}.
+     */
+    public RequestManager setHarnessError(String harnessError) {
+        this.harnessError = harnessError;
+        return this;
+    }
+
     public RequestManager setTaskTiming(TaskTiming taskTiming) {
         this.taskTiming = taskTiming;
         return this;
@@ -241,6 +256,9 @@ public class RequestManager {
                 .put("mode", mode.name())
                 .put("outcome", taskOutcome)
                 .mergeIn(taskTokenUsage.toJson());
+        if(harnessError != null){
+            usage.put("harnessError", harnessError);
+        }
         if(taskTiming != null){
             usage.put("timing", taskTiming.toJson(taskTokenUsage.inferenceMs()));
         }
@@ -276,6 +294,7 @@ public class RequestManager {
         this.previousTokenUsage = TokenUsageRecord.active;
         this.tokenUsageFinished = false;
         this.taskOutcome = null;
+        this.harnessError = null;
         TokenUsageRecord.active = this.taskTokenUsage;
 
         //Use the timing the harness handed in, unless it belongs to an earlier task.
@@ -283,6 +302,12 @@ public class RequestManager {
             taskTiming = new TaskTiming();
         }
         taskTiming.markExecutionStart();
+
+        //Write the task's raw events to disk as they arrive, rather than holding them in memory until the task ends.
+        if(evalId != null && experimentFolderPath != null){
+            client.getEventConnectionManager().getEventProcessor().streamRawEventsTo(
+                    Path.of("%s/%s.events.jsonl.part".formatted(experimentFolderPath, evalId).replaceAll("\\|","-")));
+        }
 
         //Every chat completion made while the task runs uses the task's client settings, if it has any.
         if(llmConfig != null){

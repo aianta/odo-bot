@@ -131,14 +131,14 @@ Run the experiments of a comparison at the **same concurrency level**. Concurren
 ## Outputs
 
 Everything lands under `execution_events/<experimentId>/` (the `execution_events` mount):
-- **`<evalId>.json`:** the raw OdoX event log of a task, which is what gets scored.
-- **`<evalId>-tokens.json`:** the task's token usage, plus `timing` (`setupMs`, `executionMs` split into `inferenceMs` and `otherExecutionMs`, `artifactsMs`, `scoringMs`, `totalMs`) and `outcome` (`completed` or `failed: <reason>`).
+- **`<evalId>.json`:** the raw OdoX event log of a task, which is what gets scored. While the task runs, its events are written as they arrive to `<evalId>.events.jsonl.part` (one event per line), which becomes `<evalId>.json` when the task ends. A leftover `.part` file means the task's events could not be saved. It does not count as a finished task, so the task runs again on resume, and the file holds the events if you need them.
+- **`<evalId>-tokens.json`:** the task's token usage, plus `timing` (`setupMs`, `executionMs` split into `inferenceMs` and `otherExecutionMs`, `artifactsMs`, `scoringMs`, `totalMs`) and `outcome` (`completed`, `failed: <reason>`, or `failed: setup: <error>` for a task whose browser or OdoX setup failed). `harnessError` is set when the task ran but saving its events or scoring it failed.
 - **`results/<experimentId>-tokens.json`:** the experiment summary. It holds token stats and a `timing` section with per-phase stats, `inferenceShare`, slowest and fastest task, `byOutcome`, `wallClockMs` and `skippedTasks`.
 - **Uncharted runs:** also `<evalId>-qwen38-trajectory.jsonl` and `<evalId>-qwen38-messages-step-<n>.json`. A task's answer is recorded in its event log.
 - **With `evaluationDatasetPath`:** also `results/<id>-result.json` per task, `results/<experimentId>-results.json`, and Elasticsearch telemetry (`task_instance_results`, `experiment_results`).
 
 **Response codes:**
-- **`200`:** the experiment finished. With a dataset, the body is the experiment results. Failed or timed-out tasks still give 200; check each task's `outcome`.
+- **`200`:** the experiment finished. With a dataset, the body is the experiment results. Failed or timed-out tasks, and tasks that failed at setup or while saving, still give 200; check each task's `outcome` and `harnessError`.
 - **`400`:** the definition was rejected before anything ran, e.g. an invalid `llm` or `qwen` setting, `targetHosts` that isn't an array, or a missing required field.
 - **`500`:** the experiment-level evaluation failed.
 
@@ -149,3 +149,5 @@ Everything lands under `execution_events/<experimentId>/` (the `execution_events
 - **The browser sits on an error page or another environment's app.** The start URL isn't reachable from Firefox, or the app redirected to its base URL (see step 3).
 - **`call_llm failed attempt n/5` in the log.** The model server is overloaded or unreachable. Check `llm.base_url` from inside the container.
 - **The task fails with `Timeout!`.** The agent produced no instruction for `timeout` ms. Check the model server and the OdoBot log.
+- **`DOM is still changing after ... ms` in the log.** OdoBot holds each instruction until the page has not changed for 5 s, but at most 30 s. A page that keeps changing (a spinner, a live grid) gets one instruction every 30 s at most, which shows up as `otherExecutionMs`.
+- **The task fails with `failed: setup: ...ERROR_SIGNEDSTATE_REQUIRED`.** Firefox rejected the unsigned OdoX add-on. Use the pinned `selenium/standalone-firefox` image from `cascon-experiment.bat`, not `:latest`.

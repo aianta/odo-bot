@@ -98,6 +98,7 @@ public class Effect extends ArrayList<DomEffect> implements TimelineEntity {
                 .filter(predicate)
                 //.peek(domEffect -> log.info("DomEffect[{}] [EffectElementNull:{}]: {} ", domEffect.getAction().toString() ,domEffect.getEffectElement() == null, domEffect.xpath))
                 .map(DomEffect::getEffectElement)
+                .filter(Objects::nonNull) //Effects built during live runs have no parsed elements.
                 .collect(Collectors.toSet());
     }
 

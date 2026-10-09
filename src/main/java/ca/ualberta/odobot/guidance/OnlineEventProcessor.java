@@ -9,10 +9,13 @@ import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.BufferedReader;
 import java.io.BufferedWriter;
-import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.net.URL;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -39,7 +42,8 @@ public class OnlineEventProcessor {
 
     private JsonMapper<ClickEvent> clickEventMapper = new LogUIClickEventMapper();
     private JsonMapper<SelectEvent> selectEventJsonMapper = new LogUISelectEventMapper();
-    private JsonMapper<DomEffect> domEffectMapper = new LogUIDomEffectMapper();
+    //DOM effects can arrive many times a second, and nothing reads their parsed pages during a live run, so they are not parsed.
+    private JsonMapper<DomEffect> domEffectMapper = new LogUIDomEffectMapper(false);
     private JsonMapper<NetworkEvent> networkEventMapper = new LogUINetworkEventMapper();
     private JsonMapper<InputChange> inputChangeMapper = new LogUIInputChangeMapper();
     private OnlineTimeline line = new OnlineTimeline();
@@ -55,7 +59,18 @@ public class OnlineEventProcessor {
      */
     private boolean unchartedTimelineEnabled = false;
 
-    private List<JsonObject> rawEvents = new ArrayList<>();
+    /**
+     * Raw events received before {@link #streamRawEventsTo} opened the task's event file. Once it is open, raw events go
+     * straight to the file, one JSON object per line, so a long task does not hold its whole event log (each DOM effect
+     * carries a full page snapshot) in memory.
+     */
+    private final List<String> pendingRawEvents = new ArrayList<>();
+
+    private Path rawEventsPartFile = null;
+
+    private BufferedWriter rawEventsWriter = null;
+
+    private int rawEventCount = 0;
 
     public void injectNoOp(){
         if(line != null){
@@ -72,13 +87,14 @@ public class OnlineEventProcessor {
         if(line != null){
             line.add(taskAnswer);
         }
-        rawEvents.add(new JsonObject()
+        appendRawEvent(new JsonObject()
                 .put("eventType", "customEvent")
                 .put("eventDetails", new JsonObject()
                         .put("name", "TASK_ANSWER")
                         .put("answer", answer))
                 .put("timestamps", new JsonObject()
-                        .put("eventTimestamp", timeFormatter.format(Instant.ofEpochMilli(taskAnswer.timestamp())))));
+                        .put("eventTimestamp", timeFormatter.format(Instant.ofEpochMilli(taskAnswer.timestamp()))))
+                .encode());
     }
 
     /**
@@ -106,8 +122,71 @@ public class OnlineEventProcessor {
         this.unchartedTimelineEnabled = enabled;
     }
 
-    public void clearRawEvents(){
-        rawEvents.clear();
+    /**
+     * Drop the raw events recorded so far, and delete the task's partial event file if there is one.
+     */
+    public synchronized void clearRawEvents(){
+        pendingRawEvents.clear();
+        rawEventCount = 0;
+        closeRawEventsWriter();
+        if(rawEventsPartFile != null){
+            try{
+                Files.deleteIfExists(rawEventsPartFile);
+            }catch (IOException e){
+                log.warn("Could not delete the partial event file {}: {}", rawEventsPartFile, e.getMessage());
+            }
+            rawEventsPartFile = null;
+        }
+    }
+
+    /**
+     * Write the raw events of the task to the given partial file from now on, one JSON object per line, starting with
+     * those received so far. {@link #saveRawEvents} turns it into the task's event file. If the file cannot be opened,
+     * raw events stay in memory.
+     *
+     * @param partFile a file name that the experiment's skip check and the evaluation script do not mistake for a
+     *                 task's event file, i.e. one not ending in {@code .json}.
+     */
+    public synchronized void streamRawEventsTo(Path partFile){
+        closeRawEventsWriter();
+        try{
+            BufferedWriter writer = Files.newBufferedWriter(partFile, StandardCharsets.UTF_8);
+            for(String event: pendingRawEvents){
+                writer.write(event);
+                writer.newLine();
+            }
+            pendingRawEvents.clear();
+            rawEventsWriter = writer;
+            rawEventsPartFile = partFile;
+        }catch (IOException e){
+            log.error("Could not open {} for raw events, keeping them in memory: {}", partFile, e.getMessage());
+        }
+    }
+
+    private synchronized void appendRawEvent(String event){
+        rawEventCount++;
+        if(rawEventsWriter != null){
+            try{
+                rawEventsWriter.write(event);
+                rawEventsWriter.newLine();
+                return;
+            }catch (IOException e){
+                log.error("Could not write a raw event to {}, keeping the rest in memory: {}", rawEventsPartFile, e.getMessage());
+                closeRawEventsWriter();
+            }
+        }
+        pendingRawEvents.add(event);
+    }
+
+    private void closeRawEventsWriter(){
+        if(rawEventsWriter != null){
+            try{
+                rawEventsWriter.close();
+            }catch (IOException e){
+                log.warn("Could not close the raw event file {}: {}", rawEventsPartFile, e.getMessage());
+            }
+            rawEventsWriter = null;
+        }
     }
 
     public int countNetworkEvents(){
@@ -122,22 +201,49 @@ public class OnlineEventProcessor {
         return count;
     }
 
-    public void saveRawEvents(String filename){
-//        log.info("raw events size before save: {}", rawEvents.size());
-        File fout = new File(filename);
-        try(FileWriter fw = new FileWriter(fout);
-            BufferedWriter bw = new BufferedWriter(fw);
-        ){
-
-            JsonArray data = rawEvents.stream().collect(JsonArray::new, JsonArray::add, JsonArray::addAll);
-            bw.write(data.encodePrettily());
-            bw.flush();
-
+    /**
+     * Save the raw events of the task as a JSON array in the given file. They are copied one at a time from the partial
+     * file (then any held in memory), so the log is never held in memory as a whole. The array is written to a temporary
+     * file and moved into place, so a failed save never leaves a partial event file that would count as a finished task.
+     */
+    public synchronized void saveRawEvents(String filename){
+        closeRawEventsWriter();
+        Path target = Path.of(filename);
+        //Not ending in, or containing, "<id>.json", so that a leftover is never taken for a finished task.
+        Path temp = Path.of(filename.replaceFirst("\\.json$", "") + ".events-saving");
+        try{
+            try(BufferedWriter out = Files.newBufferedWriter(temp, StandardCharsets.UTF_8)){
+                out.write("[");
+                boolean first = true;
+                if(rawEventsPartFile != null && Files.exists(rawEventsPartFile)){
+                    try(BufferedReader in = Files.newBufferedReader(rawEventsPartFile, StandardCharsets.UTF_8)){
+                        String line;
+                        while((line = in.readLine()) != null){
+                            if(line.isBlank()) continue;
+                            first = writeArrayElement(out, line, first);
+                        }
+                    }
+                }
+                for(String event: pendingRawEvents){
+                    first = writeArrayElement(out, event, first);
+                }
+                out.write("\n]");
+            }
+            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING);
+            log.info("Saved {} raw events to {}", rawEventCount, filename);
         } catch (IOException e) {
             log.error(e.getMessage(), e);
+            try{
+                Files.deleteIfExists(temp);
+            }catch (IOException ignored){}
             throw new RuntimeException(e);
         }
+    }
 
+    private static boolean writeArrayElement(BufferedWriter out, String event, boolean first) throws IOException{
+        out.write(first? "\n" : ",\n");
+        out.write(event);
+        return false;
     }
 
     public OnlineEventProcessor(){
@@ -173,8 +279,8 @@ public class OnlineEventProcessor {
     }
 
     public void process(JsonObject event){
-        rawEvents.add(new JsonObject(event.encode()));
-        //log.info("RAW EVENTS SIZE: {}", rawEvents.size());
+        //Recorded before processing, which may change the event.
+        appendRawEvent(event.encode());
         try{
 
 //            int _preprocessLineSize = line.size();
@@ -184,7 +290,7 @@ public class OnlineEventProcessor {
             String eventType = event.getString("eventType");
             String eventName = eventDetails.getString("name");
 
-            log.info("event type: {} - event name: {} - raw events size: {}", eventType, eventName, rawEvents.size());
+            log.info("event type: {} - event name: {} - raw events size: {}", eventType, eventName, rawEventCount);
 
             switch (eventType){
                 case "interactionEvent":

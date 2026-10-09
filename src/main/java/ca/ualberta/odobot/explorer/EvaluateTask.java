@@ -66,6 +66,11 @@ public class EvaluateTask implements Runnable{
     Promise<Void> promise;
 
     /**
+     * Completes when the task's execution ends, once {@link #startTask} has handed it to the RequestManager. Null until then.
+     */
+    Promise<Void> evaluationPromise;
+
+    /**
      * Wall clock time of this task, from before the browser is set up until after scoring.
      */
     TaskTiming timing = new TaskTiming();
@@ -177,17 +182,44 @@ public class EvaluateTask implements Runnable{
             setupEnvironment();
 
             startTask(task);
-        }catch (MalformedURLException e){
-            log.error(e.getMessage(), e);
-            cleanUp();
+        }catch (Throwable e){
+            if(evaluationPromise != null){
+                //The task has started: end it, so its artifacts are saved and the experiment moves on as usual.
+                log.error("Task {} failed after it started: {}", task.getString("_evalId"), e.getMessage(), e);
+                evaluationPromise.tryFail(e);
+            }else{
+                //The task never started, so nothing else will end it. Record the failure and move on to the next task.
+                log.error("Task {} could not be set up: {}", task.getString("_evalId"), e.getMessage(), e);
+                saveSetupFailure(e);
+                taskComplete();
+            }
         }
-        catch (Exception e){
-            log.error(e.getMessage(), e);
-            cleanUp();
+
+    }
+
+    /**
+     * Record a task that could not be set up in {@code <evalId>-tokens.json}, like a task that ran, so the experiment
+     * summary counts it as failed. It writes no event file, so the task is run again when the experiment is resumed.
+     */
+    private void saveSetupFailure(Throwable e){
+        String evalId = task.getString("_evalId");
+        if(evalId == null || experimentFolderPath == null){
+            return;
         }
-
-
-
+        JsonObject usage = new JsonObject()
+                .put("evalId", evalId)
+                .put("experimentId", config.getString("experimentId", "default"))
+                .put("executionId", null)
+                .put("mode", agent.getMode() == null? null : agent.getMode().name())
+                .put("outcome", "failed: setup: " + e)
+                .mergeIn(new TokenUsageRecord().toJson())
+                .put("timing", timing.toJson());
+        try{
+            Files.createDirectories(Path.of(experimentFolderPath));
+            Files.writeString(Path.of("%s/%s-tokens.json".formatted(experimentFolderPath, evalId).replaceAll("\\|","-")), usage.encodePrettily());
+        }catch (IOException | RuntimeException ex){
+            log.error("Could not record the setup failure of task {}: {}", evalId, ex.getMessage());
+        }
     }
 
     public void startTask(JsonObject task){
@@ -202,11 +234,12 @@ public class EvaluateTask implements Runnable{
 
         IAgent taskAgent = buildAgent(task);
 
-        Promise<Void> evaluationPromise = Promise.promise();
+        evaluationPromise = Promise.promise();
         //Hand the promise to the RequestManager first: its completion handlers (which finish the task's token usage and
         //write <evalId>-tokens.json) must run before the ones below.
         odoXClient.getRequestManager().setEvaluationComplete(evaluationPromise);
         evaluationPromise.future().onComplete((done)->{
+          try{
 
 //                if (odoXClient.getEventConnectionManager().getEventProcessor().countNetworkEvents() < MIN_NETWORK_EVENTS){
 //                    log.info("{} network events observed", odoXClient.getEventConnectionManager().getEventProcessor().countNetworkEvents());
@@ -218,6 +251,8 @@ public class EvaluateTask implements Runnable{
 
             odoXClient.getGuidanceConnectionManager().dumpHistory();
             odoXClient.getEventConnectionManager().getEventProcessor().saveRawEvents("%s/%s.json".formatted(this.experimentFolderPath, odoXClient.getRequestManager().getEvalId()).replaceAll("\\|","-"));
+            //The events are saved, so drop the partial event file. If saving failed it is kept, so the events can be recovered.
+            odoXClient.getEventConnectionManager().getEventProcessor().clearRawEvents();
             timing.markArtifactsSaved();
 
             //Perform task evaluation after the task is complete.
@@ -331,6 +366,19 @@ public class EvaluateTask implements Runnable{
 
             this.taskComplete();
 
+          }catch (Throwable e){
+            //Saving the artifacts or scoring failed, e.g. out of memory. Record it and end the task anyway, or the
+            //experiment would wait for this task forever.
+            log.error("Task {} could not be finished: {}", task.getString("_evalId"), e.getMessage(), e);
+            try{
+                timing.markAfterScoring();
+                odoXClient.getRequestManager().setHarnessError(e.toString());
+                odoXClient.getRequestManager().saveTaskUsage();
+            }catch (Throwable ex){
+                log.error("Could not record the failure of task {}: {}", task.getString("_evalId"), ex.getMessage());
+            }
+            this.taskComplete();
+          }
 
         });
 
@@ -453,9 +501,14 @@ public class EvaluateTask implements Runnable{
 
         //Close the browser
         try{
-            driver.close();
-            driver.quit();
+            if(driver != null){
+                driver.close();
+                driver.quit();
+            }
         }catch (NoSuchSessionException e) {
+            driver = null;
+        }catch (Exception e){
+            log.warn("Could not close the browser: {}", e.getMessage());
             driver = null;
         }
 

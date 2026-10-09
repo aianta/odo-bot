@@ -29,6 +29,17 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
     public long executionInstructionDelayTimer = -1l;
     public long executionInstructionDelay = 5000l;
 
+    /**
+     * The longest an instruction is held for the DOM to settle. On a page that keeps changing, each change would
+     * otherwise postpone the next instruction again, until the task times out.
+     */
+    public long executionInstructionMaxDelay = 30000l;
+
+    /**
+     * When ({@link System#nanoTime()}) the current wait for the DOM to settle began, or -1 if there is none.
+     */
+    private long executionInstructionDelaySince = -1l;
+
 
     private JsonObject executionInstruction = null;
 
@@ -156,13 +167,38 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
         return promise.future();
     }
 
+    /**
+     * @param waitedMs how long the current wait for the DOM to settle has lasted.
+     * @return how much longer to wait: the settle delay, cut short so the whole wait never exceeds the max delay.
+     */
+    static long settleDelay(long waitedMs, long delayMs, long maxDelayMs){
+        return Math.max(1, Math.min(delayMs, maxDelayMs - waitedMs));
+    }
+
+    /**
+     * Hold the next execution instruction until the DOM has not changed for {@link #executionInstructionDelay}, but
+     * no longer than {@link #executionInstructionMaxDelay} after the wait began.
+     */
     public void resetExecutionInstructionDelay(){
         if(executionInstructionDelayTimer != -1l){
             GuidanceVerticle._vertx.cancelTimer(executionInstructionDelayTimer);
         }
-        log.info("Next execution instruction will be delayed to give time for DOM to settle.");
-        executionInstructionDelayTimer = GuidanceVerticle._vertx.setTimer(executionInstructionDelay, id->{
+
+        long now = System.nanoTime();
+        if(executionInstructionDelaySince == -1l){
+            executionInstructionDelaySince = now;
+        }
+        long waitedMs = (now - executionInstructionDelaySince) / 1_000_000;
+        long delay = settleDelay(waitedMs, executionInstructionDelay, executionInstructionMaxDelay);
+
+        if(delay < executionInstructionDelay){
+            log.info("DOM is still changing after {} ms, the next execution instruction will be sent in at most {} ms.", waitedMs, delay);
+        }else{
+            log.info("Next execution instruction will be delayed to give time for DOM to settle.");
+        }
+        executionInstructionDelayTimer = GuidanceVerticle._vertx.setTimer(delay, id->{
             executionInstructionDelayTimer = -1;
+            executionInstructionDelaySince = -1;
             if(executionInstruction != null){
                 log.info("Delayed instruction is being sent now!");
                 super.addHistory(executionInstruction);

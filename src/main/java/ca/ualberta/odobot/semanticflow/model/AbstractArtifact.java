@@ -139,7 +139,13 @@ public abstract class AbstractArtifact {
         this.timestamp = timestamp;
     }
 
+    /**
+     * @return the element at this artifact's xpath in its snapshot, or null if it has no parsed snapshot.
+     */
     public Element getTargetElement(){
+        if(domSnapshot == null){
+            return null;
+        }
         return domSnapshot.selectXpath(getXpath()).first();
     }
 }
