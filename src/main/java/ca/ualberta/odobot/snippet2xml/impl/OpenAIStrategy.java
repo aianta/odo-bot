@@ -1,6 +1,7 @@
 package ca.ualberta.odobot.snippet2xml.impl;
 
 import ca.ualberta.odobot.common.AbstractOpenAIStrategy;
+import ca.ualberta.odobot.common.LlmCallScope;
 import ca.ualberta.odobot.common.UsageTelemetry;
 import ca.ualberta.odobot.common.LlmCallType;
 import ca.ualberta.odobot.snippet2xml.AIStrategy;
@@ -34,6 +35,13 @@ public class OpenAIStrategy extends AbstractOpenAIStrategy implements AIStrategy
 
     public OpenAIStrategy(JsonObject config) {
         super(config);
+    }
+
+    /**
+     * @param scope the task this strategy makes calls for, see {@link AbstractOpenAIStrategy#scope}.
+     */
+    public OpenAIStrategy(JsonObject config, LlmCallScope scope) {
+        super(config, scope);
     }
 
 

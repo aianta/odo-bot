@@ -11,8 +11,9 @@ import java.util.Map;
 /**
  * Token usage, LLM call counts and time spent waiting on inference, in total and per {@link LlmCallType}.
  *
- * <p>LLM clients report every call to {@link #active}, the record the current owner has installed. During task
- * execution that is the {@link RequestManager}'s {@link TaskTokenUsage}.</p>
+ * <p>LLM clients built for a task report its calls through the task's {@link ca.ualberta.odobot.common.LlmCallScope}
+ * to the {@link RequestManager}'s {@link TaskTokenUsage}. Other clients report to {@link #active}, the process-wide
+ * record, if one is installed.</p>
  *
  * <p>Clients also time each call with an {@link InferenceSpan} from {@link #begin}. {@link #inferenceMs()} is the time
  * at least one call was in flight, so overlapping calls are not counted twice; the per call type {@code inferenceMs}
@@ -23,7 +24,8 @@ public class TokenUsageRecord {
     private static final Logger log = LoggerFactory.getLogger(TokenUsageRecord.class);
 
     /**
-     * The record every LLM call in this JVM is reported to, or null if usage is not being recorded.
+     * The record that LLM calls made outside a task are reported to, or null if they are not being recorded. Calls made
+     * for a task go to the task's own record instead, see {@link ca.ualberta.odobot.common.LlmCallScope}.
      */
     public static volatile TokenUsageRecord active;
 
@@ -33,8 +35,7 @@ public class TokenUsageRecord {
     public static void report(LlmCallType type, long inputTokens, long outputTokens, long totalTokens){
         TokenUsageRecord record = active;
         if(record != null){
-            log.info("Usage Record: {} {} call [input: {}, output: {}, total: {}]", record, type.label, inputTokens, outputTokens, totalTokens);
-            record.record(type, inputTokens, outputTokens, totalTokens);
+            record.reportCall(type, inputTokens, outputTokens, totalTokens);
         }
     }
 
@@ -44,7 +45,22 @@ public class TokenUsageRecord {
      */
     public static InferenceSpan begin(LlmCallType type){
         TokenUsageRecord record = active;
-        return record == null? InferenceSpan.NONE : new InferenceSpan(record, type, record.callStarted());
+        return record == null? InferenceSpan.NONE : record.span(type);
+    }
+
+    /**
+     * Record one LLM call in this record.
+     */
+    public void reportCall(LlmCallType type, long inputTokens, long outputTokens, long totalTokens){
+        log.info("Usage Record: {} {} call [input: {}, output: {}, total: {}]", this, type.label, inputTokens, outputTokens, totalTokens);
+        record(type, inputTokens, outputTokens, totalTokens);
+    }
+
+    /**
+     * Start timing one LLM call against this record.
+     */
+    public InferenceSpan span(LlmCallType type){
+        return new InferenceSpan(this, type, callStarted());
     }
 
     /**
@@ -52,7 +68,7 @@ public class TokenUsageRecord {
      */
     public static class InferenceSpan {
 
-        static final InferenceSpan NONE = new InferenceSpan(null, null, -1);
+        public static final InferenceSpan NONE = new InferenceSpan(null, null, -1);
 
         private final TokenUsageRecord record;
         private final LlmCallType type;

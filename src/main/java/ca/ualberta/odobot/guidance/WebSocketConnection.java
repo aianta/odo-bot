@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.guidance;
 
+import io.netty.handler.codec.http.QueryStringDecoder;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.ServerWebSocket;
@@ -24,8 +25,6 @@ public class WebSocketConnection {
     private long pingPongTimer;
     private ServerWebSocket socket;
 
-    public static Map<UUID, OdoClient> clientMap = new HashMap<>();
-
     private Vertx vertx;
     private boolean isBound = false;
 
@@ -40,12 +39,25 @@ public class WebSocketConnection {
     public WebSocketConnection(){}
 
     public WebSocketConnection(Vertx vertx, ServerWebSocket socket){
+        this(vertx, socket, null, null);
+    }
+
+    /**
+     * @param clientId the clientId from the socket's URL, or null if it had none. Then the socket is bound on its first message.
+     * @param source the source from the socket's URL, or null if it had none.
+     */
+    public WebSocketConnection(Vertx vertx, ServerWebSocket socket, UUID clientId, Source source){
         this.vertx = vertx; //Get a reference to the vertx instance, we'll need this to ping/pong active sockets.
         handleConnection(socket);
+        if(clientId != null && source != null){
+            bind(clientId, source);
+        }
     }
 
     public void close(){
-        socket.close();
+        if(socket != null && !socket.isClosed()){
+            socket.close();
+        }
     }
 
     public void handleConnection(ServerWebSocket socket){
@@ -66,27 +78,25 @@ public class WebSocketConnection {
 
            this.socket.writePing(Buffer.buffer("OdoBot Ping"), pingWritten->{
                //This handler is called when the ping was successfully written to the socket.
-               if(boundClient != null && boundSource != null){
-                   log.info("[%s][%s] Websocket ping sent!".formatted(boundClient.id().toString(), boundSource.name));
-               }else{
-                   log.info("Ping sent!");
-               }
+               log.info("[{}] Websocket ping sent!", label());
            });
         });
 
         this.socket.pongHandler(pong->{
-            if(boundClient != null && boundSource != null){
-                log.info("[%s][%s] Got pong!".formatted(boundClient.id().toString(), boundSource.name));
-            }else{
-                log.info("Got pong!");
-            }
+            log.info("[{}] Got pong!", label());
         });
 
     }
 
+    /**
+     * @return how logs name this socket: its client and source, as far as they are known.
+     */
+    private String label(){
+        return "%s][%s".formatted(boundClient == null? "unbound" : boundClient.label(), boundSource == null? "?" : boundSource.name);
+    }
+
     private void onError(Throwable error){
-        String errLine = "[%s][%s] WebSocket Error %s".formatted(boundClient.id().toString(), boundSource.name, error.getMessage() );
-        log.error(errLine, error);
+        log.error("[{}] WebSocket Error {}", label(), error.getMessage(), error);
 
         vertx.cancelTimer(pingPongTimer);
 
@@ -94,11 +104,7 @@ public class WebSocketConnection {
 
     private void onClose(Void event){
         this.isConnected = false;
-        if(boundClient != null){
-            log.info("[{}][{}] Connection Closed", boundClient.id().toString(), boundSource.name);
-        }else{
-            log.info("[{}] Connection Closed", boundSource.name);
-        }
+        log.info("[{}] Connection Closed", label());
 
         vertx.cancelTimer(pingPongTimer);
 
@@ -117,53 +123,54 @@ public class WebSocketConnection {
     }
 
     /**
-     * This method works to associate the websocket with the appropriate client upon receiving the first message from the extension.
-     * The appropriate client is identified by a 'clientId' field.
-     *
-     * Additionally, each client has {@link OdoClient#control}, {@link OdoClient#event}, and {@link OdoClient#guidance} fields for {@link WebSocketConnection} to
-     * be assigned to. This method reads the 'source' field in the in initial message to appropriately assign itself to the corresponding field.
-     *
-     * Clients are held in a static map {@link WebSocketConnection#clientMap}.
-     *
-     * All messages from the extension are expected to have, at minimum, the 'source' and 'clientId' field.
+     * Bind this socket to the client with the given clientId, see {@link ClientRegistry#bind}.
+     */
+    private void bind(UUID clientId, Source source){
+        boundSource = source;
+        boundClient = ClientRegistry.bind(clientId, source, this);
+        isBound = true;
+    }
+
+    /**
+     * Messages from the extension carry, at minimum, the 'source' and 'clientId' fields. A socket whose URL had no clientId
+     * (an older OdoX) is bound to its client by its first message, see {@link ClientRegistry#bind}. In strict mode a socket
+     * whose clientId no task expects is closed.
      *
      * @param buffer
      */
     private void onMessage(Buffer buffer){
         JsonObject message = buffer.toJsonObject();
 
-        if(!isBound){ //Associate this WebSocket connection with the appropriate paths request.
-            UUID clientId = UUID.fromString(message.getString("clientId"));
+        if(!isBound){ //Associate this WebSocket connection with its client.
+            UUID clientId = parseUuid(message.getString("clientId"));
+            Source source = Source.fromName(message.getString("source"));
 
-            if(!clientMap.containsKey(clientId)){
-                log.info("Registering new OdoClient {}", clientId.toString());
-                OdoClient client = new OdoClient(clientId);
-                clientMap.put(clientId, client);
-            }else{
-                log.info("Binding websocket to existing OdoClient {}", clientId.toString());
+            if(clientId == null || source == null){
+                log.warn("Closing websocket, its first message has no valid clientId and source: {} {}", message.getString("clientId"), message.getString("source"));
+                close();
+                return;
             }
 
-            //Set the bound client and source
-            printClientMap();
-
-            boundClient = clientMap.get(clientId);
-
-            //Set the bound client and source
-            boundSource = Source.getSourceByName(message.getString("source"));
-
-            switch (boundSource){
-                case EVENT_SOCKET -> boundClient.setEvent(this);
-                case CONTROL_SOCKET -> boundClient.setControl(this);
-                case GUIDANCE_SOCKET -> boundClient.setGuidance(this);
+            if(ClientRegistry.isStrict() && !ClientRegistry.isExpected(clientId)){
+                log.warn("Closing websocket of OdoX client {} ({}), which no task expects.", clientId, socket.remoteAddress());
+                close();
+                return;
             }
 
-            isBound = true;
+            bind(clientId, source);
             log.info("Underlying message type: {} ", message.getString("type"));
 
+        }else if(message.containsKey("clientId") && !boundClient.id().toString().equalsIgnoreCase(message.getString("clientId"))){
+            log.warn("[{}] Message has clientId {}, keeping the socket bound to {}", label(), message.getString("clientId"), boundClient.id());
         }
-//        if(true){
+
         if(boundSource != Source.EVENT_SOCKET){
-            log.info("[{}][{}] got message:\n{}", boundClient.id().toString(), boundSource.name, message.encodePrettily().substring(0, Math.min(message.encodePrettily().length(), 150)));
+            log.info("[{}] got message:\n{}", label(), message.encodePrettily().substring(0, Math.min(message.encodePrettily().length(), 150)));
+        }
+
+        if(messageConsumer == null){
+            log.warn("[{}] No consumer for message of type {}, dropping it", label(), message.getString("type"));
+            return;
         }
         messageConsumer.accept(message);
     }
@@ -172,9 +179,36 @@ public class WebSocketConnection {
         this.messageConsumer = consumer;
     }
 
+    /**
+     * @return the clientId in the query of a websocket URL, e.g. {@code /?clientId=<uuid>&source=ControlSocket}, or null if it has no valid one.
+     */
+    static UUID clientIdFromUri(String uri){
+        return parseUuid(queryParameter(uri, "clientId"));
+    }
 
-    public void printClientMap(){
-        log.info("Client map [size: {}]",clientMap.size());
-        clientMap.entrySet().forEach(entry->log.info("{} - {}", entry.getKey(), entry.getValue()));
+    /**
+     * @return the source in the query of a websocket URL, or null if it has no valid one.
+     */
+    static Source sourceFromUri(String uri){
+        return Source.fromName(queryParameter(uri, "source"));
+    }
+
+    private static String queryParameter(String uri, String name){
+        if(uri == null){
+            return null;
+        }
+        List<String> values = new QueryStringDecoder(uri).parameters().get(name);
+        return values == null || values.isEmpty()? null : values.get(0);
+    }
+
+    private static UUID parseUuid(String value){
+        if(value == null){
+            return null;
+        }
+        try{
+            return UUID.fromString(value);
+        }catch (IllegalArgumentException e){
+            return null;
+        }
     }
 }

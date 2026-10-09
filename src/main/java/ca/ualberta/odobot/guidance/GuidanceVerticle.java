@@ -18,6 +18,7 @@ import org.slf4j.LoggerFactory;
 
 
 import java.util.Map;
+import java.util.UUID;
 
 
 public class GuidanceVerticle extends HttpServiceVerticle {
@@ -55,7 +56,26 @@ public class GuidanceVerticle extends HttpServiceVerticle {
     }
 
     protected io.vertx.rxjava3.core.http.HttpServer afterServerCreate(io.vertx.rxjava3.core.http.HttpServer server) {
-        server.webSocketHandler(serverSocket->new WebSocketConnection(vertx.getDelegate(), serverSocket.getDelegate()));
+        ClientRegistry.setStrict(_config.getBoolean("strictClientIds", false));
+
+        /*
+         * OdoX puts its clientId and the socket's source in the URL, e.g. wss://host/?clientId=<uuid>&source=ControlSocket,
+         * so the socket is bound to its client here, before any message. In strict mode sockets of clients no task expects
+         * are refused. Older OdoX sends neither; its sockets are bound by their first message, see WebSocketConnection#onMessage.
+         */
+        server.webSocketHandler(serverSocket->{
+            ServerWebSocket socket = serverSocket.getDelegate();
+            UUID clientId = WebSocketConnection.clientIdFromUri(socket.uri());
+            Source source = WebSocketConnection.sourceFromUri(socket.uri());
+
+            if(clientId != null && ClientRegistry.isStrict() && !ClientRegistry.isExpected(clientId)){
+                log.warn("Rejecting websocket of OdoX client {} ({}), which no task expects.", clientId, socket.remoteAddress());
+                socket.reject(403);
+                return;
+            }
+
+            new WebSocketConnection(vertx.getDelegate(), socket, clientId, source);
+        });
         return server;
     }
 
@@ -75,10 +95,7 @@ public class GuidanceVerticle extends HttpServiceVerticle {
 
 
 //        vertx.setPeriodic(PERIODIC_REPORTING_INTERVAL, interval->{
-//           log.info("{} registered clients, generating status report!", WebSocketConnection.clientMap.size());
-//           WebSocketConnection.clientMap.values().forEach(client->{
-//               log.info("{}", client.statusReport().encodePrettily());
-//           });
+//           ClientRegistry.printClients();
 //        });
 
         return Completable.complete();

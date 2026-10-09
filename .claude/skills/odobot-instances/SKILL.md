@@ -5,19 +5,24 @@ description: Launch N independent OdoBot + Firefox container pairs on odobot-net
 
 # Multiple OdoBot instances
 
-One OdoBot process runs **one task at a time**. To run tasks concurrently, start one OdoBot container **and** one Firefox grid per concurrent execution, and send each pair its own evaluate request. `odobot-instances.ps1` (next to this file) does this.
+The proven way to run tasks concurrently is one OdoBot container **and** one Firefox grid per concurrent execution, with each pair getting its own evaluate request. `odobot-instances.ps1` (next to this file) does this.
 
-## Why not one OdoBot with concurrent requests
+## One OdoBot with concurrent requests (not yet verified end to end)
 
-The endpoint accepts concurrent requests, but the tasks would break each other:
+Tasks within a request run one after another (`ExplorerVerticle.evaluateHandler` chains them with `f.compose`). Concurrent requests each start an `EvaluateTask` thread right away. The process-wide state that used to make those tasks break each other has been replaced:
 
-- **Tasks within a request run one after another.** `ExplorerVerticle.evaluateHandler` chains them with `f.compose`.
-- **Concurrent requests each start an `EvaluateTask` thread right away**, and they share process-wide state:
-  - **Each task could grab the other's browser.** `WebSocketConnection.clientMap` is a static map of OdoX connections. `EvaluateTask.setupEnvironment()` assumes it holds one entry and takes the first one.
-  - **The first task to finish cuts off the other.** `EvaluateTask.cleanUp()` calls `clientMap.clear()`.
-  - **Token counts and timing go to the wrong task.** `TokenUsageRecord.active` is static and is overwritten by each `RequestManager.startTask`. That corrupts each `-tokens.json`, including its `timing`.
-  - **LLM settings get crossed.** `LlmClientConfig.active` is static, so one experiment's `llm` settings can apply to the other's calls.
-- **The Firefox grid has one session.** `selenium/standalone-firefox` runs one session at a time by default.
+- **Browser association.** Each task registers its browser's extension id (`dynamicAddonId`, which OdoX uses as its `clientId`) with `ClientRegistry` before Firefox starts. It is only handed the OdoX client with that id, and `cleanUp()` releases only that client.
+- **Token usage and LLM settings.** Each task's `RequestManager` owns an `LlmCallScope`. The agents and services built for the task are given it:
+  - the Qwen model client;
+  - a scoped copy of Snippet2XML;
+  - a scoped task planner registered at a per-task event-bus address, whose similar-task embedding comes back through `topKWithUsage`.
+
+  There is no static `LlmClientConfig.active` any more. `TokenUsageRecord.active` only collects calls made outside a task.
+
+What still stands in the way:
+- **One Firefox grid per concurrent request.** `selenium/standalone-firefox` runs one session at a time, so each request needs its own `firefoxDockerGridURL`.
+- **Charted runs share navigation-model state.** `NavPath.globalParameterMap`, `DijkstraCache` and the shared localizer, path constructor, graph DB and SQLite have no per-task isolation. Run charted tasks one at a time.
+- **No end-to-end run of concurrent requests in one OdoBot yet.** Until one has been checked, prefer separate instances (below) for experiments whose numbers matter.
 
 ## Usage
 

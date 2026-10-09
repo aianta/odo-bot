@@ -1,6 +1,9 @@
 package ca.ualberta.odobot.taskplanner.impl;
 
+import ca.ualberta.odobot.common.LlmCallScope;
+import ca.ualberta.odobot.common.LlmCallType;
 import ca.ualberta.odobot.guidance.RequestManager;
+import ca.ualberta.odobot.guidance.TokenUsageRecord;
 import ca.ualberta.odobot.semanticflow.navmodel.Neo4JUtils;
 
 import ca.ualberta.odobot.snippet2xml.SemanticSchema;
@@ -32,23 +35,66 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
 
     private JsonObject config;
 
+    private Strategy strategyType;
     private AIStrategy strategy;
     public static String model;
 
+    /**
+     * The task this service makes LLM calls for, or null if it is not built for a task.
+     */
+    private final LlmCallScope scope;
+
     public TaskPlannerServiceImpl(JsonObject config, Vertx vertx, SqliteService sqliteService, SqliteVectorService vectorService, Neo4JUtils neo4j, Strategy strategy){
+        this(config, vertx, sqliteService, vectorService, neo4j, strategy, null);
+    }
+
+    private TaskPlannerServiceImpl(JsonObject config, Vertx vertx, SqliteService sqliteService, SqliteVectorService vectorService, Neo4JUtils neo4j, Strategy strategy, LlmCallScope scope){
         this.vertx = vertx;
         this.config = config;
         this.sqlite = sqliteService;
         this.neo4j = neo4j;
         this.vectorService = vectorService;
+        this.strategyType = strategy;
+        this.scope = scope;
 
         this.strategy = switch (strategy){
             case OPENAI -> {
-                OpenAIStrategy _strategy = new OpenAIStrategy(config);
+                OpenAIStrategy _strategy = new OpenAIStrategy(config, scope);
                 model = _strategy.getModel();
                 yield _strategy;
             }
         };
+    }
+
+    /**
+     * @return a copy of this service whose LLM calls use the settings of, and are counted toward, the given task.
+     */
+    public TaskPlannerServiceImpl withScope(LlmCallScope scope){
+        return new TaskPlannerServiceImpl(config, vertx, sqlite, vectorService, neo4j, strategyType, scope);
+    }
+
+    /**
+     * @return the k synthetic tasks most similar to the query. The embedding call this makes is counted toward this
+     * service's task, if it has one.
+     */
+    private Future<List<JsonObject>> similarTasks(int k, String query){
+        if(scope == null){
+            return vectorService.topK(k, query);
+        }
+
+        //The span covers the whole lookup, of which the embedding call is nearly all.
+        TokenUsageRecord.InferenceSpan span = scope.begin(LlmCallType.SIMILAR_TASK_EMBEDDING);
+        return vectorService.topKWithUsage(k, query)
+                .onFailure(err->span.fail())
+                .map(result->{
+                    span.end();
+                    JsonObject usage = result.getJsonObject("usage");
+                    //Embeddings have no output tokens.
+                    scope.report(LlmCallType.SIMILAR_TASK_EMBEDDING, usage.getLong("inputTokens"), 0, usage.getLong("totalTokens"));
+                    return result.getJsonArray("results").stream()
+                            .map(JsonObject.class::cast)
+                            .collect(Collectors.toList());
+                });
     }
 
     public Future<String> generateNodeAnnotation(List<String> descriptions){
@@ -101,7 +147,7 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
                         log.info("Rewrote task:\n{}\nto:\n{}", taskDescription, rewrittenTask);
                         task.put("rewrittenTo", rewrittenTask);
                         return Future.all(
-                                vectorService.topK(15, rewrittenTask),
+                                similarTasks(15, rewrittenTask),
                                 Future.succeededFuture(syntheticTasks)
                         );
                         }

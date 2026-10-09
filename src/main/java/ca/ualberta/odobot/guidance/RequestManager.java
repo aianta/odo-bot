@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.guidance;
 
+import ca.ualberta.odobot.common.LlmCallScope;
 import ca.ualberta.odobot.common.LlmClientConfig;
 import ca.ualberta.odobot.guidance.instructions.*;
 import ca.ualberta.odobot.semanticflow.model.*;
@@ -53,14 +54,15 @@ public class RequestManager {
     private boolean firstInstructionSent = false;
 
     /**
-     * Token usage of the current task. It is the active {@link TokenUsageRecord} while the task runs.
+     * Token usage of the current task. LLM calls made through {@link #llmScope} are counted toward it while the task runs.
      */
     private TaskTokenUsage taskTokenUsage = null;
 
     /**
-     * The active token usage record from before the task started, restored when it ends.
+     * The task's LLM settings and token usage record, given to the agents and services built for the task. It holds
+     * them only while the task runs, so tasks running at the same time do not share them.
      */
-    private TokenUsageRecord previousTokenUsage = null;
+    private final LlmCallScope llmScope = new LlmCallScope();
 
     private boolean tokenUsageFinished = false;
 
@@ -81,17 +83,10 @@ public class RequestManager {
     private TaskTiming taskTiming = null;
 
     /**
-     * The OpenAI client settings of the task, or null to leave each service's own configuration in place. They are
-     * the active {@link LlmClientConfig} while the task runs.
+     * The OpenAI client settings of the task, or null to leave each service's own configuration in place. Calls made
+     * through {@link #llmScope} use them while the task runs.
      */
     private LlmClientConfig llmConfig = null;
-
-    /**
-     * The active client settings from before the task started, restored when it ends.
-     */
-    private LlmClientConfig previousLlmConfig = null;
-
-    private boolean llmConfigInstalled = false;
 
     public RequestManager(OdoClient client){
         this.client = client;
@@ -170,13 +165,16 @@ public class RequestManager {
         return this;
     }
 
+    /**
+     * @return the task's LLM settings and token usage record, for the agents and services built for the task. It is
+     * filled when the task starts and emptied when it ends.
+     */
+    public LlmCallScope getLlmScope() {
+        return llmScope;
+    }
+
     private void restoreLlmConfig(){
-        if(llmConfigInstalled){
-            llmConfigInstalled = false;
-            if(LlmClientConfig.active == llmConfig){
-                LlmClientConfig.active = previousLlmConfig;
-            }
-        }
+        llmScope.clearConfig();
     }
 
     /**
@@ -221,9 +219,7 @@ public class RequestManager {
         }
         tokenUsageFinished = true;
         taskOutcome = outcome;
-        if(TokenUsageRecord.active == taskTokenUsage){
-            TokenUsageRecord.active = previousTokenUsage;
-        }
+        llmScope.stopCounting();
 
         //Inference is only counted during execution, so a call still in flight counts up to the end of execution.
         Long executionEnd = taskTiming == null? null : taskTiming.executionEndNanos();
@@ -291,11 +287,12 @@ public class RequestManager {
 
         //Every LLM call made while the task runs is counted toward it, whichever agent makes it.
         this.taskTokenUsage = new TaskTokenUsage(()->activeAgent == null? "none" : activeAgent.getClass().getSimpleName());
-        this.previousTokenUsage = TokenUsageRecord.active;
         this.tokenUsageFinished = false;
         this.taskOutcome = null;
         this.harnessError = null;
-        TokenUsageRecord.active = this.taskTokenUsage;
+
+        //Every chat completion made through the task's scope uses the task's client settings, if it has any.
+        llmScope.start(this.taskTokenUsage, llmConfig);
 
         //Use the timing the harness handed in, unless it belongs to an earlier task.
         if(taskTiming == null || taskTiming.executionStarted()){
@@ -307,13 +304,6 @@ public class RequestManager {
         if(evalId != null && experimentFolderPath != null){
             client.getEventConnectionManager().getEventProcessor().streamRawEventsTo(
                     Path.of("%s/%s.events.jsonl.part".formatted(experimentFolderPath, evalId).replaceAll("\\|","-")));
-        }
-
-        //Every chat completion made while the task runs uses the task's client settings, if it has any.
-        if(llmConfig != null){
-            this.previousLlmConfig = LlmClientConfig.active;
-            LlmClientConfig.active = llmConfig;
-            this.llmConfigInstalled = true;
         }
 
         client.getEventConnectionManager().getEventProcessor().setUnchartedTimelineEnabled(mode == ExecutionMode.UNCHARTED);

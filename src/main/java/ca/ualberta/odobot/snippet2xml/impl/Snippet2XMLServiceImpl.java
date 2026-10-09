@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.snippet2xml.impl;
 
+import ca.ualberta.odobot.common.LlmCallScope;
 import ca.ualberta.odobot.common.UsageTelemetry;
 import ca.ualberta.odobot.guidance.RequestManager;
 import ca.ualberta.odobot.snippet2xml.*;
@@ -18,14 +19,25 @@ public class Snippet2XMLServiceImpl implements Snippet2XMLService {
 
     private static final Logger log = LoggerFactory.getLogger(Snippet2XMLServiceImpl.class);
     private Vertx vertx;
+    private JsonObject config;
+    private Strategy strategyType;
     private AIStrategy strategy;
     public static String model;
 
     public Snippet2XMLServiceImpl(Vertx vertx, JsonObject config, Strategy strategy){
+        this(vertx, config, strategy, null);
+    }
+
+    /**
+     * @param scope the task this service makes LLM calls for, or null if it is not built for a task.
+     */
+    private Snippet2XMLServiceImpl(Vertx vertx, JsonObject config, Strategy strategy, LlmCallScope scope){
         this.vertx = vertx;
+        this.config = config;
+        this.strategyType = strategy;
         this.strategy = switch (strategy){
             case OPENAI -> {
-                OpenAIStrategy _strategy = new OpenAIStrategy(config);
+                OpenAIStrategy _strategy = new OpenAIStrategy(config, scope);
                 model = _strategy.getModel();
                 yield _strategy;
             }
@@ -33,6 +45,13 @@ public class Snippet2XMLServiceImpl implements Snippet2XMLService {
 
 
 
+    }
+
+    /**
+     * @return a copy of this service whose LLM calls use the settings of, and are counted toward, the given task.
+     */
+    public Snippet2XMLServiceImpl withScope(LlmCallScope scope){
+        return new Snippet2XMLServiceImpl(vertx, config, strategyType, scope);
     }
 
     public String getModel(){

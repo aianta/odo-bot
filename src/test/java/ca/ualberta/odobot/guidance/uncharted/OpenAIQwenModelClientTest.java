@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.guidance.uncharted;
 
+import ca.ualberta.odobot.common.LlmCallScope;
 import ca.ualberta.odobot.guidance.TokenUsageRecord;
 import ca.ualberta.odobot.guidance.uncharted.QwenModelClient.QwenCompletion;
 import io.vertx.core.Context;
@@ -66,7 +67,10 @@ class OpenAIQwenModelClientTest {
     void sendsQwenParametersRetriesAndMergesReasoning() throws Exception {
         QwenAgentConfig config = QwenAgentConfig.fromJson(new JsonObject()
                 .put("base_url", "http://127.0.0.1:%d/v1".formatted(server.actualPort())));
-        OpenAIQwenModelClient client = new OpenAIQwenModelClient(config);
+        TokenUsageRecord usage = new TokenUsageRecord();
+        LlmCallScope scope = new LlmCallScope();
+        scope.start(usage, null);
+        OpenAIQwenModelClient client = new OpenAIQwenModelClient(config, scope);
 
         JsonArray messages = new JsonArray()
                 .add(QwenHistory.message("system", new JsonArray().add(QwenHistory.textPart("SYS"))))
@@ -76,8 +80,9 @@ class OpenAIQwenModelClientTest {
                 .add(QwenHistory.message("assistant", new JsonArray().add(QwenHistory.textPart("prev"))))
                 .add(QwenHistory.message("user", new JsonArray().add(QwenHistory.textPart("<tool_response>\n"))));
 
-        TokenUsageRecord usage = new TokenUsageRecord();
-        TokenUsageRecord.active = usage;
+        //The task's calls are counted toward its own record only.
+        TokenUsageRecord global = new TokenUsageRecord();
+        TokenUsageRecord.active = global;
 
         Context context = vertx.getOrCreateContext();
         CompletableFuture<QwenCompletion> result = new CompletableFuture<>();
@@ -95,6 +100,8 @@ class OpenAIQwenModelClientTest {
         client.close();
 
         assertEquals(2, calls.get());
+        assertEquals(0, global.llmCalls);
+        assertEquals(1, usage.failedAttempts);
 
         // Only the successful attempt has usage to count.
         JsonObject step = usage.toJson().getJsonObject("byCallType").getJsonObject("uncharted-step");

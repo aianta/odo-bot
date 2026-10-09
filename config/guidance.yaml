@@ -3,3 +3,5 @@ port: 7080
 apiPathPrefix: "/api/*"
 jksPath: "./ssl/odobot-server.jks"
 jksPassword: "odobotserver"
+# Refuse websockets of OdoX clients that no task expects. When false they are kept on a client of their own that no task is given.
+strictClientIds: false

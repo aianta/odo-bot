@@ -19,4 +19,11 @@ public enum Source {
     static Source getSourceByName(String name){
         return Arrays.stream(values()).filter(source -> source.name.equals(name)).findFirst().get();
     }
+
+    /**
+     * @return the source with the given name, or null if there is none.
+     */
+    public static Source fromName(String name){
+        return Arrays.stream(values()).filter(source -> source.name.equals(name)).findFirst().orElse(null);
+    }
 }

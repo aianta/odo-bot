@@ -43,11 +43,6 @@ public record LlmClientConfig(
     public static final String DEFAULT_BASE_URL = "http://127.0.0.1:8080/v1";
     public static final String DEFAULT_API_KEY = "dummy";
 
-    /**
-     * The settings of the task being executed, or null to use each service's yaml configuration.
-     */
-    public static volatile LlmClientConfig active;
-
     public LlmClientConfig {
         if (model == null || model.isBlank()) {
             throw new IllegalArgumentException("model is required");

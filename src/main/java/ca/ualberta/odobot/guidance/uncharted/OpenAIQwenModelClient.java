@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.guidance.uncharted;
 
+import ca.ualberta.odobot.common.LlmCallScope;
 import ca.ualberta.odobot.common.LlmCallType;
 import ca.ualberta.odobot.guidance.TokenUsageRecord;
 import com.openai.client.OpenAIClientAsync;
@@ -40,10 +41,23 @@ public class OpenAIQwenModelClient implements QwenModelClient {
 
     private final QwenAgentConfig config;
 
+    /**
+     * The task this client makes calls for, or null to report them to {@link TokenUsageRecord#active}.
+     */
+    private final LlmCallScope scope;
+
     private OpenAIClientAsync client;
 
     public OpenAIQwenModelClient(QwenAgentConfig config) {
+        this(config, null);
+    }
+
+    /**
+     * @param scope the task this client makes calls for, or null to report them to {@link TokenUsageRecord#active}.
+     */
+    public OpenAIQwenModelClient(QwenAgentConfig config, LlmCallScope scope) {
         this.config = config;
+        this.scope = scope;
     }
 
     @Override
@@ -56,7 +70,8 @@ public class OpenAIQwenModelClient implements QwenModelClient {
         }
         Promise<QwenCompletion> promise = Promise.promise();
         //The span covers every attempt and the backoff between them, since the agent waits on inference throughout.
-        attempt(context, params, 1, TokenUsageRecord.begin(LlmCallType.UNCHARTED_STEP), promise);
+        TokenUsageRecord.InferenceSpan span = scope == null ? TokenUsageRecord.begin(LlmCallType.UNCHARTED_STEP) : scope.begin(LlmCallType.UNCHARTED_STEP);
+        attempt(context, params, 1, span, promise);
         return promise.future();
     }
 
@@ -89,11 +104,16 @@ public class OpenAIQwenModelClient implements QwenModelClient {
     /**
      * Token accounting must never fail a step, so a missing or malformed usage block is only logged.
      */
-    private static void reportUsage(ChatCompletion completion) {
+    private void reportUsage(ChatCompletion completion) {
         try {
             completion.usage().ifPresentOrElse(
-                    usage -> TokenUsageRecord.report(LlmCallType.UNCHARTED_STEP,
-                            usage.promptTokens(), usage.completionTokens(), usage.totalTokens()),
+                    usage -> {
+                        if (scope == null) {
+                            TokenUsageRecord.report(LlmCallType.UNCHARTED_STEP, usage.promptTokens(), usage.completionTokens(), usage.totalTokens());
+                        } else {
+                            scope.report(LlmCallType.UNCHARTED_STEP, usage.promptTokens(), usage.completionTokens(), usage.totalTokens());
+                        }
+                    },
                     () -> log.warn("[Qwen38Agent] completion has no usage block, its tokens are not counted"));
         } catch (RuntimeException e) {
             log.warn("[Qwen38Agent] could not read completion usage: {}", e.toString());

@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.guidance.uncharted;
 
+import ca.ualberta.odobot.common.LlmCallScope;
 import ca.ualberta.odobot.guidance.AbstractAgent;
 import ca.ualberta.odobot.guidance.UnchartedAgent;
 import ca.ualberta.odobot.guidance.instructions.GiveUp;
@@ -67,9 +68,19 @@ public class Qwen38Agent extends UnchartedAgent {
 
         private QwenAgentConfig config;
         private QwenModelClient modelClient;
+        private LlmCallScope llmScope;
 
         public Builder config(QwenAgentConfig config) {
             this.config = config;
+            return this;
+        }
+
+        /**
+         * The task the default model client makes calls for, so they are counted toward it. Optional: without it calls
+         * are reported to {@link ca.ualberta.odobot.guidance.TokenUsageRecord#active}.
+         */
+        public Builder llmScope(LlmCallScope llmScope) {
+            this.llmScope = llmScope;
             return this;
         }
 
@@ -102,7 +113,7 @@ public class Qwen38Agent extends UnchartedAgent {
         protected Qwen38Agent create() {
             Qwen38Agent agent = new Qwen38Agent();
             agent.config = config;
-            agent.modelClient = modelClient != null ? modelClient : new OpenAIQwenModelClient(config);
+            agent.modelClient = modelClient != null ? modelClient : new OpenAIQwenModelClient(config, llmScope);
             return agent;
         }
 

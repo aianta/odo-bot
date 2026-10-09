@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.explorer;
 
+import ca.ualberta.odobot.common.LlmCallScope;
 import ca.ualberta.odobot.common.LlmClientConfig;
 import ca.ualberta.odobot.dataentry2label.impl.DataEntry2LabelServiceImpl;
 import ca.ualberta.odobot.guidance.*;
@@ -10,13 +11,19 @@ import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
 import ca.ualberta.odobot.snippet2xml.Snippet2XMLVerticle;
 import ca.ualberta.odobot.snippet2xml.impl.Snippet2XMLServiceImpl;
 import ca.ualberta.odobot.taskplanner.TaskPlannerService;
+import ca.ualberta.odobot.taskplanner.TaskPlannerVerticle;
 import ca.ualberta.odobot.taskplanner.impl.TaskPlannerServiceImpl;
 import ca.ualberta.odobot.telemetry.TelemetryVerticle;
 import ca.ualberta.odobot.telemetry.model.TaskInstanceResults;
+import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.buffer.Buffer;
+import io.vertx.core.eventbus.DeliveryOptions;
+import io.vertx.core.eventbus.MessageConsumer;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import io.vertx.serviceproxy.ServiceBinder;
+import io.vertx.serviceproxy.ServiceProxyBuilder;
 import org.openqa.selenium.*;
 import org.openqa.selenium.firefox.*;
 import org.openqa.selenium.remote.Augmenter;
@@ -32,15 +39,23 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.NoSuchElementException;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import static ca.ualberta.odobot.explorer.ExploreTask.*;
 import static ca.ualberta.odobot.explorer.WebDriverUtils.*;
+import static ca.ualberta.odobot.logpreprocessor.Constants.TASK_PLANNER_SERVICE_ADDRESS;
 
 public class EvaluateTask implements Runnable{
 
     private static final Logger log = LoggerFactory.getLogger(EvaluateTask.class);
     private static final String ADDON_ID = "odosight@ualberta.ca";
     private static final int MIN_NETWORK_EVENTS = 3;
+    /**
+     * How long setup waits for OdoX's control and event sockets to connect, unless the request sets {@code odoXConnectTimeout}.
+     */
+    private static final long ODOX_CONNECT_TIMEOUT_MS = 30000L;
 
     Agent agent;
     UUID dynamicAddonId = UUID.randomUUID();
@@ -74,11 +89,13 @@ public class EvaluateTask implements Runnable{
      * Wall clock time of this task, from before the browser is set up until after scoring.
      */
     TaskTiming timing = new TaskTiming();
-    TaskPlannerService taskPlannerService;
+    /**
+     * The event bus registration of this task's own task planner, see {@link #taskPlanner}. Null unless the task is charted.
+     */
+    MessageConsumer<JsonObject> taskPlannerBinding;
 
-    public EvaluateTask(JsonObject exploreVerticleConfig, JsonObject config, JsonObject task, Promise<Void> promise, TaskPlannerService taskPlannerService, Agent agent){
+    public EvaluateTask(JsonObject exploreVerticleConfig, JsonObject config, JsonObject task, Promise<Void> promise, Agent agent){
         this.agent = agent;
-        this.taskPlannerService = taskPlannerService;
         this.config = config;
         this.promise = promise;
         this.task = task;
@@ -99,8 +116,15 @@ public class EvaluateTask implements Runnable{
         this.exploreVerticleConfig = exploreVerticleConfig;
     }
 
-    private void setupEnvironment() throws MalformedURLException {
+    private void setupEnvironment() throws MalformedURLException, InterruptedException, ExecutionException, TimeoutException {
         try {
+
+            //OdoX's clientId is its extension instance id, which buildProfile() sets to dynamicAddonId. Expect it before
+            //the browser starts, so its sockets are bound to this task as they arrive.
+            Future<OdoClient> clientReady = ClientRegistry.expect(dynamicAddonId, new JsonObject()
+                    .put("evalId", task.getString("_evalId"))
+                    .put("taskId", task.getString("id"))
+                    .put("experimentId", config.getString("experimentId", "default")));
 
             FirefoxOptions options = new FirefoxOptions();
             if (headless) {
@@ -162,12 +186,11 @@ public class EvaluateTask implements Runnable{
 
             //Navigate to Canvas Login
 
-            //At this stage OdoX should be connected to the guidance vertical.
-            assert WebSocketConnection.clientMap.size() == 1;
+            //Wait for this browser's OdoX to connect to the guidance subsystem. A timeout fails the task's setup.
+            odoXClient = clientReady.toCompletionStage().toCompletableFuture()
+                    .get(config.getLong("odoXConnectTimeout", ODOX_CONNECT_TIMEOUT_MS), TimeUnit.MILLISECONDS);
 
-            log.info("OdoX connected to Guidance Subsystem");
-
-            odoXClient = WebSocketConnection.clientMap.entrySet().iterator().next().getValue();
+            log.info("OdoX client {} connected to Guidance Subsystem", odoXClient.id());
         }catch (NoSuchElementException e){
             cleanUp();
             setupEnvironment();
@@ -396,14 +419,16 @@ public class EvaluateTask implements Runnable{
      * Builds the agent that executes the task in the agent's {@link ExecutionMode}.
      */
     private IAgent buildAgent(JsonObject task){
+        //The LLM clients the agent uses are built for this task, so they count its calls and use its settings.
+        LlmCallScope llmScope = odoXClient.getRequestManager().getLlmScope();
         return switch (agent.getMode()){
             case CHARTED -> new ChartedAgent.Builder()
                     .mode(agent == Agent.ODO_BOT_NL? ExecutionRequest.Type.NL : ExecutionRequest.Type.PREDEFINED)
                     .pathSelectionMode(this.pathSelectionMode)
                     .localizer(LogPreprocessor.localizer)
                     .pathsConstructor(LogPreprocessor.pathsConstructor)
-                    .taskPlanner(taskPlannerService)
-                    .snippet2XML(Snippet2XMLVerticle.snippet2XML)
+                    .taskPlanner(taskPlanner(llmScope))
+                    .snippet2XML(((Snippet2XMLServiceImpl)Snippet2XMLVerticle.snippet2XML).withScope(llmScope))
                     .graphDb(LogPreprocessor.graphDB)
                     .neo4J(LogPreprocessor.neo4j)
                     .sqlite(ExplorerVerticle.sqliteService)
@@ -413,6 +438,7 @@ public class EvaluateTask implements Runnable{
                     .build();
             case UNCHARTED -> new Qwen38Agent.Builder()
                     .config(qwenConfig(config))
+                    .llmScope(llmScope)
                     .task(task)
                     .artifactDir(this.experimentFolderPath)
                     .evalId(task.getString("_evalId"))
@@ -423,6 +449,23 @@ public class EvaluateTask implements Runnable{
                     .evalId(task.getString("_evalId"))
                     .build();
         };
+    }
+
+    /**
+     * Charted agents reach the task planner over the event bus. This registers a copy of it, built for this task, at an
+     * address of the task's own, and returns a proxy to it. The copy counts the task's LLM calls and uses its settings.
+     * {@link #cleanUp} removes the registration.
+     */
+    private TaskPlannerService taskPlanner(LlmCallScope llmScope){
+        String address = TASK_PLANNER_SERVICE_ADDRESS + "." + dynamicAddonId;
+        TaskPlannerServiceImpl scoped = ((TaskPlannerServiceImpl)TaskPlannerVerticle.service).withScope(llmScope);
+        taskPlannerBinding = new ServiceBinder(GuidanceVerticle._vertx)
+                .setAddress(address)
+                .register(TaskPlannerService.class, scoped);
+        return new ServiceProxyBuilder(GuidanceVerticle._vertx)
+                .setAddress(address)
+                .setOptions(new DeliveryOptions().setSendTimeout(3600000)) //1hr timeout - sometimes chat completions take a hot second.
+                .build(TaskPlannerService.class);
     }
 
     /**
@@ -512,8 +555,14 @@ public class EvaluateTask implements Runnable{
             driver = null;
         }
 
-        //Clear client map
-        WebSocketConnection.clientMap.clear();
+        //Forget this task's OdoX client, leaving those of other tasks.
+        ClientRegistry.release(dynamicAddonId);
+
+        //Remove this task's task planner from the event bus.
+        if(taskPlannerBinding != null){
+            taskPlannerBinding.unregister();
+            taskPlannerBinding = null;
+        }
 
     }
 
@@ -627,17 +676,8 @@ public class EvaluateTask implements Runnable{
         //Open the OdoXControls
         driver.get(odoXControlsUrl);
 
-        //Then switch back to the target web app tab
+        //Then switch back to the target web app tab. setupEnvironment() then waits for OdoX's sockets to connect.
         driver.switchTo().window(webAppTabHandle);
-
-//        //Wait for OdoX to connect to the OdoBot server.
-//        explicitlyWait(driver, 3);
-//
-//        //Refresh the web app page
-//        driver.get(config.getString(EvaluationTaskRequestFields.WEB_APP_URL.field));
-
-        //Wait for OdoX websockets to stabilize
-        explicitlyWait(driver, 5);
 
     }
 

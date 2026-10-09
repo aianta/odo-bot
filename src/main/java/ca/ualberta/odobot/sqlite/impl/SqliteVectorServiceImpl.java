@@ -103,8 +103,25 @@ public class SqliteVectorServiceImpl  implements SqliteVectorService {
     }
 
     public Future<List<JsonObject>> topK(int k, String queryString){
+        return topK(k, createEmbeddings(LlmCallType.SIMILAR_TASK_EMBEDDING, queryString, true));
+    }
 
-        CreateEmbeddingResponse embeddings = createEmbeddings(LlmCallType.SIMILAR_TASK_EMBEDDING, queryString);
+    /**
+     * Like {@link #topK(int, String)}, but the embedding call is not reported to {@link TokenUsageRecord#active}. Its
+     * usage is returned with the results instead, so the caller can count it toward its own task.
+     *
+     * @return {@code {"results": [...], "usage": {"inputTokens": ..., "totalTokens": ...}}}
+     */
+    public Future<JsonObject> topKWithUsage(int k, String queryString){
+        CreateEmbeddingResponse embeddings = createEmbeddings(LlmCallType.SIMILAR_TASK_EMBEDDING, queryString, false);
+        return topK(k, embeddings).map(results->new JsonObject()
+                .put("results", new JsonArray(results))
+                .put("usage", new JsonObject()
+                        .put("inputTokens", embeddings.usage().promptTokens())
+                        .put("totalTokens", embeddings.usage().totalTokens())));
+    }
+
+    private Future<List<JsonObject>> topK(int k, CreateEmbeddingResponse embeddings){
         Embedding item = embeddings.data().get(0);
 
         ByteBuffer byteBuffer = ByteBuffer.allocate(item.embedding().size()*4);
@@ -148,7 +165,7 @@ public class SqliteVectorServiceImpl  implements SqliteVectorService {
     public Future<Void> embedSyntheticTask(String trajectoryId, String task) {
         log.info("Computing embedding for synthetic task for trajectory {}:\n{}", trajectoryId, task);
 
-        CreateEmbeddingResponse embeddings = createEmbeddings(LlmCallType.OTHER_EMBEDDING, task);
+        CreateEmbeddingResponse embeddings = createEmbeddings(LlmCallType.OTHER_EMBEDDING, task, true);
 
         for (Embedding item : embeddings.data()) {
             log.info("Embedding vector of length: {}", item.embedding().size());
@@ -182,9 +199,11 @@ public class SqliteVectorServiceImpl  implements SqliteVectorService {
 
     /**
      * @param callType the context of this call, used to break down token usage.
+     * @param reportToActive whether to time and count the call in {@link TokenUsageRecord#active}. False when the caller
+     *                       counts it toward its own task.
      */
-    private CreateEmbeddingResponse createEmbeddings(LlmCallType callType, String input){
-        TokenUsageRecord.InferenceSpan span = TokenUsageRecord.begin(callType);
+    private CreateEmbeddingResponse createEmbeddings(LlmCallType callType, String input, boolean reportToActive){
+        TokenUsageRecord.InferenceSpan span = reportToActive? TokenUsageRecord.begin(callType) : TokenUsageRecord.InferenceSpan.NONE;
         CreateEmbeddingResponse response;
         try{
             response = openAIClient.embeddings().create(EmbeddingCreateParams.builder()
@@ -199,7 +218,9 @@ public class SqliteVectorServiceImpl  implements SqliteVectorService {
         }
 
         //Embeddings have no output tokens.
-        TokenUsageRecord.report(callType, response.usage().promptTokens(), 0, response.usage().totalTokens());
+        if(reportToActive){
+            TokenUsageRecord.report(callType, response.usage().promptTokens(), 0, response.usage().totalTokens());
+        }
         return response;
     }
 

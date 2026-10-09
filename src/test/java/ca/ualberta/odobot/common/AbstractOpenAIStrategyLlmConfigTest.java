@@ -17,13 +17,26 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * The charted services' chat completions use the task's {@link LlmClientConfig} when one is active.
+ * The charted services' chat completions use the settings of the task they are built for, and are counted toward it.
  */
 class AbstractOpenAIStrategyLlmConfigTest {
 
     private Vertx vertx;
     private HttpServer server;
     private final List<JsonObject> requests = new CopyOnWriteArrayList<>();
+
+    /**
+     * A strategy that asks one question, built for a task or not.
+     */
+    static class AskingStrategy extends AbstractOpenAIStrategy {
+        AskingStrategy(JsonObject openAI, LlmCallScope scope){
+            super(new JsonObject().put("openAI", openAI), scope);
+        }
+
+        String ask(){
+            return executeChatCompletion(List.of(user("Label the link.")));
+        }
+    }
 
     @BeforeEach
     void startFakeServer() throws Exception {
@@ -48,7 +61,6 @@ class AbstractOpenAIStrategyLlmConfigTest {
 
     @AfterEach
     void stop() throws Exception {
-        LlmClientConfig.active = null;
         TokenUsageRecord.active = null;
         vertx.close().toCompletionStage().toCompletableFuture().get(10, TimeUnit.SECONDS);
     }
@@ -57,29 +69,33 @@ class AbstractOpenAIStrategyLlmConfigTest {
         return "http://127.0.0.1:%d/v1".formatted(server.actualPort());
     }
 
-    private LinkLabelingServiceImpl linkLabeler(JsonObject openAI) {
-        openAI.put("generateLinkLabel", new JsonObject().put("systemPrompt", "Label the link."));
-        return new LinkLabelingServiceImpl(new JsonObject().put("openAI", openAI));
+    /**
+     * Settings like a service's yaml, which point elsewhere so a call that uses them fails.
+     */
+    private static JsonObject unreachableYaml(){
+        return new JsonObject()
+                .put("secretKey", "yaml-key")
+                .put("model", "yaml-model")
+                .put("baseUrl", "http://127.0.0.1:1/v1");
+    }
+
+    private LlmClientConfig taskSettings(String model){
+        return LlmClientConfig.fromJson(new JsonObject()
+                .put("base_url", serverUrl())
+                .put("model", model)
+                .put("max_attempts", 1));
     }
 
     @Test
-    void usesTheActiveTaskSettings() {
-        //The yaml settings point elsewhere; the active task settings must win.
-        LinkLabelingServiceImpl labeler = linkLabeler(new JsonObject()
-                .put("secretKey", "yaml-key")
-                .put("model", "yaml-model")
-                .put("baseUrl", "http://127.0.0.1:1/v1"));
-        LlmClientConfig.active = LlmClientConfig.fromJson(new JsonObject()
-                .put("base_url", serverUrl())
-                .put("model", "qwen3.8-27b")
-                .put("max_attempts", 1));
+    void usesTheSettingsOfItsTask() {
+        LlmCallScope scope = new LlmCallScope();
         TokenUsageRecord usage = new TokenUsageRecord();
-        TokenUsageRecord.active = usage;
-
-        JsonObject label = labeler.labelLink("/courses/2/announcements/17", "/courses/*/announcements/*").result();
+        scope.start(usage, taskSettings("qwen3.8-27b"));
+        TokenUsageRecord global = new TokenUsageRecord();
+        TokenUsageRecord.active = global;
 
         //The reasoning block is stripped from the answer.
-        assertEquals("announcement", label.getString("type"));
+        assertEquals("announcement", new AskingStrategy(unreachableYaml(), scope).ask());
 
         JsonObject body = requests.get(0);
         assertEquals("qwen3.8-27b", body.getString("model"));
@@ -91,23 +107,68 @@ class AbstractOpenAIStrategyLlmConfigTest {
 
         assertEquals(1, usage.llmCalls);
         assertEquals(57, usage.totalTokens);
+        assertEquals(0, global.llmCalls, "a task's calls are not counted in the process-wide record");
     }
 
     @Test
-    void usesTheServiceSettingsWithoutActiveTaskSettings() {
-        LlmClientConfig.active = null;
-        LinkLabelingServiceImpl labeler = linkLabeler(new JsonObject()
+    void tasksRunningAtTheSameTimeKeepTheirOwnSettingsAndUsage() {
+        LlmCallScope first = new LlmCallScope();
+        LlmCallScope second = new LlmCallScope();
+        TokenUsageRecord firstUsage = new TokenUsageRecord();
+        TokenUsageRecord secondUsage = new TokenUsageRecord();
+        first.start(firstUsage, taskSettings("first-model"));
+        second.start(secondUsage, taskSettings("second-model"));
+
+        AskingStrategy firstStrategy = new AskingStrategy(unreachableYaml(), first);
+        AskingStrategy secondStrategy = new AskingStrategy(unreachableYaml(), second);
+        firstStrategy.ask();
+        secondStrategy.ask();
+        secondStrategy.ask();
+
+        assertEquals(List.of("first-model", "second-model", "second-model"), requests.stream().map(body->body.getString("model")).toList());
+        assertEquals(1, firstUsage.llmCalls);
+        assertEquals(2, secondUsage.llmCalls);
+    }
+
+    @Test
+    void callsAfterTheTaskEndsAreNotCountedAndUseTheServiceSettings() {
+        LlmCallScope scope = new LlmCallScope();
+        TokenUsageRecord usage = new TokenUsageRecord();
+        scope.start(usage, taskSettings("qwen3.8-27b"));
+        scope.stopCounting();
+        scope.clearConfig();
+
+        new AskingStrategy(new JsonObject()
+                .put("secretKey", "yaml-key")
+                .put("model", "yaml-model")
+                .put("baseUrl", serverUrl()), scope).ask();
+
+        assertEquals("yaml-model", requests.get(0).getString("model"));
+        assertEquals(0, usage.llmCalls);
+    }
+
+    @Test
+    void aServiceNotBuiltForATaskUsesItsOwnSettingsAndTheProcessWideRecord() {
+        TokenUsageRecord global = new TokenUsageRecord();
+        TokenUsageRecord.active = global;
+        //A task running at the same time does not affect it.
+        new LlmCallScope().start(new TokenUsageRecord(), taskSettings("qwen3.8-27b"));
+
+        LinkLabelingServiceImpl labeler = new LinkLabelingServiceImpl(new JsonObject().put("openAI", new JsonObject()
                 .put("secretKey", "yaml-key")
                 .put("model", "yaml-model")
                 .put("baseUrl", serverUrl())
-                .putNull("temperature"));
+                .putNull("temperature")
+                .put("generateLinkLabel", new JsonObject().put("systemPrompt", "Label the link."))));
 
-        labeler.labelLink("/courses/2/announcements/17", "/courses/*/announcements/*").result();
+        JsonObject label = labeler.labelLink("/courses/2/announcements/17", "/courses/*/announcements/*").result();
 
+        assertEquals("announcement", label.getString("type"));
         JsonObject body = requests.get(0);
         assertEquals("yaml-model", body.getString("model"));
         assertFalse(body.containsKey("temperature"));
         assertFalse(body.containsKey("top_k"));
         assertFalse(body.containsKey("max_tokens"));
+        assertEquals(1, global.llmCalls);
     }
 }

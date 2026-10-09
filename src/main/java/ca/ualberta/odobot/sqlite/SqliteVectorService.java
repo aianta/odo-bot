@@ -24,6 +24,14 @@ public interface SqliteVectorService {
 
     Future<List<JsonObject>> topK(int k, String queryString);
 
+    /**
+     * Like {@link #topK}, but the embedding call's token usage is returned with the results for the caller to count,
+     * rather than reported to the process-wide record.
+     *
+     * @return {@code {"results": [...], "usage": {"inputTokens": ..., "totalTokens": ...}}}
+     */
+    Future<JsonObject> topKWithUsage(int k, String queryString);
+
     Future<Void> embedSyntheticTasks(JsonObject tasks);
 
     Future<Void> embedSyntheticTask(String trajectoryId, String task);

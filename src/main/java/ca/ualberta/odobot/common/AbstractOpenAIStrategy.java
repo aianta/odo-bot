@@ -36,6 +36,12 @@ public abstract class AbstractOpenAIStrategy {
 
     protected String model; //The openAI model to use for chat completions
 
+    /**
+     * The task this strategy makes calls for, or null if it is not built for a task. Then its calls use its own
+     * configuration and are reported to {@link TokenUsageRecord#active}.
+     */
+    protected final LlmCallScope scope;
+
     public enum Role {SYSTEM, USER}
 
     /**
@@ -56,6 +62,14 @@ public abstract class AbstractOpenAIStrategy {
     }
 
     public AbstractOpenAIStrategy(JsonObject config){
+        this(config, null);
+    }
+
+    /**
+     * @param scope the task this strategy makes calls for, or null if it is not built for a task.
+     */
+    public AbstractOpenAIStrategy(JsonObject config, LlmCallScope scope){
+        this.scope = scope;
         this.config = config.getJsonObject("openAI");
         if (MainVerticle.MODEL_OVERRIDE != null){
             this.model = MainVerticle.MODEL_OVERRIDE;
@@ -100,8 +114,8 @@ public abstract class AbstractOpenAIStrategy {
         ChatCompletionCreateParams.Builder params = ChatCompletionCreateParams.builder()
                 .n(1); //Only generate one choice
 
-        //The task being executed may set the client settings, otherwise they come from this service's configuration.
-        LlmClientConfig taskConfig = LlmClientConfig.active;
+        //The task this strategy is built for may set the client settings, otherwise they come from this service's configuration.
+        LlmClientConfig taskConfig = scope == null? null : scope.config();
         OpenAIClient callClient;
         if(taskConfig != null){
             taskConfig.applyTo(params);
@@ -133,7 +147,7 @@ public abstract class AbstractOpenAIStrategy {
         }
 
         //Time the call, including the client's own retries, as time spent waiting on inference.
-        TokenUsageRecord.InferenceSpan span = TokenUsageRecord.begin(callType);
+        TokenUsageRecord.InferenceSpan span = scope == null? TokenUsageRecord.begin(callType) : scope.begin(callType);
         ChatCompletion chatCompletion;
         try{
             chatCompletion = callClient.chat().completions().create(params.build());
@@ -143,9 +157,14 @@ public abstract class AbstractOpenAIStrategy {
             throw e;
         }
 
-        //Record token usage if there is an active token usage record
-        chatCompletion.usage().ifPresent(usage->
-                TokenUsageRecord.report(callType, usage.promptTokens(), usage.completionTokens(), usage.totalTokens()));
+        //Record token usage toward this strategy's task, or else the active token usage record if there is one
+        chatCompletion.usage().ifPresent(usage->{
+            if(scope == null){
+                TokenUsageRecord.report(callType, usage.promptTokens(), usage.completionTokens(), usage.totalTokens());
+            }else{
+                scope.report(callType, usage.promptTokens(), usage.completionTokens(), usage.totalTokens());
+            }
+        });
 
 
         log.info("Got chat completion ({})@{}", chatCompletion.id(), chatCompletion.created());
