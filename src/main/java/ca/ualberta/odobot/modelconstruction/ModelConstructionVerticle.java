@@ -111,7 +111,7 @@ public class ModelConstructionVerticle extends HttpServiceVerticle {
         webClient = WebClient.create(vertx.getDelegate(), webClientOptions);
 
         //Init SQLiteVectorService
-        sqliteVectorService = SqliteVectorService.create(_config.getJsonObject("sqliteVectorConfig"));
+        sqliteVectorService = SqliteVectorService.create(vertx.getDelegate(), _config.getJsonObject("sqliteVectorConfig"));
         new ServiceBinder(vertx.getDelegate())
                 .setAddress(SQLITE_VECTOR_SERVICE_ADDRESS)
                 .register(SqliteVectorService.class, sqliteVectorService)

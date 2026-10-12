@@ -26,6 +26,11 @@ public class WebSocketConnection {
     private ServerWebSocket socket;
 
     private Vertx vertx;
+
+    /**
+     * The task this socket was accepted for. Null for a placeholder connection.
+     */
+    private TaskSockets sockets;
     private boolean isBound = false;
 
     private OdoClient boundClient = null;
@@ -38,20 +43,25 @@ public class WebSocketConnection {
 
     public WebSocketConnection(){}
 
-    public WebSocketConnection(Vertx vertx, ServerWebSocket socket){
-        this(vertx, socket, null, null);
-    }
-
     /**
+     * @param sockets the task the socket was accepted for.
      * @param clientId the clientId from the socket's URL, or null if it had none. Then the socket is bound on its first message.
      * @param source the source from the socket's URL, or null if it had none.
      */
-    public WebSocketConnection(Vertx vertx, ServerWebSocket socket, UUID clientId, Source source){
+    public WebSocketConnection(Vertx vertx, ServerWebSocket socket, TaskSockets sockets, UUID clientId, Source source){
         this.vertx = vertx; //Get a reference to the vertx instance, we'll need this to ping/pong active sockets.
+        this.sockets = sockets;
         handleConnection(socket);
         if(clientId != null && source != null){
             bind(clientId, source);
         }
+    }
+
+    /**
+     * @return the Vert.x instance this socket was accepted on, or null for a placeholder connection.
+     */
+    public Vertx vertx(){
+        return vertx;
     }
 
     public void close(){
@@ -123,18 +133,23 @@ public class WebSocketConnection {
     }
 
     /**
-     * Bind this socket to the client with the given clientId, see {@link ClientRegistry#bind}.
+     * Bind this socket to the task's client, see {@link TaskSockets#bind}. A socket with another clientId is closed.
      */
     private void bind(UUID clientId, Source source){
+        OdoClient client = sockets.bind(clientId, source, this);
+        if(client == null){
+            close();
+            return;
+        }
         boundSource = source;
-        boundClient = ClientRegistry.bind(clientId, source, this);
+        boundClient = client;
         isBound = true;
     }
 
     /**
      * Messages from the extension carry, at minimum, the 'source' and 'clientId' fields. A socket whose URL had no clientId
-     * (an older OdoX) is bound to its client by its first message, see {@link ClientRegistry#bind}. In strict mode a socket
-     * whose clientId no task expects is closed.
+     * (an older OdoX) is bound to its client by its first message, see {@link TaskSockets#bind}. A socket whose clientId
+     * is not the task's is closed.
      *
      * @param buffer
      */
@@ -151,13 +166,10 @@ public class WebSocketConnection {
                 return;
             }
 
-            if(ClientRegistry.isStrict() && !ClientRegistry.isExpected(clientId)){
-                log.warn("Closing websocket of OdoX client {} ({}), which no task expects.", clientId, socket.remoteAddress());
-                close();
+            bind(clientId, source);
+            if(!isBound){
                 return;
             }
-
-            bind(clientId, source);
             log.info("Underlying message type: {} ", message.getString("type"));
 
         }else if(message.containsKey("clientId") && !boundClient.id().toString().equalsIgnoreCase(message.getString("clientId"))){
@@ -182,14 +194,14 @@ public class WebSocketConnection {
     /**
      * @return the clientId in the query of a websocket URL, e.g. {@code /?clientId=<uuid>&source=ControlSocket}, or null if it has no valid one.
      */
-    static UUID clientIdFromUri(String uri){
+    public static UUID clientIdFromUri(String uri){
         return parseUuid(queryParameter(uri, "clientId"));
     }
 
     /**
      * @return the source in the query of a websocket URL, or null if it has no valid one.
      */
-    static Source sourceFromUri(String uri){
+    public static Source sourceFromUri(String uri){
         return Source.fromName(queryParameter(uri, "source"));
     }
 

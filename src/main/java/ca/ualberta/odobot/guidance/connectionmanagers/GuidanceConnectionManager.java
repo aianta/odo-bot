@@ -1,6 +1,5 @@
 package ca.ualberta.odobot.guidance.connectionmanagers;
 
-import ca.ualberta.odobot.guidance.GuidanceVerticle;
 import ca.ualberta.odobot.guidance.OdoClient;
 import ca.ualberta.odobot.guidance.WebSocketConnection;
 import ca.ualberta.odobot.guidance.feedback.AlternateXpath;
@@ -42,6 +41,21 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
 
 
     private JsonObject executionInstruction = null;
+
+    /**
+     * How long an instruction waits before it is sent, see {@link #sendExecutionInstruction}.
+     */
+    public long instructionPause = 3000l;
+
+    /**
+     * How long a follow-up instruction, or a SHOW_NAVIGATION_OPTIONS message, waits before it is sent.
+     */
+    public long followUpPause = 1000l;
+
+    /**
+     * The timers of messages waiting out their pause, see {@link #afterPause}.
+     */
+    private final Set<Long> pauseTimers = new HashSet<>();
 
     private void printActivePromises(){
         log.info("ActivePromises:");
@@ -157,14 +171,52 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
         Promise<JsonObject> promise = Promise.promise();
         activePromises.put("NAVIGATION_OPTIONS_SHOW_RESULT", promise);
         printActivePromises();
-        try {
-            Thread.sleep(1000);
-        } catch (InterruptedException e) {
-            throw new RuntimeException(e);
-        }
-        send(showNavigationOptionsRequest);
+        afterPause(followUpPause, ()->send(showNavigationOptionsRequest));
 
         return promise.future();
+    }
+
+    /**
+     * Run the action once the pause has elapsed, on the context that runs the agent. Unlike the sleep it replaces, the
+     * pause does not hold up the event loop, so OdoX's messages keep being handled meanwhile.
+     */
+    private void afterPause(long pauseMs, Runnable action){
+        if(context != null && Vertx.currentContext() != context){
+            context.runOnContext(v->afterPause(pauseMs, action));
+            return;
+        }
+
+        long[] timer = new long[1];
+        timer[0] = client.vertx().setTimer(pauseMs, id->{
+            pauseTimers.remove(timer[0]);
+            action.run();
+        });
+        pauseTimers.add(timer[0]);
+    }
+
+    /**
+     * Cancel the task timeout and every message still waiting to be sent, once the task is over.
+     */
+    public void cancelTimers(){
+        if(context != null && Vertx.currentContext() != context){
+            context.runOnContext(v->cancelTimers());
+            return;
+        }
+
+        pauseTimers.forEach(client.vertx()::cancelTimer);
+        pauseTimers.clear();
+
+        if(executionInstructionDelayTimer != -1l){
+            client.vertx().cancelTimer(executionInstructionDelayTimer);
+            executionInstructionDelayTimer = -1l;
+            executionInstructionDelaySince = -1l;
+        }
+        executionInstruction = null;
+
+        if(timeoutTimer != -1l){
+            client.vertx().cancelTimer(timeoutTimer);
+            timeoutTimer = -1l;
+        }
     }
 
     /**
@@ -181,7 +233,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
      */
     public void resetExecutionInstructionDelay(){
         if(executionInstructionDelayTimer != -1l){
-            GuidanceVerticle._vertx.cancelTimer(executionInstructionDelayTimer);
+            client.vertx().cancelTimer(executionInstructionDelayTimer);
         }
 
         long now = System.nanoTime();
@@ -196,7 +248,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
         }else{
             log.info("Next execution instruction will be delayed to give time for DOM to settle.");
         }
-        executionInstructionDelayTimer = GuidanceVerticle._vertx.setTimer(delay, id->{
+        executionInstructionDelayTimer = client.vertx().setTimer(delay, id->{
             executionInstructionDelayTimer = -1;
             executionInstructionDelaySince = -1;
             if(executionInstruction != null){
@@ -220,10 +272,10 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
         }
 
         if(timeoutTimer != -1l){ //Only if it hasn't yet been set.
-            GuidanceVerticle._vertx.cancelTimer(timeoutTimer);
+            client.vertx().cancelTimer(timeoutTimer);
         }
 
-        timeoutTimer = GuidanceVerticle._vertx.setTimer(client.getRequestManager().getTimeout(), id->{
+        timeoutTimer = client.vertx().setTimer(client.getRequestManager().getTimeout(), id->{
             //timeoutTimer = id;
             log.info("Task execution timed out!");
             client.getRequestManager().getEvaluationComplete().tryFail("Timeout!");
@@ -266,12 +318,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
         log.info("Added EXECUTION_RESULT promise.");
         activePromises.put("EXECUTION_RESULT", promise);
         printActivePromises();
-        try{
-            Thread.sleep(followUp?1000:3000);
-        }catch (InterruptedException e){
-            throw new RuntimeException(e);
-        }
-        send(executionRequest);
+        afterPause(followUp? followUpPause : instructionPause, ()->send(executionRequest));
 
         return promise.future();
     }
@@ -287,7 +334,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
             data.put("delayed", true);
             if(executionInstruction != null){
                 log.error("Fatal Error, previous instruction was still waiting to be sent!");
-                GuidanceVerticle._vertx.setTimer(executionInstructionDelay, timer->{
+                client.vertx().setTimer(executionInstructionDelay, timer->{
                     send(data);
                 });
                 return false;

@@ -54,6 +54,22 @@ public class RequestManager {
     private boolean firstInstructionSent = false;
 
     /**
+     * How many steps a task may take unless it sets {@code maxSteps}.
+     */
+    public static final int DEFAULT_MAX_STEPS = 30;
+
+    /**
+     * The most instructions the active agent may have executed in the current task, or null for no limit. Follow-ups
+     * of multi-step instructions don't count. An instruction past the limit ends the task as failed.
+     */
+    private Integer maxSteps = DEFAULT_MAX_STEPS;
+
+    /**
+     * How many of the agent's instructions have been executed in the current task.
+     */
+    private int steps = 0;
+
+    /**
      * Token usage of the current task. LLM calls made through {@link #llmScope} are counted toward it while the task runs.
      */
     private TaskTokenUsage taskTokenUsage = null;
@@ -87,6 +103,11 @@ public class RequestManager {
      * through {@link #llmScope} use them while the task runs.
      */
     private LlmClientConfig llmConfig = null;
+
+    /**
+     * Where the task runs, saved with its token usage, or null.
+     */
+    private JsonObject environment = null;
 
     public RequestManager(OdoClient client){
         this.client = client;
@@ -127,9 +148,9 @@ public class RequestManager {
 
     public RequestManager setEvaluationComplete(Promise<Void> evaluationComplete) {
         this.evaluationComplete = evaluationComplete;
-        this.evaluationComplete.future().onSuccess(done->{
-            //Clear timeout timer
-            GuidanceVerticle._vertx.cancelTimer(client.getGuidanceConnectionManager().timeoutTimer);
+        this.evaluationComplete.future().onComplete(done->{
+            //Nothing more goes to OdoX for this task: stop the timeout and drop any instruction still waiting to be sent.
+            client.getGuidanceConnectionManager().cancelTimers();
         });
         this.evaluationComplete.future().onFailure(err->{
             log.error(err.getMessage(), err);
@@ -204,6 +225,44 @@ public class RequestManager {
         return this;
     }
 
+    /**
+     * @return how the current (or last) task ended, or null if it hasn't.
+     */
+    public String getTaskOutcome() {
+        return taskOutcome;
+    }
+
+    public String getHarnessError() {
+        return harnessError;
+    }
+
+    /**
+     * @param maxSteps the most instructions the agent may have executed in the next task, at least 1, or null for no
+     *                 limit.
+     */
+    public RequestManager setMaxSteps(Integer maxSteps) {
+        if(maxSteps != null && maxSteps < 1){
+            throw new IllegalArgumentException("maxSteps must be at least 1, got " + maxSteps);
+        }
+        this.maxSteps = maxSteps;
+        return this;
+    }
+
+    /**
+     * @return how many of the agent's instructions have been executed in the current (or last) task.
+     */
+    public int getSteps() {
+        return steps;
+    }
+
+    /**
+     * @param environment where the task runs, saved with its token usage as {@code environment}.
+     */
+    public RequestManager setEnvironment(JsonObject environment) {
+        this.environment = environment;
+        return this;
+    }
+
     public RequestManager setTaskTiming(TaskTiming taskTiming) {
         this.taskTiming = taskTiming;
         return this;
@@ -251,9 +310,14 @@ public class RequestManager {
                 .put("executionId", executionId == null? null : executionId.toString())
                 .put("mode", mode.name())
                 .put("outcome", taskOutcome)
+                .put("steps", steps)
+                .put("maxSteps", maxSteps)
                 .mergeIn(taskTokenUsage.toJson());
         if(harnessError != null){
             usage.put("harnessError", harnessError);
+        }
+        if(environment != null){
+            usage.put("environment", environment);
         }
         if(taskTiming != null){
             usage.put("timing", taskTiming.toJson(taskTokenUsage.inferenceMs()));
@@ -284,6 +348,7 @@ public class RequestManager {
         this.mode = mode;
         this.ended = false;
         this.firstInstructionSent = false;
+        this.steps = 0;
 
         //Every LLM call made while the task runs is counted toward it, whichever agent makes it.
         this.taskTokenUsage = new TaskTokenUsage(()->activeAgent == null? "none" : activeAgent.getClass().getSimpleName());
@@ -401,6 +466,17 @@ public class RequestManager {
             return;
         }
 
+        if(!followUp){
+            if(maxSteps != null && steps >= maxSteps){
+                log.info("Task {} reached its step limit of {}, ending it instead of executing: {}", evalId, maxSteps, instruction);
+                if(evaluationComplete != null){
+                    evaluationComplete.tryFail("Step limit of %d reached".formatted(maxSteps));
+                }
+                return;
+            }
+            steps++;
+        }
+
         Future<JsonObject> result = client.getGuidanceConnectionManager().sendExecutionInstruction(instruction, followUp, next->execute(source, next, true));
 
         if(!followUp && !firstInstructionSent){
@@ -417,7 +493,7 @@ public class RequestManager {
             //If the evaluation ID is not null (meaning this was an evaluation run, output the raw events from this execution to the appropriate folder.
             evaluationComplete.tryComplete();
         }
-        client.getEventConnectionManager().getEventProcessor().clearRawEvents();
+        //The raw events are not cleared here: the harness saves them once the evaluation completes, then clears them.
     }
 
 }

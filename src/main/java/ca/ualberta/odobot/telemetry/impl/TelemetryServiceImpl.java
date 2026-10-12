@@ -53,14 +53,22 @@ public class TelemetryServiceImpl implements TelemetryService {
 
     @Override
     public Future<Void> reportExperimentResults(ExperimentResults results) {
-        saveToIndex(results, experimentResultsIndex);
-        return Future.succeededFuture();
+        return saveToIndexOffLoop(results, experimentResultsIndex);
     }
 
     @Override
     public Future<Void> reportTaskResults(TaskInstanceResults results) {
-        saveToIndex(results, taskInstanceResultsIndex);
-        return Future.succeededFuture();
+        return saveToIndexOffLoop(results, taskInstanceResultsIndex);
+    }
+
+    /**
+     * The Elasticsearch client blocks, so index on a worker thread. Unordered, so reports of concurrent tasks don't queue.
+     */
+    private Future<Void> saveToIndexOffLoop(JsonObject data, String index){
+        return vertx.executeBlocking(()->{
+            saveToIndex(data, index);
+            return null;
+        }, false);
     }
 
     private void saveToIndex(JsonObject data, String index){

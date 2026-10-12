@@ -9,6 +9,7 @@ import com.openai.models.embeddings.CreateEmbeddingResponse;
 import com.openai.models.embeddings.Embedding;
 import com.openai.models.embeddings.EmbeddingCreateParams;
 import io.vertx.core.Future;
+import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
@@ -29,7 +30,17 @@ public class SqliteVectorServiceImpl  implements SqliteVectorService {
 
     private OpenAIClient openAIClient;
 
+    /**
+     * Runs the lookups' embedding calls and queries on worker threads. Null to run them on the caller's thread.
+     */
+    private final Vertx vertx;
+
     public SqliteVectorServiceImpl(JsonObject config) {
+        this(null, config);
+    }
+
+    public SqliteVectorServiceImpl(Vertx vertx, JsonObject config) {
+        this.vertx = vertx;
         this.config = config;
         init();
     }
@@ -103,7 +114,7 @@ public class SqliteVectorServiceImpl  implements SqliteVectorService {
     }
 
     public Future<List<JsonObject>> topK(int k, String queryString){
-        return topK(k, createEmbeddings(LlmCallType.SIMILAR_TASK_EMBEDDING, queryString, true));
+        return embed(queryString, true).compose(embeddings->query(k, embeddings));
     }
 
     /**
@@ -113,12 +124,33 @@ public class SqliteVectorServiceImpl  implements SqliteVectorService {
      * @return {@code {"results": [...], "usage": {"inputTokens": ..., "totalTokens": ...}}}
      */
     public Future<JsonObject> topKWithUsage(int k, String queryString){
-        CreateEmbeddingResponse embeddings = createEmbeddings(LlmCallType.SIMILAR_TASK_EMBEDDING, queryString, false);
-        return topK(k, embeddings).map(results->new JsonObject()
+        return embed(queryString, false).compose(embeddings->query(k, embeddings).map(results->new JsonObject()
                 .put("results", new JsonArray(results))
                 .put("usage", new JsonObject()
                         .put("inputTokens", embeddings.usage().promptTokens())
-                        .put("totalTokens", embeddings.usage().totalTokens())));
+                        .put("totalTokens", embeddings.usage().totalTokens()))));
+    }
+
+    /**
+     * Embed a lookup's query. The embedding call waits on the API, so with a Vert.x instance it runs on an unordered
+     * worker job: lookups of concurrent tasks overlap instead of queuing behind each other.
+     */
+    private Future<CreateEmbeddingResponse> embed(String queryString, boolean reportToActive){
+        if(vertx == null){
+            return Future.succeededFuture(createEmbeddings(LlmCallType.SIMILAR_TASK_EMBEDDING, queryString, reportToActive));
+        }
+        return vertx.executeBlocking(()->createEmbeddings(LlmCallType.SIMILAR_TASK_EMBEDDING, queryString, reportToActive), false);
+    }
+
+    /**
+     * Find the k nearest synthetic tasks. The service has a single connection, so with a Vert.x instance the query runs
+     * on an ordered worker job, one at a time.
+     */
+    private Future<List<JsonObject>> query(int k, CreateEmbeddingResponse embeddings){
+        if(vertx == null){
+            return topK(k, embeddings);
+        }
+        return vertx.<Future<List<JsonObject>>>executeBlocking(()->topK(k, embeddings), true).compose(result->result);
     }
 
     private Future<List<JsonObject>> topK(int k, CreateEmbeddingResponse embeddings){

@@ -21,6 +21,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
 
 public class TaskPlannerServiceImpl implements TaskPlannerService {
@@ -97,12 +98,20 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
                 });
     }
 
+    /**
+     * Run one of the strategy's LLM calls, which block until the model answers, on a worker thread of the calling
+     * context. Unordered, so a long completion doesn't hold up that context's other blocking jobs.
+     */
+    private <T> Future<T> llm(Callable<Future<T>> call){
+        return vertx.<Future<T>>executeBlocking(call, false).compose(result->result);
+    }
+
     public Future<String> generateNodeAnnotation(List<String> descriptions){
-        return this.strategy.generateNodeAnnotation(descriptions);
+        return llm(()->this.strategy.generateNodeAnnotation(descriptions));
     }
 
     public Future<JsonObject> pickMostRelevantTask(String queryTask, List<JsonObject> options){
-        return this.strategy.pickMostRelevantTask(queryTask, options);
+        return llm(()->this.strategy.pickMostRelevantTask(queryTask, options));
     }
 
 
@@ -116,7 +125,7 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
     }
 
     public Future<String> rewriteQueryTaskWithoutSpecificInputs(String queryTask, List<JsonObject> syntheticTasks){
-        return this.strategy.rewriteQueryTaskWithoutSpecificInputs(queryTask, syntheticTasks);
+        return llm(()->this.strategy.rewriteQueryTaskWithoutSpecificInputs(queryTask, syntheticTasks));
     }
 
 
@@ -138,7 +147,7 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
                     return Future.all(
                             Future.succeededFuture(syntheticTasks),
                             //Rewrite the given task omitting input values in order to improve accuracy of targeting. Need synthetic tasks for this to give the LLM examples of the style to rewrite in.
-                            this.strategy.rewriteQueryTaskWithoutSpecificInputs(taskDescription, syntheticTasks)
+                            llm(()->this.strategy.rewriteQueryTaskWithoutSpecificInputs(taskDescription, syntheticTasks))
                     );
                 }).compose( results->{
                         List<JsonObject> syntheticTasks = results.resultAt(0);
@@ -186,7 +195,7 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
                     }).compose(options->{
 
                         //Pick the correct task from a list of likely options.
-                        return this.strategy.pickMostRelevantTask(taskDescription, options.stream().map(JsonObject.class::cast).toList())
+                        return llm(()->this.strategy.pickMostRelevantTask(taskDescription, options.stream().map(JsonObject.class::cast).toList()))
                                 .compose(chosenTaskAndAPICalls->this.processTargetingResults(taskDescription, new JsonArray().add(chosenTaskAndAPICalls) ));
                     });
 
@@ -391,7 +400,7 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
     public Future<List<JsonObject>> getRelevantResourceParameters(String taskDescription){
         log.info("getRelevantResourceParameters");
         return sqlite.getResourceParameterLabels()
-                .compose(labels->this.strategy.getTaskResourceParameters(taskDescription, labels.stream().toList()))
+                .compose(labels->llm(()->this.strategy.getTaskResourceParameters(taskDescription, labels.stream().toList())))
                 //Resolve node ids for identified resource parameters.
                 .compose(mapping->{
                     List<JsonObject> finalMapping = new ArrayList<>();
@@ -428,7 +437,7 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
                         return Future.succeededFuture(noDuplicates);
                     })
                     //Prompt the LLM to identify relevant ones.
-                    .compose(schemas->this.strategy.getTaskSchemas(taskDescription, schemas))
+                    .compose(schemas->llm(()->this.strategy.getTaskSchemas(taskDescription, schemas)))
                     //Resolve schema parameter node ids, and replace the schemaIds with these nodeIds.
                     //TODO: Should schemaIds even be a separate thing from the ids of the nodes in which they're stored in the nav model?
                     .compose(schemas->{
@@ -446,7 +455,7 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
 
             return sqlite.getAllDataEntryAnnotations()
                     .onFailure(err->log.error(err.getMessage(), err))
-                    .compose(dataEntryAnnotations->this.strategy.getTaskInputParameterMappings(taskDescription, dataEntryAnnotations))
+                    .compose(dataEntryAnnotations->llm(()->this.strategy.getTaskInputParameterMappings(taskDescription, dataEntryAnnotations)))
                     .compose(chosenParameters->{
                         for(JsonObject entry: chosenParameters){
                             String resolvedId = null;
@@ -469,7 +478,7 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
     }
 
     public Future<List<JsonObject>> getRelevantAPICalls(String taskDescription, List<JsonObject> apiCalls){
-        return this.strategy.getTaskAPICalls(taskDescription, apiCalls);
+        return llm(()->this.strategy.getTaskAPICalls(taskDescription, apiCalls));
     }
 
     @Override
@@ -496,7 +505,7 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
                             ).toList()
             );
 
-            return this.strategy.getTaskAPICalls(taskDescription, apiCalls);
+            return llm(()->this.strategy.getTaskAPICalls(taskDescription, apiCalls));
 
 
     }
@@ -512,14 +521,14 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
         //Use that xpath to retrieve all known info about that data entry, combine that with the task description and ask the LLM to spit out an appropriate value.
         return sqlite.getAllDataEntryInfoForXpath(inputParameterXpath)
                 .compose(dataEntryInfo->{
-                    return this.strategy.resolveDataEntryValue(taskDescription,
+                    return llm(()->this.strategy.resolveDataEntryValue(taskDescription,
                             dataEntryInfo.getString("inputElementHTML"),
                             dataEntryInfo.getString("htmlContext"),
                             dataEntryInfo.getJsonArray("enteredData").stream().map(String.class::cast).toList(),
                             dataEntryInfo.getString("label"),
                             dataEntryInfo.getString("description"),
                             currentValue
-                    );
+                    ));
                 });
 
 
@@ -537,13 +546,13 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
         //Use that xpath to retrieve all known info about that data entry, combine that with the task description and ask the LLM to spit out an appropriate value.
         return sqlite.getAllDataEntryInfoForXpath(inputParameterXpath)
                 .compose(dataEntryInfo->{
-                    return this.strategy.resolveRadioButtonAction(
+                    return llm(()->this.strategy.resolveRadioButtonAction(
                             state,
                             taskDescription,
                             dataEntryInfo.getString("htmlContext"),
                             dataEntryInfo.getString("label"),
                             dataEntryInfo.getString("description")
-                    );
+                    ));
                 });
     }
 
@@ -557,14 +566,14 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
         //Use that xpath to retrieve all known info about that data entry, combine that with the task description and ask the LLM to spit out an appropriate value.
         return sqlite.getAllDataEntryInfoForXpath(inputParameterXpath)
                 .compose(dataEntryInfo->{
-                    return this.strategy.resolveSelectAction(
+                    return llm(()->this.strategy.resolveSelectAction(
                             state,
                             taskDescription,
                             dataEntryInfo.getString("inputElementHTML"),
                             dataEntryInfo.getString("htmlContext"),
                             dataEntryInfo.getString("label"),
                             dataEntryInfo.getString("description")
-                    );
+                    ));
 
                 });
 
@@ -581,12 +590,12 @@ public class TaskPlannerServiceImpl implements TaskPlannerService {
         //Use that xpath to retrieve all known info about that data entry, combine that with the task description and ask the LLM to spit out an appropriate value.
         return sqlite.getAllDataEntryInfoForXpath(inputParameterXpath)
                 .compose(dataEntryInfo->{
-                    return this.strategy.resolveCheckboxAction(
+                    return llm(()->this.strategy.resolveCheckboxAction(
                             state,
                             taskDescription,
                             dataEntryInfo.getString("label"),
                             dataEntryInfo.getString("description")
-                    );
+                    ));
 
                 });
 

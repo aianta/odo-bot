@@ -6,7 +6,7 @@ description: Execute an OdoBot experiment (an experiment definition JSON sent to
 # Running an OdoBot experiment
 
 An **experiment** is one experiment definition JSON POSTed to an OdoBot instance at `POST /api/evaluate?agent=<agent>`:
-- The instance runs the definition's tasks **one after another**. The request returns once the last task has finished.
+- The instance runs the definition's tasks one after another, or up to `maxConcurrentTasks` at a time. The request returns once the last task has finished.
 - Every artifact goes to `execution_events/<experimentId>/`.
 - One OdoBot instance runs **one experiment at a time**. To run experiments concurrently, use one instance per experiment. The [`odobot-instances`](../odobot-instances/SKILL.md) skill starts and manages those instances. This skill covers what to send them.
 
@@ -22,7 +22,7 @@ An **experiment** is one experiment definition JSON POSTed to an OdoBot instance
 |---|---|---|
 | `odoSightPath` | yes | The OdoX extension, inside the OdoBot container: `./odo-sight.xpi`. |
 | `webAppURL` | yes | The page the browser opens before each task, unless the task has a `startUrl`. It must be reachable **from the Firefox container**. |
-| `guidanceServiceHost` | yes | Where OdoX (in Firefox) reaches OdoBot: `<OdoBot container IP>:7080`. Use the container port, not a host port. |
+| `guidanceServiceHost` | yes | Where OdoX (in Firefox) reaches OdoBot: `<OdoBot container IP>:7080`. Only the host is used: each task listens on a port of its own and OdoX is given `<host>:<that port>`, so Firefox must reach OdoBot over `odobot-net`, not through a published port. |
 | `logUIHost`, `logUIUsername`, `logUIPassword` | yes | LogUI settings OdoX needs to start. Nothing is sent to LogUI during evaluation. |
 | `tasks` | yes | The tasks, see below. |
 | `firefoxDockerGridURL` | in docker, yes | `http://<Firefox container IP>:4444`. Without it OdoBot starts a local Firefox, which doesn't exist inside the container. |
@@ -34,6 +34,7 @@ An **experiment** is one experiment definition JSON POSTed to an OdoBot instance
 | `qwen` | no | Uncharted agent settings: `history_n`, `image_max`, `fold_size`, `coord`, `collapse_text`. |
 | `evaluationDatasetPath` | no | The ground-truth dataset, relative to `canvas-evaluation-scripts`, e.g. `sample_generated_data/cascon-2026/tasks.json`. It turns on scoring and Elasticsearch telemetry. It is for **Canvas only**: the evaluation script can't score WebArena tasks, so leave it out for them. |
 | `notes` | no | Copied into the experiment telemetry, e.g. the number of concurrent instances. |
+| `maxConcurrentTasks` | no (1) | How many of the definition's tasks run at the same time on this instance. Each concurrent task needs its own Firefox grid and environment, given in its `environment` object. |
 | `pathSelectionMode` | no | Charted agent only. |
 
 **Each entry in `tasks`** is `{ "<task field>": { ... } }`. The task field depends on the agent: `odoBotNL` for `agent=odoBotNL`, `uncharted` and `hybrid`, and `odoBot` for `agent=odoBot` (see README "Task Execution Modes"). Inside it:
@@ -41,7 +42,10 @@ An **experiment** is one experiment definition JSON POSTed to an OdoBot instance
 - **`_evalId`:** unique per task, used in file names (`|` becomes `-`). The convention is `<dataset task id>|OdoBotNL|<id>`.
 - **`task`:** the instruction the agent gets. Put credentials first, e.g. `Use the username: admin and password: admin1234 to login to the Magento admin panel.\nTask: ...`. WebArena's accounts are in `browser_env/env_config.py` of the WebArena repo (`/home/aianta/shock_and_awe/WebArena` in WSL).
 - **`startUrl`:** optional. The page this task starts on, instead of `webAppURL`. It lets one experiment cover several apps. Reachable from Firefox, like `webAppURL`.
-- **`userLocation`:** used by the charted agent to find its starting point. It is not opened by the browser.
+- **`environment`:** optional. Where this task runs, overriding the experiment-level fields: `firefoxDockerGridURL`, `startUrl`, `targetHosts`, `sites` (named app base URLs) and the `logUI*` settings. Fields left out fall back to the experiment's. The resolved environment is saved in the task's tokens file.
+- **`maxSteps`:** optional, 30 by default. The most of the agent's instructions the harness executes; the next one ends the task as `failed: Step limit of N reached`. Follow-ups of multi-step instructions don't count. The step count is saved in the tokens file as `steps`.
+- **`ignoreMaxSteps`:** optional, false by default, **charted agents only** (a 400 otherwise). Turns the step limit off, since charted agents follow paths computed from the navigation model.
+- **`userLocation`:** ignored (with a warning). The charted agent localizes from the task's start page instead.
 
 Agents (the `agent=` query parameter):
 - **`uncharted`:** the Qwen screenshot agent.

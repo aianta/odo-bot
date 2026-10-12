@@ -281,5 +281,26 @@ class ExperimentTokenUsageTest {
         assertEquals("2026-10-07T12:05:00Z", timing.getString("experimentEnd"));
         assertEquals(300000, timing.getLong("wallClockMs"));
         assertEquals(2, timing.getInteger("skippedTasks"));
+        assertEquals(1, timing.getInteger("maxConcurrentTasks"));
+        assertEquals(0.9, timing.getDouble("parallelism"), "270 s of execution in 300 s of wall clock");
+    }
+
+    @Test
+    void savesHowMuchConcurrentTasksOverlapped() throws IOException {
+        writeThreeTimedTasks();
+        Path results = experimentFolder.resolve("results");
+        Instant start = Instant.parse("2026-10-07T12:00:00Z");
+
+        //270 s of task execution in 135 s of wall clock: on average two tasks ran at once.
+        ExperimentTokenUsage.summarizeAndSave("exp", start, start.plusSeconds(135), 0, 3, experimentFolder.toString(), results.toString());
+
+        JsonObject timing = new JsonObject(Files.readString(results.resolve("exp-tokens.json"))).getJsonObject("timing");
+        assertEquals(3, timing.getInteger("maxConcurrentTasks"));
+        assertEquals(2.0, timing.getDouble("parallelism"));
+    }
+
+    @Test
+    void noParallelismWithoutAWallClock(){
+        assertNull(ExperimentTokenUsage.parallelism(new JsonObject().put("executionMs", new JsonObject().put("sum", 1000L)), 0));
     }
 }

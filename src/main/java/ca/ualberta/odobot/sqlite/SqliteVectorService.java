@@ -12,8 +12,12 @@ import java.util.List;
 @ProxyGen
 public interface SqliteVectorService {
 
-    static SqliteVectorService create(JsonObject config){
-        return new SqliteVectorServiceImpl(config);
+    /**
+     * The embedding calls of lookups are made on worker threads, so a lookup doesn't block the event loop that serves
+     * the service.
+     */
+    static SqliteVectorService create(Vertx vertx, JsonObject config){
+        return new SqliteVectorServiceImpl(vertx, config);
     }
 
     static SqliteVectorService createProxy(Vertx vertx, String address){

@@ -7,22 +7,22 @@ description: Launch N independent OdoBot + Firefox container pairs on odobot-net
 
 The proven way to run tasks concurrently is one OdoBot container **and** one Firefox grid per concurrent execution, with each pair getting its own evaluate request. `odobot-instances.ps1` (next to this file) does this.
 
-## One OdoBot with concurrent requests (not yet verified end to end)
+## One OdoBot running tasks concurrently (not yet verified end to end)
 
-Tasks within a request run one after another (`ExplorerVerticle.evaluateHandler` chains them with `f.compose`). Concurrent requests each start an `EvaluateTask` thread right away. The process-wide state that used to make those tasks break each other has been replaced:
+Since the agent-verticle migration (see `docs/agent-verticle-design.md`), one OdoBot can run an experiment's tasks
+concurrently: set `maxConcurrentTasks` in the evaluate request. Each task runs in a `TaskVerticle` of its own, with its
+own OdoX listener on a port the OS picks (OdoX gets the host of `guidanceServiceHost` with that port), its own
+`LlmCallScope`, and its own scoped planner and Snippet2XML.
 
-- **Browser association.** Each task registers its browser's extension id (`dynamicAddonId`, which OdoX uses as its `clientId`) with `ClientRegistry` before Firefox starts. It is only handed the OdoX client with that id, and `cleanUp()` releases only that client.
-- **Token usage and LLM settings.** Each task's `RequestManager` owns an `LlmCallScope`. The agents and services built for the task are given it:
-  - the Qwen model client;
-  - a scoped copy of Snippet2XML;
-  - a scoped task planner registered at a per-task event-bus address, whose similar-task embedding comes back through `topKWithUsage`.
-
-  There is no static `LlmClientConfig.active` any more. `TokenUsageRecord.active` only collects calls made outside a task.
-
-What still stands in the way:
-- **One Firefox grid per concurrent request.** `selenium/standalone-firefox` runs one session at a time, so each request needs its own `firefoxDockerGridURL`.
-- **Charted runs share navigation-model state.** `NavPath.globalParameterMap`, `DijkstraCache` and the shared localizer, path constructor, graph DB and SQLite have no per-task isolation. Run charted tasks one at a time.
-- **No end-to-end run of concurrent requests in one OdoBot yet.** Until one has been checked, prefer separate instances (below) for experiments whose numbers matter.
+What concurrent tasks still need:
+- **One Firefox grid each.** `selenium/standalone-firefox` runs one session at a time, so give each task its own
+  `environment.firefoxDockerGridURL`.
+- **One environment each**, named in each task's `environment` object (`startUrl`, `targetHosts`, `sites`). OdoBot
+  doesn't manage environments; whatever submits the request makes sure they are up.
+- **Care with charted runs.** `NavPath.globalParameterMap` and `DijkstraCache` are still shared, process-wide state.
+  Run charted tasks one at a time until that has been checked.
+- **No end-to-end run of concurrent tasks in one OdoBot yet.** Until one has been checked, prefer separate instances
+  (below) for experiments whose numbers matter.
 
 ## Usage
 

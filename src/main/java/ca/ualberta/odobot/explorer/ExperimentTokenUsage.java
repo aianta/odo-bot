@@ -53,12 +53,27 @@ public final class ExperimentTokenUsage {
      */
     public static JsonObject summarizeAndSave(String experimentId, Instant experimentStart, Instant experimentEnd, int skippedTasks,
                                               String experimentFolderPath, String experimentResultsFolderPath){
+        return summarizeAndSave(experimentId, experimentStart, experimentEnd, skippedTasks, 1, experimentFolderPath, experimentResultsFolderPath);
+    }
+
+    /**
+     * Like {@link #summarizeAndSave(String, Instant, Instant, int, String, String)}, for an experiment that ran up to
+     * {@code maxConcurrentTasks} tasks at a time.
+     *
+     * <p>With tasks running in parallel, the sums of the task phases exceed the wall clock. {@code parallelism}, the sum
+     * of the tasks' execution times over the wall clock, shows how much the tasks overlapped.</p>
+     */
+    public static JsonObject summarizeAndSave(String experimentId, Instant experimentStart, Instant experimentEnd, int skippedTasks,
+                                              int maxConcurrentTasks, String experimentFolderPath, String experimentResultsFolderPath){
         JsonObject summary = new JsonObject().put("experimentId", experimentId).mergeIn(summarize(experimentFolderPath));
+        long wallClockMs = Duration.between(experimentStart, experimentEnd).toMillis();
         JsonObject timing = summary.getJsonObject("timing")
                 .put("experimentStart", experimentStart.toString())
                 .put("experimentEnd", experimentEnd.toString())
-                .put("wallClockMs", Duration.between(experimentStart, experimentEnd).toMillis())
-                .put("skippedTasks", skippedTasks);
+                .put("wallClockMs", wallClockMs)
+                .put("skippedTasks", skippedTasks)
+                .put("maxConcurrentTasks", maxConcurrentTasks)
+                .put("parallelism", parallelism(timing(summary), wallClockMs));
 
         log.info("Experiment {} token usage over {} tasks: {} total tokens ({} input, {} output) over {} LLM calls; per task min {}, max {}, mean {} total tokens",
                 experimentId, summary.getInteger("taskCount"),
@@ -86,6 +101,22 @@ public final class ExperimentTokenUsage {
             log.error("Failed to save token usage for experiment {}: {}", experimentId, e.getMessage());
         }
         return summary;
+    }
+
+    private static JsonObject timing(JsonObject summary){
+        return summary.getJsonObject("timing");
+    }
+
+    /**
+     * @return the sum of the tasks' execution times over the experiment's wall clock, or null if neither is known.
+     */
+    static Double parallelism(JsonObject timing, long wallClockMs){
+        JsonObject execution = timing.getJsonObject("executionMs");
+        Long executionSum = execution == null? null : execution.getLong("sum");
+        if(executionSum == null || wallClockMs <= 0){
+            return null;
+        }
+        return Math.round(executionSum * 100.0 / wallClockMs) / 100.0;
     }
 
     /**

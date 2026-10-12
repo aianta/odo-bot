@@ -3,6 +3,7 @@ package ca.ualberta.odobot.guidance;
 import ca.ualberta.odobot.guidance.connectionmanagers.ControlConnectionManager;
 import ca.ualberta.odobot.guidance.connectionmanagers.EventConnectionManager;
 import ca.ualberta.odobot.guidance.connectionmanagers.GuidanceConnectionManager;
+import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,7 +19,12 @@ public class OdoClient {
     private UUID id;
 
     /**
-     * The task this client was created for, as given to {@link ClientRegistry#expect}. Null if no task expects it.
+     * The Vert.x instance the client's sockets were accepted on. The managers set their timers with it.
+     */
+    private final Vertx vertx;
+
+    /**
+     * The task this client was created for, see {@link TaskSockets}. Null if no task expects it.
      */
     private JsonObject taskContext;
 
@@ -66,19 +72,24 @@ public class OdoClient {
         return id.toString();
     }
 
-    public OdoClient(UUID clientId){
-        this(clientId, null);
+    public OdoClient(UUID clientId, Vertx vertx){
+        this(clientId, null, vertx);
     }
 
-    public OdoClient(UUID clientId, JsonObject taskContext){
+    public OdoClient(UUID clientId, JsonObject taskContext, Vertx vertx){
         this.id = clientId;
         this.taskContext = taskContext;
+        this.vertx = vertx;
 
         this.controlConnectionManager = new ControlConnectionManager(this);
         this.requestManager = new RequestManager(this); //Request Manager must be initalized after control connection manager
         this.eventConnectionManager = new EventConnectionManager(this); //Event connection manager must be called after RequestManager is bound to the request.
         this.guidanceConnectionManager = new GuidanceConnectionManager(this);
 
+    }
+
+    public Vertx vertx(){
+        return vertx;
     }
 
     public WebSocketConnection getControl() {

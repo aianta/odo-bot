@@ -3,11 +3,22 @@ package ca.ualberta.odobot.explorer;
 import ca.ualberta.odobot.common.HttpServiceVerticle;
 import ca.ualberta.odobot.guidance.ExecutionMode;
 import ca.ualberta.odobot.guidance.RequestManager;
+import ca.ualberta.odobot.task.Platform;
+import ca.ualberta.odobot.task.TaskEnvironment;
+import ca.ualberta.odobot.task.TaskOutcome;
+import ca.ualberta.odobot.task.TaskSettings;
+import ca.ualberta.odobot.task.TaskVerticle;
+import ca.ualberta.odobot.telemetry.TelemetryService;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import ca.ualberta.odobot.telemetry.TelemetryVerticle;
 import ca.ualberta.odobot.telemetry.model.ExperimentResults;
 import io.reactivex.rxjava3.core.Completable;
 
+import io.vertx.config.ConfigRetriever;
+import io.vertx.config.ConfigRetrieverOptions;
+import io.vertx.config.ConfigStoreOptions;
+import io.vertx.core.Context;
+import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 
@@ -30,10 +41,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static ca.ualberta.odobot.logpreprocessor.Constants.SQLITE_SERVICE_ADDRESS;
+import static ca.ualberta.odobot.logpreprocessor.Constants.TELEMETRY_SERVICE_ADDRESS;
 
 /**
  * @author Alexandru Ianta
@@ -46,6 +59,11 @@ public class ExplorerVerticle extends HttpServiceVerticle {
     private static final Logger log = LoggerFactory.getLogger(ExplorerVerticle.class);
 
     public static SqliteService sqliteService;
+
+    /**
+     * config/guidance.yaml, which names the keystore of the tasks' OdoX listeners. Null until it has loaded.
+     */
+    private JsonObject guidanceConfig;
 
     public String serviceName(){return "Data Generation (Explorer) Service";}
 
@@ -67,6 +85,13 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
             //Init proxy to sqlite service
             sqliteService = SqliteService.createProxy(vertx.getDelegate(), SQLITE_SERVICE_ADDRESS);
+
+            //Each task verticle listens for its OdoX with the guidance service's TLS settings.
+            ConfigRetriever.create(vertx.getDelegate(), new ConfigRetrieverOptions().addStore(new ConfigStoreOptions()
+                            .setType("file").setFormat("yaml").setConfig(new JsonObject().put("path", "config/guidance.yaml"))))
+                    .getConfig()
+                    .onSuccess(loaded->guidanceConfig = loaded)
+                    .onFailure(err->log.error("Could not load config/guidance.yaml, tasks cannot run: {}", err.getMessage(), err));
 
             api.route(HttpMethod.POST, "/explore").handler(this::exploreValidationHandler);
             api.route(HttpMethod.POST, "/explore").handler(this::exploreHandler);
@@ -987,7 +1012,13 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
         if(rc.body().available()){
             JsonObject config = rc.body().asJsonObject();
-            validateFields(rc, config, EvaluationTaskRequestFields.values());
+            //Only the fields that are always experiment-wide. The start page and LogUI settings may come from each
+            //task's environment instead, and are checked when the tasks' environments are resolved.
+            validateFields(rc, config, new EvaluationTaskRequestFields[]{
+                    EvaluationTaskRequestFields.ODOSIGHT_PATH,
+                    EvaluationTaskRequestFields.ODOX_OPTIONS_GUIDANCE_SERVICE_HOST,
+                    EvaluationTaskRequestFields.TASKS
+            });
 
             if(!rc.response().ended()){
                 rc.put("config", config);
@@ -1001,6 +1032,11 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
 
 
+    /**
+     * A task of the experiment that is to be run, with where it runs.
+     */
+    private record PendingTask(JsonObject task, TaskEnvironment environment){}
+
     private void evaluateHandler(RoutingContext rc){
         JsonObject config = rc.get("config");
         if(config == null){
@@ -1009,7 +1045,7 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
         //Create a folder inside the output artifacts folder for this experiment based on the experiment id
         String experimentId = (config.containsKey("experimentId")?config.getString("experimentId"):"default");
-        String experimentFolderPath = _config.getString("outputArtifactsFolder") + "/" + experimentId;
+        String experimentFolderPath = TaskVerticle.experimentFolderPath(_config, config);
         String experimentResultsFolderPath = experimentFolderPath + "/results";
 
         String _agent = rc.request().getParam("agent", "odoBot");
@@ -1023,14 +1059,14 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
         //Fail before launching anything if the LLM client or uncharted agent settings are invalid.
         try{
-            EvaluateTask.llmConfig(config);
+            TaskSettings.llmConfig(config);
         }catch (RuntimeException e){
             rc.response().setStatusCode(400).end("Invalid 'llm' settings: %s".formatted(e.getMessage()));
             return;
         }
         if(agent.getMode() == ExecutionMode.UNCHARTED){
             try{
-                EvaluateTask.qwenConfig(config);
+                TaskSettings.qwenConfig(config);
             }catch (RuntimeException e){
                 rc.response().setStatusCode(400).end("Invalid 'qwen' settings: %s".formatted(e.getMessage()));
                 return;
@@ -1040,173 +1076,226 @@ public class ExplorerVerticle extends HttpServiceVerticle {
             rc.response().setStatusCode(400).end("'targetHosts' must be an array of hosts, or [\"*\"] for every host.");
             return;
         }
+        Object maxConcurrent = config.getValue("maxConcurrentTasks", 1);
+        if(!(maxConcurrent instanceof Integer) || (Integer)maxConcurrent < 1){
+            rc.response().setStatusCode(400).end("'maxConcurrentTasks' must be a whole number of at least 1.");
+            return;
+        }
+        int maxConcurrentTasks = (Integer) maxConcurrent;
 
-        JsonArray tasks = getTasks(config.getJsonArray("tasks"), agent);
-        Instant experimentStartTime = Instant.now();
-        int skippedTasks = 0;
-
-        Future f = null;
-
-        ListIterator<JsonObject> taskIterator = tasks.stream().map(o->(JsonObject)o).collect(Collectors.toList()).listIterator();
-        while (taskIterator.hasNext()){
-            JsonObject _task = taskIterator.next();
-
+        //Every task must resolve to an environment it can run in, and have a valid step limit.
+        List<PendingTask> pendingTasks = new ArrayList<>();
+        for(Object o: getTasks(config.getJsonArray("tasks"), agent)){
+            JsonObject _task = (JsonObject) o;
             try{
+                TaskSettings.maxSteps(_task, agent.getMode());
+                pendingTasks.add(new PendingTask(_task, TaskEnvironment.resolve(_task, config)));
+            }catch (RuntimeException e){
+                rc.response().setStatusCode(400).end("Task %s: %s".formatted(_task.getString("_evalId", _task.getString("id")), e.getMessage()));
+                return;
+            }
+        }
 
-                if(!vertx.fileSystem().existsBlocking(experimentFolderPath)){
-                    Files.createDirectories(Path.of(experimentFolderPath));
-                }
+        Platform platform = Platform.current(guidanceConfig);
+        if(guidanceConfig == null || (agent.getMode() == ExecutionMode.CHARTED && !platform.chartedReady())){
+            rc.response().setStatusCode(503).end("OdoBot's services are still starting, try again shortly.");
+            return;
+        }
 
-                //Inside each experiment folder create a new folder specifically for evaluation script results.
-                if(!vertx.fileSystem().existsBlocking(experimentResultsFolderPath)){
-                    Files.createDirectories(Path.of(experimentResultsFolderPath));
-                }
+        Instant experimentStartTime = Instant.now();
 
-                //Check to see if this task has already been run for this experiment.
-                List<String> experimentOutputs = vertx.fileSystem().readDirBlocking(experimentFolderPath);
+        //Skip the tasks that have already been run for this experiment.
+        List<PendingTask> tasksToRun = new ArrayList<>();
+        int skippedTasks = 0;
+        try{
+            Files.createDirectories(Path.of(experimentResultsFolderPath));
+            List<String> experimentOutputs = vertx.fileSystem().readDirBlocking(experimentFolderPath);
+            for(PendingTask pending: pendingTasks){
                 //If it's been run before, there will be files whose names contain this task instance id.
-                List<String> taskOutputs = experimentOutputs.stream().filter(path->path.contains(_task.getString("id") + ".json")).toList();
-                if(!taskOutputs.isEmpty()){ //So if we find any of those, skip this task.
-                    log.info("Output artifacts for task {} in experiment {} already exist, skipping this task.",_task.getString("id"),  experimentId);
+                String taskId = pending.task().getString("id");
+                if(experimentOutputs.stream().anyMatch(path->path.contains(taskId + ".json"))){
+                    log.info("Output artifacts for task {} in experiment {} already exist, skipping this task.", taskId, experimentId);
                     skippedTasks++;
-                    continue;
+                }else{
+                    tasksToRun.add(pending);
                 }
-
-            }catch (IOException e){
-                log.error("Failed to create experiment folder!");
-                log.error(e.getMessage(),e);
             }
-
-
-            if(f == null){
-                Promise<Void> promise = Promise.promise();
-                promise.future()
-                        .onFailure(err->serverError(rc, err));
-                f = promise.future();
-
-                EvaluateTask evaluateTask = new EvaluateTask(_config, config, _task, promise, agent);
-                Thread thread = new Thread(evaluateTask);
-                thread.start();
-            }else{
-                JsonObject finalConfig = config;
-                f = f.compose(fDone->{
-
-                    Promise<Void> promise = Promise.promise();
-                    promise.future()
-                            .onFailure(err->serverError(rc, err));
-
-                    EvaluateTask evaluateTask = new EvaluateTask(_config, finalConfig, _task, promise, agent);
-                    Thread thread = new Thread(evaluateTask);
-                    thread.start();
-
-                    return promise.future();
-                });
-            }
-
-
+        }catch (IOException e){
+            log.error("Failed to create experiment folder!");
+            log.error(e.getMessage(),e);
+            tasksToRun = pendingTasks;
         }
 
-
-        if (f == null){
-            f = Future.succeededFuture();
-        }
-
-        //Summarize the token usage and timing of every task in the experiment, also when it failed part way. The experiment
-        //ends here, so its wall clock does not include the experiment level scoring below. This handler is registered first
-        //so the summary is ready for the experiment telemetry below.
-        JsonObject experimentTokenUsage = new JsonObject();
+        JsonObject request = config;
         int finalSkippedTasks = skippedTasks;
-        f.onComplete(done->experimentTokenUsage.mergeIn(ExperimentTokenUsage.summarizeAndSave(experimentId, experimentStartTime, Instant.now(), finalSkippedTasks, experimentFolderPath, experimentResultsFolderPath)));
+        int runCount = tasksToRun.size();
+        Context context = vertx.getOrCreateContext().getDelegate();
+        log.info("Experiment {}: running {} tasks, up to {} at a time ({} skipped).", experimentId, runCount, maxConcurrentTasks, skippedTasks);
 
-        JsonObject finalConfig1 = config;
-        f.onSuccess(done->{
-
-            if(finalConfig1.containsKey("evaluationDatasetPath")){
-                try{
-
-                    //Evaluate all experiment results
-                    String evalScriptPath = "%s/%s".formatted(_config.getString("evaluationScriptsPath"), _config.getString("evaluationScript"));
-                    String datasetPath = "%s/%s".formatted(_config.getString("evaluationScriptsPath"), finalConfig1.getString("evaluationDatasetPath"));
-                    String experimentResultsFile = experimentResultsFolderPath + "/" + experimentId + "-results.json";
-
-                    //Only the charted agent constructs task queries, so the other modes are evaluated without the target check.
-                    ProcessBuilder pb = new ProcessBuilder(
-                            "python",
-                            "-X", "utf8",
-                            evalScriptPath,
-                            "-t", datasetPath,
-                            "-o", experimentResultsFile,
-                            agent.getMode() == ExecutionMode.CHARTED? "--odobot-execution-events": "--odobot-uncharted-execution-events",
-                            "%s".formatted(experimentFolderPath)
-                    );
-
-                    StringBuilder commandSb = new StringBuilder();
-                    pb.command().forEach(part->commandSb.append(part + " "));
-                    log.info("{}", commandSb.toString());
-
-                    pb.inheritIO();
-                    long scoringStart = System.nanoTime();
-                    Process evalProcess = pb.start();
-                    evalProcess.waitFor();
-                    long experimentScoringMs = (System.nanoTime() - scoringStart) / 1_000_000;
-
-                    JsonObject experimentResult = new JsonObject(Buffer.buffer(Files.readAllBytes(Path.of(experimentResultsFile))));
-                    JsonObject experimentTiming = experimentTokenUsage.getJsonObject("timing");
-
-                    //Report Experiment level telemetry
-                    ExperimentResults experimentResults = new ExperimentResults();
-                    experimentResults.setExperimentId(experimentId);
-                    experimentResults.setAgent(_config.getString("agentName"));
-                    experimentResults.setAgentVersion(_config.getString("agentVersion"));
-                    experimentResults.setSubmittedTasks(tasks.size());
-                    experimentResults.setDuration(experimentTiming.getLong("wallClockMs"));
-                    experimentResults.setExperimentStartTime(experimentTiming.getString("experimentStart"));
-                    experimentResults.setExperimentEndTime(experimentTiming.getString("experimentEnd"));
-                    experimentResults.setSkippedTasks(experimentTiming.getInteger("skippedTasks"));
-                    //Task durations are execution times, like the Duration of each task's telemetry.
-                    experimentResults.setMinTaskDuration(experimentTiming.getJsonObject("executionMs").getLong("min"));
-                    experimentResults.setMaxTaskDuration(experimentTiming.getJsonObject("executionMs").getLong("max"));
-                    experimentResults.setMeanTaskDuration(experimentTiming.getJsonObject("executionMs").getDouble("mean"));
-                    experimentResults.setTotalTaskExecution(experimentTiming.getJsonObject("executionMs").getLong("sum"));
-                    experimentResults.setSlowestTaskEvalId(experimentTiming.getString("slowestEvalId"));
-                    experimentResults.setTotalInference(experimentTiming.getJsonObject("inferenceMs").getLong("sum"));
-                    experimentResults.setMeanTaskInference(experimentTiming.getJsonObject("inferenceMs").getDouble("mean"));
-                    experimentResults.setInferenceShare(experimentTiming.getDouble("inferenceShare"));
-                    experimentResults.setExperimentScoringDuration(experimentScoringMs);
-                    experimentResults.setTotalInputTokens(Math.toIntExact(experimentTokenUsage.getJsonObject("inputTokens").getLong("sum")));
-                    experimentResults.setTotalOutputTokens(Math.toIntExact(experimentTokenUsage.getJsonObject("outputTokens").getLong("sum")));
-                    experimentResults.setTotalCombinedTokens(Math.toIntExact(experimentTokenUsage.getJsonObject("totalTokens").getLong("sum")));
-                    experimentResults.setTotalLlmCalls(Math.toIntExact(experimentTokenUsage.getJsonObject("llmCalls").getLong("sum")));
-                    experimentResults.setMinTaskCombinedTokens(experimentTokenUsage.getJsonObject("totalTokens").getInteger("min"));
-                    experimentResults.setMaxTaskCombinedTokens(experimentTokenUsage.getJsonObject("totalTokens").getInteger("max"));
-                    experimentResults.setMeanTaskCombinedTokens(experimentTokenUsage.getJsonObject("totalTokens").getDouble("mean"));
-                    experimentResults.setSuccessfulTasks(experimentResult.getInteger("correct"));
-                    experimentResults.setFailedTasks(experimentResult.getInteger("incorrect"));
-                    experimentResults.setEvaluatedTasks(experimentResult.getInteger("correct") + experimentResult.getInteger("incorrect"));
-                    experimentResults.setEvaluationDatasetId(finalConfig1.getString("evaluationDatasetPath"));
-
-                    experimentResults.setModel(EvaluateTask.modelDescription(agent, finalConfig1));
-
-                    if (finalConfig1.containsKey("notes")){
-                        experimentResults.setNotes(finalConfig1.getString("notes"));
+        runTasks(context, tasksToRun, maxConcurrentTasks, agent, request, platform)
+                //The experiment ends here, so its wall clock does not include the experiment level scoring below.
+                .compose(outcomes->context.executeBlocking(()->finishExperiment(experimentId, experimentStartTime, Instant.now(),
+                        finalSkippedTasks, maxConcurrentTasks, runCount, agent, request, experimentFolderPath, experimentResultsFolderPath), false))
+                .onSuccess(experimentResults->{
+                    if(experimentResults == null){
+                        rc.getDelegate().response().setStatusCode(200).end();
+                        return;
                     }
-
-                    TelemetryVerticle.telemetryService.reportExperimentResults(experimentResults);
-
+                    TelemetryService.createProxy(vertx.getDelegate(), TELEMETRY_SERVICE_ADDRESS)
+                            .reportExperimentResults(experimentResults)
+                            .onFailure(err->log.error("Experiment {} telemetry failed: {}", experimentId, err.getMessage()));
                     rc.getDelegate().response().setStatusCode(200).end(experimentResults.encode());
-                }catch (Exception e){
-                    log.error(e.getMessage(), e);
+                })
+                .onFailure(err->{
+                    log.error(err.getMessage(), err);
                     rc.getDelegate().response().setStatusCode(500).end();
-                }
-            }else {
-                rc.getDelegate().response().setStatusCode(200).end();
+                });
+    }
+
+    /**
+     * Run the tasks, up to {@code maxConcurrentTasks} at a time, each in a {@link TaskVerticle} of its own.
+     *
+     * @return completes once every task is over, with their outcomes. A task that fails, even to deploy, still has an
+     * outcome, so one failure doesn't end the experiment early.
+     */
+    private Future<List<TaskOutcome>> runTasks(Context context, List<PendingTask> tasks, int maxConcurrentTasks, Agent agent, JsonObject request, Platform platform){
+        Promise<List<TaskOutcome>> all = Promise.promise();
+        if(tasks.isEmpty()){
+            all.complete(List.of());
+            return all.future();
+        }
+
+        TaskOutcome[] outcomes = new TaskOutcome[tasks.size()];
+        int[] next = {0};
+        int[] finished = {0};
+        Runnable[] launchNext = new Runnable[1];
+        //Runs on the orchestrator's context only.
+        launchNext[0] = ()->{
+            if(next[0] >= tasks.size()){
+                return;
             }
+            int index = next[0]++;
+            PendingTask pending = tasks.get(index);
+            runTask(pending, agent, request, platform).onComplete(done->context.runOnContext(v->{
+                outcomes[index] = done.succeeded()? done.result()
+                        : new TaskOutcome(pending.task().getString("_evalId"), "failed: " + done.cause().getMessage(), null);
+                log.info("Task {} is over: {}", outcomes[index].evalId(), outcomes[index].outcome());
+                if(++finished[0] == tasks.size()){
+                    all.complete(Arrays.asList(outcomes));
+                }else{
+                    launchNext[0].run();
+                }
+            }));
+        };
+        for(int i = 0; i < Math.min(maxConcurrentTasks, tasks.size()); i++){
+            launchNext[0].run();
+        }
+        return all.future();
+    }
 
+    /**
+     * Deploy a task's verticle, wait for its outcome, then undeploy it.
+     */
+    private Future<TaskOutcome> runTask(PendingTask pending, Agent agent, JsonObject request, Platform platform){
+        Promise<TaskOutcome> outcome = Promise.promise();
+        TaskVerticle taskVerticle = new TaskVerticle(agent, request, pending.task(), pending.environment(), _config, platform, outcome);
+        DeploymentOptions options = new DeploymentOptions()
+                .setWorkerPoolName("task-pool")
+                .setWorkerPoolSize(_config.getInteger("taskWorkerPoolSize", 16))
+                .setMaxWorkerExecuteTime(1)
+                .setMaxWorkerExecuteTimeUnit(TimeUnit.HOURS);
 
+        return vertx.getDelegate().deployVerticle(taskVerticle, options)
+                .compose(deploymentId->outcome.future()
+                        .compose(taskOutcome->vertx.getDelegate().undeploy(deploymentId)
+                                .transform(undeployed->{
+                                    if(undeployed.failed()){
+                                        log.warn("Could not undeploy the verticle of task {}: {}", taskOutcome.evalId(), undeployed.cause().getMessage());
+                                    }
+                                    return Future.succeededFuture(taskOutcome);
+                                })));
+    }
 
-        });
+    /**
+     * Summarize the experiment's token usage and timing, and score it if it has a ground-truth dataset. Blocking.
+     *
+     * @return the experiment's telemetry, or null if it has no dataset.
+     */
+    private ExperimentResults finishExperiment(String experimentId, Instant experimentStartTime, Instant experimentEndTime, int skippedTasks,
+                                               int maxConcurrentTasks, int submittedTasks, Agent agent, JsonObject config,
+                                               String experimentFolderPath, String experimentResultsFolderPath) throws IOException, InterruptedException {
+        //Summarize the token usage and timing of every task in the experiment, also when it failed part way.
+        JsonObject experimentTokenUsage = ExperimentTokenUsage.summarizeAndSave(experimentId, experimentStartTime, experimentEndTime,
+                skippedTasks, maxConcurrentTasks, experimentFolderPath, experimentResultsFolderPath);
 
+        if(!config.containsKey("evaluationDatasetPath")){
+            return null;
+        }
 
+        //Evaluate all experiment results
+        String evalScriptPath = "%s/%s".formatted(_config.getString("evaluationScriptsPath"), _config.getString("evaluationScript"));
+        String datasetPath = "%s/%s".formatted(_config.getString("evaluationScriptsPath"), config.getString("evaluationDatasetPath"));
+        String experimentResultsFile = experimentResultsFolderPath + "/" + experimentId + "-results.json";
+
+        //Only the charted agent constructs task queries, so the other modes are evaluated without the target check.
+        ProcessBuilder pb = new ProcessBuilder(
+                "python",
+                "-X", "utf8",
+                evalScriptPath,
+                "-t", datasetPath,
+                "-o", experimentResultsFile,
+                agent.getMode() == ExecutionMode.CHARTED? "--odobot-execution-events": "--odobot-uncharted-execution-events",
+                "%s".formatted(experimentFolderPath)
+        );
+        log.info("{}", String.join(" ", pb.command()));
+
+        pb.inheritIO();
+        long scoringStart = System.nanoTime();
+        Process evalProcess = pb.start();
+        evalProcess.waitFor();
+        long experimentScoringMs = (System.nanoTime() - scoringStart) / 1_000_000;
+
+        JsonObject experimentResult = new JsonObject(Buffer.buffer(Files.readAllBytes(Path.of(experimentResultsFile))));
+        JsonObject experimentTiming = experimentTokenUsage.getJsonObject("timing");
+
+        //Report Experiment level telemetry
+        ExperimentResults experimentResults = new ExperimentResults();
+        experimentResults.setExperimentId(experimentId);
+        experimentResults.setAgent(_config.getString("agentName"));
+        experimentResults.setAgentVersion(_config.getString("agentVersion"));
+        experimentResults.setSubmittedTasks(submittedTasks + skippedTasks);
+        experimentResults.setDuration(experimentTiming.getLong("wallClockMs"));
+        experimentResults.setExperimentStartTime(experimentTiming.getString("experimentStart"));
+        experimentResults.setExperimentEndTime(experimentTiming.getString("experimentEnd"));
+        experimentResults.setSkippedTasks(experimentTiming.getInteger("skippedTasks"));
+        //Task durations are execution times, like the Duration of each task's telemetry.
+        experimentResults.setMinTaskDuration(experimentTiming.getJsonObject("executionMs").getLong("min"));
+        experimentResults.setMaxTaskDuration(experimentTiming.getJsonObject("executionMs").getLong("max"));
+        experimentResults.setMeanTaskDuration(experimentTiming.getJsonObject("executionMs").getDouble("mean"));
+        experimentResults.setTotalTaskExecution(experimentTiming.getJsonObject("executionMs").getLong("sum"));
+        experimentResults.setSlowestTaskEvalId(experimentTiming.getString("slowestEvalId"));
+        experimentResults.setTotalInference(experimentTiming.getJsonObject("inferenceMs").getLong("sum"));
+        experimentResults.setMeanTaskInference(experimentTiming.getJsonObject("inferenceMs").getDouble("mean"));
+        experimentResults.setInferenceShare(experimentTiming.getDouble("inferenceShare"));
+        experimentResults.setExperimentScoringDuration(experimentScoringMs);
+        experimentResults.setTotalInputTokens(Math.toIntExact(experimentTokenUsage.getJsonObject("inputTokens").getLong("sum")));
+        experimentResults.setTotalOutputTokens(Math.toIntExact(experimentTokenUsage.getJsonObject("outputTokens").getLong("sum")));
+        experimentResults.setTotalCombinedTokens(Math.toIntExact(experimentTokenUsage.getJsonObject("totalTokens").getLong("sum")));
+        experimentResults.setTotalLlmCalls(Math.toIntExact(experimentTokenUsage.getJsonObject("llmCalls").getLong("sum")));
+        experimentResults.setMinTaskCombinedTokens(experimentTokenUsage.getJsonObject("totalTokens").getInteger("min"));
+        experimentResults.setMaxTaskCombinedTokens(experimentTokenUsage.getJsonObject("totalTokens").getInteger("max"));
+        experimentResults.setMeanTaskCombinedTokens(experimentTokenUsage.getJsonObject("totalTokens").getDouble("mean"));
+        experimentResults.setSuccessfulTasks(experimentResult.getInteger("correct"));
+        experimentResults.setFailedTasks(experimentResult.getInteger("incorrect"));
+        experimentResults.setEvaluatedTasks(experimentResult.getInteger("correct") + experimentResult.getInteger("incorrect"));
+        experimentResults.setEvaluationDatasetId(config.getString("evaluationDatasetPath"));
+
+        experimentResults.setModel(TaskSettings.modelDescription(agent, config));
+
+        if (config.containsKey("notes")){
+            experimentResults.setNotes(config.getString("notes"));
+        }
+        return experimentResults;
     }
 
     /**

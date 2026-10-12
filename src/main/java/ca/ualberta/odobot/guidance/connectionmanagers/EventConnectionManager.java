@@ -1,6 +1,5 @@
 package ca.ualberta.odobot.guidance.connectionmanagers;
 
-import ca.ualberta.odobot.guidance.GuidanceVerticle;
 import ca.ualberta.odobot.guidance.OdoClient;
 import ca.ualberta.odobot.guidance.OnlineEventProcessor;
 import ca.ualberta.odobot.guidance.UnchartedStepObserver;
@@ -43,7 +42,7 @@ public class EventConnectionManager extends AbstractConnectionManager implements
         eventProcessor.setOnEntity(client.getRequestManager()::onObservation);
         eventProcessor.setOnUnchartedObservation(client.getRequestManager()::onUnchartedObservation);
 
-        stepObserver = new UnchartedStepObserver(GuidanceVerticle._vertx, this::requestScreenshot, eventProcessor::addUnchartedObservation);
+        stepObserver = new UnchartedStepObserver(client.vertx(), this::requestScreenshot, eventProcessor::addUnchartedObservation);
     }
 
     /**
