@@ -31,6 +31,14 @@ public class TaskBrowser {
     private static final String ADDON_ID = "odosight@ualberta.ca";
 
     /**
+     * An MV2 add-on that removes Content Security Policy headers from every response (source in csp-strip/). Without it,
+     * sites that enforce a CSP, such as the WebArena Forum, block OdoX's WebSocket to OdoBot. OdoX is MV3, and Firefox
+     * ignores CSP header changes from MV3 extensions, so this can't be done inside OdoX. It is installed into every
+     * task browser before OdoX, and only affects responses that arrive after it is installed.
+     */
+    private static final Path CSP_STRIP_PATH = Path.of("csp-strip.xpi");
+
+    /**
      * How often setup is tried again when OdoX's options page is missing an element, e.g. because the extension had
      * not initialized yet.
      */
@@ -122,10 +130,13 @@ public class TaskBrowser {
         if (environment.gridUrl() != null) {
             driver = new RemoteWebDriver(new URL(environment.gridUrl()), options);
             WebDriver augmentedDriver = new Augmenter().augment(driver);
+            String cspStripId = ((HasExtensions) augmentedDriver).installExtension(CSP_STRIP_PATH, true);
+            log.info("Installed CSP stripping extension with id {}", cspStripId);
             String extensionId = ((HasExtensions) augmentedDriver).installExtension(Paths.get(odoSightPath));
             log.info("Installed extension with id {}", extensionId);
         } else {
             driver = new FirefoxDriver(options);
+            ((FirefoxDriver) driver).installExtension(CSP_STRIP_PATH, true);
             ((FirefoxDriver) driver).installExtension(Path.of(odoSightPath), true);
         }
     }

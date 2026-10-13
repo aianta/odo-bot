@@ -45,6 +45,9 @@ db
 # Example experiment definitions, referenced by the README and the run-experiment skill.
 !resource-use-sampling.json
 !.claude/skills/**/*.json
+# The CSP stripping add-on installed into every task browser, and its source.
+!csp-strip.xpi
+!csp-strip/manifest.json
 
 # Personal Claude Code settings. Project skills under .claude/skills are checked in.
 .claude/settings.local.json
