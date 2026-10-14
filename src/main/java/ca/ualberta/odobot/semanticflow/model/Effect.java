@@ -96,8 +96,8 @@ public class Effect extends ArrayList<DomEffect> implements TimelineEntity {
     private Set<Element> getElementSet(Predicate<? super DomEffect> predicate){
         return stream()
                 .filter(predicate)
-                //.peek(domEffect -> log.info("DomEffect[{}] [EffectElementNull:{}]: {} ", domEffect.getAction().toString() ,domEffect.getEffectElement() == null, domEffect.xpath))
-                .map(DomEffect::getEffectElement)
+                //Every node of each DOM change, not just its primary one.
+                .flatMap(domEffect -> domEffect.getEffectElements().stream())
                 .filter(Objects::nonNull) //Effects built during live runs have no parsed elements.
                 .collect(Collectors.toSet());
     }

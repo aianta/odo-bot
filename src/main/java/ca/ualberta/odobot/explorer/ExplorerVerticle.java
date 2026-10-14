@@ -1217,9 +1217,10 @@ public class ExplorerVerticle extends HttpServiceVerticle {
     }
 
     /**
-     * Summarize the experiment's token usage and timing, and score it if it has a ground-truth dataset. Blocking.
+     * Summarize the experiment's token usage and timing, and score it: with the evaluation script if it has a
+     * ground-truth dataset, or from the tasks' WebArena results if they were scored by the WebArena evaluators. Blocking.
      *
-     * @return the experiment's telemetry, or null if it has no dataset.
+     * @return the experiment's telemetry, or null if it was not scored.
      */
     private ExperimentResults finishExperiment(String experimentId, Instant experimentStartTime, Instant experimentEndTime, int skippedTasks,
                                                int maxConcurrentTasks, int submittedTasks, Agent agent, JsonObject config,
@@ -1228,8 +1229,20 @@ public class ExplorerVerticle extends HttpServiceVerticle {
         JsonObject experimentTokenUsage = ExperimentTokenUsage.summarizeAndSave(experimentId, experimentStartTime, experimentEndTime,
                 skippedTasks, maxConcurrentTasks, experimentFolderPath, experimentResultsFolderPath);
 
+        JsonObject webArena = experimentTokenUsage.getJsonObject("webarena");
         if(!config.containsKey("evaluationDatasetPath")){
-            return null;
+            if(webArena == null){
+                return null;
+            }
+            //Each task was scored when it ended, while its browser was open: count their results. Errors are left out
+            //of the evaluated tasks, as WebArena leaves them out of its scores.
+            ExperimentResults experimentResults = experimentResults(experimentId, experimentTokenUsage, submittedTasks, skippedTasks, agent, config);
+            experimentResults.setExperimentScoringDuration(0);
+            experimentResults.setSuccessfulTasks(webArena.getInteger("pass"));
+            experimentResults.setFailedTasks(webArena.getInteger("fail"));
+            experimentResults.setEvaluatedTasks(webArena.getInteger("pass") + webArena.getInteger("fail"));
+            experimentResults.setEvaluationDatasetId("webarena");
+            return experimentResults;
         }
 
         //Evaluate all experiment results
@@ -1256,6 +1269,21 @@ public class ExplorerVerticle extends HttpServiceVerticle {
         long experimentScoringMs = (System.nanoTime() - scoringStart) / 1_000_000;
 
         JsonObject experimentResult = new JsonObject(Buffer.buffer(Files.readAllBytes(Path.of(experimentResultsFile))));
+
+        ExperimentResults experimentResults = experimentResults(experimentId, experimentTokenUsage, submittedTasks, skippedTasks, agent, config);
+        experimentResults.setExperimentScoringDuration(experimentScoringMs);
+        experimentResults.setSuccessfulTasks(experimentResult.getInteger("correct"));
+        experimentResults.setFailedTasks(experimentResult.getInteger("incorrect"));
+        experimentResults.setEvaluatedTasks(experimentResult.getInteger("correct") + experimentResult.getInteger("incorrect"));
+        experimentResults.setEvaluationDatasetId(config.getString("evaluationDatasetPath"));
+        return experimentResults;
+    }
+
+    /**
+     * The experiment level telemetry that doesn't depend on how the tasks were scored.
+     */
+    private ExperimentResults experimentResults(String experimentId, JsonObject experimentTokenUsage, int submittedTasks,
+                                                int skippedTasks, Agent agent, JsonObject config){
         JsonObject experimentTiming = experimentTokenUsage.getJsonObject("timing");
 
         //Report Experiment level telemetry
@@ -1277,7 +1305,6 @@ public class ExplorerVerticle extends HttpServiceVerticle {
         experimentResults.setTotalInference(experimentTiming.getJsonObject("inferenceMs").getLong("sum"));
         experimentResults.setMeanTaskInference(experimentTiming.getJsonObject("inferenceMs").getDouble("mean"));
         experimentResults.setInferenceShare(experimentTiming.getDouble("inferenceShare"));
-        experimentResults.setExperimentScoringDuration(experimentScoringMs);
         experimentResults.setTotalInputTokens(Math.toIntExact(experimentTokenUsage.getJsonObject("inputTokens").getLong("sum")));
         experimentResults.setTotalOutputTokens(Math.toIntExact(experimentTokenUsage.getJsonObject("outputTokens").getLong("sum")));
         experimentResults.setTotalCombinedTokens(Math.toIntExact(experimentTokenUsage.getJsonObject("totalTokens").getLong("sum")));
@@ -1285,10 +1312,6 @@ public class ExplorerVerticle extends HttpServiceVerticle {
         experimentResults.setMinTaskCombinedTokens(experimentTokenUsage.getJsonObject("totalTokens").getInteger("min"));
         experimentResults.setMaxTaskCombinedTokens(experimentTokenUsage.getJsonObject("totalTokens").getInteger("max"));
         experimentResults.setMeanTaskCombinedTokens(experimentTokenUsage.getJsonObject("totalTokens").getDouble("mean"));
-        experimentResults.setSuccessfulTasks(experimentResult.getInteger("correct"));
-        experimentResults.setFailedTasks(experimentResult.getInteger("incorrect"));
-        experimentResults.setEvaluatedTasks(experimentResult.getInteger("correct") + experimentResult.getInteger("incorrect"));
-        experimentResults.setEvaluationDatasetId(config.getString("evaluationDatasetPath"));
 
         experimentResults.setModel(TaskSettings.modelDescription(agent, config));
 

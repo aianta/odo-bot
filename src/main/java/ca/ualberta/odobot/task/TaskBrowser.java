@@ -1,5 +1,8 @@
 package ca.ualberta.odobot.task;
 
+import ca.ualberta.odobot.guidance.TaskTiming;
+import ca.ualberta.odobot.task.webarena.SessionAuthenticator;
+import io.vertx.core.json.JsonObject;
 import org.openqa.selenium.*;
 import org.openqa.selenium.firefox.FirefoxDriver;
 import org.openqa.selenium.firefox.FirefoxOptions;
@@ -9,7 +12,6 @@ import org.openqa.selenium.remote.Augmenter;
 import org.openqa.selenium.remote.RemoteWebDriver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import io.vertx.core.json.JsonObject;
 
 import java.io.File;
 import java.net.MalformedURLException;
@@ -49,6 +51,12 @@ public class TaskBrowser {
     private final TaskEnvironment environment;
     private final String odoSightPath;
     private final boolean headless;
+    private final TaskTiming timing;
+
+    /**
+     * How the sites were logged in to before the agent started, or null if setup hasn't got that far.
+     */
+    private volatile JsonObject authReport;
 
     private final String odoXControlsUrl;
     private final String odoXOptionsUrl;
@@ -56,15 +64,23 @@ public class TaskBrowser {
     private volatile WebDriver driver;
 
     /**
+     * The tab of the web app the agent works in, as opposed to OdoX's controls tab.
+     */
+    private volatile String appTabHandle;
+
+    /**
      * @param addonId OdoX's extension instance id, which is also its clientId on the sockets.
      * @param odoSightPath the OdoX xpi.
+     * @param timing marks the time spent logging in to the task's sites.
      */
-    public TaskBrowser(String evalId, UUID addonId, TaskEnvironment environment, String odoSightPath, boolean headless){
+    public TaskBrowser(String evalId, UUID addonId, TaskEnvironment environment, String odoSightPath, boolean headless,
+                       TaskTiming timing){
         this.evalId = evalId;
         this.addonId = addonId;
         this.environment = environment;
         this.odoSightPath = odoSightPath;
         this.headless = headless;
+        this.timing = timing;
         this.odoXControlsUrl = "moz-extension://" + addonId + "/popup/bot/bot.html";
         this.odoXOptionsUrl = "moz-extension://" + addonId + "/options/options.html";
     }
@@ -168,9 +184,13 @@ public class TaskBrowser {
         WebElement submitButton = findElement(driver, By.tagName("button"));
         click(driver, submitButton);
 
+        //Start logged in to the task's sites, as WebArena does, before the start page loads and before OdoX connects.
+        logIn();
+
         //Load the target application, and remember its tab.
         driver.get(environment.startUrl());
         String webAppTabHandle = driver.getWindowHandle();
+        appTabHandle = webAppTabHandle;
 
         //Open OdoX's controls in a new tab. This connects OdoX to OdoBot.
         driver.switchTo().newWindow(WindowType.TAB);
@@ -178,6 +198,66 @@ public class TaskBrowser {
 
         //Then switch back to the target web app tab.
         driver.switchTo().window(webAppTabHandle);
+    }
+
+    /**
+     * Log in to the sites the task starts logged in to, see {@link SessionAuthenticator}. Nothing to do in prompt mode.
+     *
+     * @throws SessionAuthenticator.AuthFailedException if a site could not be logged in to.
+     */
+    private void logIn(){
+        if(environment.auth().sitesToLogIn().isEmpty()){
+            authReport = environment.auth().toJson().put("sites", new JsonObject());
+            return;
+        }
+        timing.markAuthStart();
+        try{
+            authReport = SessionAuthenticator.authenticate(driver, environment.auth());
+        }catch (SessionAuthenticator.AuthFailedException e){
+            authReport = e.report;
+            throw e;
+        }finally {
+            timing.markAuthEnd();
+        }
+        log.info("Task {}: logged in: {}", evalId, authReport.encode());
+    }
+
+    /**
+     * @return how the sites were logged in to, {@code {mode, sites: {site: {status, method, ms}}}}, or null.
+     */
+    public JsonObject authReport(){
+        return authReport;
+    }
+
+    /**
+     * Switch the driver to the agent's tab, so that evaluators read the page the agent ended on. If that tab was
+     * closed, the most recently opened tab that isn't OdoX's is used.
+     *
+     * @return the tab's handle.
+     * @throws IllegalStateException if the browser isn't open or has no such tab.
+     */
+    public String focusAppTab(){
+        WebDriver open = driver;
+        if(open == null){
+            throw new IllegalStateException("The browser is not open.");
+        }
+        java.util.Set<String> handles = open.getWindowHandles();
+        if(appTabHandle != null && handles.contains(appTabHandle)){
+            open.switchTo().window(appTabHandle);
+            return appTabHandle;
+        }
+        String fallback = null;
+        for(String handle: handles){
+            open.switchTo().window(handle);
+            if(!open.getCurrentUrl().startsWith("moz-extension://")){
+                fallback = handle;
+            }
+        }
+        if(fallback == null){
+            throw new IllegalStateException("The agent's tab is gone and no other web page is open.");
+        }
+        open.switchTo().window(fallback);
+        return fallback;
     }
 
     private void setField(String id, String value){

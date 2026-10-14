@@ -8,6 +8,8 @@ import java.time.Instant;
  * The wall clock time of one evaluation task, saved with its token usage in {@code <evalId>-tokens.json}.
  *
  * <p>The harness marks the phases of the task as it goes: setup ({@link #markBeforeSetup} to {@link #markExecutionStart}),
+ * which includes logging in to the task's sites ({@link #markAuthStart} to {@link #markAuthEnd}) when the task starts
+ * logged in,
  * execution (to {@link #markExecutionEnd}), saving its artifacts (to {@link #markArtifactsSaved}), and scoring
  * ({@link #markScoringStart} to {@link #markScoringEnd}), and the task ends at {@link #markAfterScoring}. Durations come
  * from {@link System#nanoTime()}, so clock adjustments do not skew them; the instants are only for the timestamps.</p>
@@ -26,6 +28,8 @@ public class TaskTiming {
     }
 
     private Mark beforeSetup;
+    private Mark authStart;
+    private Mark authEnd;
     private Mark executionStart;
     private Mark executionEnd;
     private Mark artifactsSaved;
@@ -35,6 +39,22 @@ public class TaskTiming {
 
     public synchronized void markBeforeSetup(){
         if(beforeSetup == null) beforeSetup = Mark.now();
+    }
+
+    public synchronized void markAuthStart(){
+        if(authStart == null) authStart = Mark.now();
+    }
+
+    public synchronized void markAuthEnd(){
+        if(authEnd == null) authEnd = Mark.now();
+    }
+
+    /**
+     * @return the time spent logging in to the task's sites before the agent started, part of {@link #setupMs()}, or
+     * null if the task didn't start logged in.
+     */
+    public synchronized Long authMs(){
+        return between(authStart, authEnd);
     }
 
     public synchronized void markExecutionStart(){
@@ -147,6 +167,7 @@ public class TaskTiming {
         putInstant(json, "executionEnd", executionEnd);
         putInstant(json, "afterScoring", afterScoring);
         putMs(json, "setupMs", setupMs());
+        putMs(json, "authMs", authMs());
         putMs(json, "executionMs", executionMs());
         putMs(json, "inferenceMs", inferenceMs(inferenceMs));
         putMs(json, "otherExecutionMs", otherExecutionMs(inferenceMs));

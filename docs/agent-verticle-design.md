@@ -288,37 +288,58 @@ in-memory state. Token usage, timing, the event log and the agent's state all st
 
 ## Task evaluation
 
-Evaluation stays inside the task verticle. Today that is the python script run over the task's event log, and WebArena
-tasks have no scoring at all. The plan is to port WebArena's automated evaluators later (out of scope for now). Several
-of them check the end state of the browser: the URL, the page content, or values read off the page. So they need the
-browser session after the agent finishes and before the driver is quit, which only the task verticle has.
+Evaluation stays inside the task verticle, because WebArena's evaluators check the end state of the browser (the URL,
+the page content, values read off the page), so they need the browser session after the agent finishes and before the
+driver is quit. Canvas tasks are still scored by the python script over the event log (`TaskScorer`); WebArena tasks
+are scored by a Java port of WebArena's `evaluation_harness` (`ca.ualberta.odobot.task.webarena`).
 
-That fixes the order of the end of a task:
+The end of a task (`TaskVerticle.finishTask`):
 
-1. **The agent finishes**, by completing, failing, hitting the step cap or timing out. The harness stops sending
-   instructions but leaves the browser alone. A timeout ends execution, not the task.
-2. **Evaluate**, with the browser still open. The evaluators run on the task's worker pool, since Selenium blocks.
-3. **Save the artifacts** and the task's `-result.json`.
-4. **Report per-task telemetry** through the proxy.
-5. **Quit the browser**, then complete the orchestrator's promise with the `TaskOutcome`.
+1. **The agent finishes**, by completing, judging the task infeasible, failing, hitting the step cap or timing out.
+   `RequestManager` keeps the answer it reported (`TaskComplete`, or an infeasible `GiveUp`).
+2. **Save the artifacts**: the event log is final here.
+3. **Seal the event stream.** `OnlineEventProcessor.seal()` counts and drops every event from then on, and OdoX is
+   asked to stop transmitting. Nothing the evaluators do in the browser reaches the task's event log, its timeline or
+   memory; the count is saved as `droppedEvalEvents`.
+4. **Record the final URL** of the agent's tab as `finalUrl` in `-tokens.json`.
+5. **Score**, on the worker pool, between `markScoringStart` and `markScoringEnd`:
+   - WebArena tasks (with a `webarena` block): `WebArenaTaskEvaluator` routes the config's `eval_types` to
+     `StringEvaluator`, `UrlEvaluator` and `HtmlContentEvaluator`, multiplies their scores, and writes
+     `<evalId>-webarena-eval.json`. A score of 1 is PASS; an evaluator that throws gives ERROR, as WebArena's
+     "Unhandled Error" (left out of its scores).
+   - Canvas tasks (with `evaluationDatasetPath`): the python script, as before.
+6. **Report per-task telemetry** through the proxy, and save `-tokens.json` with `webarena`, `evaluatorUsage` and the
+   timing.
+7. **Quit the browser**, then complete the orchestrator's promise with the `TaskOutcome`.
 
-A sketch of the seam, so today's python scoring and the future WebArena evaluators fit the same slot:
+`stop()` (undeploy after a crash or cancel) does not evaluate. It only cleans up.
 
-```java
-interface TaskEvaluator {
-    /** Runs on a worker thread. The browser is still open and must not be navigated away by accident. */
-    TaskEvaluation evaluate(TaskEndState end);
-}
+**The answer the evaluators see** mirrors WebArena's stop action: the agent's answer; "N/A" when it judged the task
+infeasible without one (WebArena agents answer `stop [N/A]`); "" otherwise (step limit, timeout, error), as `run.py`
+appends `stop("")`. Give-ups that are errors (no path, a failed LLM call) are not infeasibility, so they score with "".
 
-record TaskEndState(JsonObject task, WebDriver driver, Path eventLog, String agentAnswer, TaskTiming timing){}
-```
+**Parity with the original.** The port reproduces Python's semantics where they matter: `clean_answer` and Python's
+whitespace, NLTK's `word_tokenize` with punkt (for single-character references), `html.unescape`, `urllib.parse`
+(`urlparse`, `parse_qs`), and what `str()` gives for each JS value Playwright returns (the page side uses Playwright
+1.32's own serializer). `scripts/webarena-parity/gen_golden.py` runs the original code over all 812 configs and
+writes golden files that `EvaluatorGoldenTest` and `PyCompatGoldenTest` check exactly. `func:` calls are parsed, never
+evaluated, and only WebArena's helpers can be called.
 
-- The evaluators are chosen from the task's definition, as WebArena does with its `eval_types`.
-- `TaskTiming.scoringMs` covers the evaluate step, as it does today.
-- An evaluator that fails or throws gives an `ERROR` result. It never skips the browser quit.
-- `stop()` (undeploy after a crash or cancel) does not evaluate. It only cleans up.
-- Some WebArena evaluators query the site's backend rather than the page. Those take the site URLs from the task's
-  `TaskEnvironment.sites`, not the browser, and can run the same way.
+**Starting logged in.** In `session` auth mode (the environment's `auth` block), `TaskBrowser` logs in to the task's
+sites before the start page loads and before OdoX connects, with the steps of WebArena's `auto_login.py`
+(`SessionAuthenticator`), in a scratch tab, and checks each login as `auto_login.is_expired` does. It is timed as
+`authMs`, part of setup. A failed login fails setup with `auth: <site>`.
+
+**Telemetry.** The judge has its own `LlmCallScope` and token record (`webarena-judge` calls), saved as
+`evaluatorUsage`, never in the agent's tokens or inference time. Evaluation time is `scoringMs` (3 s per navigated
+target plus REST and judge calls), never `executionMs`. Tasks hold their slot while they authenticate and are scored,
+so the experiment's `parallelism` (execution over wall clock) is lower than before. The experiment summary adds a
+`webarena` block (PASS/FAIL/ERROR, success rate over evaluated and over submitted tasks, judge tokens), and
+`finishExperiment` reports `ExperimentResults` from it when there is no Canvas dataset.
+
+**Shared state.** `shopping_get_latest_order_url` and the review helpers read the shopping site's global state, so
+concurrent tasks on one environment can score each other's orders. One environment per concurrent task, and a reset
+after state-changing tasks (the scheduler's `reset_after`), keep scores clean.
 
 ## Experiment-level telemetry
 
@@ -451,10 +472,10 @@ Not done yet, deliberately:
 - **The charted agent's Neo4j work** (localizing, `constructV3`) still runs on the task's event loop. It used to block
   the shared guidance loop, so this is already better, but moving it to a worker means changing `ChartedAgent`.
 - **Saving the raw event log** stays on the event loop, since OdoX's events keep arriving on it until the browser quits.
-- **Experiment pass/fail still comes from rerunning the python script** over the experiment folder, not from the task
-  outcomes. That has to change once WebArena evaluators exist.
-- **No evaluator seam yet.** `TaskScorer` is today's python scoring; the `TaskEvaluator` interface comes with the
-  WebArena evaluators.
+- **Canvas pass/fail still comes from rerunning the python script** over the experiment folder. WebArena pass/fail
+  comes from the tasks' own results (`webarena` in each `-tokens.json`), since they can't be recomputed afterwards.
+- **No generic evaluator seam.** `TaskScorer` (Canvas) and `WebArenaTaskEvaluator` (WebArena) are called directly
+  from `finishTask`; a shared interface wasn't needed for two.
 - **Tests.** Socket routing is tested with real websockets on per-task ports (`TaskSocketsTest`), and pacing, environment
   resolution and the summary are unit tested. There is no test that runs a whole `TaskVerticle` with a fake OdoX, since
   that needs a stand-in for `TaskBrowser`; the smoke tests cover it.
@@ -581,6 +602,4 @@ charted path uses the shared services (Neo4j, the planner, the vector service) t
 
 ## Open questions
 
-- **Porting the WebArena evaluators.** They are written in Python against Playwright. They could be rewritten in Java
-  against Selenium, or kept in Python and given the end state, though a Python process can't easily share the task's
-  Selenium session. Rewriting the page-reading parts in Java is probably simpler.
+- **Porting the WebArena evaluators.** Done: rewritten in Java against Selenium, see [Task evaluation](#task-evaluation).

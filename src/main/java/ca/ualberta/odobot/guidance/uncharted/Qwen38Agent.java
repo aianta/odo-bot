@@ -255,7 +255,7 @@ public class Qwen38Agent extends UnchartedAgent {
                 stopped = true;
             }
             case FAIL -> {
-                emit(new GiveUp("Qwen3.8 ended the task as failed: " + parsed.lowLevelInstruction()));
+                emit(GiveUp.infeasible("Qwen3.8 ended the task as failed: " + parsed.lowLevelInstruction(), parsed.answer()));
                 stopped = true;
             }
             case NONE -> {

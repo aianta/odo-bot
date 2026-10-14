@@ -72,6 +72,28 @@ public class OnlineEventProcessor {
 
     private int rawEventCount = 0;
 
+    /**
+     * True once the task's events are saved: events that arrive afterwards, e.g. while evaluators drive the browser,
+     * are counted and dropped. They are neither written, nor added to the timeline, nor kept in memory.
+     */
+    private volatile boolean sealed = false;
+
+    private int droppedAfterSeal = 0;
+
+    /**
+     * Drop every event from now on, see {@link #sealed}.
+     */
+    public synchronized void seal(){
+        sealed = true;
+    }
+
+    /**
+     * @return how many events were dropped since {@link #seal()}.
+     */
+    public synchronized int droppedAfterSeal(){
+        return droppedAfterSeal;
+    }
+
     public void injectNoOp(){
         if(line != null){
             line.add(new NoOpEvent());
@@ -279,6 +301,12 @@ public class OnlineEventProcessor {
     }
 
     public void process(JsonObject event){
+        if(sealed){
+            synchronized (this){
+                droppedAfterSeal++;
+            }
+            return;
+        }
         //Recorded before processing, which may change the event.
         appendRawEvent(event.encode());
         try{

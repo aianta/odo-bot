@@ -7,6 +7,9 @@ import ca.ualberta.odobot.guidance.*;
 import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
 import ca.ualberta.odobot.guidance.uncharted.Qwen38Agent;
 import ca.ualberta.odobot.sqlite.SqliteService;
+import ca.ualberta.odobot.task.webarena.WebArenaEvaluationSettings;
+import ca.ualberta.odobot.task.webarena.WebArenaTaskConfig;
+import ca.ualberta.odobot.task.webarena.WebArenaTaskEvaluator;
 import ca.ualberta.odobot.telemetry.TelemetryService;
 import ca.ualberta.odobot.telemetry.model.TaskInstanceResults;
 import io.vertx.core.AbstractVerticle;
@@ -35,7 +38,10 @@ import static ca.ualberta.odobot.logpreprocessor.Constants.TELEMETRY_SERVICE_ADD
  *     <li>Start Firefox with OdoX pointed at that port (worker thread).</li>
  *     <li>Wait for OdoX's control and event sockets.</li>
  *     <li>Run the task: the agent and its harness ({@link RequestManager}) run on this verticle's event loop.</li>
- *     <li>Save the artifacts, score the task (worker thread) and report its telemetry.</li>
+ *     <li>Save the artifacts, then drop OdoX's events from then on, so that nothing the evaluators do in the browser
+ *     reaches the task's event log.</li>
+ *     <li>Record the final URL, score the task while the browser is still open (worker thread), and report its
+ *     telemetry. WebArena tasks are scored by the ported WebArena evaluators, Canvas tasks by the evaluation script.</li>
  *     <li>Quit the browser (worker thread), close the sockets, and report the {@link TaskOutcome}.</li>
  * </ol>
  *
@@ -90,6 +96,13 @@ public class TaskVerticle extends AbstractVerticle {
     private boolean finishing = false;
 
     /**
+     * The task's WebArena config, or null if it isn't a WebArena task scored by the ported evaluators.
+     */
+    private WebArenaTaskConfig webArenaConfig;
+
+    private WebArenaEvaluationSettings webArenaSettings;
+
+    /**
      * @param agent the agent the experiment runs.
      * @param request the evaluate request.
      * @param task the task, as the agent reads it.
@@ -134,7 +147,16 @@ public class TaskVerticle extends AbstractVerticle {
                 .put("experimentId", experimentId), vertx);
         browser = new TaskBrowser(evalId, clientId, environment,
                 request.getString(EvaluationTaskRequestFields.ODOSIGHT_PATH.field),
-                request.getBoolean("headless", true));
+                request.getBoolean("headless", true), timing);
+
+        //A malformed WebArena config fails the task now, rather than after it has run.
+        try{
+            webArenaConfig = WebArenaTaskConfig.fromTask(task);
+            webArenaSettings = webArenaConfig == null? null : WebArenaEvaluationSettings.fromRequest(request);
+        }catch (IllegalArgumentException e){
+            setupFailed(e);
+            return;
+        }
 
         openListener()
                 .compose(port->context.<Void>executeBlocking(()->{
@@ -262,6 +284,9 @@ public class TaskVerticle extends AbstractVerticle {
             requestManager.setMaxSteps(TaskSettings.maxSteps(task, agent.getMode()));
             requestManager.setTaskTiming(timing); //Already marks the setup, the RequestManager marks the execution.
             requestManager.startTask(taskAgent, agent.getMode(), UUID.fromString(task.getString("id")), request.getLong("timeout", 180000L));
+            if(browser.authReport() != null){
+                requestManager.putUsageField("auth", browser.authReport());
+            }
         }catch (Throwable e){
             if(evaluation != null){
                 //The task has started: end it, so its artifacts are saved as usual.
@@ -351,8 +376,15 @@ public class TaskVerticle extends AbstractVerticle {
             return;
         }
 
+        //Nothing that happens in the browser from here on belongs to the task.
+        client.getEventConnectionManager().getEventProcessor().seal();
+        client.getEventConnectionManager().stopTransmitting()
+                .onFailure(err->log.debug("Task {}: OdoX did not confirm it stopped transmitting: {}", evalId, err.getMessage()));
+
         TaskScorer scorer = new TaskScorer(explorerConfig, request);
-        Future<Void> scored = scorer.enabled()? scoreAndReport(scorer, requestManager) : Future.succeededFuture();
+        Future<Void> scored = recordFinalUrl(requestManager)
+                .compose(v->webArenaConfig != null? evaluateWebArena(requestManager) : Future.succeededFuture())
+                .compose(v->scorer.enabled()? scoreAndReport(scorer, requestManager) : Future.succeededFuture());
 
         scored.onComplete(done->{
             if(done.failed()){
@@ -369,6 +401,69 @@ public class TaskVerticle extends AbstractVerticle {
             requestManager.saveTaskUsage();
             close();
         });
+    }
+
+    /**
+     * Record the URL of the agent's tab as {@code finalUrl} in the task's token usage file, and leave the driver on that
+     * tab for the evaluators. Never fails: a browser that can't tell is logged.
+     */
+    private Future<Void> recordFinalUrl(RequestManager requestManager){
+        return context.<Void>executeBlocking(()->{
+            browser.focusAppTab();
+            requestManager.putUsageField("finalUrl", browser.driver().getCurrentUrl());
+            return null;
+        }).recover(err->{
+            log.warn("Task {}: could not read the final URL: {}", evalId, err.getMessage());
+            return Future.succeededFuture();
+        });
+    }
+
+    /**
+     * Score a WebArena task with the ported WebArena evaluators on a worker thread, while the browser is still open,
+     * then report its telemetry. The evaluation's own failures make the task's result ERROR; they never fail the task.
+     */
+    private Future<Void> evaluateWebArena(RequestManager requestManager){
+        //The REST helpers use the accounts the task logged in with.
+        WebArenaTaskEvaluator evaluator = new WebArenaTaskEvaluator(webArenaConfig, webArenaSettings, environment.sites(),
+                environment.auth().applyTo(webArenaSettings.accounts()));
+        return context.<WebArenaTaskEvaluator.Result>executeBlocking(()->{
+            timing.markScoringStart();
+            try{
+                return evaluator.evaluate(evalId, browser.driver(), requestManager.getAgentAnswer(),
+                        requestManager.isJudgedInfeasible(),
+                        client.getEventConnectionManager().getEventProcessor()::droppedAfterSeal,
+                        Path.of(artifactPath(WebArenaTaskEvaluator.FILE_SUFFIX)));
+            }finally {
+                timing.markScoringEnd();
+            }
+        }).map(result->{
+            requestManager.putUsageField("webarena", result.summary());
+            if(result.judgeUsage() != null){
+                requestManager.putUsageField("evaluatorUsage", result.judgeUsage());
+            }
+            reportWebArenaTelemetry(result, requestManager);
+            return null;
+        });
+    }
+
+    private void reportWebArenaTelemetry(WebArenaTaskEvaluator.Result result, RequestManager requestManager){
+        timing.markAfterScoring();
+        TaskInstanceResults telemetry = new TaskInstanceResults();
+        telemetry.setResult(result.result());
+        telemetry.setDetails(new JsonObject()
+                .put("webarena", result.summary())
+                .put("answer", result.answer())
+                .put("finalUrl", result.finalUrl()));
+        new TaskScorer(explorerConfig, request).describe(telemetry, task, experimentId,
+                TaskSettings.modelDescription(agent, request), timing, requestManager.getTokenUsage());
+        telemetry.setEvaluationDatasetId("webarena");
+        if(webArenaConfig.taskId() != null){
+            telemetry.setTaskId(String.valueOf(webArenaConfig.taskId()));
+        }
+        TelemetryService.createProxy(vertx, TELEMETRY_SERVICE_ADDRESS)
+                .reportTaskResults(telemetry)
+                .onSuccess(done->log.info("Task [{}] {} WebArena telemetry sent!", experimentId, task.getString("id")))
+                .onFailure(err->log.error("Task [{}] {} WebArena telemetry failed: {}", experimentId, task.getString("id"), err.getMessage()));
     }
 
     /**
@@ -448,6 +543,9 @@ public class TaskVerticle extends AbstractVerticle {
                 .mergeIn(new TokenUsageRecord().toJson())
                 .put("environment", environment.toJson())
                 .put("timing", timing.toJson());
+        if(browser != null && browser.authReport() != null){
+            usage.put("auth", browser.authReport());
+        }
         try{
             Files.createDirectories(Path.of(experimentFolderPath));
             Files.writeString(Path.of(artifactPath("-tokens.json")), usage.encodePrettily());

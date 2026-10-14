@@ -4,11 +4,11 @@ import ca.ualberta.odobot.semanticflow.mappers.JsonMapper;
 import ca.ualberta.odobot.semanticflow.model.DomEffect;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
-import org.jsoup.Jsoup;
-import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.List;
 
 /**
  * {@link DomEffectMapper} contains all the logic necessary to produce a {@link DomEffect} object
@@ -18,66 +18,36 @@ public class DomEffectMapper extends JsonMapper<DomEffect> {
     private static final Logger log = LoggerFactory.getLogger(DomEffectMapper.class);
 
     private static final String ACTION_FIELD = "eventDetails_action";
-    private static final String ADD_ACTION = "add";
-    private static final String SHOW_ACTION = "show";
-    private static final String HIDE_ACTION = "hide";
-    private static final String REMOVE_ACTION = "remove";
 
     private static final String NODES_FIELD = "eventDetails_nodes";
-    private static final String XPATH_FIELD = "eventDetails_xpath";
 
     private static final String NODE_HTML_FIELD = "outerHTML";
-    private static final String NODE_TAG_FIELD = "localName";
-    private static final String NODE_ID_FIELD = "id";
-    private static final String NODE_TEXT_FIELD = "outerText";
-    private static final String NODE_BASEURI_FIELD = "baseURI";
     private static final String NODE_XPATH_FIELD = "xpath";
 
+    /**
+     * Map a DOM effect event to one {@link DomEffect} covering all of its nodes, most relevant first, see
+     * {@link LogUIDomEffectMapper#relevantNodes}. The page snapshot is parsed once for the whole change.
+     *
+     * @return the DomEffect, or null if none of the event's nodes is worth keeping.
+     */
     @Override
     public DomEffect map(JsonObject event) {
-
-        //Get the dom node/element that was added/shown/hidden/removed
-        JsonObject node = firstNode(event);
-//        log.info("node: {}", node.encodePrettily());
-//        log.info("{}", event.getString(XPATH_FIELD));
-
-        DomEffect result = new DomEffect();
-        result.setDomSnapshot(getDOMSnapshot(event));
-        result.setXpath(node.getString(NODE_XPATH_FIELD));
-        result.setEffectElement(extractElement(node.getString(NODE_HTML_FIELD)));
-        result.setTag(node.getString(NODE_TAG_FIELD));
-        result.setHtmlId(node.getString(NODE_ID_FIELD));
-        result.setText(node.getString(NODE_TEXT_FIELD));
-        result.setBaseURI(node.getString(NODE_BASEURI_FIELD));
-
-
-        switch (event.getString(ACTION_FIELD)){
-            case ADD_ACTION -> result.setAction(DomEffect.EffectType.ADD);
-            case SHOW_ACTION -> result.setAction(DomEffect.EffectType.SHOW);
-            case HIDE_ACTION -> result.setAction(DomEffect.EffectType.HIDE);
-            case REMOVE_ACTION -> result.setAction(DomEffect.EffectType.REMOVE);
-        }
-
-//        if(result.getTargetElement() == null){
-//            log.error("Target Element missing! {} \n{}", event.getString(ACTION_FIELD), result.getXpath(), result.getEffectElement().html());
-//        }
-
-        if(result.getAction() == DomEffect.EffectType.ADD && !result.getXpath().startsWith("/html")){
-            log.warn("Got a DOM ADD event with a broken xpath? This is really bad, investigate this please. Anyways, skipping for now...");
+        DomEffect.EffectType action = LogUIDomEffectMapper.action(event.getString(ACTION_FIELD));
+        List<JsonObject> nodes = LogUIDomEffectMapper.relevantNodes(new JsonArray(event.getString(NODES_FIELD)), action);
+        if(nodes.isEmpty()){
+            log.warn("Got a DOM {} event with no locatable node, skipping it.", action);
             return null;
         }
 
+        DomEffect result = LogUIDomEffectMapper.fromPrimaryNode(nodes.get(0), action);
+        result.setDomSnapshot(getDOMSnapshot(event));
+        List<Element> elements = nodes.stream().map(node->extractElement(node.getString(NODE_HTML_FIELD))).toList();
+        result.setEffectElement(elements.get(0));
+        if(nodes.size() > 1){
+            result.setXpaths(nodes.stream().map(node->node.getString(NODE_XPATH_FIELD)).toList());
+            result.setEffectElements(elements);
+        }
         return result;
     }
 
-
-    /**
-     * Returns the first, and often, only element in the nodes array.
-     * @param event
-     * @return
-     */
-    private JsonObject firstNode(JsonObject event){
-        JsonArray nodes = new JsonArray(event.getString(NODES_FIELD));
-        return nodes.getJsonObject(0);
-    }
 }

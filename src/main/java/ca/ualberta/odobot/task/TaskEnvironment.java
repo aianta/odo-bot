@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.task;
 
+import ca.ualberta.odobot.task.webarena.TaskAuth;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
@@ -22,6 +23,7 @@ import java.util.Map;
  * @param sites named base URLs of the environment's apps, for evaluators that query a backend.
  * @param logUiHost OdoX's options page requires LogUI settings, though nothing is sent to LogUI during evaluation.
  *                  Required, like the username and password.
+ * @param auth how the agent gets logged in to the sites: by itself, or before it starts, as in WebArena.
  */
 public record TaskEnvironment(
         String gridUrl,
@@ -30,7 +32,8 @@ public record TaskEnvironment(
         Map<String, String> sites,
         String logUiHost,
         String logUiUsername,
-        String logUiPassword
+        String logUiPassword,
+        TaskAuth auth
 ) {
 
     /**
@@ -73,12 +76,13 @@ public record TaskEnvironment(
                 sites(environment),
                 required(environment, experimentRequest, "logUIHost"),
                 required(environment, experimentRequest, "logUIUsername"),
-                required(environment, experimentRequest, "logUIPassword")
+                required(environment, experimentRequest, "logUIPassword"),
+                TaskAuth.fromJson(environment.getValue("auth"))
         );
     }
 
     /**
-     * @return the environment as saved with the task's artifacts. The LogUI password is left out.
+     * @return the environment as saved with the task's artifacts. The LogUI password and the auth passwords are left out.
      */
     public JsonObject toJson(){
         JsonObject sitesJson = new JsonObject();
@@ -88,7 +92,8 @@ public record TaskEnvironment(
                 .put("startUrl", startUrl)
                 .put("targetHosts", new JsonArray(targetHosts))
                 .put("sites", sitesJson)
-                .put("logUIHost", logUiHost);
+                .put("logUIHost", logUiHost)
+                .put("auth", auth.toJson());
     }
 
     /**

@@ -40,7 +40,7 @@ public final class ExperimentTokenUsage {
      * The task phases timed by {@link ca.ualberta.odobot.guidance.TaskTiming}. Execution is split into
      * {@code inferenceMs} and {@code otherExecutionMs}.
      */
-    private static final List<String> PHASES = List.of("setupMs", "executionMs", "inferenceMs", "otherExecutionMs", "artifactsMs", "scoringMs", "totalMs");
+    private static final List<String> PHASES = List.of("setupMs", "authMs", "executionMs", "inferenceMs", "otherExecutionMs", "artifactsMs", "scoringMs", "totalMs");
 
     private ExperimentTokenUsage(){}
 
@@ -142,6 +142,11 @@ public final class ExperimentTokenUsage {
 
         summary.put("timing", summarizeTiming(tasks));
 
+        JsonObject webArena = summarizeWebArena(tasks);
+        if(webArena != null){
+            summary.put("webarena", webArena);
+        }
+
         summary.put("tasks", tasks.stream()
                 .map(task->{
                     JsonObject entry = new JsonObject()
@@ -150,6 +155,10 @@ public final class ExperimentTokenUsage {
                             .put("outcome", task.getString("outcome"))
                             .put("totalTokens", task.getInteger("totalTokens", 0))
                             .put("llmCalls", task.getInteger("llmCalls", 0));
+                    JsonObject webArenaResult = task.getJsonObject("webarena");
+                    if(webArenaResult != null){
+                        entry.put("webarenaResult", webArenaResult.getString("result"));
+                    }
                     JsonObject timing = task.getJsonObject("timing");
                     if(timing != null){
                         for(String phase: List.of("executionMs", "inferenceMs", "totalMs")){
@@ -161,6 +170,39 @@ public final class ExperimentTokenUsage {
                 .collect(JsonArray::new, JsonArray::add, JsonArray::addAll));
 
         return summary;
+    }
+
+    /**
+     * Summarize the WebArena scores of the tasks that have one ({@code webarena} in their token usage file):
+     * <ul>
+     *     <li>PASS, FAIL and ERROR counts,</li>
+     *     <li>{@code successRate}: passes over the tasks that were evaluated, i.e. without the errors, as WebArena counts,</li>
+     *     <li>{@code successRateSubmitted}: passes over every task in the experiment,</li>
+     *     <li>{@code judge}: the LLM judge's calls and tokens, which are not part of the agent's.</li>
+     * </ul>
+     *
+     * @return null if no task was scored by the WebArena evaluators.
+     */
+    static JsonObject summarizeWebArena(List<JsonObject> tasks){
+        List<JsonObject> scored = tasks.stream().filter(task->task.getJsonObject("webarena") != null).toList();
+        if(scored.isEmpty()){
+            return null;
+        }
+        long pass = scored.stream().filter(task->"PASS".equals(task.getJsonObject("webarena").getString("result"))).count();
+        long fail = scored.stream().filter(task->"FAIL".equals(task.getJsonObject("webarena").getString("result"))).count();
+        long error = scored.size() - pass - fail;
+        JsonObject judge = new JsonObject();
+        for(String count: List.of("llmCalls", "inputTokens", "outputTokens", "totalTokens", "failedCalls")){
+            judge.put(count, scored.stream().mapToLong(task->task.getJsonObject("evaluatorUsage", new JsonObject()).getLong(count, 0L)).sum());
+        }
+        return new JsonObject()
+                .put("scoredTasks", scored.size())
+                .put("pass", pass)
+                .put("fail", fail)
+                .put("error", error)
+                .put("successRate", pass + fail == 0? null : (double) pass / (pass + fail))
+                .put("successRateSubmitted", tasks.isEmpty()? null : (double) pass / tasks.size())
+                .put("judge", judge);
     }
 
     /**

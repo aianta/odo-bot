@@ -109,6 +109,21 @@ public class RequestManager {
      */
     private JsonObject environment = null;
 
+    /**
+     * The answer the agent reported when it completed the task or judged it infeasible, or null if it reported none.
+     */
+    private String agentAnswer = null;
+
+    /**
+     * True if the agent ended the current task by judging it infeasible.
+     */
+    private boolean judgedInfeasible = false;
+
+    /**
+     * Fields the harness adds to the task's token usage file after the task ends, e.g. its final URL and score.
+     */
+    private final JsonObject usageFields = new JsonObject();
+
     public RequestManager(OdoClient client){
         this.client = client;
         this.client.setRequestManager(this);
@@ -237,6 +252,28 @@ public class RequestManager {
     }
 
     /**
+     * @return the answer the agent reported with {@link TaskComplete} or an infeasible {@link GiveUp}, or null.
+     */
+    public String getAgentAnswer() {
+        return agentAnswer;
+    }
+
+    /**
+     * @return true if the agent ended the current (or last) task by judging it infeasible.
+     */
+    public boolean isJudgedInfeasible() {
+        return judgedInfeasible;
+    }
+
+    /**
+     * Add a field to the task's token usage file, which {@link #saveTaskUsage()} writes next.
+     */
+    public RequestManager putUsageField(String key, Object value) {
+        usageFields.put(key, value);
+        return this;
+    }
+
+    /**
      * @param maxSteps the most instructions the agent may have executed in the next task, at least 1, or null for no
      *                 limit.
      */
@@ -322,6 +359,7 @@ public class RequestManager {
         if(taskTiming != null){
             usage.put("timing", taskTiming.toJson(taskTokenUsage.inferenceMs()));
         }
+        usage.mergeIn(usageFields);
 
         String fileName = "%s/%s-tokens.json".formatted(experimentFolderPath, evalId).replaceAll("\\|","-");
         try(FileWriter fw = new FileWriter(fileName);
@@ -355,6 +393,9 @@ public class RequestManager {
         this.tokenUsageFinished = false;
         this.taskOutcome = null;
         this.harnessError = null;
+        this.agentAnswer = null;
+        this.judgedInfeasible = false;
+        this.usageFields.clear();
 
         //Every chat completion made through the task's scope uses the task's client settings, if it has any.
         llmScope.start(this.taskTokenUsage, llmConfig);
@@ -441,6 +482,7 @@ public class RequestManager {
             if(taskComplete.answer != null){
                 //Record the answer before taskComplete() saves the raw events.
                 log.info("Agent answered: {}", taskComplete.answer);
+                agentAnswer = taskComplete.answer;
                 client.getEventConnectionManager().getEventProcessor().injectTaskAnswer(taskComplete.answer);
             }
             taskComplete();
@@ -448,7 +490,12 @@ public class RequestManager {
         }
 
         if(instruction instanceof GiveUp giveUp){
-            log.info("Agent gave up: {}", giveUp.reason);
+            log.info("Agent gave up: {}", giveUp);
+            judgedInfeasible = giveUp.infeasible;
+            if(giveUp.infeasible && giveUp.answer != null){
+                agentAnswer = giveUp.answer;
+                client.getEventConnectionManager().getEventProcessor().injectTaskAnswer(giveUp.answer);
+            }
             if(evaluationComplete != null){
                 evaluationComplete.tryFail(giveUp.reason);
             }

@@ -303,4 +303,35 @@ class ExperimentTokenUsageTest {
     void noParallelismWithoutAWallClock(){
         assertNull(ExperimentTokenUsage.parallelism(new JsonObject().put("executionMs", new JsonObject().put("sum", 1000L)), 0));
     }
+    @Test
+    void countsWebArenaResultsWithoutTheJudgeInTheAgentsTokens() throws IOException {
+        String[][] results = {{"t1", "PASS"}, {"t2", "FAIL"}, {"t3", "ERROR"}, {"t4", "PASS"}};
+        for(String[] r: results){
+            writeTask(r[0], new Call(UNCHARTED_STEP, 100, 10));
+            Path file = experimentFolder.resolve(r[0] + "-tokens.json");
+            JsonObject task = new JsonObject(Files.readString(file))
+                    .put("webarena", new JsonObject().put("result", r[1]).put("score", "PASS".equals(r[1])? 1.0 : 0.0))
+                    .put("evaluatorUsage", new JsonObject().put("llmCalls", 1).put("totalTokens", 50));
+            Files.writeString(file, task.encodePrettily());
+        }
+        writeTask("t5", "failed: setup: auth: gitlab", null);
+
+        JsonObject summary = ExperimentTokenUsage.summarize(experimentFolder.toString());
+        JsonObject webArena = summary.getJsonObject("webarena");
+
+        assertEquals(4, webArena.getInteger("scoredTasks"));
+        assertEquals(2, webArena.getInteger("pass"));
+        assertEquals(1, webArena.getInteger("fail"));
+        assertEquals(1, webArena.getInteger("error"));
+        assertEquals(2.0 / 3, webArena.getDouble("successRate"), 1e-9, "errors are left out, as WebArena does");
+        assertEquals(2.0 / 5, webArena.getDouble("successRateSubmitted"), 1e-9);
+        assertEquals(4, webArena.getJsonObject("judge").getInteger("llmCalls"));
+        assertEquals(440, summary.getJsonObject("totalTokens").getLong("sum"), "the judge's tokens are not the agent's");
+    }
+
+    @Test
+    void noWebArenaSummaryWithoutWebArenaResults() throws IOException {
+        writeThreeTasks();
+        assertNull(ExperimentTokenUsage.summarize(experimentFolder.toString()).getJsonObject("webarena"));
+    }
 }

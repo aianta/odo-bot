@@ -29,6 +29,9 @@ public enum LlmCallType {
     //Uncharted agent
     UNCHARTED_STEP("uncharted-step", Kind.CHAT_COMPLETION),
 
+    //WebArena evaluation: the LLM judge of fuzzy_match string answers. Counted apart from the agent's calls.
+    WEBARENA_JUDGE("webarena-judge", Kind.CHAT_COMPLETION),
+
     //Calls made outside the agents' contexts (model construction, data entry labelling, ...)
     OTHER_CHAT_COMPLETION("other-chat-completion", Kind.CHAT_COMPLETION),
     OTHER_EMBEDDING("other-embedding", Kind.EMBEDDING);

@@ -27,7 +27,39 @@
                 "_evalId": "0|OdoBotNL|7aef98f1-2540-5d01-bf97-1dae57cf87b1",
                 "startUrl": "http://<SHOPPING_ADMIN_IP>/admin",
                 "userLocation": "http://<SHOPPING_ADMIN_IP>/admin",
-                "task": "Use the username: admin and password: admin1234 to login to the Magento admin panel.\nTask: What is the top-1 best-selling product in 2022"
+                "task": "Use the username: admin and password: admin1234 to login to the Magento admin panel.\nTask: What is the top-1 best-selling product in 2022",
+                "environment": {
+                    "sites": {
+                        "shopping_admin": "http://<SHOPPING_ADMIN_IP>/admin",
+                        "shopping": "http://<SHOPPING_IP>",
+                        "reddit": "http://<REDDIT_IP>",
+                        "gitlab": "http://<GITLAB_IP>:8023"
+                    }
+                },
+                "webarena": {
+                    "taskId": 0,
+                    "intentTemplateId": 279,
+                    "intent": "What is the top-1 best-selling product in 2022",
+                    "sites": [
+                        "shopping_admin"
+                    ],
+                    "storageState": "./.auth/shopping_admin_state.json",
+                    "startUrls": [
+                        "http://<SHOPPING_ADMIN_IP>/admin"
+                    ],
+                    "eval": {
+                        "eval_types": [
+                            "string_match"
+                        ],
+                        "reference_answers": {
+                            "exact_match": "Quest Lumaflex™ Band"
+                        },
+                        "reference_url": "",
+                        "program_html": [],
+                        "string_note": "",
+                        "reference_answer_raw_annotation": "Quest Lumaflex™ Band"
+                    }
+                }
             }
         },
         {
@@ -36,7 +68,41 @@
                 "_evalId": "190|OdoBotNL|cb24d09b-6f98-5676-8d04-5030d3f1ad07",
                 "startUrl": "http://<SHOPPING_IP>",
                 "userLocation": "http://<SHOPPING_IP>",
-                "task": "Use the username: emma.lopez@gmail.com and password: Password.123 to login to the One Stop Market shopping site.\nTask: Tell me the total cost of my latest complete order?"
+                "task": "Use the username: emma.lopez@gmail.com and password: Password.123 to login to the One Stop Market shopping site.\nTask: Tell me the total cost of my latest complete order?",
+                "environment": {
+                    "sites": {
+                        "shopping_admin": "http://<SHOPPING_ADMIN_IP>/admin",
+                        "shopping": "http://<SHOPPING_IP>",
+                        "reddit": "http://<REDDIT_IP>",
+                        "gitlab": "http://<GITLAB_IP>:8023"
+                    }
+                },
+                "webarena": {
+                    "taskId": 190,
+                    "intentTemplateId": 214,
+                    "intent": "Tell me the total cost of my latest complete order?",
+                    "sites": [
+                        "shopping"
+                    ],
+                    "storageState": "./.auth/shopping_state.json",
+                    "startUrls": [
+                        "http://<SHOPPING_IP>"
+                    ],
+                    "eval": {
+                        "eval_types": [
+                            "string_match"
+                        ],
+                        "reference_answers": {
+                            "must_include": [
+                                "65.32"
+                            ]
+                        },
+                        "reference_url": "",
+                        "program_html": [],
+                        "string_note": "",
+                        "reference_answer_raw_annotation": "65.32"
+                    }
+                }
             }
         },
         {
@@ -45,7 +111,41 @@
                 "_evalId": "29|OdoBotNL|508a2003-4469-510e-b137-485bad583c6e",
                 "startUrl": "http://<REDDIT_IP>",
                 "userLocation": "http://<REDDIT_IP>",
-                "task": "Use the username: MarvelsGrantMan136 and password: test1234 to login to the Reddit forum.\nTask: Tell me the count of comments that have received more downvotes than upvotes for the user who made the latest post on the DIY forum."
+                "task": "Use the username: MarvelsGrantMan136 and password: test1234 to login to the Reddit forum.\nTask: Tell me the count of comments that have received more downvotes than upvotes for the user who made the latest post on the DIY forum.",
+                "environment": {
+                    "sites": {
+                        "shopping_admin": "http://<SHOPPING_ADMIN_IP>/admin",
+                        "shopping": "http://<SHOPPING_IP>",
+                        "reddit": "http://<REDDIT_IP>",
+                        "gitlab": "http://<GITLAB_IP>:8023"
+                    }
+                },
+                "webarena": {
+                    "taskId": 29,
+                    "intentTemplateId": 33,
+                    "intent": "Tell me the count of comments that have received more downvotes than upvotes for the user who made the latest post on the DIY forum.",
+                    "sites": [
+                        "reddit"
+                    ],
+                    "storageState": "./.auth/reddit_state.json",
+                    "startUrls": [
+                        "http://<REDDIT_IP>"
+                    ],
+                    "eval": {
+                        "eval_types": [
+                            "string_match"
+                        ],
+                        "reference_answers": {
+                            "must_include": [
+                                "1"
+                            ]
+                        },
+                        "reference_url": "",
+                        "program_html": [],
+                        "string_note": "",
+                        "reference_answer_raw_annotation": "1"
+                    }
+                }
             }
         },
         {
@@ -54,8 +154,45 @@
                 "_evalId": "308|OdoBotNL|8f941f94-ea28-5115-af1a-010c14d23cea",
                 "startUrl": "http://<GITLAB_IP>:8023",
                 "userLocation": "http://<GITLAB_IP>:8023",
-                "task": "Use the username: byteblaze and password: hello1234 to login to GitLab.\nTask: Tell me who has made the most contributions, in terms of number of commits, to the primer/design project"
+                "task": "Use the username: byteblaze and password: hello1234 to login to GitLab.\nTask: Tell me who has made the most contributions, in terms of number of commits, to the primer/design project",
+                "environment": {
+                    "sites": {
+                        "shopping_admin": "http://<SHOPPING_ADMIN_IP>/admin",
+                        "shopping": "http://<SHOPPING_IP>",
+                        "reddit": "http://<REDDIT_IP>",
+                        "gitlab": "http://<GITLAB_IP>:8023"
+                    }
+                },
+                "webarena": {
+                    "taskId": 308,
+                    "intentTemplateId": 323,
+                    "intent": "Tell me who has made the most contributions, in terms of number of commits, to the primer/design project",
+                    "sites": [
+                        "gitlab"
+                    ],
+                    "storageState": "./.auth/gitlab_state.json",
+                    "startUrls": [
+                        "http://<GITLAB_IP>:8023"
+                    ],
+                    "eval": {
+                        "eval_types": [
+                            "string_match"
+                        ],
+                        "reference_answers": {
+                            "exact_match": "Shawn Allen"
+                        },
+                        "reference_url": "",
+                        "program_html": [],
+                        "string_note": "",
+                        "reference_answer_raw_annotation": "Shawn Allen"
+                    }
+                }
             }
         }
-    ]
+    ],
+    "webarenaEvaluation": {
+        "judge": {
+            "model": "gpt-4-1106-preview"
+        }
+    }
 }
