@@ -1,6 +1,7 @@
 package ca.ualberta.odobot.task;
 
 import ca.ualberta.odobot.common.LlmCallScope;
+import ca.ualberta.odobot.common.TaskArtifacts;
 import ca.ualberta.odobot.explorer.Agent;
 import ca.ualberta.odobot.explorer.EvaluationTaskRequestFields;
 import ca.ualberta.odobot.guidance.*;
@@ -71,6 +72,11 @@ public class TaskVerticle extends AbstractVerticle {
     private final String experimentResultsFolderPath;
 
     /**
+     * Where the task's artifacts go, or null if the task has no evalId.
+     */
+    private final TaskArtifacts artifacts;
+
+    /**
      * OdoX's extension instance id, which is also its clientId on the sockets.
      */
     private final UUID clientId = UUID.randomUUID();
@@ -124,6 +130,7 @@ public class TaskVerticle extends AbstractVerticle {
         this.experimentId = request.getString("experimentId", "default");
         this.experimentFolderPath = experimentFolderPath(explorerConfig, request);
         this.experimentResultsFolderPath = experimentFolderPath + "/results";
+        this.artifacts = evalId == null? null : TaskArtifacts.of(experimentFolderPath, evalId);
     }
 
     /**
@@ -472,7 +479,7 @@ public class TaskVerticle extends AbstractVerticle {
     private Future<Void> scoreAndReport(TaskScorer scorer, RequestManager requestManager){
         return context.<TaskInstanceResults>executeBlocking(()->{
             TaskInstanceResults telemetry = scorer.score(task, agent.getMode(), eventsFile(),
-                    artifactPath("-task-query-construction-result.json"),
+                    artifactPath(TaskArtifacts.TASK_QUERY_CONSTRUCTION_RESULT),
                     "%s/%s".formatted(experimentResultsFolderPath, task.getString("id") + "-result.json"),
                     timing);
             timing.markAfterScoring();
@@ -530,7 +537,7 @@ public class TaskVerticle extends AbstractVerticle {
      * summary counts it as failed. It writes no event file, so the task is run again when the experiment is resumed.
      */
     private void saveSetupFailure(Throwable e){
-        if(evalId == null){
+        if(artifacts == null){
             return;
         }
         JsonObject usage = new JsonObject()
@@ -546,21 +553,24 @@ public class TaskVerticle extends AbstractVerticle {
             usage.put("auth", browser.authReport());
         }
         try{
-            Files.createDirectories(Path.of(experimentFolderPath));
-            Files.writeString(Path.of(artifactPath("-tokens.json")), usage.encodePrettily());
+            Files.createDirectories(artifacts.folder());
+            Files.writeString(artifacts.file(TaskArtifacts.TOKENS), usage.encodePrettily());
         }catch (IOException | RuntimeException ex){
             log.error("Could not record the setup failure of task {}: {}", evalId, ex.getMessage());
         }
     }
 
     private String eventsFile(){
-        return artifactPath(".json");
+        return artifactPath(TaskArtifacts.EVENTS);
     }
 
     /**
-     * @return the path of one of the task's artifacts, {@code <experiment folder>/<evalId><suffix>}.
+     * @return the path of one of the task's artifacts, {@code <experiment folder>/<evalId><suffix>}, see {@link TaskArtifacts}.
      */
     private String artifactPath(String suffix){
-        return "%s/%s%s".formatted(experimentFolderPath, evalId, suffix).replaceAll("\\|","-");
+        if(artifacts == null){
+            throw new IllegalStateException("Task has no _evalId to name its artifacts after.");
+        }
+        return artifacts.file(suffix).toString();
     }
 }

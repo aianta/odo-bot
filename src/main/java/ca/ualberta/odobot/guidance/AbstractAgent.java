@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.guidance;
 
+import ca.ualberta.odobot.common.TaskArtifacts;
 import ca.ualberta.odobot.guidance.instructions.Instruction;
 import ca.ualberta.odobot.semanticflow.navmodel.GraphDB;
 import ca.ualberta.odobot.semanticflow.navmodel.Neo4JUtils;
@@ -45,8 +46,15 @@ public abstract class AbstractAgent implements IAgent{
         instructionConsumer.accept(instruction);
     }
 
-    protected String artifactPath(String suffix){
-        return "%s/%s-%s".formatted(artifactDir, evalId, suffix).replaceAll("\\|","-");
+    protected TaskArtifacts artifacts(){
+        return TaskArtifacts.of(artifactDir, evalId);
+    }
+
+    /**
+     * @return the path of one of this agent's artifacts, {@code <artifactDir>/<evalId>-<name>}, see {@link TaskArtifacts}.
+     */
+    protected String artifactPath(String name){
+        return artifacts().file("-" + name).toString();
     }
 
     public static abstract class Builder<A extends AbstractAgent, B extends Builder<A, B>>{

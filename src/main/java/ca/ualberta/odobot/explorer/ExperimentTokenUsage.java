@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.explorer;
 
+import ca.ualberta.odobot.common.TaskArtifacts;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
@@ -28,7 +29,7 @@ public final class ExperimentTokenUsage {
 
     private static final Logger log = LoggerFactory.getLogger(ExperimentTokenUsage.class);
 
-    static final String TASK_FILE_SUFFIX = "-tokens.json";
+    static final String TASK_FILE_SUFFIX = TaskArtifacts.TOKENS;
 
     private static final List<String> METRICS = List.of("inputTokens", "outputTokens", "totalTokens", "llmCalls", "failedCalls", "failedAttempts");
 

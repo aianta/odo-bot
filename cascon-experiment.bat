@@ -1,14 +1,18 @@
 @echo off
 setlocal EnableExtensions
 REM ============================================================================
-REM  cascon-experiment.bat <TASK FILE> <NUM INSTANCES> [--agent NAME] [--logs|--no-logs]
+REM  cascon-experiment.bat <TASK FILE> <NUM INSTANCES> [--agent NAME] [--logs|--no-logs] [--fresh-odobot]
 REM
 REM  Runs the CASCON 2026 experiment with one of three agents - OdoBot, Agent-E
 REM  or WebVoyager - against the same containerised Canvas environment.
 REM
 REM  For each instance it:
-REM    1. Resets the environment (recreates the containers the chosen agent
-REM       needs, so every instance starts from identical state)
+REM    1. Resets the environment (recreates Canvas and the browser, so every
+REM       instance starts from identical state). OdoBot is shared: it runs each
+REM       request in a task verticle of its own, so it can serve this experiment
+REM       while it runs others, e.g. a WebArena scheduler run. A running odobot
+REM       container is reused if it can be, see :ensure_odobot, otherwise one is
+REM       started. --fresh-odobot always recreates it, ending whatever it runs.
 REM    2. Builds a per-instance copy of the task file with the running Canvas
 REM       container's address written into it
 REM    3. Runs the agent and waits for it to finish
@@ -101,6 +105,7 @@ set "EXPERIMENT_FILE=%~1"
 set "NUM_INSTANCES=%~2"
 set "EXPERIMENT_FILE_ABS=%~f1"
 set "AGENT=odobot"
+set "FRESH_ODOBOT=0"
 
 if "%EXPERIMENT_FILE%"=="" goto :usage
 if "%NUM_INSTANCES%"=="" goto :usage
@@ -127,6 +132,11 @@ if /i "%~1"=="--no-logs" (
 )
 if /i "%~1"=="--logs" (
     set "CAPTURE_AGENT_LOGS=1"
+    shift
+    goto :parse_options
+)
+if /i "%~1"=="--fresh-odobot" (
+    set "FRESH_ODOBOT=1"
     shift
     goto :parse_options
 )
@@ -267,7 +277,9 @@ if "%AGENT%"=="odobot" (
     echo The containers are left running so the final state can be inspected
     echo ^(Canvas on http://localhost:%CANVAS_PORT%, browser view on http://localhost:%SELENIUM_VNC_PORT%^).
     echo Stop them with:
-    echo   docker rm -f %ODOBOT_NAME% %CANVAS_NAME% %SELENIUM_NAME%
+    echo   docker rm -f %CANVAS_NAME% %SELENIUM_NAME%
+    echo %ODOBOT_NAME% may be serving other experiments. Once none is running, stop it with:
+    echo   docker rm -f %ODOBOT_NAME%
 ) else (
     echo The Canvas container is left running so the final state can be inspected
     echo ^(http://localhost:%CANVAS_PORT%^). Stop it with:
@@ -642,7 +654,8 @@ if "%AGENT%"=="odobot" (
     echo [1/5] Resetting environment...
 )
 
-docker rm -f %ODOBOT_NAME% %CANVAS_NAME% %SELENIUM_NAME% %AGENT_NAME% >nul 2>&1
+REM OdoBot is left alone: other experiments may be running on it. See :ensure_odobot.
+docker rm -f %CANVAS_NAME% %SELENIUM_NAME% %AGENT_NAME% >nul 2>&1
 
 docker network inspect %NETWORK% >nul 2>&1
 if errorlevel 1 (
@@ -683,18 +696,8 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo   starting %ODOBOT_NAME%
-docker run -d --name %ODOBOT_NAME% --network %NETWORK% ^
-    -p %ODOBOT_API_PORT%:8076 -p %ODOBOT_GUIDANCE_PORT%:7080 ^
-    -v "%PROJECT_DIR_U%/config:/application/config" ^
-    -v "%PROJECT_DIR_U%/execution_events:/application/execution_events" ^
-    -v "%PROJECT_DIR_U%/libs:/application/libs" ^
-    -v "%PROJECT_DIR_U%/db:/application/db" ^
-    %ODOBOT_IMAGE% >nul
-if errorlevel 1 (
-    echo   [ERROR] Could not start %ODOBOT_NAME%.
-    exit /b 1
-)
+call :ensure_odobot
+if errorlevel 1 exit /b 1
 
 :reset_wait
 if "%AGENT%"=="odobot" (
@@ -713,6 +716,39 @@ if errorlevel 1 exit /b 1
 exit /b 0
 
 REM ---------------------------------------------------------------------------
+REM  OdoBot - one container, shared by every experiment running at the time
+REM ---------------------------------------------------------------------------
+
+:ensure_odobot
+REM OdoBot runs each evaluate request on its own task verticle, so one container
+REM serves several experiments at once. A running odobot container is reused when
+REM the "reuse" step finds it runs %ODOBOT_IMAGE%, writes to this checkout's
+REM execution_events and was started after the last config change. The step exits
+REM 0 to reuse it, 2 if none is running, and 1 if one runs but cannot be reused.
+if "%FRESH_ODOBOT%"=="1" goto :start_odobot
+set "ODO_EXP_STEP=reuse"
+call :run_powershell
+if errorlevel 2 goto :start_odobot
+if errorlevel 1 exit /b 1
+exit /b 0
+
+:start_odobot
+docker rm -f %ODOBOT_NAME% >nul 2>&1
+echo   starting %ODOBOT_NAME%
+docker run -d --name %ODOBOT_NAME% --network %NETWORK% ^
+    -p %ODOBOT_API_PORT%:8076 -p %ODOBOT_GUIDANCE_PORT%:7080 ^
+    -v "%PROJECT_DIR_U%/config:/application/config" ^
+    -v "%PROJECT_DIR_U%/execution_events:/application/execution_events" ^
+    -v "%PROJECT_DIR_U%/libs:/application/libs" ^
+    -v "%PROJECT_DIR_U%/db:/application/db" ^
+    %ODOBOT_IMAGE% >nul
+if errorlevel 1 (
+    echo   [ERROR] Could not start %ODOBOT_NAME%.
+    exit /b 1
+)
+exit /b 0
+
+REM ---------------------------------------------------------------------------
 REM  Helpers
 REM ---------------------------------------------------------------------------
 
@@ -727,6 +763,7 @@ set "FULL_EXPERIMENT_ID="
 set "CANVAS_URL="
 set "TASK_COUNT="
 set "EVAL_INPUT="
+set "LOG_SINCE="
 for /f "usebackq tokens=1,* delims==" %%A in ("%ODO_EXP_RESULT%") do (
     if "%%A"=="path"   set "INSTANCE_FILE=%%B"
     if "%%A"=="pathU"  set "INSTANCE_FILE_U=%%B"
@@ -737,6 +774,7 @@ for /f "usebackq tokens=1,* delims==" %%A in ("%ODO_EXP_RESULT%") do (
     if "%%A"=="canvas" set "CANVAS_URL=%%B"
     if "%%A"=="count"  set "TASK_COUNT=%%B"
     if "%%A"=="eval"   set "EVAL_INPUT=%%B"
+    if "%%A"=="since"  set "LOG_SINCE=%%B"
 )
 exit /b 0
 
@@ -788,7 +826,7 @@ exit /b %errorlevel%
 
 :usage
 echo.
-echo Usage: cascon-experiment.bat ^<TASK FILE^> ^<NUM INSTANCES^> [--agent NAME] [--logs^|--no-logs]
+echo Usage: cascon-experiment.bat ^<TASK FILE^> ^<NUM INSTANCES^> [--agent NAME] [--logs^|--no-logs] [--fresh-odobot]
 echo.
 echo   TASK FILE          The tasks to run. The format depends on --agent:
 echo                        odobot      cascon-experiment.json
@@ -813,6 +851,11 @@ echo                      execution_events\^<experimentId^>\logs\. On by default
 echo                      OdoBot is chatty, so --no-logs skips it. A failing
 echo                      instance is logged either way. The ODOBOT_CAPTURE_LOGS
 echo                      environment variable ^(1 or 0^) sets the default.
+echo   --fresh-odobot     Recreate the odobot container, ending anything it runs.
+echo                      By default a running odobot container is shared with
+echo                      the experiments it is already running, when it runs
+echo                      ODOBOT_IMAGE, writes to this checkout's execution_events
+echo                      and was started after the last config change.
 echo.
 echo Agent-E and WebVoyager need OPENAI_API_KEY and OPENAI_MODEL set, and score
 echo their runs with host python. cascon-environment-setup.bat configures both.
@@ -943,6 +986,66 @@ try {
             }
         }
 
+        'reuse' {
+            # Exit 0: the running odobot container can serve this experiment too.
+            # Exit 2: none is running, start one. Exit 1: one runs but can't be shared.
+            $name = $env:ODOBOT_NAME
+            # cmd does the redirect: in Windows PowerShell, stderr from a native command
+            # (here "no such object") throws under $ErrorActionPreference 'Stop'.
+            $running = (cmd /c "docker inspect -f {{.State.Running}} $name 2>nul" | Out-String).Trim()
+            if ($running -ne 'true') {
+                Write-Host ("  no running {0} container" -f $name)
+                exit 2
+            }
+            $hint = "It may be running other experiments. Wait for them to finish, or pass --fresh-odobot to recreate it, which ends them."
+
+            # Compare image ids, not names: a rebuilt tag points at a new image while
+            # the container still runs the old one.
+            $containerImage = (docker inspect -f "{{.Image}}" $name | Out-String).Trim()
+            $wantedImage = (docker image inspect -f "{{.Id}}" $env:ODOBOT_IMAGE 2>$null | Out-String).Trim()
+            if ($containerImage -ne $wantedImage) {
+                Write-Host ("  [ERROR] The running {0} container does not run {1}." -f $name, $env:ODOBOT_IMAGE)
+                Write-Host ("          {0}" -f $hint)
+                exit 1
+            }
+
+            # Read as JSON: Windows PowerShell mangles quotes inside native arguments,
+            # which rules out templates with string literals.
+            $networks = (docker inspect -f "{{json .NetworkSettings.Networks}}" $name | Out-String) | ConvertFrom-Json
+            if (-not ($networks.PSObject.Properties.Name -contains $env:NETWORK)) {
+                Write-Host ("  [ERROR] The running {0} container is not on the {1} network." -f $name, $env:NETWORK)
+                Write-Host ("          {0}" -f $hint)
+                exit 1
+            }
+
+            # Its artifacts must land where this script reads them.
+            $mounts = (docker inspect -f "{{json .Mounts}}" $name | Out-String) | ConvertFrom-Json
+            $eventsMount = $mounts | Where-Object { $_.Destination -eq '/application/execution_events' } | Select-Object -First 1
+            $events = "$($eventsMount.Source)" -replace '\\', '/'
+            $expected = "$($env:PROJECT_DIR_U)/execution_events"
+            if ($events -ne $expected) {
+                Write-Host ("  [ERROR] The running {0} container writes its artifacts to '{1}', not {2}." -f $name, $events, $expected)
+                Write-Host ("          {0}" -f $hint)
+                exit 1
+            }
+
+            # OdoBot reads config\*.yaml (API key, model) only when it starts, so a
+            # container started before the last change still runs the old settings.
+            $startedText = (docker inspect -f "{{.State.StartedAt}}" $name | Out-String).Trim() -replace '(\.\d{7})\d+', '$1'
+            $started = [DateTimeOffset]::Parse($startedText).UtcDateTime
+            $newest = Get-ChildItem -LiteralPath (Join-Path $env:PROJECT_DIR 'config') -Filter '*.yaml' -File |
+                      Where-Object { $_.Name -notlike '*-example.yaml' } |
+                      Sort-Object LastWriteTimeUtc | Select-Object -Last 1
+            if ($newest -and $newest.LastWriteTimeUtc -gt $started) {
+                Write-Host ("  [ERROR] config\{0} changed after the running {1} container started, so it still" -f $newest.Name, $name)
+                Write-Host  "          runs the settings it started with (e.g. the API key and model)."
+                Write-Host ("          {0}" -f $hint)
+                exit 1
+            }
+
+            Write-Host ("  reusing {0}, running {1} since {2:u}" -f $name, $env:ODOBOT_IMAGE, $started)
+        }
+
         'config' {
             $source = $env:EXPERIMENT_FILE_ABS
             $instance = $env:INSTANCE
@@ -988,10 +1091,13 @@ try {
             Write-Host ("  webAppURL            http://{0}{1}" -f $canvasAddr, $path)
             Write-Host ("  definition           {0}" -f $outFile)
 
+            # OdoBot may be shared with other experiments, so its log is captured from
+            # this point on rather than from when the container started.
             Write-Result @(
                 "path=$outFile",
                 "id=$experimentId",
-                "base=$baseId"
+                "base=$baseId",
+                "since=$((Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'))"
             )
         }
 
@@ -1156,7 +1262,8 @@ try {
             # Tail the container into the experiment's log folder. cmd does the
             # stream merge so stdout and stderr land in one file in order.
             $logFile = $env:LOG_FILE
-            $cmdLine = 'docker logs -f {0} > "{1}" 2>&1' -f $env:LOG_CONTAINER, $logFile
+            $since = if ($env:LOG_SINCE) { "--since $($env:LOG_SINCE) " } else { '' }
+            $cmdLine = 'docker logs -f {0}{1} > "{2}" 2>&1' -f $since, $env:LOG_CONTAINER, $logFile
             $proc = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $cmdLine -PassThru -NoNewWindow
             [IO.File]::WriteAllText($env:ODO_EXP_LOGPID, $proc.Id.ToString(), $utf8NoBom)
             Write-Host ("  streaming {0} logs -> {1}" -f $env:LOG_CONTAINER, $logFile)
@@ -1175,7 +1282,8 @@ try {
             }
             Start-Sleep -Milliseconds 500
             $logFile = $env:LOG_FILE
-            cmd /c "docker logs $($env:LOG_CONTAINER) > `"$logFile`" 2>&1"
+            $since = if ($env:LOG_SINCE) { "--since $($env:LOG_SINCE) " } else { '' }
+            cmd /c "docker logs $since$($env:LOG_CONTAINER) > `"$logFile`" 2>&1"
             $size = 0
             if (Test-Path -LiteralPath $logFile) { $size = (Get-Item -LiteralPath $logFile).Length }
             Write-Host ("  agent log written ({0:N0} bytes)" -f $size)

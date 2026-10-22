@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.guidance;
 
+import ca.ualberta.odobot.common.TaskArtifacts;
 import ca.ualberta.odobot.guidance.execution.ExecutionParameter;
 import ca.ualberta.odobot.guidance.execution.ExecutionRequest;
 import ca.ualberta.odobot.guidance.feedback.AlternateXpath;
@@ -330,7 +331,7 @@ public class ChartedAgent extends AbstractAgent{
             return taskPlanner.taskQueryConstructionV2(task)
                     .compose(definedTask->{
                         log.info("Got task definition from task query construction:\n{}", definedTask.encodePrettily());
-                        saveTaskQueryConstructionResult("%s/%s-task-query-construction-result.json".formatted(this.artifactDir, definedTask.getString("_evalId")).replaceAll("\\|","-"), definedTask);
+                        saveTaskQueryConstructionResult(artifacts().file(TaskArtifacts.TASK_QUERY_CONSTRUCTION_RESULT).toString(), definedTask);
 
                         executionRequest.setTaskDescription(task.getString("task"));
 

@@ -2,6 +2,7 @@ package ca.ualberta.odobot.guidance;
 
 import ca.ualberta.odobot.common.LlmCallScope;
 import ca.ualberta.odobot.common.LlmClientConfig;
+import ca.ualberta.odobot.common.TaskArtifacts;
 import ca.ualberta.odobot.guidance.instructions.*;
 import ca.ualberta.odobot.semanticflow.model.*;
 import io.vertx.core.Future;
@@ -13,7 +14,6 @@ import org.slf4j.LoggerFactory;
 import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.io.IOException;
-import java.nio.file.Path;
 import java.util.*;
 
 /**
@@ -159,6 +159,13 @@ public class RequestManager {
 
     public String getEvalId() {
         return evalId;
+    }
+
+    /**
+     * @return where the task's artifacts go, or null if this is not an evaluation run (no evalId or experiment folder).
+     */
+    public TaskArtifacts getArtifacts() {
+        return evalId == null || experimentFolderPath == null? null : TaskArtifacts.of(experimentFolderPath, evalId);
     }
 
     public RequestManager setEvalId(String evalId) {
@@ -346,7 +353,8 @@ public class RequestManager {
      * saved when the task ends; the harness saves it again once it has finished timing the task (artifacts and scoring).
      */
     public void saveTaskUsage(){
-        if(taskTokenUsage == null || evalId == null || experimentFolderPath == null){
+        TaskArtifacts artifacts = getArtifacts();
+        if(taskTokenUsage == null || artifacts == null){
             return; //No task was started, or not an evaluation run, so there is nowhere to save the usage.
         }
 
@@ -370,8 +378,7 @@ public class RequestManager {
         }
         usage.mergeIn(usageFields);
 
-        String fileName = "%s/%s-tokens.json".formatted(experimentFolderPath, evalId).replaceAll("\\|","-");
-        try(FileWriter fw = new FileWriter(fileName);
+        try(FileWriter fw = new FileWriter(artifacts.file(TaskArtifacts.TOKENS).toFile());
             BufferedWriter bw = new BufferedWriter(fw)
         ){
             bw.write(usage.encodePrettily());
@@ -416,9 +423,9 @@ public class RequestManager {
         taskTiming.markExecutionStart();
 
         //Write the task's raw events to disk as they arrive, rather than holding them in memory until the task ends.
-        if(evalId != null && experimentFolderPath != null){
-            client.getEventConnectionManager().getEventProcessor().streamRawEventsTo(
-                    Path.of("%s/%s.events.jsonl.part".formatted(experimentFolderPath, evalId).replaceAll("\\|","-")));
+        TaskArtifacts artifacts = getArtifacts();
+        if(artifacts != null){
+            client.getEventConnectionManager().getEventProcessor().streamRawEventsTo(artifacts.file(TaskArtifacts.EVENTS_PART));
         }
 
         client.getEventConnectionManager().getEventProcessor().setUnchartedTimelineEnabled(mode == ExecutionMode.UNCHARTED);

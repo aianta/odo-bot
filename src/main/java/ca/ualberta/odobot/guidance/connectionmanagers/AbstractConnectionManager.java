@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.guidance.connectionmanagers;
 
+import ca.ualberta.odobot.common.TaskArtifacts;
 import ca.ualberta.odobot.guidance.Channel;
 import ca.ualberta.odobot.guidance.ChannelConnection;
 import ca.ualberta.odobot.guidance.OdoClient;
@@ -205,9 +206,9 @@ public abstract class AbstractConnectionManager implements ConnectionManager {
     }
 
     protected void saveHistory(String source){
-        if(client.getRequestManager().getEvalId() != null){
-            String fileName = "%s/%s-%s-history.json".formatted(client.getRequestManager().getExperimentFolderPath(), client.getRequestManager().getEvalId(),source).replaceAll("\\|","-");
-            File fout = new File(fileName);
+        TaskArtifacts artifacts = client.getRequestManager().getArtifacts();
+        if(artifacts != null){
+            File fout = artifacts.history(source).toFile();
             try(FileWriter fw = new FileWriter(fout);
                 BufferedWriter bw = new BufferedWriter(fw);
             ){

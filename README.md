@@ -105,6 +105,7 @@ An experiment is the exection of all tasks specified in a task file by an agent.
 * `NUM INSTANCES`: The number of times the experiment will be repeated. The environment is reset between instances.
 * `--agent NAME`: `odobot` (the default), `odobot-uncharted`, `odobot-hybrid`, `agent-e`, or `webvoyager`. `odobot` is OdoBot's charted mode; `odobot-uncharted` and `odobot-hybrid` run its other [execution modes](#task-execution-modes).
 * `--logs` / `--no-logs`: For OdoBot only, captures container logs to a file.
+* `--fresh-odobot`: Recreate the `odobot` container, ending anything it is running. By default a running `odobot` container is shared, see below.
 
 <details>
 <summary>AI Generated Details</summary>
@@ -114,6 +115,7 @@ An experiment is the exection of all tasks specified in a task file by an agent.
 For each instance the script resets the environment, builds a per-instance copy of the task file, runs the agent, and writes an evaluation report. What it starts depends on the agent:
 
 * **OdoBot** needs the Canvas, Selenium Firefox and OdoBot containers. The experiment definition is POSTed to OdoBot's `/api/evaluate` endpoint, and OdoBot evaluates itself using the copy of the evaluation scripts baked into its own image. A `-{INSTANCE}` suffix is appended to the `experimentId` field from the JSON file.
+* **OdoBot is shared.** It runs each evaluate request on a task verticle of its own, so one container serves several experiments at once, e.g. this script and a WebArena scheduler run. The reset recreates Canvas and Firefox but leaves a running `odobot` container alone, and reuses it if it runs `ODOBOT_IMAGE`, writes to this checkout's `execution_events`, and was started after the last change to `config\*.yaml` (OdoBot reads its config, including the API key, only when it starts). Otherwise the script stops with the reason. If no `odobot` container is running, it starts one. The captured log covers the experiment's own time window, but lines from other experiments running at the same time are mixed in.
 * **Agent-E and WebVoyager** need only the Canvas container — both bundle their own browser — and are launched with `docker run`. Their experiment id is derived from the task file's name, so `cascon-experiment-agent-e.json` produces `cascon-agent-e-1`, `cascon-agent-e-2`, and so on. They are scored after the run by this script, because OdoBot's `/api/evaluate` endpoint only executes OdoBot's own agents (see [Task Execution Modes](#task-execution-modes)) and cannot be handed a baseline run.
 
 >Note: Experiment results appear in `execution_events/{experimentId}-{INSTANCE}`, with the evaluation script's output in its `results` subfolder, for every agent.
@@ -375,7 +377,7 @@ docker run -p 8076:8076 -p 7080:7080 -v ./config:/application/config -v ./execut
 
 ## Manual container setup
 
-`cascon-experiment.bat` starts and resets all of these containers for you. The commands below are here for debugging a run, or for inspecting the environment on its own.
+`cascon-experiment.bat` starts all of these containers for you, and resets Canvas and Firefox for each instance. A running `odobot` container is shared rather than reset (see `--fresh-odobot`). The commands below are here for debugging a run, or for inspecting the environment on its own.
 
 ### Environment setup
 
