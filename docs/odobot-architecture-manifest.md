@@ -484,10 +484,10 @@ The **runtime execution engine**. This is where OdoBot actually drives a browser
 | GET | `/api/targetNodes` | Cypher `MATCH (n:APINode) RETURN n.method, n.path, n.id` — the catalogue of executable targets. |
 | GET | `/` (any non-API route) | Returns a plaintext banner. |
 
-#### The OdoX socket (protocol v2)
+#### The OdoX socket (protocol v3)
 
 Odo Sight (OdoX) opens **one** WebSocket per client, from its background script, at
-`wss://<host>/?clientId=<extension instance id>&protocol=2`. `TaskSockets.accept` refuses (403) a
+`wss://<host>/?clientId=<extension instance id>&protocol=3`. `TaskSockets.accept` refuses (403) a
 socket whose clientId is not the task's or whose protocol is not
 `WebSocketConnection.PROTOCOL_VERSION`, and binds the rest to the task's `OdoClient`. A
 reconnected socket replaces the old one. `WebSocketConnection` keeps it alive with a periodic
@@ -501,24 +501,37 @@ Every message, both ways, is a flat JSON object:
 
 | Field | Meaning |
 |---|---|
-| `v` | `2` |
+| `v` | `3` |
 | `channel` | `event` or `guidance`: the `Channel` whose manager handles it, see `OdoClient.route`. |
 | `type` | The message type. |
 | `id` | Unique per message, set by its sender. |
 | `replyTo` | On a reply, the `id` of the message it answers. Replies complete the request they answer (`AbstractConnectionManager.request`), so requests of the same type can overlap. |
 | `cause` | On guidance feedback OdoX sends unasked (`UNRESOLVABLE_XPATH`, `REGISTER_ALTERNATE_XPATH`), the `id` of the `EXECUTE` it is about. |
+| `pageId` | On guidance messages: the page a message from OdoBot is addressed to, or the page a message from OdoX came from. OdoX's relay gives each page an id when it connects, and delivers a message only to the page it is addressed to; any other is answered `NOT_DELIVERED`. |
+| `seq` | On `EVENT`: its number in the current transmission, from 0 at `START_TRANSMISSION`. A jump means events were lost. |
 
 | Channel | Manager | Messages (→X to OdoX, →B to OdoBot; replies in parentheses) |
 |---|---|---|
-| `event` | `EventConnectionManager` | →X `START_TRANSMISSION` (`TRANSMISSION_STARTED`, sent after the start Observation `EVENT`), `STOP_TRANSMISSION` (`TRANSMISSION_STOPPED`), `GET_SCREENSHOT` (`SCREENSHOT`), `PATH_COMPLETE` (`PATH_COMPLETE_ACK`). →B `EVENT`, streamed into the `OnlineEventProcessor`. |
-| `guidance` | `GuidanceConnectionManager` | →X `EXECUTE` (`EXECUTION_RESULT`, for `queryDom` / `getDOMSnapshot` / `getUIControlState` only), `SHOW_NAVIGATION_OPTIONS` (`NAVIGATION_OPTIONS_SHOW_RESULT`), `CLEAR_NAVIGATION_OPTIONS` (`CLEAR_NAVIGATION_OPTIONS_RESULT`), `PATH_COMPLETE` (`PATH_COMPLETE_ACK`). →B `REGISTER_ALTERNATE_XPATH` (`ALTERNATE_XPATH_CONFIRMED`), `UNRESOLVABLE_XPATH`, `PAGE_READY` / `PAGE_GONE`. |
+| `event` | `EventConnectionManager` | →X `START_TRANSMISSION` (`TRANSMISSION_STARTED`, sent after the start Observation `EVENT`), `STOP_TRANSMISSION` (`TRANSMISSION_STOPPED`), `GET_SCREENSHOT` (`SCREENSHOT`), `PATH_COMPLETE` (`PATH_COMPLETE_ACK`). →B `EVENT` (numbered by `seq`), streamed into the `OnlineEventProcessor`; `EVENT_GAP`, messages OdoX's outbox had to drop. |
+| `guidance` | `GuidanceConnectionManager`, fed by `InstructionDispatcher` | →X `EXECUTE` (`EXECUTE_DONE` with `status` `ok` / `failed` / `page-gone` once it has run, or `EXECUTION_RESULT` for `queryDom` / `getDOMSnapshot` / `getUIControlState`), `SHOW_NAVIGATION_OPTIONS` (`NAVIGATION_OPTIONS_SHOW_RESULT`), `CLEAR_NAVIGATION_OPTIONS` (`CLEAR_NAVIGATION_OPTIONS_RESULT`). →B `REGISTER_ALTERNATE_XPATH` (`ALTERNATE_XPATH_CONFIRMED`, sent to the page that asked), `UNRESOLVABLE_XPATH`, `PAGE_READY` / `PAGE_GONE` (with the page's `pageId`), `NOT_DELIVERED` (answers a message for a page that isn't the target). |
 
-`AbstractConnectionManager` queues outbound messages while its channel is closed and flushes the
-queue in order when it opens, and records a timestamped `history` per manager. The event channel
-is open while the socket is. The guidance channel is open only while OdoX also has a page ready
-(`PAGE_READY` … `PAGE_GONE`, re-sent after every reconnect), so instructions wait while the page
-navigates, and `RequestManager.onExecutionInstructionSent` fires when an instruction actually goes
-out.
+`AbstractConnectionManager` matches replies to requests and records a timestamped `history` per
+manager. The event channel is open while the socket is, and queues outbound messages while it is
+down. The guidance channel is open only while OdoX also has a page ready (`PAGE_READY` …
+`PAGE_GONE`, re-sent after every reconnect), and never queues.
+
+`guidance.InstructionDispatcher`, owned by `RequestManager`, is the only place guidance messages
+wait. It applies the task's `DispatchPolicy` (one per `ExecutionMode`): a pause before each
+instruction, then an ordered queue that sends only while a page is ready and, for an `EXECUTE`,
+once the DOM has settled. In uncharted runs the next step also waits until the previous one is
+reported done, and the step observer starts on `EXECUTE_DONE`. A step that is `NOT_DELIVERED`, or
+gets no reply in time, is dropped, not counted, and the page is observed again. Charted runs never
+wait for `EXECUTE_DONE` (charted agents advance on the effects they observe); an undelivered
+charted instruction is re-queued for the next page. `InstructionDispatcher.cancel()` ends it all
+when the task ends: nothing is sent to a page afterwards.
+
+Lost events are recorded in the raw event log as `EVENT_GAP` custom events, from a `seq` jump or
+an `EVENT_GAP` message, by `OnlineEventProcessor.injectEventGap`.
 
 #### Execution flow
 
@@ -1022,7 +1035,7 @@ flowchart LR
 |---|---|
 | Change what gets deployed | `config/main.yaml` |
 | Change how a task is planned | `taskplanner/impl/TaskPlannerServiceImpl.java` + `config/taskplanner.yaml` prompts |
-| Change how the browser is driven | `guidance/connectionmanagers/GuidanceConnectionManager.java`, `guidance/instructions/` |
+| Change how the browser is driven | `guidance/InstructionDispatcher.java`, `guidance/DispatchPolicy.java`, `guidance/connectionmanagers/GuidanceConnectionManager.java`, `guidance/instructions/` |
 | Change path search | `semanticflow/navmodel/NavPathsConstructor.java` (`constructV3`) |
 | Change what the model looks like | `semanticflow/navmodel/nodes/`, `Neo4JUtils`, `Collapse*` |
 | Change evaluation / experiments | `explorer/EvaluateTask.java`, `config/explorer.yaml` |
