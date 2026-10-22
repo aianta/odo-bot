@@ -29,6 +29,12 @@ public class EventConnectionManager extends AbstractConnectionManager implements
      */
     private Context eventContext = null;
 
+    /**
+     * The sequence number of the last EVENT received, or null before the first of a transmission. OdoX numbers its
+     * events from 0 when transmission starts, so a jump means events were lost on the way.
+     */
+    private Integer lastSeq = null;
+
     public OnlineEventProcessor getEventProcessor(){
         return eventProcessor;
     }
@@ -86,15 +92,41 @@ public class EventConnectionManager extends AbstractConnectionManager implements
         switch (message.getString("type")){
             case "EVENT":
 
+                checkSequence(message.getInteger("seq"));
                 JsonObject event = message.getJsonObject("event");
                 stepObserver.onEvent();
                 eventProcessor.process(event);
 
 
                 break;
+            case "EVENT_GAP":
+                //OdoX had to drop messages it could not send, e.g. while its socket was down.
+                log.warn("OdoX dropped {} message(s) it could not send ({}): {}", message.getInteger("dropped"),
+                        message.getString("reason"), message.getJsonObject("droppedTypes"));
+                eventProcessor.injectEventGap(message.getInteger("dropped", 0), lastSeq, message.getString("reason"),
+                        message.getJsonObject("droppedTypes"));
+                break;
             default:
                 log.warn("Unexpected message of type {} on the event channel.", message.getString("type"));
         }
+    }
+
+    /**
+     * Record a gap in the raw events if the event with this sequence number is not the one after the last.
+     * @param seq the event's sequence number, or null if OdoX sent none.
+     */
+    private void checkSequence(Integer seq){
+        if(seq == null){
+            return;
+        }
+        if(lastSeq != null && seq > lastSeq + 1){
+            int missing = seq - lastSeq - 1;
+            log.warn("{} event(s) after event {} never arrived.", missing, lastSeq);
+            eventProcessor.injectEventGap(missing, lastSeq, "sequence-gap", null);
+        }else if(lastSeq != null && seq <= lastSeq){
+            log.info("OdoX's events start over at {} after {}, a new transmission.", seq, lastSeq);
+        }
+        lastSeq = seq;
     }
 
     public Future<JsonObject> notifyPathComplete(){
@@ -113,6 +145,9 @@ public class EventConnectionManager extends AbstractConnectionManager implements
         }
 
         log.info("Requesting transmission of user events!");
+
+        //OdoX numbers the events of the new transmission from 0.
+        lastSeq = null;
 
         return request(startTransmissionRequest).compose(response->{
             log.info("Confirmed transmission started!");

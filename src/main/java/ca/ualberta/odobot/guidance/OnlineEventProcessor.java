@@ -120,6 +120,34 @@ public class OnlineEventProcessor {
     }
 
     /**
+     * Records that events OdoX sent never arrived, as an EVENT_GAP custom event in the raw events, where they are
+     * missing. The timeline is not touched. Scoring reads the raw events, so a task scored on an incomplete event log is
+     * visible as such.
+     *
+     * @param missing how many messages were lost.
+     * @param afterSeq the sequence number of the last event that arrived before the gap, or null if unknown.
+     * @param reason why they were lost: "sequence-gap" when OdoBot saw a gap in the events' sequence numbers, or the
+     *               reason OdoX reported, e.g. "outbox-overflow".
+     * @param details what else is known about the lost messages, e.g. OdoX's count by type, or null.
+     */
+    public void injectEventGap(int missing, Integer afterSeq, String reason, JsonObject details){
+        JsonObject eventDetails = new JsonObject()
+                .put("name", "EVENT_GAP")
+                .put("missing", missing)
+                .put("afterSeq", afterSeq)
+                .put("reason", reason);
+        if(details != null){
+            eventDetails.put("details", details);
+        }
+        appendRawEvent(new JsonObject()
+                .put("eventType", "customEvent")
+                .put("eventDetails", eventDetails)
+                .put("timestamps", new JsonObject()
+                        .put("eventTimestamp", timeFormatter.format(Instant.now())))
+                .encode());
+    }
+
+    /**
      * @param listener called with every observation added to the uncharted timeline.
      */
     public void setOnUnchartedObservation(Consumer<Observation> listener){
