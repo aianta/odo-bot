@@ -1,6 +1,5 @@
 package ca.ualberta.odobot.guidance;
 
-import ca.ualberta.odobot.guidance.connectionmanagers.GuidanceConnectionManagerPacingTest;
 import ca.ualberta.odobot.guidance.instructions.Instruction;
 import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
 import ca.ualberta.odobot.task.TaskSettings;
@@ -48,7 +47,7 @@ class RequestManagerStepLimitTest {
     private Vertx vertx;
     private Context context;
     private RequestManager requestManager;
-    private final GuidanceConnectionManagerPacingTest.RecordingConnection guidance = new GuidanceConnectionManagerPacingTest.RecordingConnection();
+    private final InstructionDispatcherPacingTest.RecordingConnection guidance = new InstructionDispatcherPacingTest.RecordingConnection();
     private final ScriptedAgent agent = new ScriptedAgent();
     private final Promise<Void> evaluation = Promise.promise();
 
@@ -57,8 +56,7 @@ class RequestManagerStepLimitTest {
         vertx = Vertx.vertx();
         context = vertx.getOrCreateContext();
         OdoClient client = new OdoClient(UUID.randomUUID(), vertx);
-        client.getGuidanceConnectionManager().instructionPause = 1;
-        client.getGuidanceConnectionManager().followUpPause = 1;
+        InstructionDispatcherPacingTest.usePauses(client, 1, 1);
         requestManager = client.getRequestManager();
         run(()->{
             client.getGuidanceConnectionManager().updateConnection(guidance);
@@ -86,7 +84,7 @@ class RequestManagerStepLimitTest {
     void stepsUpToTheLimitAreExecuted() throws Exception {
         start(3);
         for(int i = 0; i < 3; i++){
-            run(()->agent.emit.accept(new GuidanceConnectionManagerPacingTest.TestInstruction()));
+            run(()->agent.emit.accept(new InstructionDispatcherPacingTest.TestInstruction()));
         }
 
         waitUntil(()->executeMessages() == 3);
@@ -98,11 +96,11 @@ class RequestManagerStepLimitTest {
     void theStepPastTheLimitEndsTheTask() throws Exception {
         start(2);
         for(int i = 1; i <= 2; i++){
-            run(()->agent.emit.accept(new GuidanceConnectionManagerPacingTest.TestInstruction()));
+            run(()->agent.emit.accept(new InstructionDispatcherPacingTest.TestInstruction()));
             long sent = i;
             waitUntil(()->executeMessages() == sent);
         }
-        run(()->agent.emit.accept(new GuidanceConnectionManagerPacingTest.TestInstruction()));
+        run(()->agent.emit.accept(new InstructionDispatcherPacingTest.TestInstruction()));
 
         assertTrue(evaluation.future().failed());
         assertEquals("Step limit of 2 reached", evaluation.future().cause().getMessage());
@@ -118,7 +116,7 @@ class RequestManagerStepLimitTest {
             requestManager.startTask(agent, ExecutionMode.CHARTED, UUID.randomUUID(), 60000);
         });
         for(int i = 0; i < 40; i++){
-            run(()->agent.emit.accept(new GuidanceConnectionManagerPacingTest.TestInstruction()));
+            run(()->agent.emit.accept(new InstructionDispatcherPacingTest.TestInstruction()));
         }
 
         assertFalse(evaluation.future().isComplete());
@@ -128,7 +126,7 @@ class RequestManagerStepLimitTest {
     @Test
     void theStepCountStartsOverWithEachTask() throws Exception {
         start(2);
-        run(()->agent.emit.accept(new GuidanceConnectionManagerPacingTest.TestInstruction()));
+        run(()->agent.emit.accept(new InstructionDispatcherPacingTest.TestInstruction()));
         assertEquals(1, requestManager.getSteps());
 
         run(()->requestManager.startTask(agent, ExecutionMode.UNCHARTED, UUID.randomUUID(), 60000));

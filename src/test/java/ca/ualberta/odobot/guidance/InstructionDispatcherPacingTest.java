@@ -1,9 +1,5 @@
-package ca.ualberta.odobot.guidance.connectionmanagers;
+package ca.ualberta.odobot.guidance;
 
-import ca.ualberta.odobot.guidance.Channel;
-import ca.ualberta.odobot.guidance.ChannelConnection;
-import ca.ualberta.odobot.guidance.OdoClient;
-import ca.ualberta.odobot.guidance.RequestManager;
 import ca.ualberta.odobot.guidance.instructions.Instruction;
 import io.vertx.core.Context;
 import io.vertx.core.Vertx;
@@ -24,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Instructions wait out their pause on a timer, so the event loop keeps handling OdoX's messages meanwhile.
  */
-public class GuidanceConnectionManagerPacingTest {
+public class InstructionDispatcherPacingTest {
 
     private static final UUID EXECUTION_ID = UUID.randomUUID();
 
@@ -71,10 +67,17 @@ public class GuidanceConnectionManagerPacingTest {
         }
     }
 
+    /**
+     * Have the client's dispatcher use the given pauses in every mode.
+     */
+    public static void usePauses(OdoClient client, long instructionPause, long followUpPause){
+        client.getRequestManager().getDispatcher().setPolicies(mode->DispatchPolicy.forMode(mode).withPauses(instructionPause, followUpPause));
+    }
+
     private Vertx vertx;
     private Context context;
     private OdoClient client;
-    private GuidanceConnectionManager manager;
+    private InstructionDispatcher dispatcher;
     private final RecordingConnection connection = new RecordingConnection();
 
     @BeforeEach
@@ -97,11 +100,10 @@ public class GuidanceConnectionManagerPacingTest {
             public void onExecutionInstructionSent(JsonObject instruction) {
             }
         });
-        manager = client.getGuidanceConnectionManager();
-        manager.instructionPause = 600;
-        manager.followUpPause = 200;
-        //The manager runs on the context its socket was bound on.
-        run(()->manager.updateConnection(connection));
+        dispatcher = client.getRequestManager().getDispatcher();
+        usePauses(client, 600, 200);
+        //The dispatcher runs on the context the socket was bound on.
+        run(()->client.getGuidanceConnectionManager().updateConnection(connection));
     }
 
     @AfterEach
@@ -111,15 +113,16 @@ public class GuidanceConnectionManagerPacingTest {
 
     @Test
     void thePausesKeepTheirLengths() {
-        GuidanceConnectionManager fresh = new OdoClient(UUID.randomUUID(), vertx).getGuidanceConnectionManager();
-        assertEquals(3000, fresh.instructionPause);
-        assertEquals(1000, fresh.followUpPause);
+        for(ExecutionMode mode: ExecutionMode.values()){
+            assertEquals(3000, DispatchPolicy.forMode(mode).instructionPause());
+            assertEquals(1000, DispatchPolicy.forMode(mode).followUpPause());
+        }
     }
 
     @Test
     void anInstructionIsSentOnceItsPauseHasElapsed() throws Exception {
         long start = System.currentTimeMillis();
-        run(()->manager.sendExecutionInstruction(new TestInstruction(), false, next->{}));
+        run(()->dispatcher.submit(new TestInstruction(), false, next->{}));
 
         waitUntil(()->connection.sent.size() == 1);
         assertTrue(connection.sentAt.get(0) - start >= 600, "sent before the pause elapsed");
@@ -130,7 +133,7 @@ public class GuidanceConnectionManagerPacingTest {
     @Test
     void aFollowUpWaitsTheShorterPause() throws Exception {
         long start = System.currentTimeMillis();
-        run(()->manager.sendExecutionInstruction(new TestInstruction(), true, next->{}));
+        run(()->dispatcher.submit(new TestInstruction(), true, next->{}));
 
         waitUntil(()->connection.sent.size() == 1);
         long waited = connection.sentAt.get(0) - start;
@@ -141,7 +144,7 @@ public class GuidanceConnectionManagerPacingTest {
     @Test
     void theEventLoopIsFreeDuringThePause() throws Exception {
         long start = System.currentTimeMillis();
-        run(()->manager.sendExecutionInstruction(new TestInstruction(), false, next->{}));
+        run(()->dispatcher.submit(new TestInstruction(), false, next->{}));
 
         //Anything else queued on the context runs right away, not after the instruction is sent.
         long[] ranAt = new long[1];
@@ -153,15 +156,15 @@ public class GuidanceConnectionManagerPacingTest {
     @Test
     void anInstructionCalledFromAnotherThreadIsPacedOnTheAgentsContext() throws Exception {
         //E.g. an agent that decided on a worker thread.
-        manager.sendExecutionInstruction(new TestInstruction(), false, next->{});
+        dispatcher.submit(new TestInstruction(), false, next->{});
 
         waitUntil(()->connection.sent.size() == 1);
     }
 
     @Test
     void noInstructionIsSentOnceTheTimersAreCancelled() throws Exception {
-        run(()->manager.sendExecutionInstruction(new TestInstruction(), false, next->{}));
-        run(()->manager.cancelTimers());
+        run(()->dispatcher.submit(new TestInstruction(), false, next->{}));
+        run(()->dispatcher.cancel());
 
         Thread.sleep(900);
         assertTrue(connection.sent.isEmpty(), "an instruction was sent after the task ended");
@@ -169,15 +172,15 @@ public class GuidanceConnectionManagerPacingTest {
 
     @Test
     void cancellingStopsTheTaskTimeout() throws Exception {
-        run(()->manager.resetTimeout());
-        assertNotEquals(-1l, manager.timeoutTimer);
+        run(()->dispatcher.resetTimeout());
+        assertNotEquals(-1l, dispatcher.timeoutTimer);
 
-        run(()->manager.cancelTimers());
-        assertEquals(-1l, manager.timeoutTimer);
+        run(()->dispatcher.cancel());
+        assertEquals(-1l, dispatcher.timeoutTimer);
     }
 
     /**
-     * Run the action on the manager's context and wait for it to finish.
+     * Run the action on the dispatcher's context and wait for it to finish.
      */
     private void run(Runnable action) throws Exception {
         CompletableFuture<Void> done = new CompletableFuture<>();

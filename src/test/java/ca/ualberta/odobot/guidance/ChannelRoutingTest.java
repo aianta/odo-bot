@@ -155,7 +155,7 @@ class ChannelRoutingTest {
         Future<JsonObject> clear = call(()->client.getGuidanceConnectionManager().clearNavigationOptions());
         assertFalse(clear.isComplete());
 
-        run(()->client.getGuidanceConnectionManager().cancelTimers());
+        run(()->client.getRequestManager().getDispatcher().cancel());
 
         assertTrue(clear.failed());
         //A late reply is dropped.

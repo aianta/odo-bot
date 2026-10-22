@@ -1,7 +1,6 @@
 package ca.ualberta.odobot.guidance;
 
-import ca.ualberta.odobot.guidance.connectionmanagers.GuidanceConnectionManager;
-import ca.ualberta.odobot.guidance.connectionmanagers.GuidanceConnectionManagerPacingTest.TestInstruction;
+import ca.ualberta.odobot.guidance.InstructionDispatcherPacingTest.TestInstruction;
 import io.vertx.core.Context;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
@@ -30,7 +29,7 @@ class GuidanceHoldTest {
     private Vertx vertx;
     private Context context;
     private OdoClient client;
-    private GuidanceConnectionManager manager;
+    private InstructionDispatcher dispatcher;
     private final ChannelRoutingTest.RecordingSocket socket = new ChannelRoutingTest.RecordingSocket();
 
     /**
@@ -59,9 +58,8 @@ class GuidanceHoldTest {
                 reportedSent.add(instruction);
             }
         });
-        manager = client.getGuidanceConnectionManager();
-        manager.instructionPause = 1;
-        manager.followUpPause = 1;
+        dispatcher = client.getRequestManager().getDispatcher();
+        InstructionDispatcherPacingTest.usePauses(client, 1, 1);
         run(()->client.setSocket(socket));
     }
 
@@ -76,7 +74,7 @@ class GuidanceHoldTest {
 
     private Future<JsonObject> execute() throws Exception {
         AtomicReference<Future<JsonObject>> result = new AtomicReference<>();
-        run(()->result.set(manager.sendExecutionInstruction(new TestInstruction(), false, next->{})));
+        run(()->result.set(dispatcher.submit(new TestInstruction(), false, next->{})));
         //Let the instruction's pause elapse, so instructions reach the queue in the order they were sent.
         Thread.sleep(100);
         return result.get();

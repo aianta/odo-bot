@@ -124,10 +124,19 @@ public class RequestManager {
      */
     private final JsonObject usageFields = new JsonObject();
 
+    /**
+     * Decides when the agent's instructions go out to OdoX, and keeps the task's idle timeout.
+     */
+    private final InstructionDispatcher dispatcher;
+
     public RequestManager(OdoClient client){
         this.client = client;
         this.client.setRequestManager(this);
+        this.dispatcher = new InstructionDispatcher(client);
+    }
 
+    public InstructionDispatcher getDispatcher() {
+        return dispatcher;
     }
 
     public String getExperimentFolderPath() {
@@ -165,7 +174,7 @@ public class RequestManager {
         this.evaluationComplete = evaluationComplete;
         this.evaluationComplete.future().onComplete(done->{
             //Nothing more goes to OdoX for this task: stop the timeout and drop any instruction still waiting to be sent.
-            client.getGuidanceConnectionManager().cancelTimers();
+            dispatcher.cancel();
         });
         this.evaluationComplete.future().onFailure(err->{
             log.error(err.getMessage(), err);
@@ -416,8 +425,10 @@ public class RequestManager {
 
         agent.setInstructionConsumer(instruction->onInstruction(agent, instruction));
 
+        dispatcher.start(mode);
+
         //Arm the timeout now, so the task also fails if OdoX never sends the first observation or the agent never produces an instruction.
-        client.getGuidanceConnectionManager().resetTimeout();
+        dispatcher.resetTimeout();
 
         client.getEventConnectionManager().startTransmitting()//Turn on event transmissions
                 .onSuccess(done->log.info("Waiting for the first observation from OdoX."))
@@ -435,7 +446,7 @@ public class RequestManager {
 
         //Give the DOM time to settle before sending the next instruction.
         if(entity instanceof Effect || entity instanceof NetworkEvent || entity instanceof ApplicationLocationChange){
-            client.getGuidanceConnectionManager().resetExecutionInstructionDelay();
+            dispatcher.onPageActivity();
         }
 
         if(activeAgent != null && mode != ExecutionMode.UNCHARTED){
@@ -524,7 +535,7 @@ public class RequestManager {
             steps++;
         }
 
-        Future<JsonObject> result = client.getGuidanceConnectionManager().sendExecutionInstruction(instruction, followUp, next->execute(source, next, true));
+        Future<JsonObject> result = dispatcher.submit(instruction, followUp, next->execute(source, next, true));
 
         if(!followUp && !firstInstructionSent){
             firstInstructionSent = true;

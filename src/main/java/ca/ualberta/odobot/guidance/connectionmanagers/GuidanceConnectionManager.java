@@ -2,71 +2,28 @@ package ca.ualberta.odobot.guidance.connectionmanagers;
 
 import ca.ualberta.odobot.guidance.Channel;
 import ca.ualberta.odobot.guidance.ChannelConnection;
+import ca.ualberta.odobot.guidance.InstructionDispatcher;
 import ca.ualberta.odobot.guidance.OdoClient;
 import ca.ualberta.odobot.guidance.feedback.AlternateXpath;
 import ca.ualberta.odobot.guidance.feedback.UnresolvableXpath;
-import ca.ualberta.odobot.guidance.instructions.Instruction;
-import ca.ualberta.odobot.guidance.instructions.MultiStepInstruction;
 import io.vertx.core.Context;
 import io.vertx.core.Future;
-import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Consumer;
-
 /**
  * The guidance channel: instructions for the page and the page's feedback, which OdoX's background passes to and from
  * the page. The channel is open only while OdoX has a page ready (PAGE_READY), so instructions wait while the page
  * navigates.
+ *
+ * <p>When an instruction goes out is decided by the {@link InstructionDispatcher}; this manager only carries it.</p>
  */
 public class GuidanceConnectionManager extends AbstractConnectionManager implements ConnectionManager {
 
     private static final Logger log = LoggerFactory.getLogger(GuidanceConnectionManager.class);
     private static final String SOURCE = "GuidanceConnectionManager";
-
-    /**
-     * EXECUTE messages that expect no reply, by id. Their futures complete once they have actually gone out.
-     */
-    private final Map<String, Promise<JsonObject>> awaitingSend = new ConcurrentHashMap<>();
-
-    public long timeoutTimer = -1l;
-
-    public long executionInstructionDelayTimer = -1l;
-    public long executionInstructionDelay = 5000l;
-
-    /**
-     * The longest an instruction is held for the DOM to settle. On a page that keeps changing, each change would
-     * otherwise postpone the next instruction again, until the task times out.
-     */
-    public long executionInstructionMaxDelay = 30000l;
-
-    /**
-     * When ({@link System#nanoTime()}) the current wait for the DOM to settle began, or -1 if there is none.
-     */
-    private long executionInstructionDelaySince = -1l;
-
-
-    private JsonObject executionInstruction = null;
-
-    /**
-     * How long an instruction waits before it is sent, see {@link #sendExecutionInstruction}.
-     */
-    public long instructionPause = 3000l;
-
-    /**
-     * How long a follow-up instruction, or a SHOW_NAVIGATION_OPTIONS message, waits before it is sent.
-     */
-    public long followUpPause = 1000l;
-
-    /**
-     * The timers of messages waiting out their pause, see {@link #afterPause}.
-     */
-    private final Set<Long> pauseTimers = new HashSet<>();
 
     /**
      * The context this socket's messages are handled on. Agent logic runs on it as well.
@@ -81,6 +38,13 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
     public void updateConnection(ChannelConnection connection) {
         super.updateConnection(connection);
         context = Vertx.currentContext();
+    }
+
+    /**
+     * @return the context OdoX's socket was bound on, which runs the agent, or null before OdoX has connected.
+     */
+    public Context context(){
+        return context;
     }
 
     /**
@@ -160,192 +124,42 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                 .mergeIn(navigationOptions);
 
         Future<JsonObject> reply = expectReply(showNavigationOptionsRequest);
-        afterPause(followUpPause, ()->send(showNavigationOptionsRequest));
+        InstructionDispatcher dispatcher = client.getRequestManager().getDispatcher();
+        dispatcher.afterPause(dispatcher.policy().followUpPause(), ()->send(showNavigationOptionsRequest));
 
         return reply;
     }
 
     /**
-     * Run the action once the pause has elapsed, on the context that runs the agent. Unlike the sleep it replaces, the
-     * pause does not hold up the event loop, so OdoX's messages keep being handled meanwhile.
+     * Wait for the EXECUTION_RESULT of an EXECUTE message the dispatcher sends later.
+     * @return completes with the EXECUTION_RESULT.
      */
-    private void afterPause(long pauseMs, Runnable action){
-        if(context != null && Vertx.currentContext() != context){
-            context.runOnContext(v->afterPause(pauseMs, action));
-            return;
-        }
-
-        long[] timer = new long[1];
-        timer[0] = client.vertx().setTimer(pauseMs, id->{
-            pauseTimers.remove(timer[0]);
-            action.run();
-        });
-        pauseTimers.add(timer[0]);
+    public Future<JsonObject> expectExecutionResult(JsonObject executionRequest){
+        return expectReply(executionRequest);
     }
 
     /**
-     * Cancel the task timeout and every message still waiting to be sent, and fail the requests still waiting for
-     * OdoX, once the task is over.
+     * Send an EXECUTE message the dispatcher has released. It goes out now if a page is ready, otherwise once one is.
      */
-    public void cancelTimers(){
-        if(context != null && Vertx.currentContext() != context){
-            context.runOnContext(v->cancelTimers());
-            return;
-        }
-
-        pauseTimers.forEach(client.vertx()::cancelTimer);
-        pauseTimers.clear();
-
-        failPending("The task ended");
-        awaitingSend.values().forEach(sent->sent.tryFail("The task ended before the instruction was sent"));
-        awaitingSend.clear();
-
-        if(executionInstructionDelayTimer != -1l){
-            client.vertx().cancelTimer(executionInstructionDelayTimer);
-            executionInstructionDelayTimer = -1l;
-            executionInstructionDelaySince = -1l;
-        }
-        executionInstruction = null;
-
-        if(timeoutTimer != -1l){
-            client.vertx().cancelTimer(timeoutTimer);
-            timeoutTimer = -1l;
-        }
+    public boolean sendExecute(JsonObject executionRequest){
+        super.addHistory(executionRequest);
+        return super.send(executionRequest);
     }
 
     /**
-     * @param waitedMs how long the current wait for the DOM to settle has lasted.
-     * @return how much longer to wait: the settle delay, cut short so the whole wait never exceeds the max delay.
+     * Send one of this manager's own messages, e.g. ALTERNATE_XPATH_CONFIRMED. Instructions go through
+     * {@link #sendExecute} instead.
      */
-    static long settleDelay(long waitedMs, long delayMs, long maxDelayMs){
-        return Math.max(1, Math.min(delayMs, maxDelayMs - waitedMs));
-    }
-
-    /**
-     * Hold the next execution instruction until the DOM has not changed for {@link #executionInstructionDelay}, but
-     * no longer than {@link #executionInstructionMaxDelay} after the wait began.
-     */
-    public void resetExecutionInstructionDelay(){
-        if(executionInstructionDelayTimer != -1l){
-            client.vertx().cancelTimer(executionInstructionDelayTimer);
-        }
-
-        long now = System.nanoTime();
-        if(executionInstructionDelaySince == -1l){
-            executionInstructionDelaySince = now;
-        }
-        long waitedMs = (now - executionInstructionDelaySince) / 1_000_000;
-        long delay = settleDelay(waitedMs, executionInstructionDelay, executionInstructionMaxDelay);
-
-        if(delay < executionInstructionDelay){
-            log.info("DOM is still changing after {} ms, the next execution instruction will be sent in at most {} ms.", waitedMs, delay);
-        }else{
-            log.info("Next execution instruction will be delayed to give time for DOM to settle.");
-        }
-        executionInstructionDelayTimer = client.vertx().setTimer(delay, id->{
-            executionInstructionDelayTimer = -1;
-            executionInstructionDelaySince = -1;
-            if(executionInstruction != null){
-                log.info("Delayed instruction is being sent now!");
-                super.addHistory(executionInstruction);
-                super.send(executionInstruction);
-                executionInstruction = null;
-            }
-
-        });
-    }
-
-    /**
-     * (Re)start the task timeout. The task fails if the timeout elapses before the next reset.
-     */
-    public void resetTimeout(){
-        //Keep the timeout on the event loop that runs the agent, so the two never run concurrently.
-        if(context != null && Vertx.currentContext() != context){
-            context.runOnContext(v->resetTimeout());
-            return;
-        }
-
-        if(timeoutTimer != -1l){ //Only if it hasn't yet been set.
-            client.vertx().cancelTimer(timeoutTimer);
-        }
-
-        timeoutTimer = client.vertx().setTimer(client.getRequestManager().getTimeout(), id->{
-            //timeoutTimer = id;
-            log.info("Task execution timed out!");
-            client.getRequestManager().getEvaluationComplete().tryFail("Timeout!");
-        });
-    }
-
-    /**
-     * Send an instruction to OdoX for execution.
-     *
-     * @param instruction the instruction to execute.
-     * @param followUp true if the instruction was produced by the follow-up logic of a {@link MultiStepInstruction}.
-     *                 Follow-ups do not reset the task timeout, and are sent after a shorter pause.
-     * @param next if the instruction is a {@link MultiStepInstruction}, receives the follow-up instructions it produces
-     *             from its EXECUTION_RESULT.
-     * @return for a {@link MultiStepInstruction}, a future that completes with the instruction's EXECUTION_RESULT. For
-     * other instructions, which get no reply, a future that completes with the EXECUTE message once it has gone out.
-     */
-    public Future<JsonObject> sendExecutionInstruction(Instruction instruction, boolean followUp, Consumer<Instruction> next){
-
-        if(!followUp){
-            resetTimeout();
-        }
-
-        JsonObject executionRequest = new JsonObject()
-                .put("type", "EXECUTE")
-                .put("id", UUID.randomUUID().toString())
-                .put("source", SOURCE)
-                .put("executionId", client.getRequestManager().getExecutionId().toString())
-                .mergeIn(instruction.toJson());
-
-        Future<JsonObject> result;
-
-        //Multi-step instructions produce follow-up instructions from their execution result.
-        if(instruction instanceof MultiStepInstruction multiStepInstruction){
-            log.info("Configuring handling the response for {} instruction.", executionRequest.getString("action"));
-
-            result = expectReply(executionRequest);
-            result.onFailure(err->log.error(err.getMessage(), err))
-                    .onSuccess(response->multiStepInstruction.onExecutionResult(executionRequest, response, next));
-        }else{
-            Promise<JsonObject> sent = Promise.promise();
-            awaitingSend.put(executionRequest.getString("id"), sent);
-            result = sent.future();
-        }
-
-        afterPause(followUp? followUpPause : instructionPause, ()->send(executionRequest));
-
-        return result;
-    }
-
     protected boolean send(JsonObject data){
-        if(executionInstructionDelayTimer == -1l || (data.containsKey("type") && !data.getString("type").equals("EXECUTE"))){
-            log.info("No delay for instruction, sending immediately.");
-            data.put("delayed", false);
-            super.addHistory(data);
-            return super.send(data);
-        }else{
-            log.info("Delay requested for instruction, saving instruction to be sent after delay.");
-            data.put("delayed", true);
-            if(executionInstruction != null){
-                log.error("Fatal Error, previous instruction was still waiting to be sent!");
-                client.vertx().setTimer(executionInstructionDelay, timer->{
-                    send(data);
-                });
-                return false;
-
-            }
-            executionInstruction = data;
-            return true;
-        }
-
+        log.info("No delay for instruction, sending immediately.");
+        data.put("delayed", false);
+        super.addHistory(data);
+        return super.send(data);
     }
 
     /**
-     * Tells the harness when an EXECUTE message has actually gone to OdoX. A message queued while OdoX has no page ready is
-     * reported when a page is ready again and the queue is flushed.
+     * Tells the dispatcher when an EXECUTE message has actually gone to OdoX. A message queued while OdoX has no page
+     * ready is reported when a page is ready again and the queue is flushed.
      */
     @Override
     protected void onSent(String data){
@@ -354,11 +168,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
         }
         JsonObject message = new JsonObject(data);
         if("EXECUTE".equals(message.getString("type"))){
-            Promise<JsonObject> sent = awaitingSend.remove(message.getString("id"));
-            if(sent != null){
-                sent.complete(message);
-            }
-            client.getRequestManager().onExecutionInstructionSent(message);
+            client.getRequestManager().getDispatcher().onExecuteSent(message);
         }
     }
 
