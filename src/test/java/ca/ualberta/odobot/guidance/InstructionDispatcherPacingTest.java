@@ -103,7 +103,10 @@ public class InstructionDispatcherPacingTest {
         dispatcher = client.getRequestManager().getDispatcher();
         usePauses(client, 600, 200);
         //The dispatcher runs on the context the socket was bound on.
-        run(()->client.getGuidanceConnectionManager().updateConnection(connection));
+        run(()->{
+            client.getGuidanceConnectionManager().updateConnection(connection);
+            client.onPageReady("page-1");
+        });
     }
 
     @AfterEach

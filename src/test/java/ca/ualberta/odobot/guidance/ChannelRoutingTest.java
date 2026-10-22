@@ -76,6 +76,22 @@ class ChannelRoutingTest {
                 .put("id", UUID.randomUUID().toString());
     }
 
+    /**
+     * The page OdoX reports ready in these tests.
+     */
+    static final String PAGE_ID = "page-1";
+
+    /**
+     * @return OdoX reporting {@link #PAGE_ID} ready.
+     */
+    static JsonObject pageReady(){
+        return pageReady(PAGE_ID);
+    }
+
+    static JsonObject pageReady(String pageId){
+        return message("guidance", "PAGE_READY").put("pageId", pageId);
+    }
+
     static JsonObject reply(JsonObject request, String type){
         return message(request.getString("channel"), type).put("replyTo", request.getString("id"));
     }
@@ -104,7 +120,7 @@ class ChannelRoutingTest {
         run(()->client.route(message("event", "PAGE_READY")));
         assertFalse(client.isPageReady());
 
-        run(()->client.route(message("guidance", "PAGE_READY")));
+        run(()->client.route(pageReady()));
         assertTrue(client.isPageReady());
     }
 
@@ -144,14 +160,14 @@ class ChannelRoutingTest {
     @Test
     void aReplyNoRequestIsWaitingForIsDropped() throws Exception {
         //Not handled as an ordinary PAGE_READY either.
-        run(()->client.route(message("guidance", "PAGE_READY").put("replyTo", UUID.randomUUID().toString())));
+        run(()->client.route(pageReady().put("replyTo", UUID.randomUUID().toString())));
 
         assertFalse(client.isPageReady());
     }
 
     @Test
     void theEndOfTheTaskFailsTheRequestsStillWaiting() throws Exception {
-        run(()->client.route(message("guidance", "PAGE_READY")));
+        run(()->client.route(pageReady()));
         Future<JsonObject> clear = call(()->client.getGuidanceConnectionManager().clearNavigationOptions());
         assertFalse(clear.isComplete());
 
@@ -164,8 +180,9 @@ class ChannelRoutingTest {
 
     @Test
     void theAlternateXpathConfirmationAnswersTheRegistration() throws Exception {
-        run(()->client.route(message("guidance", "PAGE_READY")));
+        run(()->client.route(pageReady()));
         JsonObject registration = message("guidance", "REGISTER_ALTERNATE_XPATH")
+                .put("pageId", PAGE_ID)
                 .put("cause", UUID.randomUUID().toString())
                 .put("sourceNodeId", UUID.randomUUID().toString())
                 .put("alternateXpath", "/html/body/div[2]");
@@ -175,6 +192,34 @@ class ChannelRoutingTest {
         JsonObject confirmation = socket.sent("ALTERNATE_XPATH_CONFIRMED").get(0);
         assertEquals(registration.getString("id"), confirmation.getString("replyTo"));
         assertEquals("/html/body/div[2]", confirmation.getString("alternateXpath"));
+        assertEquals(PAGE_ID, confirmation.getString("pageId"), "the confirmation goes to the page that asked");
+    }
+
+    @Test
+    void aPageReadyWithoutAPageIdIsIgnored() throws Exception {
+        run(()->client.route(message("guidance", "PAGE_READY")));
+
+        assertFalse(client.isPageReady());
+    }
+
+    @Test
+    void aStalePageGoneLeavesTheCurrentPageReady() throws Exception {
+        run(()->client.route(pageReady("page-2")));
+        run(()->client.route(message("guidance", "PAGE_GONE").put("pageId", "page-1")));
+
+        assertEquals("page-2", client.pageId());
+    }
+
+    @Test
+    void aMessageOdoXCouldNotDeliverFailsTheRequest() throws Exception {
+        run(()->client.route(pageReady()));
+        Future<JsonObject> clear = call(()->client.getGuidanceConnectionManager().clearNavigationOptions());
+        JsonObject sent = socket.sent("CLEAR_NAVIGATION_OPTIONS").get(0);
+        assertEquals(PAGE_ID, sent.getString("pageId"));
+
+        run(()->client.route(reply(sent, "NOT_DELIVERED").put("reason", "page-gone")));
+
+        assertTrue(clear.failed());
     }
 
     private <T> Future<T> call(Supplier<Future<T>> action) throws Exception {

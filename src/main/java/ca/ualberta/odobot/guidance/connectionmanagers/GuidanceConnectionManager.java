@@ -15,10 +15,12 @@ import org.slf4j.LoggerFactory;
 
 /**
  * The guidance channel: instructions for the page and the page's feedback, which OdoX's background passes to and from
- * the page. The channel is open only while OdoX has a page ready (PAGE_READY), so instructions wait while the page
- * navigates.
+ * the page. The channel is open only while OdoX has a page ready (PAGE_READY), and every message is addressed to a page
+ * by its {@code pageId}.
  *
- * <p>When an instruction goes out is decided by the {@link InstructionDispatcher}; this manager only carries it.</p>
+ * <p>The channel never holds messages. When an instruction goes out is decided by the {@link InstructionDispatcher},
+ * which waits for a page; this manager only carries it. A message sent while no page is ready is dropped, and a request
+ * among them fails.</p>
  */
 public class GuidanceConnectionManager extends AbstractConnectionManager implements ConnectionManager {
 
@@ -56,15 +58,36 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
         super.addHistory(message);
     }
 
+    /**
+     * NOT_DELIVERED answers a message OdoX could not deliver, because the page it was addressed to had gone. The
+     * dispatcher decides what happens to an instruction; any other request among them fails.
+     */
+    @Override
+    public void dispatch(JsonObject message) {
+        if("NOT_DELIVERED".equals(message.getString("type"))){
+            super.addHistory(message);
+            if(!client.getRequestManager().getDispatcher().onNotDelivered(message)){
+                failReply(message.getString("replyTo"), "OdoX could not deliver it: " + message.getString("reason"));
+            }
+            return;
+        }
+        super.dispatch(message);
+    }
+
     public void onMessage(JsonObject message){
         switch (message.getString("type")){
             case "PAGE_READY":
                 super.addHistory(message);
-                client.setPageReady(true);
+                String pageId = message.getString("pageId");
+                if(pageId == null){
+                    log.warn("Ignoring a PAGE_READY without a pageId.");
+                    break;
+                }
+                client.onPageReady(pageId);
                 break;
             case "PAGE_GONE":
                 super.addHistory(message);
-                client.setPageReady(false);
+                client.onPageGone(message.getString("pageId"));
                 break;
 
             case "UNRESOLVABLE_XPATH":
@@ -89,9 +112,11 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
 
                 super.addHistory(message);
 
+                //The page that asked is waiting for the confirmation, so it goes straight to that page.
                 JsonObject confirmation = new JsonObject()
                         .put("type", "ALTERNATE_XPATH_CONFIRMED")
                         .put("replyTo", message.getString("id"))
+                        .put("pageId", message.getString("pageId"))
                         .put("source", SOURCE)
                         .put("pathsRequestId", client.getRequestManager().getExecutionId().toString())
                         .put("alternateXpath", alternateXpath); //Confirm which xpath was registered.
@@ -109,11 +134,9 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                 .put("source", SOURCE)
                 .put("pathsRequestId", client.getRequestManager().getExecutionId().toString());
 
-        return request(clearNavigationOptionsRequest);
-    }
-
-    public Future<JsonObject> notifyPathComplete(){
-        return request(makeNotifyPathCompleteRequest(SOURCE));
+        Future<JsonObject> reply = expectReply(clearNavigationOptionsRequest);
+        client.getRequestManager().getDispatcher().send(clearNavigationOptionsRequest);
+        return reply;
     }
 
     public Future<JsonObject> showNavigationOptions(JsonObject navigationOptions){
@@ -125,9 +148,16 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
 
         Future<JsonObject> reply = expectReply(showNavigationOptionsRequest);
         InstructionDispatcher dispatcher = client.getRequestManager().getDispatcher();
-        dispatcher.afterPause(dispatcher.policy().followUpPause(), ()->send(showNavigationOptionsRequest));
+        dispatcher.afterPause(dispatcher.policy().followUpPause(), ()->dispatcher.send(showNavigationOptionsRequest));
 
         return reply;
+    }
+
+    /**
+     * @return whether a message sent now would go out: the socket is connected and a page is ready.
+     */
+    public boolean canSend(){
+        return isOpen();
     }
 
     /**
@@ -139,27 +169,56 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
     }
 
     /**
-     * Send an EXECUTE message the dispatcher has released. It goes out now if a page is ready, otherwise once one is.
+     * Send an EXECUTE message the dispatcher has released to the page it is addressed to.
      */
     public boolean sendExecute(JsonObject executionRequest){
-        super.addHistory(executionRequest);
-        return super.send(executionRequest);
+        return sendQueued(executionRequest);
     }
 
     /**
-     * Send one of this manager's own messages, e.g. ALTERNATE_XPATH_CONFIRMED. Instructions go through
-     * {@link #sendExecute} instead.
+     * Send a message the dispatcher has released from its queue, see {@link InstructionDispatcher#send}.
+     */
+    public boolean sendQueued(JsonObject message){
+        super.addHistory(message);
+        return sendOrFail(message);
+    }
+
+    /**
+     * Send a reply to the page that asked, e.g. ALTERNATE_XPATH_CONFIRMED, without waiting in the dispatcher's queue.
+     * Messages OdoBot starts go through {@link InstructionDispatcher#send} instead.
      */
     protected boolean send(JsonObject data){
-        log.info("No delay for instruction, sending immediately.");
         data.put("delayed", false);
         super.addHistory(data);
+        return sendOrFail(data);
+    }
+
+    /**
+     * Send a message now, or drop it if no page is ready, failing the request among them.
+     */
+    private boolean sendOrFail(JsonObject message){
+        if(super.send(message)){
+            return true;
+        }
+        failReply(message.getString("id"), "No page was ready to receive it");
+        return false;
+    }
+
+    /**
+     * The guidance channel never holds a message: the dispatcher waits for a page instead. One sent while no page is
+     * ready is dropped.
+     */
+    @Override
+    protected boolean send(String data){
+        if(!isOpen()){
+            log.warn("No page is ready, dropping a guidance message: {}", data.substring(0, Math.min(data.length(), 150)));
+            return false;
+        }
         return super.send(data);
     }
 
     /**
-     * Tells the dispatcher when an EXECUTE message has actually gone to OdoX. A message queued while OdoX has no page
-     * ready is reported when a page is ready again and the queue is flushed.
+     * Tells the dispatcher when an EXECUTE message has actually gone to OdoX.
      */
     @Override
     protected void onSent(String data){

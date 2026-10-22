@@ -18,6 +18,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 
 import static ca.ualberta.odobot.guidance.ChannelRoutingTest.message;
+import static ca.ualberta.odobot.guidance.ChannelRoutingTest.pageReady;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -89,7 +90,7 @@ class GuidanceHoldTest {
         assertTrue(reportedSent.isEmpty(), "the harness was told an instruction went out before it did");
         assertFalse(first.isComplete());
 
-        run(()->client.route(message("guidance", "PAGE_READY")));
+        run(()->client.route(pageReady()));
 
         waitUntil(()->executes().size() == 2);
         assertEquals(first.result().getString("id"), executes().get(0).getString("id"));
@@ -99,7 +100,7 @@ class GuidanceHoldTest {
 
     @Test
     void anInstructionIsHeldAgainOnceThePageIsGone() throws Exception {
-        run(()->client.route(message("guidance", "PAGE_READY")));
+        run(()->client.route(pageReady()));
         execute();
         waitUntil(()->executes().size() == 1);
 
@@ -108,14 +109,14 @@ class GuidanceHoldTest {
         assertEquals(1, executes().size());
         assertFalse(held.isComplete());
 
-        run(()->client.route(message("guidance", "PAGE_READY")));
+        run(()->client.route(pageReady()));
         waitUntil(()->executes().size() == 2);
         assertTrue(held.succeeded(), "an instruction without a reply completes once it has gone out");
     }
 
     @Test
     void aNewSocketForgetsThePage() throws Exception {
-        run(()->client.route(message("guidance", "PAGE_READY")));
+        run(()->client.route(pageReady()));
         assertTrue(client.isPageReady());
 
         ChannelRoutingTest.RecordingSocket reconnected = new ChannelRoutingTest.RecordingSocket();

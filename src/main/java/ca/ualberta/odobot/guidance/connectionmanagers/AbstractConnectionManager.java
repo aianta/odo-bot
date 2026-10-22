@@ -133,6 +133,16 @@ public abstract class AbstractConnectionManager implements ConnectionManager {
     }
 
     /**
+     * Fail the request with the given id, if it is still waiting for a reply, e.g. because OdoX could not deliver it.
+     */
+    public void failReply(String id, String reason){
+        Promise<JsonObject> request = id == null? null : pendingReplies.remove(id);
+        if(request != null){
+            request.tryFail(reason);
+        }
+    }
+
+    /**
      * Fail every request still waiting for a reply, e.g. when the task ends.
      */
     public void failPending(String reason){

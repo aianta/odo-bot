@@ -17,12 +17,13 @@ import java.util.function.Consumer;
  * {@link OdoClient#route}.
  *
  * <p>OdoX puts its clientId and protocol version in the socket's URL, e.g.
- * {@code wss://host/?clientId=<uuid>&protocol=2}, so the socket is bound to its client when it is accepted, see
+ * {@code wss://host/?clientId=<uuid>&protocol=3}, so the socket is bound to its client when it is accepted, see
  * {@link TaskSockets#accept}.</p>
  *
  * <p>Every message, both ways, is a flat JSON object with {@code v} (the protocol version), {@code channel},
  * {@code type} and {@code id}, plus {@code replyTo} on a reply, {@code cause} on guidance feedback OdoX sends unasked,
- * and the fields of its type.</p>
+ * and the fields of its type. Guidance messages also carry {@code pageId}: the page a message from OdoBot is addressed
+ * to, or the page a message from OdoX came from. OdoX answers a message for a page that is gone with NOT_DELIVERED.</p>
  */
 public class WebSocketConnection {
 
@@ -31,7 +32,7 @@ public class WebSocketConnection {
     /**
      * The version of the protocol OdoBot speaks with OdoX. Sockets of any other version are refused.
      */
-    public static final int PROTOCOL_VERSION = 2;
+    public static final int PROTOCOL_VERSION = 3;
 
     private static final long PING_PERIOD_MS = 600000; //Send pings every 10 seconds (10,000ms)
 
@@ -162,7 +163,7 @@ public class WebSocketConnection {
     }
 
     /**
-     * @return the clientId in the query of a websocket URL, e.g. {@code /?clientId=<uuid>&protocol=2}, or null if it has no valid one.
+     * @return the clientId in the query of a websocket URL, e.g. {@code /?clientId=<uuid>&protocol=3}, or null if it has no valid one.
      */
     public static UUID clientIdFromUri(String uri){
         return parseUuid(queryParameter(uri, "clientId"));

@@ -473,6 +473,24 @@ public class RequestManager {
         }
     }
 
+    /**
+     * OdoX could not deliver an instruction, and the policy drops it, see
+     * {@link DispatchPolicy.LostInstruction#UNCOUNT_AND_REOBSERVE}. It never ran, so it doesn't count as a step, and an
+     * uncharted step is observed again from now, so the agent decides anew from the page on the screen.
+     */
+    public void onInstructionLost(JsonObject instruction, boolean followUp){
+        if(ended){
+            return;
+        }
+        if(!followUp && steps > 0){
+            steps--;
+        }
+        log.info("Task {}: instruction {} was not delivered and is not counted; {} step(s) taken.", evalId, instruction.getString("id"), steps);
+        if("uncharted_step".equals(instruction.getString("action"))){
+            client.getEventConnectionManager().observeUnchartedStep(instruction);
+        }
+    }
+
     public void onInstruction(IAgent source, Instruction instruction){
         execute(source, instruction, false);
     }
@@ -544,7 +562,7 @@ public class RequestManager {
     }
 
     private void taskComplete(){
-        client.getGuidanceConnectionManager().notifyPathComplete();
+        //Only the event channel is told: OdoX's background ends the transmission. The page has nothing to do.
         client.getEventConnectionManager().notifyPathComplete();
 
         if(evalId != null && evaluationComplete != null){

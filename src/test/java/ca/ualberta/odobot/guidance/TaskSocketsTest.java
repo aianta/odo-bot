@@ -191,6 +191,7 @@ class TaskSocketsTest {
                 .put("channel", "guidance")
                 .put("type", "PAGE_READY")
                 .put("id", UUID.randomUUID().toString())
+                .put("pageId", "page-1")
                 .encode());
 
         waitUntil(client::isPageReady);

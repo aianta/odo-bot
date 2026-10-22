@@ -36,17 +36,17 @@ public class OdoClient {
     private WebSocketConnection socket = new WebSocketConnection();
 
     /**
-     * Whether OdoX has a page ready for guidance messages, see {@link #setPageReady}. The guidance channel is open only
-     * while it does.
+     * The id of the page OdoX has ready for guidance messages, or null if it has none, see {@link #onPageReady}. The
+     * guidance channel is open only while there is one, and guidance messages are addressed to it.
      */
-    private volatile boolean pageReady = false;
+    private volatile String pageId = null;
 
     public JsonObject statusReport(){
         JsonObject report = new JsonObject()
                 .put("id", id().toString())
                 .put("task", taskContext)
                 .put("socket", socket.isConnected()?"connected":"disconnected")
-                .put("page", pageReady?"ready":"not ready");
+                .put("page", pageId == null? "not ready" : pageId);
 
         return report;
     }
@@ -100,7 +100,7 @@ public class OdoClient {
      */
     public void setSocket(WebSocketConnection socket) {
         this.socket = socket;
-        this.pageReady = false;
+        this.pageId = null;
         socket.setMessageConsumer(this::route);
 
         eventConnectionManager.updateConnection(new ChannelConnection(Channel.EVENT, socket, ()->true));
@@ -124,19 +124,38 @@ public class OdoClient {
     }
 
     public boolean isPageReady(){
-        return pageReady;
+        return pageId != null;
     }
 
     /**
-     * OdoX reported that a page is ready for guidance messages (PAGE_READY), or that it is gone (PAGE_GONE), e.g. while
-     * the page navigates. Guidance messages wait while there is no page, and go out in order once one is ready.
+     * @return the id of the page OdoX has ready for guidance messages, or null if it has none.
      */
-    public void setPageReady(boolean ready){
-        log.info("[{}] Page {}", label(), ready? "ready" : "gone");
-        this.pageReady = ready;
-        if(ready){
-            guidanceConnectionManager.flushQueue();
+    public String pageId(){
+        return pageId;
+    }
+
+    /**
+     * OdoX reported a page ready for guidance messages (PAGE_READY). Instructions that waited for a page go out to it,
+     * see {@link InstructionDispatcher#onPageReady}.
+     */
+    public void onPageReady(String pageId){
+        log.info("[{}] Page {} ready", label(), pageId);
+        this.pageId = pageId;
+        requestManager.getDispatcher().onPageReady();
+    }
+
+    /**
+     * OdoX reported that a page is gone (PAGE_GONE), e.g. because it navigated. Instructions wait until the next page is
+     * ready. A report about a page other than the current one is stale and ignored.
+     * @param pageId the page that is gone, or null if OdoX didn't say.
+     */
+    public void onPageGone(String pageId){
+        if(pageId != null && this.pageId != null && !pageId.equals(this.pageId)){
+            log.info("[{}] Page {} gone, but page {} is the current one; ignoring it.", label(), pageId, this.pageId);
+            return;
         }
+        log.info("[{}] Page {} gone", label(), this.pageId);
+        this.pageId = null;
     }
 
     public EventConnectionManager getEventConnectionManager() {

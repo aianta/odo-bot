@@ -59,7 +59,7 @@ public final class TaskSockets {
 
     /**
      * Accept a websocket on the task's listener. OdoX puts its clientId and protocol version in the URL, e.g.
-     * wss://host/?clientId=&lt;uuid&gt;&amp;protocol=2, so a socket of another client, or of an OdoX that speaks another
+     * wss://host/?clientId=&lt;uuid&gt;&amp;protocol=3, so a socket of another client, or of an OdoX that speaks another
      * protocol, is rejected here, before any message.
      */
     public void accept(ServerWebSocket socket){

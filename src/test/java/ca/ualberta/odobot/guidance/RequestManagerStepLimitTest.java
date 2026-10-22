@@ -60,6 +60,7 @@ class RequestManagerStepLimitTest {
         requestManager = client.getRequestManager();
         run(()->{
             client.getGuidanceConnectionManager().updateConnection(guidance);
+            client.onPageReady("page-1");
             requestManager.setEvaluationComplete(evaluation);
         });
     }
