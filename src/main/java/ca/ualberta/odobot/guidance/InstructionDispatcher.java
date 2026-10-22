@@ -3,6 +3,7 @@ package ca.ualberta.odobot.guidance;
 import ca.ualberta.odobot.guidance.connectionmanagers.GuidanceConnectionManager;
 import ca.ualberta.odobot.guidance.instructions.Instruction;
 import ca.ualberta.odobot.guidance.instructions.MultiStepInstruction;
+import io.vertx.core.AsyncResult;
 import io.vertx.core.Context;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
@@ -35,6 +36,9 @@ import java.util.function.Function;
  *     <li>for an EXECUTE, the DOM has settled, if the policy has a settle gate, see {@link #onPageActivity}. Messages
  *     behind a held EXECUTE wait with it, so nothing overtakes it.</li>
  * </ul>
+ * <p>Every EXECUTE gets one reply: EXECUTE_DONE once the page has run it, or EXECUTION_RESULT for a multi-step
+ * instruction. If the policy says so ({@link DispatchPolicy#awaitDone}), the next EXECUTE waits for it, and an EXECUTE
+ * without one is lost. Either way the harness is told, see {@link RequestManager#onExecutionDone}.</p>
  * <p>{@link #cancel} drops everything still waiting once the task is over, and nothing goes out after it.</p>
  *
  * <p>Calls must come from the context OdoX's socket was bound on, or hop to it, as the public methods here do.</p>
@@ -87,7 +91,18 @@ public class InstructionDispatcher {
     private final Map<String, Outgoing> sent = new HashMap<>();
 
     /**
-     * EXECUTE messages that expect no reply, by id. Their futures complete once they have actually gone out.
+     * The id of the EXECUTE sent last and not yet reported done, or null. With {@link DispatchPolicy#awaitDone}, the next
+     * EXECUTE waits for it.
+     */
+    private String inFlight = null;
+
+    /**
+     * The timers that limit how long OdoX may take to report each sent EXECUTE done, by id.
+     */
+    private final Map<String, Long> doneTimers = new HashMap<>();
+
+    /**
+     * EXECUTE messages that expect no EXECUTION_RESULT, by id. Their futures complete once they have actually gone out.
      */
     private final Map<String, Promise<JsonObject>> awaitingSend = new ConcurrentHashMap<>();
 
@@ -119,6 +134,8 @@ public class InstructionDispatcher {
         this.mode = mode;
         this.cancelled = false;
         this.sent.clear();
+        stopDoneTimers();
+        this.inFlight = null;
     }
 
     /**
@@ -167,7 +184,7 @@ public class InstructionDispatcher {
      * @param next if the instruction is a {@link MultiStepInstruction}, receives the follow-up instructions it produces
      *             from its EXECUTION_RESULT.
      * @return for a {@link MultiStepInstruction}, a future that completes with the instruction's EXECUTION_RESULT. For
-     * other instructions, which get no reply, a future that completes with the EXECUTE message once it has gone out.
+     * other instructions, a future that completes with the EXECUTE message once it has gone out.
      */
     public Future<JsonObject> submit(Instruction instruction, boolean followUp, Consumer<Instruction> next){
 
@@ -187,13 +204,20 @@ public class InstructionDispatcher {
                 .put("executionId", client.getRequestManager().getExecutionId().toString())
                 .mergeIn(instruction.toJson());
 
+        //Every EXECUTE gets one reply: EXECUTE_DONE, or EXECUTION_RESULT for a multi-step instruction.
+        String id = executionRequest.getString("id");
+        Future<JsonObject> reply = guidance().expectReplyTo(executionRequest);
+        reply.onComplete(done->onReply(id, done));
+
         Future<JsonObject> result;
 
         //Multi-step instructions produce follow-up instructions from their execution result.
         if(instruction instanceof MultiStepInstruction multiStepInstruction){
             log.info("Configuring handling the response for {} instruction.", executionRequest.getString("action"));
 
-            result = guidance().expectExecutionResult(executionRequest);
+            result = reply.compose(response->"EXECUTION_RESULT".equals(response.getString("type"))?
+                    Future.succeededFuture(response) :
+                    Future.failedFuture("OdoX answered %s (%s) instead of an EXECUTION_RESULT".formatted(response.getString("type"), response.getString("status"))));
             result.onFailure(err->log.error(err.getMessage(), err))
                     .onSuccess(response->multiStepInstruction.onExecutionResult(executionRequest, response, next));
         }else{
@@ -243,6 +267,10 @@ public class InstructionDispatcher {
             }
 
             Outgoing next = queue.peekFirst();
+            if(next.isExecute() && inFlight != null && policy().awaitDone()){
+                log.info("Holding the next instruction until OdoX reports {} done.", inFlight);
+                return;
+            }
             if(next.isExecute() && settleTimer != -1l){
                 log.info("Delay requested for instruction, holding it until the DOM has settled.");
                 next.message().put("delayed", true);
@@ -260,7 +288,10 @@ public class InstructionDispatcher {
     private void write(Outgoing outgoing){
         JsonObject message = outgoing.message().put("pageId", client.pageId());
         if(outgoing.isExecute()){
-            sent.put(message.getString("id"), outgoing);
+            String id = message.getString("id");
+            sent.put(id, outgoing);
+            inFlight = id;
+            startDoneTimer(id, message);
             guidance().sendExecute(message);
         }else{
             guidance().sendQueued(message);
@@ -285,9 +316,14 @@ public class InstructionDispatcher {
      * @return true if the message was an EXECUTE this dispatcher sent, false for anything else.
      */
     public boolean onNotDelivered(JsonObject notDelivered){
-        Outgoing lost = sent.remove(notDelivered.getString("replyTo"));
+        String id = notDelivered.getString("replyTo");
+        Outgoing lost = sent.remove(id);
         if(lost == null || cancelled){
             return lost != null;
+        }
+        stopDoneTimer(id);
+        if(id.equals(inFlight)){
+            inFlight = null;
         }
 
         JsonObject message = lost.message();
@@ -301,15 +337,86 @@ public class InstructionDispatcher {
                 pump();
             }
             case UNCOUNT_AND_REOBSERVE -> {
-                guidance().failReply(message.getString("id"), "OdoX could not deliver it: " + notDelivered.getString("reason"));
+                guidance().failReply(id, "OdoX could not deliver it: " + notDelivered.getString("reason"));
                 client.getRequestManager().onInstructionLost(message, lost.followUp());
+                pump();
             }
         }
         return true;
     }
 
     /**
-     * An EXECUTE message has actually gone to OdoX. Completes its future if it expects no reply, and tells the harness.
+     * OdoX answered a sent EXECUTE: EXECUTE_DONE, or EXECUTION_RESULT for a multi-step instruction. The next
+     * instruction may go out, and the harness is told.
+     */
+    private void onReply(String id, AsyncResult<JsonObject> reply){
+        Outgoing outgoing = sent.remove(id);
+        if(outgoing == null){
+            return; //Already dealt with: not delivered, lost for want of a reply, or the task is over.
+        }
+        stopDoneTimer(id);
+        if(id.equals(inFlight)){
+            inFlight = null;
+        }
+        if(reply.succeeded()){
+            client.getRequestManager().onExecutionDone(outgoing.message(), reply.result());
+        }
+        pump();
+    }
+
+    /**
+     * Limit how long OdoX may take to report an EXECUTE done: {@link DispatchPolicy#doneTimeout}, plus the duration of a
+     * {@code wait} action, which OdoX reports done only once it has waited.
+     */
+    private void startDoneTimer(String id, JsonObject message){
+        stopDoneTimer(id);
+        long timeout = policy().doneTimeout() + UnchartedStepObserver.waitMillis(message.getJsonObject("unchartedAction"));
+        doneTimers.put(id, client.vertx().setTimer(timeout, timer->onDoneTimeout(id, timeout)));
+    }
+
+    private void stopDoneTimer(String id){
+        Long timer = doneTimers.remove(id);
+        if(timer != null){
+            client.vertx().cancelTimer(timer);
+        }
+    }
+
+    private void stopDoneTimers(){
+        doneTimers.values().forEach(client.vertx()::cancelTimer);
+        doneTimers.clear();
+    }
+
+    /**
+     * OdoX hasn't reported an EXECUTE done in time. A policy that waits for EXECUTE_DONE treats the instruction as lost;
+     * one that doesn't, the charted one, only logs it: charted agents advance on the effects they observe, never on
+     * EXECUTE_DONE.
+     */
+    private void onDoneTimeout(String id, long timeout){
+        doneTimers.remove(id);
+        Outgoing outgoing = sent.get(id);
+        if(outgoing == null || cancelled){
+            return;
+        }
+
+        if(!policy().awaitDone()){
+            log.warn("OdoX has not reported {} {} done after {} ms; the agent goes on regardless.",
+                    outgoing.message().getString("action"), id, timeout);
+            return;
+        }
+
+        log.warn("OdoX did not report {} {} done within {} ms, treating it as lost.", outgoing.message().getString("action"), id, timeout);
+        sent.remove(id);
+        if(id.equals(inFlight)){
+            inFlight = null;
+        }
+        guidance().failReply(id, "OdoX did not report it done within %d ms".formatted(timeout));
+        client.getRequestManager().onInstructionLost(outgoing.message(), outgoing.followUp());
+        pump();
+    }
+
+    /**
+     * An EXECUTE message has actually gone to OdoX. Completes its future if it expects no EXECUTION_RESULT, and tells the
+     * harness.
      */
     public void onExecuteSent(JsonObject message){
         Promise<JsonObject> sent = awaitingSend.remove(message.getString("id"));
@@ -355,6 +462,8 @@ public class InstructionDispatcher {
         }
         queue.clear();
         sent.clear();
+        stopDoneTimers();
+        inFlight = null;
 
         guidance().failPending("The task ended");
         client.getEventConnectionManager().failPending("The task ended");

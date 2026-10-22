@@ -50,8 +50,8 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
     }
 
     /**
-     * Replies (EXECUTION_RESULT, PATH_COMPLETE_ACK, NAVIGATION_OPTIONS_SHOW_RESULT, CLEAR_NAVIGATION_OPTIONS_RESULT)
-     * complete their request; they are recorded in the history here.
+     * Replies (EXECUTE_DONE, EXECUTION_RESULT, NAVIGATION_OPTIONS_SHOW_RESULT, CLEAR_NAVIGATION_OPTIONS_RESULT) complete
+     * their request; they are recorded in the history here.
      */
     @Override
     protected void onReply(JsonObject message) {
@@ -161,10 +161,11 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
     }
 
     /**
-     * Wait for the EXECUTION_RESULT of an EXECUTE message the dispatcher sends later.
-     * @return completes with the EXECUTION_RESULT.
+     * Wait for OdoX's reply to an EXECUTE message the dispatcher sends later: EXECUTE_DONE, or EXECUTION_RESULT for a
+     * multi-step instruction.
+     * @return completes with the reply.
      */
-    public Future<JsonObject> expectExecutionResult(JsonObject executionRequest){
+    public Future<JsonObject> expectReplyTo(JsonObject executionRequest){
         return expectReply(executionRequest);
     }
 

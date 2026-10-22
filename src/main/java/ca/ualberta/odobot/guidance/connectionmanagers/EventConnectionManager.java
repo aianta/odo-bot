@@ -37,8 +37,9 @@ public class EventConnectionManager extends AbstractConnectionManager implements
         super(client, Channel.EVENT);
 
         eventProcessor.setOnEntity(entity -> log.info("online timeline got: {}", entity.symbol()));
-        eventProcessor.setOnEntity(client.getRequestManager()::onObservation);
-        eventProcessor.setOnUnchartedObservation(client.getRequestManager()::onUnchartedObservation);
+        //Look the request manager up for each entity, rather than binding the one the client has now, which may be replaced.
+        eventProcessor.setOnEntity(entity->client.getRequestManager().onObservation(entity));
+        eventProcessor.setOnUnchartedObservation(observation->client.getRequestManager().onUnchartedObservation(observation));
 
         stepObserver = new UnchartedStepObserver(client.vertx(), this::requestScreenshot, eventProcessor::addUnchartedObservation);
     }
@@ -50,7 +51,7 @@ public class EventConnectionManager extends AbstractConnectionManager implements
     }
 
     /**
-     * Observes an uncharted step that has just been sent to OdoX, see {@link UnchartedStepObserver}.
+     * Observes an uncharted step OdoX has just reported done, or one that never ran, see {@link UnchartedStepObserver}.
      * @param step the step instruction as sent.
      */
     public void observeUnchartedStep(JsonObject step){

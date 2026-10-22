@@ -12,11 +12,12 @@ import java.util.function.Consumer;
 /**
  * Makes the observation of each uncharted step, as OSWorld does: execute the action, wait, take a screenshot.
  *
- * <p>Observing starts once a step has been sent to OdoX. Every event OdoX sends restarts a quiet period; when the page has been quiet
- * for {@link #quietPeriod} the screenshot is requested, and the resulting {@link Observation} (trigger
- * {@link Observation.Trigger#UNCHARTED_ACTION}) goes to the uncharted agent. So every step yields exactly one screenshot, taken after
- * the step, once the page has settled, whatever events the step produced, including none. A page that never goes quiet is
- * screenshotted after {@link #maxWait}, and a {@code wait} action is never observed before its duration has elapsed.</p>
+ * <p>Observing starts once OdoX reports the step done (EXECUTE_DONE), so the action has run, and a {@code wait} action
+ * has already waited, before the observer's clock starts. Every event OdoX sends restarts a quiet period; when the page
+ * has been quiet for {@link #quietPeriod} the screenshot is requested, and the resulting {@link Observation} (trigger
+ * {@link Observation.Trigger#UNCHARTED_ACTION}) goes to the uncharted agent. So every step yields exactly one screenshot,
+ * taken after the step, once the page has settled, whatever events the step produced, including none. A page that never
+ * goes quiet is screenshotted after {@link #maxWait}.</p>
  *
  * <p>Calls must come from a single Vert.x context; the timers it sets run there too.</p>
  */
@@ -35,7 +36,7 @@ public class UnchartedStepObserver {
     public long quietPeriod = 1500;
 
     /**
-     * How long, in milliseconds, after the step was sent the screenshot is taken even if the page is still busy.
+     * How long, in milliseconds, after the step was done the screenshot is taken even if the page is still busy.
      */
     public long maxWait = 15000;
 
@@ -57,8 +58,7 @@ public class UnchartedStepObserver {
      * The step being observed, as sent to OdoX, or null.
      */
     private JsonObject step = null;
-    private long sentAt;
-    private long notBefore;
+    private long doneAt;
     private long timer = -1;
     private int screenshotRequests = 0;
 
@@ -73,19 +73,19 @@ public class UnchartedStepObserver {
     }
 
     /**
-     * Starts observing a step that has just been sent to OdoX. A step still being observed is abandoned.
+     * Starts observing a step OdoX has just reported done, or one that never ran and is observed again (see
+     * {@link RequestManager#onInstructionLost}). A step still being observed is abandoned.
      * @param step the step instruction as sent, with its action under {@code unchartedAction}.
      */
     public void observe(JsonObject step){
         if(this.step != null){
-            log.warn("Uncharted step {} was sent before step {} was observed, abandoning the observation of step {}.",
+            log.warn("Uncharted step {} was done before step {} was observed, abandoning the observation of step {}.",
                     step.getValue("step"), this.step.getValue("step"), this.step.getValue("step"));
         }
         this.step = step;
-        this.sentAt = System.currentTimeMillis();
-        this.notBefore = sentAt + waitMillis(step.getJsonObject("unchartedAction"));
+        this.doneAt = System.currentTimeMillis();
         this.screenshotRequests = 0;
-        schedule(Math.max(quietPeriod, notBefore - sentAt));
+        schedule(quietPeriod);
     }
 
     /**
@@ -96,8 +96,8 @@ public class UnchartedStepObserver {
             return;
         }
         long now = System.currentTimeMillis();
-        long deadline = sentAt + maxWait;
-        schedule(Math.max(0, Math.min(Math.max(quietPeriod, notBefore - now), deadline - now)));
+        long deadline = doneAt + maxWait;
+        schedule(Math.max(0, Math.min(quietPeriod, deadline - now)));
     }
 
     /**
@@ -113,7 +113,7 @@ public class UnchartedStepObserver {
         cancelTimer();
         Observation observation = new Observation(Observation.Trigger.UNCHARTED_ACTION, step.getJsonObject("unchartedAction"),
                 userLocation, Screenshot.fromBase64(base64Screenshot), System.currentTimeMillis());
-        log.info("Observed uncharted step {} {} ms after it was sent.", step.getValue("step"), observation.timestamp() - sentAt);
+        log.info("Observed uncharted step {} {} ms after it was done.", step.getValue("step"), observation.timestamp() - doneAt);
         step = null;
         screenshotRequests = 0;
         onObservation.accept(observation);
@@ -140,11 +140,6 @@ public class UnchartedStepObserver {
         if(step == null){
             return;
         }
-        long now = System.currentTimeMillis();
-        if(screenshotRequests == 0 && now < notBefore){
-            schedule(notBefore - now);
-            return;
-        }
         if(screenshotRequests >= maxScreenshotRequests){
             log.error("OdoX did not answer {} screenshot requests for uncharted step {}, giving up on observing it.",
                     screenshotRequests, step.getValue("step"));
@@ -167,7 +162,8 @@ public class UnchartedStepObserver {
     }
 
     /**
-     * How long a wait action makes OdoX wait, in milliseconds, or 0 for other actions.
+     * How long a wait action makes OdoX wait, in milliseconds, or 0 for other actions. The dispatcher allows for it when
+     * it waits for the step's EXECUTE_DONE.
      */
     static long waitMillis(JsonObject action){
         if(action == null || !"wait".equals(action.getString("action"))){

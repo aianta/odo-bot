@@ -96,12 +96,21 @@ class UnchartedStepObserverTest {
     }
 
     @Test
-    void aWaitIsNotObservedBeforeItsDuration() throws Exception {
-        long sent = System.currentTimeMillis();
+    void aWaitIsNotWaitedForAgainOnceItIsDone() throws Exception {
+        //OdoX reports a wait done once it has waited, so only the quiet period remains.
+        long done = System.currentTimeMillis();
         run(()->observer.observe(step(1, new JsonObject().put("action", "wait").put("seconds", 0.6))));
 
         waitUntil(()->requests.size() == 1);
-        assertTrue(requests.get(0) - sent >= 600, "requested during the wait");
+        long elapsed = requests.get(0) - done;
+        assertTrue(elapsed >= 150 && elapsed < 550, "requested after " + elapsed + " ms");
+    }
+
+    @Test
+    void aWaitActionsDurationIsKnown() {
+        assertEquals(600, UnchartedStepObserver.waitMillis(new JsonObject().put("action", "wait").put("seconds", 0.6)));
+        assertEquals(2000, UnchartedStepObserver.waitMillis(new JsonObject().put("action", "wait")));
+        assertEquals(0, UnchartedStepObserver.waitMillis(click()));
     }
 
     @Test

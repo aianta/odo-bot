@@ -46,6 +46,7 @@ class RequestManagerStepLimitTest {
 
     private Vertx vertx;
     private Context context;
+    private OdoClient client;
     private RequestManager requestManager;
     private final InstructionDispatcherPacingTest.RecordingConnection guidance = new InstructionDispatcherPacingTest.RecordingConnection();
     private final ScriptedAgent agent = new ScriptedAgent();
@@ -55,7 +56,7 @@ class RequestManagerStepLimitTest {
     void setUp() throws Exception {
         vertx = Vertx.vertx();
         context = vertx.getOrCreateContext();
-        OdoClient client = new OdoClient(UUID.randomUUID(), vertx);
+        client = new OdoClient(UUID.randomUUID(), vertx);
         InstructionDispatcherPacingTest.usePauses(client, 1, 1);
         requestManager = client.getRequestManager();
         run(()->{
@@ -81,14 +82,26 @@ class RequestManagerStepLimitTest {
         return guidance.sent.stream().filter(message->"EXECUTE".equals(message.getString("type"))).count();
     }
 
+    /**
+     * OdoX reports the n-th EXECUTE done. An uncharted step waits for the one before it to be done.
+     */
+    private void reportDone(int n) throws Exception {
+        JsonObject execute = guidance.sent.stream().filter(message->"EXECUTE".equals(message.getString("type"))).toList().get(n - 1);
+        run(()->client.route(ChannelRoutingTest.reply(execute, "EXECUTE_DONE").put("status", "ok")));
+    }
+
     @Test
     void stepsUpToTheLimitAreExecuted() throws Exception {
         start(3);
         for(int i = 0; i < 3; i++){
             run(()->agent.emit.accept(new InstructionDispatcherPacingTest.TestInstruction()));
         }
+        for(int i = 1; i <= 3; i++){
+            long sent = i;
+            waitUntil(()->executeMessages() == sent);
+            reportDone(i);
+        }
 
-        waitUntil(()->executeMessages() == 3);
         assertFalse(evaluation.future().isComplete());
         assertEquals(3, requestManager.getSteps());
     }
@@ -100,6 +113,7 @@ class RequestManagerStepLimitTest {
             run(()->agent.emit.accept(new InstructionDispatcherPacingTest.TestInstruction()));
             long sent = i;
             waitUntil(()->executeMessages() == sent);
+            reportDone(i);
         }
         run(()->agent.emit.accept(new InstructionDispatcherPacingTest.TestInstruction()));
 

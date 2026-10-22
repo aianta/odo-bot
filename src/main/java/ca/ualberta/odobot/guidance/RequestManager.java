@@ -465,18 +465,39 @@ public class RequestManager {
     }
 
     /**
-     * An EXECUTE message has just been sent to OdoX. Uncharted steps are observed from here, see {@link UnchartedStepObserver}.
+     * An EXECUTE message has just been sent to the page it is addressed to.
      */
     public void onExecutionInstructionSent(JsonObject instruction){
+        log.info("Task {}: sent {} {} to page {}.", evalId, instruction.getString("action"), instruction.getString("id"), instruction.getString("pageId"));
+    }
+
+    /**
+     * OdoX reported an instruction done (EXECUTE_DONE), or answered it with its EXECUTION_RESULT.
+     *
+     * <p>An uncharted step is observed from here, now that it has run, see {@link UnchartedStepObserver}. Charted agents
+     * are not told: they advance on the effects they observe on the timeline (e.g. the network request a click is known
+     * to cause), so EXECUTE_DONE is only a sanity check for them, and a failure is logged.</p>
+     *
+     * @param reply EXECUTE_DONE, whose status is "ok", "failed" or "page-gone", or an EXECUTION_RESULT.
+     */
+    public void onExecutionDone(JsonObject instruction, JsonObject reply){
+        String status = reply.getString("status", "ok");
+        if(!"ok".equals(status)){
+            log.warn("Task {}: OdoX reported {} {} {}{}.", evalId, instruction.getString("action"), instruction.getString("id"), status,
+                    reply.getString("reason") == null? "" : ": " + reply.getString("reason"));
+        }
+        if(ended){
+            return;
+        }
         if("uncharted_step".equals(instruction.getString("action"))){
             client.getEventConnectionManager().observeUnchartedStep(instruction);
         }
     }
 
     /**
-     * OdoX could not deliver an instruction, and the policy drops it, see
-     * {@link DispatchPolicy.LostInstruction#UNCOUNT_AND_REOBSERVE}. It never ran, so it doesn't count as a step, and an
-     * uncharted step is observed again from now, so the agent decides anew from the page on the screen.
+     * OdoX could not deliver an instruction, or never reported it done, and the policy drops it, see
+     * {@link DispatchPolicy.LostInstruction#UNCOUNT_AND_REOBSERVE}. It isn't counted as a step, and an uncharted step is
+     * observed again from now, so the agent decides anew from the page on the screen.
      */
     public void onInstructionLost(JsonObject instruction, boolean followUp){
         if(ended){
