@@ -61,7 +61,7 @@ class RequestManagerStepLimitTest {
         client.getGuidanceConnectionManager().followUpPause = 1;
         requestManager = client.getRequestManager();
         run(()->{
-            client.setGuidance(guidance);
+            client.getGuidanceConnectionManager().updateConnection(guidance);
             requestManager.setEvaluationComplete(evaluation);
         });
     }

@@ -231,14 +231,13 @@ public class TaskVerticle extends AbstractVerticle {
     }
 
     /**
-     * @return completes with the task's OdoX client once its control and event sockets are connected, or fails after
-     * the connect timeout.
+     * @return completes with the task's OdoX client once its socket is connected, or fails after the connect timeout.
      */
     private Future<OdoClient> awaitOdoX(){
         long timeoutMs = request.getLong("odoXConnectTimeout", ODOX_CONNECT_TIMEOUT_MS);
         Promise<OdoClient> connected = Promise.promise();
         long timer = vertx.setTimer(timeoutMs, id->connected.tryFail(new TimeoutException(
-                "OdoX did not connect its control and event sockets within %d ms".formatted(timeoutMs))));
+                "OdoX did not connect its socket within %d ms".formatted(timeoutMs))));
         sockets.ready().onComplete(ready->{
             vertx.cancelTimer(timer);
             if(ready.succeeded()){

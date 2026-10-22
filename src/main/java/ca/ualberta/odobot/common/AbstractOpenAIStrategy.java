@@ -175,11 +175,13 @@ public abstract class AbstractOpenAIStrategy {
     }
 
     /**
-     * Remove any reasoning a server returned inside the answer, since callers expect the bare answer.
+     * Remove any reasoning a server returned inside the answer, and the whitespace around it, since callers expect the
+     * bare answer. Servers that return the reasoning separately, such as OpenRouter, can still leave the blank lines
+     * that followed it, e.g. "\n\n1" for a number.
      */
     static String stripReasoning(String content){
         if(!content.contains("<think>")){
-            return content;
+            return content.strip();
         }
         String text = THINK_BLOCK.matcher(content).replaceAll("");
         text = UNCLOSED_THINK.matcher(text).replaceAll("");

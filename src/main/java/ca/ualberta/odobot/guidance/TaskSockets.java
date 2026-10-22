@@ -11,7 +11,7 @@ import org.slf4j.LoggerFactory;
 import java.util.UUID;
 
 /**
- * The OdoX sockets of one task. Each task listens on a port of its own, so the only OdoX that connects is the one in
+ * The OdoX socket of one task. Each task listens on a port of its own, so the only OdoX that connects is the one in
  * the task's browser. Its clientId, the extension instance id, is chosen before the browser starts, and sockets with
  * any other clientId are refused.
  *
@@ -44,7 +44,7 @@ public final class TaskSockets {
     }
 
     /**
-     * @return completes with the task's client once its control and event sockets are connected.
+     * @return completes with the task's client once its OdoX has connected.
      */
     public Future<OdoClient> ready(){
         return ready.future();
@@ -58,58 +58,50 @@ public final class TaskSockets {
     }
 
     /**
-     * Accept a websocket on the task's listener. OdoX puts its clientId and the socket's source in the URL, e.g.
-     * wss://host/?clientId=&lt;uuid&gt;&amp;source=ControlSocket, so a socket of another client is rejected here, before
-     * any message. Older OdoX sends neither; its sockets are checked on their first message, see
-     * {@link WebSocketConnection}.
+     * Accept a websocket on the task's listener. OdoX puts its clientId and protocol version in the URL, e.g.
+     * wss://host/?clientId=&lt;uuid&gt;&amp;protocol=2, so a socket of another client, or of an OdoX that speaks another
+     * protocol, is rejected here, before any message.
      */
     public void accept(ServerWebSocket socket){
         UUID socketClientId = WebSocketConnection.clientIdFromUri(socket.uri());
-        Source source = WebSocketConnection.sourceFromUri(socket.uri());
+        Integer protocol = WebSocketConnection.protocolFromUri(socket.uri());
 
-        if(socketClientId != null && !accepts(socketClientId)){
+        if(socketClientId == null || !accepts(socketClientId)){
             log.warn("[{}] Rejecting a websocket of OdoX client {} ({}), which is not this task's.", client.label(), socketClientId, socket.remoteAddress());
             socket.reject(403);
             return;
         }
 
-        new WebSocketConnection(client.vertx(), socket, this, socketClientId, source);
+        if(protocol == null || protocol != WebSocketConnection.PROTOCOL_VERSION){
+            log.warn("[{}] Rejecting a websocket of OdoX speaking protocol {}, OdoBot speaks protocol {}. Is OdoX out of date?",
+                    client.label(), protocol, WebSocketConnection.PROTOCOL_VERSION);
+            socket.reject(403);
+            return;
+        }
+
+        bind(new WebSocketConnection(client.vertx(), socket, client));
     }
 
     /**
-     * Bind a socket to the task's client. A socket for a source that is already bound replaces it, e.g. when OdoX
-     * reconnects.
+     * Bind a socket to the task's client. It replaces any socket bound before, e.g. when OdoX reconnects.
      *
-     * @return the task's client, or null if the socket's clientId is not the task's, in which case the caller closes it.
+     * @return the task's client.
      */
-    public OdoClient bind(UUID id, Source source, WebSocketConnection connection){
-        if(!accepts(id)){
-            log.warn("[{}] Refusing a {} of OdoX client {}, which is not this task's.", client.label(), source.name, id);
-            return null;
-        }
+    public OdoClient bind(WebSocketConnection connection){
+        client.setSocket(connection);
+        log.info("[{}] Bound websocket", client.label());
 
-        switch (source){
-            case EVENT_SOCKET -> client.setEvent(connection);
-            case CONTROL_SOCKET -> client.setControl(connection);
-            case GUIDANCE_SOCKET -> client.setGuidance(connection);
-        }
-        log.info("[{}][{}] Bound websocket", client.label(), source.name);
-
-        //The task sends on the control and event sockets. The guidance socket reconnects with every page load, so it is
-        //not waited for.
-        if(client.getControl().isConnected() && client.getEvent().isConnected() && ready.tryComplete(client)){
+        if(ready.tryComplete(client)){
             log.info("[{}] OdoX client ready", client.label());
         }
         return client;
     }
 
     /**
-     * Close the task's sockets, and fail {@link #ready} if they never connected.
+     * Close the task's socket, and fail {@link #ready} if it never connected.
      */
     public void close(){
         ready.tryFail("OdoX client %s was closed before it connected".formatted(clientId));
-        client.getControl().close();
-        client.getEvent().close();
-        client.getGuidance().close();
+        client.getSocket().close();
     }
 }

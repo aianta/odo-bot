@@ -1,8 +1,9 @@
 package ca.ualberta.odobot.guidance.connectionmanagers;
 
+import ca.ualberta.odobot.guidance.Channel;
+import ca.ualberta.odobot.guidance.ChannelConnection;
 import ca.ualberta.odobot.guidance.OdoClient;
 import ca.ualberta.odobot.guidance.RequestManager;
-import ca.ualberta.odobot.guidance.WebSocketConnection;
 import ca.ualberta.odobot.guidance.instructions.Instruction;
 import io.vertx.core.Context;
 import io.vertx.core.Vertx;
@@ -28,11 +29,15 @@ public class GuidanceConnectionManagerPacingTest {
     private static final UUID EXECUTION_ID = UUID.randomUUID();
 
     /**
-     * A connected guidance socket that records what is sent over it, and when.
+     * An open guidance channel that records what is sent over it, and when.
      */
-    public static class RecordingConnection extends WebSocketConnection {
+    public static class RecordingConnection extends ChannelConnection {
         public final List<Long> sentAt = new CopyOnWriteArrayList<>();
         public final List<JsonObject> sent = new CopyOnWriteArrayList<>();
+
+        public RecordingConnection(){
+            super(Channel.GUIDANCE, null, ()->true);
+        }
 
         @Override
         public boolean isConnected() {
@@ -96,7 +101,7 @@ public class GuidanceConnectionManagerPacingTest {
         manager.instructionPause = 600;
         manager.followUpPause = 200;
         //The manager runs on the context its socket was bound on.
-        run(()->client.setGuidance(connection));
+        run(()->manager.updateConnection(connection));
     }
 
     @AfterEach

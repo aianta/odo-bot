@@ -4,6 +4,7 @@ import io.netty.handler.codec.http.QueryStringDecoder;
 import io.vertx.core.Vertx;
 import io.vertx.core.buffer.Buffer;
 import io.vertx.core.http.ServerWebSocket;
+import io.vertx.core.json.DecodeException;
 import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,13 +13,25 @@ import java.util.*;
 import java.util.function.Consumer;
 
 /**
- * Low-level wrapper around WebSocket connections.
+ * Low-level wrapper around OdoX's socket to OdoBot. There is one per client; its messages are split into channels by
+ * {@link OdoClient#route}.
  *
+ * <p>OdoX puts its clientId and protocol version in the socket's URL, e.g.
+ * {@code wss://host/?clientId=<uuid>&protocol=2}, so the socket is bound to its client when it is accepted, see
+ * {@link TaskSockets#accept}.</p>
  *
+ * <p>Every message, both ways, is a flat JSON object with {@code v} (the protocol version), {@code channel},
+ * {@code type} and {@code id}, plus {@code replyTo} on a reply, {@code cause} on guidance feedback OdoX sends unasked,
+ * and the fields of its type.</p>
  */
 public class WebSocketConnection {
 
     private static final Logger log = LoggerFactory.getLogger(WebSocketConnection.class);
+
+    /**
+     * The version of the protocol OdoBot speaks with OdoX. Sockets of any other version are refused.
+     */
+    public static final int PROTOCOL_VERSION = 2;
 
     private static final long PING_PERIOD_MS = 600000; //Send pings every 10 seconds (10,000ms)
 
@@ -28,14 +41,9 @@ public class WebSocketConnection {
     private Vertx vertx;
 
     /**
-     * The task this socket was accepted for. Null for a placeholder connection.
+     * The client this socket belongs to. Null for a placeholder connection.
      */
-    private TaskSockets sockets;
-    private boolean isBound = false;
-
-    private OdoClient boundClient = null;
-
-    private Source boundSource = null;
+    private OdoClient client;
 
     private boolean isConnected = false;
 
@@ -44,17 +52,12 @@ public class WebSocketConnection {
     public WebSocketConnection(){}
 
     /**
-     * @param sockets the task the socket was accepted for.
-     * @param clientId the clientId from the socket's URL, or null if it had none. Then the socket is bound on its first message.
-     * @param source the source from the socket's URL, or null if it had none.
+     * @param client the client the socket was accepted for.
      */
-    public WebSocketConnection(Vertx vertx, ServerWebSocket socket, TaskSockets sockets, UUID clientId, Source source){
+    public WebSocketConnection(Vertx vertx, ServerWebSocket socket, OdoClient client){
         this.vertx = vertx; //Get a reference to the vertx instance, we'll need this to ping/pong active sockets.
-        this.sockets = sockets;
+        this.client = client;
         handleConnection(socket);
-        if(clientId != null && source != null){
-            bind(clientId, source);
-        }
     }
 
     /**
@@ -99,10 +102,10 @@ public class WebSocketConnection {
     }
 
     /**
-     * @return how logs name this socket: its client and source, as far as they are known.
+     * @return how logs name this socket: its client, as far as it is known.
      */
     private String label(){
-        return "%s][%s".formatted(boundClient == null? "unbound" : boundClient.label(), boundSource == null? "?" : boundSource.name);
+        return client == null? "unbound" : client.label();
     }
 
     private void onError(Throwable error){
@@ -132,52 +135,19 @@ public class WebSocketConnection {
         return isConnected;
     }
 
-    /**
-     * Bind this socket to the task's client, see {@link TaskSockets#bind}. A socket with another clientId is closed.
-     */
-    private void bind(UUID clientId, Source source){
-        OdoClient client = sockets.bind(clientId, source, this);
-        if(client == null){
-            close();
+    private void onMessage(Buffer buffer){
+        JsonObject message;
+        try{
+            message = buffer.toJsonObject();
+        }catch (DecodeException e){
+            log.warn("[{}] Dropping a message that isn't a JSON object: {}", label(), e.getMessage());
             return;
         }
-        boundSource = source;
-        boundClient = client;
-        isBound = true;
-    }
 
-    /**
-     * Messages from the extension carry, at minimum, the 'source' and 'clientId' fields. A socket whose URL had no clientId
-     * (an older OdoX) is bound to its client by its first message, see {@link TaskSockets#bind}. A socket whose clientId
-     * is not the task's is closed.
-     *
-     * @param buffer
-     */
-    private void onMessage(Buffer buffer){
-        JsonObject message = buffer.toJsonObject();
-
-        if(!isBound){ //Associate this WebSocket connection with its client.
-            UUID clientId = parseUuid(message.getString("clientId"));
-            Source source = Source.fromName(message.getString("source"));
-
-            if(clientId == null || source == null){
-                log.warn("Closing websocket, its first message has no valid clientId and source: {} {}", message.getString("clientId"), message.getString("source"));
-                close();
-                return;
-            }
-
-            bind(clientId, source);
-            if(!isBound){
-                return;
-            }
-            log.info("Underlying message type: {} ", message.getString("type"));
-
-        }else if(message.containsKey("clientId") && !boundClient.id().toString().equalsIgnoreCase(message.getString("clientId"))){
-            log.warn("[{}] Message has clientId {}, keeping the socket bound to {}", label(), message.getString("clientId"), boundClient.id());
-        }
-
-        if(boundSource != Source.EVENT_SOCKET){
-            log.info("[{}] got message:\n{}", label(), message.encodePrettily().substring(0, Math.min(message.encodePrettily().length(), 150)));
+        //Events are many and large, so only the other messages are logged.
+        if(!Channel.EVENT.name.equals(message.getString("channel"))){
+            String encoded = message.encodePrettily();
+            log.info("[{}] got message:\n{}", label(), encoded.substring(0, Math.min(encoded.length(), 150)));
         }
 
         if(messageConsumer == null){
@@ -192,17 +162,25 @@ public class WebSocketConnection {
     }
 
     /**
-     * @return the clientId in the query of a websocket URL, e.g. {@code /?clientId=<uuid>&source=ControlSocket}, or null if it has no valid one.
+     * @return the clientId in the query of a websocket URL, e.g. {@code /?clientId=<uuid>&protocol=2}, or null if it has no valid one.
      */
     public static UUID clientIdFromUri(String uri){
         return parseUuid(queryParameter(uri, "clientId"));
     }
 
     /**
-     * @return the source in the query of a websocket URL, or null if it has no valid one.
+     * @return the protocol version in the query of a websocket URL, or null if it has no valid one.
      */
-    public static Source sourceFromUri(String uri){
-        return Source.fromName(queryParameter(uri, "source"));
+    public static Integer protocolFromUri(String uri){
+        String value = queryParameter(uri, "protocol");
+        if(value == null){
+            return null;
+        }
+        try{
+            return Integer.parseInt(value);
+        }catch (NumberFormatException e){
+            return null;
+        }
     }
 
     private static String queryParameter(String uri, String name){

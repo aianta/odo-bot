@@ -1,7 +1,8 @@
 package ca.ualberta.odobot.guidance.connectionmanagers;
 
+import ca.ualberta.odobot.guidance.Channel;
+import ca.ualberta.odobot.guidance.ChannelConnection;
 import ca.ualberta.odobot.guidance.OdoClient;
-import ca.ualberta.odobot.guidance.WebSocketConnection;
 import ca.ualberta.odobot.guidance.feedback.AlternateXpath;
 import ca.ualberta.odobot.guidance.feedback.UnresolvableXpath;
 import ca.ualberta.odobot.guidance.instructions.Instruction;
@@ -15,13 +16,23 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
+/**
+ * The guidance channel: instructions for the page and the page's feedback, which OdoX's background passes to and from
+ * the page. The channel is open only while OdoX has a page ready (PAGE_READY), so instructions wait while the page
+ * navigates.
+ */
 public class GuidanceConnectionManager extends AbstractConnectionManager implements ConnectionManager {
 
     private static final Logger log = LoggerFactory.getLogger(GuidanceConnectionManager.class);
     private static final String SOURCE = "GuidanceConnectionManager";
-    private Map<String, Promise> activePromises = new LinkedHashMap<>();
+
+    /**
+     * EXECUTE messages that expect no reply, by id. Their futures complete once they have actually gone out.
+     */
+    private final Map<String, Promise<JsonObject>> awaitingSend = new ConcurrentHashMap<>();
 
     public long timeoutTimer = -1l;
 
@@ -57,50 +68,39 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
      */
     private final Set<Long> pauseTimers = new HashSet<>();
 
-    private void printActivePromises(){
-        log.info("ActivePromises:");
-        activePromises.forEach((key,v)->log.info("{}:{}", key,v));
-    }
-
     /**
      * The context this socket's messages are handled on. Agent logic runs on it as well.
      */
     private Context context = null;
 
     public GuidanceConnectionManager(OdoClient client){
-        super(client);
+        super(client, Channel.GUIDANCE);
     }
 
     @Override
-    public void updateConnection(WebSocketConnection connection) {
+    public void updateConnection(ChannelConnection connection) {
         super.updateConnection(connection);
         context = Vertx.currentContext();
     }
 
+    /**
+     * Replies (EXECUTION_RESULT, PATH_COMPLETE_ACK, NAVIGATION_OPTIONS_SHOW_RESULT, CLEAR_NAVIGATION_OPTIONS_RESULT)
+     * complete their request; they are recorded in the history here.
+     */
+    @Override
+    protected void onReply(JsonObject message) {
+        super.addHistory(message);
+    }
+
     public void onMessage(JsonObject message){
         switch (message.getString("type")){
-            case "NAVIGATION_OPTIONS_SHOW_RESULT":
-                Promise promise = activePromises.get("NAVIGATION_OPTIONS_SHOW_RESULT");
-                promise.complete(message);
-                activePromises.remove("NAVIGATION_OPTIONS_SHOW_RESULT");
-                break;
-            case "PATH_COMPLETE_ACK":
-                activePromises.get("PATH_COMPLETE_ACK").complete(message);
-                activePromises.remove("PATH_COMPLETE_ACK");
+            case "PAGE_READY":
                 super.addHistory(message);
+                client.setPageReady(true);
                 break;
-            case  "EXECUTION_RESULT":
-                printActivePromises();
-                // Capture the promise object currently associated with the awaitng execution result.
-                final Promise _promise = activePromises.get("EXECUTION_RESULT");
-                // Let any listeners know that the execution result they're waiting for is complete.
-                activePromises.get("EXECUTION_RESULT").complete(message);
-                if (_promise == activePromises.get("EXECUTION_RESULT")){
-                    // If those listeners replaced the execution result promise with some new object, don't remove it.
-                    // But if the listeners didn't touch the execution result promise go ahead and remove it now.
-                    activePromises.remove("EXECUTION_RESULT");
-                }
+            case "PAGE_GONE":
                 super.addHistory(message);
+                client.setPageReady(false);
                 break;
 
             case "UNRESOLVABLE_XPATH":
@@ -127,12 +127,15 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
 
                 JsonObject confirmation = new JsonObject()
                         .put("type", "ALTERNATE_XPATH_CONFIRMED")
+                        .put("replyTo", message.getString("id"))
                         .put("source", SOURCE)
                         .put("pathsRequestId", client.getRequestManager().getExecutionId().toString())
                         .put("alternateXpath", alternateXpath); //Confirm which xpath was registered.
                 send(confirmation);
 
                 break;
+            default:
+                log.warn("Unexpected message of type {} on the guidance channel.", message.getString("type"));
         }
     }
 
@@ -142,23 +145,11 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                 .put("source", SOURCE)
                 .put("pathsRequestId", client.getRequestManager().getExecutionId().toString());
 
-        Promise<JsonObject> promise = Promise.promise();
-        activePromises.put("CLEAR_NAVIGATION_OPTIONS_RESULT", promise);
-        printActivePromises();
-
-        send(clearNavigationOptionsRequest);
-
-        return promise.future();
+        return request(clearNavigationOptionsRequest);
     }
 
     public Future<JsonObject> notifyPathComplete(){
-        JsonObject notifyPathCompleteRequest = makeNotifyPathCompleteRequest(SOURCE);
-        Promise<JsonObject> promise = Promise.promise();
-        activePromises.put("PATH_COMPLETE_ACK", promise);
-        printActivePromises();
-
-        send(notifyPathCompleteRequest);
-        return promise.future();
+        return request(makeNotifyPathCompleteRequest(SOURCE));
     }
 
     public Future<JsonObject> showNavigationOptions(JsonObject navigationOptions){
@@ -168,12 +159,10 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                 .put("pathsRequestId", client.getRequestManager().getExecutionId().toString())
                 .mergeIn(navigationOptions);
 
-        Promise<JsonObject> promise = Promise.promise();
-        activePromises.put("NAVIGATION_OPTIONS_SHOW_RESULT", promise);
-        printActivePromises();
+        Future<JsonObject> reply = expectReply(showNavigationOptionsRequest);
         afterPause(followUpPause, ()->send(showNavigationOptionsRequest));
 
-        return promise.future();
+        return reply;
     }
 
     /**
@@ -195,7 +184,8 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
     }
 
     /**
-     * Cancel the task timeout and every message still waiting to be sent, once the task is over.
+     * Cancel the task timeout and every message still waiting to be sent, and fail the requests still waiting for
+     * OdoX, once the task is over.
      */
     public void cancelTimers(){
         if(context != null && Vertx.currentContext() != context){
@@ -205,6 +195,10 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
 
         pauseTimers.forEach(client.vertx()::cancelTimer);
         pauseTimers.clear();
+
+        failPending("The task ended");
+        awaitingSend.values().forEach(sent->sent.tryFail("The task ended before the instruction was sent"));
+        awaitingSend.clear();
 
         if(executionInstructionDelayTimer != -1l){
             client.vertx().cancelTimer(executionInstructionDelayTimer);
@@ -290,7 +284,8 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
      *                 Follow-ups do not reset the task timeout, and are sent after a shorter pause.
      * @param next if the instruction is a {@link MultiStepInstruction}, receives the follow-up instructions it produces
      *             from its EXECUTION_RESULT.
-     * @return a future that completes with the EXECUTION_RESULT for the instruction.
+     * @return for a {@link MultiStepInstruction}, a future that completes with the instruction's EXECUTION_RESULT. For
+     * other instructions, which get no reply, a future that completes with the EXECUTE message once it has gone out.
      */
     public Future<JsonObject> sendExecutionInstruction(Instruction instruction, boolean followUp, Consumer<Instruction> next){
 
@@ -300,27 +295,29 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
 
         JsonObject executionRequest = new JsonObject()
                 .put("type", "EXECUTE")
+                .put("id", UUID.randomUUID().toString())
                 .put("source", SOURCE)
                 .put("executionId", client.getRequestManager().getExecutionId().toString())
                 .mergeIn(instruction.toJson());
 
-        Promise<JsonObject> promise = Promise.promise();
+        Future<JsonObject> result;
 
         //Multi-step instructions produce follow-up instructions from their execution result.
         if(instruction instanceof MultiStepInstruction multiStepInstruction){
             log.info("Configuring handling the response for {} instruction.", executionRequest.getString("action"));
 
-            promise.future()
-                    .onFailure(err->log.error(err.getMessage(), err))
+            result = expectReply(executionRequest);
+            result.onFailure(err->log.error(err.getMessage(), err))
                     .onSuccess(response->multiStepInstruction.onExecutionResult(executionRequest, response, next));
+        }else{
+            Promise<JsonObject> sent = Promise.promise();
+            awaitingSend.put(executionRequest.getString("id"), sent);
+            result = sent.future();
         }
 
-        log.info("Added EXECUTION_RESULT promise.");
-        activePromises.put("EXECUTION_RESULT", promise);
-        printActivePromises();
         afterPause(followUp? followUpPause : instructionPause, ()->send(executionRequest));
 
-        return promise.future();
+        return result;
     }
 
     protected boolean send(JsonObject data){
@@ -347,8 +344,8 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
     }
 
     /**
-     * Tells the harness when an EXECUTE message has actually reached OdoX. A message queued while OdoX is disconnected is reported
-     * when the connection comes back and the queue is flushed.
+     * Tells the harness when an EXECUTE message has actually gone to OdoX. A message queued while OdoX has no page ready is
+     * reported when a page is ready again and the queue is flushed.
      */
     @Override
     protected void onSent(String data){
@@ -357,6 +354,10 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
         }
         JsonObject message = new JsonObject(data);
         if("EXECUTE".equals(message.getString("type"))){
+            Promise<JsonObject> sent = awaitingSend.remove(message.getString("id"));
+            if(sent != null){
+                sent.complete(message);
+            }
             client.getRequestManager().onExecutionInstructionSent(message);
         }
     }

@@ -37,8 +37,6 @@ COPY neo4j-plugins $APP_DIR/neo4j-plugins
 COPY ./ssl $APP_DIR/ssl
 # OdoX firefox extension
 COPY ./odo-sight.xpi $APP_DIR
-# Strips CSP headers so OdoX works on sites that enforce one. Installed before OdoX in every task browser.
-COPY ./csp-strip.xpi $APP_DIR
 # Trajectory processing pipeline configuration
 COPY ./odo-pipelines.json $APP_DIR
 

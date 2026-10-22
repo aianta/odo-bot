@@ -54,7 +54,7 @@ odobot:
     timeout_seconds: 600
     max_attempts: 3
     extra_body:                  # OpenRouter: pin providers that keep Qwen's <tool_call> text (see Models)
-      provider: {only: [DekaLLM, Wafer, DeepInfra, Novita, Alibaba, Phala, CoreWeave], allow_fallbacks: false}
+      provider: {only: [DekaLLM, Wafer, Novita, Alibaba, Phala, CoreWeave], allow_fallbacks: false}
   evaluation:
     enabled: true
     judge:                       # fuzzy_match judge (118 tasks); unset keys = WebArena's gpt-4-1106-preview settings
@@ -75,7 +75,9 @@ Models:
   `! printf '%s' '<key>' > ~/.openrouter-key`; never ask them to paste it into the chat). Images work with
   `qwen/qwen3.8-27b`. **Pin the providers** (`extra_body.provider.only`, for the agent and the judge): OpenRouter
   routes each call to one of ~19 providers, and some (seen 2026-10-13: Chutes, Near AI, Reka, Parasail, Cloudflare,
-  Venice) strip the `<tool_call>` block from the reply. The Qwen parser then sees a reply without an action and ends
+  Venice; since 2026-10-16 also DeepInfra) strip the `<tool_call>` block from the reply. The `-messages-step-N.json`
+  dumps omit the screenshot, so to replay a step put the task's first Observation screenshot (from its event log)
+  back into the request. The Qwen parser then sees a reply without an action and ends
   the task as done with no answer, which looks like an agent that quits early. Re-test with a replayed request when
   the provider list changes.
 - **Local Qwen** (`http://host.docker.internal:8080/v1`): handles few concurrent tasks; set `max_running_tasks: 2`.

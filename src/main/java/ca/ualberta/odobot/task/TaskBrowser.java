@@ -10,6 +10,7 @@ import org.openqa.selenium.firefox.FirefoxProfile;
 import org.openqa.selenium.firefox.HasExtensions;
 import org.openqa.selenium.remote.Augmenter;
 import org.openqa.selenium.remote.RemoteWebDriver;
+import org.openqa.selenium.support.ui.WebDriverWait;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -18,6 +19,9 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 
 import static ca.ualberta.odobot.explorer.ExploreTask.*;
@@ -33,18 +37,20 @@ public class TaskBrowser {
     private static final String ADDON_ID = "odosight@ualberta.ca";
 
     /**
-     * An MV2 add-on that removes Content Security Policy headers from every response (source in csp-strip/). Without it,
-     * sites that enforce a CSP, such as the WebArena Forum, block OdoX's WebSocket to OdoBot. OdoX is MV3, and Firefox
-     * ignores CSP header changes from MV3 extensions, so this can't be done inside OdoX. It is installed into every
-     * task browser before OdoX, and only affects responses that arrive after it is installed.
-     */
-    private static final Path CSP_STRIP_PATH = Path.of("csp-strip.xpi");
-
-    /**
      * How often setup is tried again when OdoX's options page is missing an element, e.g. because the extension had
      * not initialized yet.
      */
     private static final int MAX_SETUP_ATTEMPTS = 5;
+
+    /**
+     * How often OdoX's options are entered again when OdoX did not store what was entered, see {@link #configureOdoX}.
+     */
+    private static final int MAX_OPTIONS_ATTEMPTS = 3;
+
+    /**
+     * How long OdoX's options page may take to fill itself in, or to store a save.
+     */
+    private static final Duration OPTIONS_PAGE_TIMEOUT = Duration.ofSeconds(30);
 
     private final String evalId;
     private final UUID addonId;
@@ -69,7 +75,7 @@ public class TaskBrowser {
     private volatile String appTabHandle;
 
     /**
-     * @param addonId OdoX's extension instance id, which is also its clientId on the sockets.
+     * @param addonId OdoX's extension instance id, which is also its clientId on its socket.
      * @param odoSightPath the OdoX xpi.
      * @param timing marks the time spent logging in to the task's sites.
      */
@@ -94,7 +100,7 @@ public class TaskBrowser {
 
     /**
      * Start Firefox, configure OdoX to reach OdoBot at {@code guidanceHost}, and open the start page and OdoX's
-     * controls. OdoX then connects its sockets.
+     * controls. OdoX then connects its socket.
      */
     public void open(String guidanceHost) throws MalformedURLException {
         for(int attempt = 1; ; attempt++){
@@ -146,13 +152,10 @@ public class TaskBrowser {
         if (environment.gridUrl() != null) {
             driver = new RemoteWebDriver(new URL(environment.gridUrl()), options);
             WebDriver augmentedDriver = new Augmenter().augment(driver);
-            String cspStripId = ((HasExtensions) augmentedDriver).installExtension(CSP_STRIP_PATH, true);
-            log.info("Installed CSP stripping extension with id {}", cspStripId);
             String extensionId = ((HasExtensions) augmentedDriver).installExtension(Paths.get(odoSightPath));
             log.info("Installed extension with id {}", extensionId);
         } else {
             driver = new FirefoxDriver(options);
-            ((FirefoxDriver) driver).installExtension(CSP_STRIP_PATH, true);
             ((FirefoxDriver) driver).installExtension(Path.of(odoSightPath), true);
         }
     }
@@ -165,24 +168,15 @@ public class TaskBrowser {
         /*
          * OdoX needs a valid LogUI config, so the LogUI username and password are set even though no events are sent
          * to the LogUI server during evaluation.
-         *
-         * This is the first thing that happens after the browser opens, so give OdoX a chance to initialize before
-         * loading its options page. Otherwise the defaults it sets up on initialization aren't in localStorage yet,
-         * don't show up on the options page, and would be overwritten with blanks.
          */
-        explicitlyWait(driver, 3);
-        driver.get(odoXOptionsUrl);
-
-        setField(ODOSIGHT_OPTIONS_GUIDANCE_SERVICE_HOST_FIELD_ID, guidanceHost);
+        Map<String, String> options = new LinkedHashMap<>();
+        options.put(ODOSIGHT_OPTIONS_GUIDANCE_SERVICE_HOST_FIELD_ID, guidanceHost);
         //The hosts whose network events OdoX captures, e.g. "http://172.23.0.2,http://172.23.0.6:8023", or "*" for every host.
-        setField(ODOSIGHT_OPTIONS_TARGET_HOST_FIELD_ID, String.join(",", environment.targetHosts()));
-        setField(ODOSIGHT_OPTIONS_LOGUI_SERVER_HOST_FIELD_ID, environment.logUiHost());
-        setField(ODOSIGHT_OPTIONS_LOGUI_SERVER_USERNAME_FIELD_ID, environment.logUiUsername());
-        setField(ODOSIGHT_OPTIONS_LOGUI_SERVER_PASSWORD_FIELD_ID, environment.logUiPassword());
-
-        //Update/save the options
-        WebElement submitButton = findElement(driver, By.tagName("button"));
-        click(driver, submitButton);
+        options.put(ODOSIGHT_OPTIONS_TARGET_HOST_FIELD_ID, String.join(",", environment.targetHosts()));
+        options.put(ODOSIGHT_OPTIONS_LOGUI_SERVER_HOST_FIELD_ID, environment.logUiHost());
+        options.put(ODOSIGHT_OPTIONS_LOGUI_SERVER_USERNAME_FIELD_ID, environment.logUiUsername());
+        options.put(ODOSIGHT_OPTIONS_LOGUI_SERVER_PASSWORD_FIELD_ID, environment.logUiPassword());
+        configureOdoX(options);
 
         //Start logged in to the task's sites, as WebArena does, before the start page loads and before OdoX connects.
         logIn();
@@ -198,6 +192,58 @@ public class TaskBrowser {
 
         //Then switch back to the target web app tab.
         driver.switchTo().window(webAppTabHandle);
+    }
+
+    /**
+     * Enter OdoX's options, save them, and check that OdoX stored them.
+     *
+     * <p>OdoX's options page fills its fields from storage asynchronously, and before OdoX has initialized its state
+     * that state may still be replaced by the defaults. Typing into the page too early can therefore leave OdoX with the
+     * wrong options, e.g. a guidance host of "localhost:7080172.23.0.2:40000", after which OdoX never reaches OdoBot.
+     * So the options are typed only once the page reports it has filled itself in (data-loaded), and are read back from
+     * a freshly loaded page after the save, which shows what OdoX stored. If they don't match, they are entered again.</p>
+     *
+     * @param options the value of each options field, by field id.
+     * @throws IllegalStateException if OdoX did not store the options after {@link #MAX_OPTIONS_ATTEMPTS} attempts.
+     */
+    private void configureOdoX(Map<String, String> options){
+        String problem = null;
+        for(int attempt = 1; attempt <= MAX_OPTIONS_ATTEMPTS; attempt++){
+            try{
+                openOdoXOptions();
+                options.forEach(this::setField);
+                click(driver, findElement(driver, By.tagName("button")));
+                new WebDriverWait(driver, OPTIONS_PAGE_TIMEOUT)
+                        .until(d->"true".equals(d.findElement(By.tagName("form")).getAttribute("data-saved")));
+
+                //A freshly loaded options page shows what OdoX stored.
+                openOdoXOptions();
+                Map<String, String> wrong = new LinkedHashMap<>();
+                options.forEach((field, expected)->{
+                    String stored = driver.findElement(By.id(field)).getAttribute("value");
+                    if(!(expected == null? "" : expected).equals(stored)){
+                        wrong.put(field, stored);
+                    }
+                });
+                if(wrong.isEmpty()){
+                    return;
+                }
+                problem = "OdoX stored " + wrong;
+            }catch (TimeoutException e){
+                problem = "OdoX's options page did not finish loading or saving within " + OPTIONS_PAGE_TIMEOUT.toSeconds() + " s";
+            }
+            log.warn("Task {}: setting OdoX's options, attempt {} of {}: {}", evalId, attempt, MAX_OPTIONS_ATTEMPTS, problem);
+        }
+        throw new IllegalStateException("Could not set OdoX's options: " + problem);
+    }
+
+    /**
+     * Open OdoX's options page, and wait until it has filled itself in from OdoX's state.
+     */
+    private void openOdoXOptions(){
+        driver.get(odoXOptionsUrl);
+        new WebDriverWait(driver, OPTIONS_PAGE_TIMEOUT)
+                .until(d->"true".equals(d.findElement(By.tagName("form")).getAttribute("data-loaded")));
     }
 
     /**

@@ -484,36 +484,56 @@ The **runtime execution engine**. This is where OdoBot actually drives a browser
 | GET | `/api/targetNodes` | Cypher `MATCH (n:APINode) RETURN n.method, n.path, n.id` — the catalogue of executable targets. |
 | GET | `/` (any non-API route) | Returns a plaintext banner. |
 
-#### The three-socket protocol
+#### The OdoX socket (protocol v2)
 
-Odo Sight opens **three** WebSocket connections per client, distinguished by a `Source`
-(`guidance/Source.java`) sent in the first message. `WebSocketConnection` binds each raw socket
-to an `OdoClient` in the static `WebSocketConnection.clientMap` keyed by client UUID, and keeps
-it alive with a periodic ping/pong.
+Odo Sight (OdoX) opens **one** WebSocket per client, from its background script, at
+`wss://<host>/?clientId=<extension instance id>&protocol=2`. `TaskSockets.accept` refuses (403) a
+socket whose clientId is not the task's or whose protocol is not
+`WebSocketConnection.PROTOCOL_VERSION`, and binds the rest to the task's `OdoClient`. A
+reconnected socket replaces the old one. `WebSocketConnection` keeps it alive with a periodic
+ping/pong.
 
-| Socket | Manager | Direction & responsibility |
+The page script that executes instructions (`guidance.js`) never connects to OdoBot itself, since
+page CSP (`connect-src`) can block it: OdoX's background passes guidance messages to and from the
+page over a runtime port. So no CSP has to be removed from the sites under test.
+
+Every message, both ways, is a flat JSON object:
+
+| Field | Meaning |
+|---|---|
+| `v` | `2` |
+| `channel` | `event` or `guidance`: the `Channel` whose manager handles it, see `OdoClient.route`. |
+| `type` | The message type. |
+| `id` | Unique per message, set by its sender. |
+| `replyTo` | On a reply, the `id` of the message it answers. Replies complete the request they answer (`AbstractConnectionManager.request`), so requests of the same type can overlap. |
+| `cause` | On guidance feedback OdoX sends unasked (`UNRESOLVABLE_XPATH`, `REGISTER_ALTERNATE_XPATH`), the `id` of the `EXECUTE` it is about. |
+
+| Channel | Manager | Messages (→X to OdoX, →B to OdoBot; replies in parentheses) |
 |---|---|---|
-| `ControlSocket` | `ControlConnectionManager` | Extension → server. Accepts `PATHS_REQUEST`, `EXECUTION_REQUEST`, `STOP_GUIDANCE_REQUEST`. An `EXECUTION_REQUEST` becomes an `ExecutionRequest` and is handed to `RequestManager.addNewRequest`. |
-| `EventSocket` | `EventConnectionManager` | Extension → server. Streams live `EVENT` messages into an `OnlineEventProcessor`, plus request/response pairs: `GET_LOCAL_CONTEXT`/`LOCAL_CONTEXT`, `START_TRANSMISSION`/`TRANSMISSION_STARTED`, `STOP_TRANSMISSION`/`TRANSMISSION_STOPPED`, `PATH_COMPLETE`/`PATH_COMPLETE_ACK`. |
-| `GuidanceSocket` | `GuidanceConnectionManager` | Server → extension. Sends `EXECUTE` instructions, `SHOW_NAVIGATION_OPTIONS` / `CLEAR_NAVIGATION_OPTIONS`, `ALTERNATE_XPATH_CONFIRMED`. Handles `NAVIGATION_OPTIONS_SHOW_RESULT`, `PATH_COMPLETE_ACK`, `UNRESOLVABLE_XPATH`, `REGISTER_ALTERNATE_XPATH`. |
+| `event` | `EventConnectionManager` | →X `START_TRANSMISSION` (`TRANSMISSION_STARTED`, sent after the start Observation `EVENT`), `STOP_TRANSMISSION` (`TRANSMISSION_STOPPED`), `GET_SCREENSHOT` (`SCREENSHOT`), `PATH_COMPLETE` (`PATH_COMPLETE_ACK`). →B `EVENT`, streamed into the `OnlineEventProcessor`. |
+| `guidance` | `GuidanceConnectionManager` | →X `EXECUTE` (`EXECUTION_RESULT`, for `queryDom` / `getDOMSnapshot` / `getUIControlState` only), `SHOW_NAVIGATION_OPTIONS` (`NAVIGATION_OPTIONS_SHOW_RESULT`), `CLEAR_NAVIGATION_OPTIONS` (`CLEAR_NAVIGATION_OPTIONS_RESULT`), `PATH_COMPLETE` (`PATH_COMPLETE_ACK`). →B `REGISTER_ALTERNATE_XPATH` (`ALTERNATE_XPATH_CONFIRMED`), `UNRESOLVABLE_XPATH`, `PAGE_READY` / `PAGE_GONE`. |
 
-`AbstractConnectionManager` queues outbound messages while a socket is disconnected and flushes
-the queue on reconnect, and records a timestamped `history` per manager.
+`AbstractConnectionManager` queues outbound messages while its channel is closed and flushes the
+queue in order when it opens, and records a timestamped `history` per manager. The event channel
+is open while the socket is. The guidance channel is open only while OdoX also has a page ready
+(`PAGE_READY` … `PAGE_GONE`, re-sent after every reconnect), so instructions wait while the page
+navigates, and `RequestManager.onExecutionInstructionSent` fires when an instruction actually goes
+out.
 
 #### Execution flow
 
 ```mermaid
 sequenceDiagram
     participant OS as Odo Sight<br/>(browser extension)
-    participant CCM as ControlConnectionManager
+    participant H as Harness<br/>(TaskVerticle)
     participant RM as RequestManager
     participant ECM as EventConnectionManager
     participant LP as LogPreprocessor statics<br/>(localizer / graphDB / pathsConstructor)
     participant TPS as TaskPlannerVerticle.service
     participant GCM as GuidanceConnectionManager
 
-    OS->>CCM: EXECUTION_REQUEST (target, userLocation, parameters)
-    CCM->>RM: addNewRequest(ExecutionRequest)
+    OS->>H: connects its socket
+    H->>RM: startTask(agent, mode, ...)
     RM->>ECM: START_TRANSMISSION
     ECM-->>RM: TRANSMISSION_STARTED
     RM->>ECM: GET_LOCAL_CONTEXT
@@ -816,8 +836,8 @@ hard-coded. The `*-example.yaml` files are the intended template.
 - `TaskPlannerVerticle` `POST /api/task` is `@Deprecated`.
 - Seven of the eight preprocessing pipelines target the retired external "deep service".
 - `guidance/llm/` is an empty package.
-- `guidance.PathsRequestInput` / the `PATHS_REQUEST` control message — the older,
-  pre-`ExecutionRequest` request path, still partly wired but inert in `ControlConnectionManager`.
+- `guidance.PathsRequestInput` — the older, pre-`ExecutionRequest` request path. Its
+  `PATHS_REQUEST` message went away with OdoX's control socket.
 
 ---
 
@@ -980,13 +1000,13 @@ flowchart LR
 ```mermaid
 flowchart LR
     A["POST /api/evaluate<br/>(ExplorerVerticle :8076)"] --> B["EvaluateTask<br/>launches Firefox + Odo Sight"]
-    B --> C["Extension opens 3 WSS<br/>to GuidanceVerticle :7080"]
-    C --> D["EXECUTION_REQUEST<br/>on ControlSocket"]
+    B --> C["Extension opens 1 WSS<br/>to the task's listener"]
+    C --> D["Harness starts the task<br/>START_TRANSMISSION on the event channel"]
     D --> E["RequestManager<br/>collects local context"]
     E --> F["Localizer resolves<br/>starting node"]
     F --> G["NavPathsConstructor.constructV3<br/>over Neo4j"]
     G --> H["TaskPlannerService.selectPath<br/>(LLM)"]
-    H --> I["Instruction stream<br/>on GuidanceSocket"]
+    H --> I["Instruction stream<br/>on the guidance channel"]
     I --> J["Extension executes<br/>DoClick / EnterData / SelectOption…"]
     J -->|"EVENT feedback"| E
     J --> K["PATH_COMPLETE"]

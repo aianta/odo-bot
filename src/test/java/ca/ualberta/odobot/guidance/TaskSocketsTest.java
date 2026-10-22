@@ -18,7 +18,8 @@ import java.util.function.BooleanSupplier;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Each task accepts only its own OdoX's sockets, and becomes ready once its control and event sockets are connected.
+ * Each task accepts only its own OdoX's socket, of the protocol version OdoBot speaks, and becomes ready once it is
+ * connected.
  */
 class TaskSocketsTest {
 
@@ -44,14 +45,12 @@ class TaskSocketsTest {
     }
 
     @Test
-    void theClientIsReadyOnceItsControlAndEventSocketsAreBound(){
+    void theClientIsReadyOnceItsSocketIsBound(){
         UUID id = UUID.randomUUID();
         TaskSockets sockets = new TaskSockets(id, task("eval-1"), null);
+        assertFalse(sockets.ready().isComplete());
 
-        sockets.bind(id, Source.CONTROL_SOCKET, new StubConnection());
-        assertFalse(sockets.ready().isComplete(), "the event socket is still missing");
-
-        OdoClient client = sockets.bind(id, Source.EVENT_SOCKET, new StubConnection());
+        OdoClient client = sockets.bind(new StubConnection());
         assertTrue(sockets.ready().succeeded());
         assertSame(client, sockets.ready().result());
         assertEquals(id, client.id());
@@ -59,51 +58,34 @@ class TaskSocketsTest {
     }
 
     @Test
-    void theGuidanceSocketAloneDoesNotMakeTheClientReady(){
-        UUID id = UUID.randomUUID();
-        TaskSockets sockets = new TaskSockets(id, task("eval-1"), null);
-
-        sockets.bind(id, Source.GUIDANCE_SOCKET, new StubConnection());
-        sockets.bind(id, Source.CONTROL_SOCKET, new StubConnection());
-
-        assertFalse(sockets.ready().isComplete());
-    }
-
-    @Test
-    void socketsOfAnotherClientAreRefused(){
-        UUID id = UUID.randomUUID();
-        TaskSockets sockets = new TaskSockets(id, task("eval-1"), null);
-
-        assertNull(sockets.bind(UUID.randomUUID(), Source.CONTROL_SOCKET, new StubConnection()));
-        assertNull(sockets.bind(UUID.randomUUID(), Source.EVENT_SOCKET, new StubConnection()));
-
-        assertFalse(sockets.ready().isComplete());
-        assertFalse(sockets.client().getControl().isConnected(), "the stray socket was not bound");
-    }
-
-    @Test
     void aReconnectedSocketReplacesTheOldOne(){
-        UUID id = UUID.randomUUID();
-        TaskSockets sockets = new TaskSockets(id, task("eval-1"), null);
+        TaskSockets sockets = new TaskSockets(UUID.randomUUID(), task("eval-1"), null);
         StubConnection first = new StubConnection();
         StubConnection second = new StubConnection();
 
-        sockets.bind(id, Source.EVENT_SOCKET, first);
-        sockets.bind(id, Source.EVENT_SOCKET, second);
+        sockets.bind(first);
+        sockets.bind(second);
 
-        assertSame(second, sockets.client().getEvent());
+        assertSame(second, sockets.client().getSocket());
     }
 
     @Test
-    void closingClosesTheSocketsAndFailsAPendingReady(){
-        UUID id = UUID.randomUUID();
-        TaskSockets sockets = new TaskSockets(id, task("eval-1"), null);
-        StubConnection control = new StubConnection();
-        sockets.bind(id, Source.CONTROL_SOCKET, control);
+    void closingClosesTheSocket(){
+        TaskSockets sockets = new TaskSockets(UUID.randomUUID(), task("eval-1"), null);
+        StubConnection socket = new StubConnection();
+        sockets.bind(socket);
 
         sockets.close();
 
-        assertTrue(control.closed);
+        assertTrue(socket.closed);
+    }
+
+    @Test
+    void closingFailsAPendingReady(){
+        TaskSockets sockets = new TaskSockets(UUID.randomUUID(), task("eval-1"), null);
+
+        sockets.close();
+
         assertTrue(sockets.ready().failed());
     }
 
@@ -131,9 +113,12 @@ class TaskSocketsTest {
         return await(server.listen()).actualPort();
     }
 
-    private Future<WebSocket> connect(int port, UUID clientId, Source source){
-        String uri = clientId == null? "/" : "/?clientId=%s&source=%s".formatted(clientId, source.name);
+    private Future<WebSocket> connect(int port, String uri){
         return httpClient.webSocket(port, "localhost", uri);
+    }
+
+    private Future<WebSocket> connect(int port, UUID clientId){
+        return connect(port, "/?clientId=%s&protocol=%d".formatted(clientId, WebSocketConnection.PROTOCOL_VERSION));
     }
 
     @Test
@@ -147,15 +132,14 @@ class TaskSocketsTest {
         assertNotEquals(firstPort, secondPort);
 
         //The second task's OdoX connects to the first task's port by mistake, and is turned away.
-        Future<WebSocket> stray = connect(firstPort, secondId, Source.CONTROL_SOCKET);
+        Future<WebSocket> stray = connect(firstPort, secondId);
         waitUntil(stray::isComplete);
         assertTrue(stray.failed(), "a socket of another task's OdoX was accepted");
+        assertFalse(first.ready().isComplete());
 
-        //Both OdoX connect to their own task, interleaved.
-        await(connect(firstPort, firstId, Source.CONTROL_SOCKET));
-        await(connect(secondPort, secondId, Source.CONTROL_SOCKET));
-        await(connect(secondPort, secondId, Source.EVENT_SOCKET));
-        await(connect(firstPort, firstId, Source.EVENT_SOCKET));
+        //Both OdoX connect to their own task.
+        await(connect(secondPort, secondId));
+        await(connect(firstPort, firstId));
 
         OdoClient firstClient = await(first.ready());
         OdoClient secondClient = await(second.ready());
@@ -165,31 +149,51 @@ class TaskSocketsTest {
     }
 
     @Test
-    void anOlderOdoXIsBoundByItsFirstMessage() throws Exception {
+    void aSocketWithoutAClientIdIsRefused() throws Exception {
+        TaskSockets sockets = new TaskSockets(UUID.randomUUID(), task("eval-1"), vertx);
+        int port = listen(sockets);
+
+        Future<WebSocket> socket = connect(port, "/?protocol=%d".formatted(WebSocketConnection.PROTOCOL_VERSION));
+        waitUntil(socket::isComplete);
+
+        assertTrue(socket.failed());
+        assertFalse(sockets.ready().isComplete());
+    }
+
+    @Test
+    void aSocketOfAnotherProtocolIsRefused() throws Exception {
         UUID id = UUID.randomUUID();
         TaskSockets sockets = new TaskSockets(id, task("eval-1"), vertx);
         int port = listen(sockets);
 
-        WebSocket control = await(connect(port, null, null));
-        control.writeTextMessage(new JsonObject().put("clientId", id.toString()).put("source", "ControlSocket").put("type", "HELLO").encode());
-        WebSocket event = await(connect(port, null, null));
-        event.writeTextMessage(new JsonObject().put("clientId", id.toString()).put("source", "EventSocket").put("type", "HELLO").encode());
+        //The three-socket OdoX sent a source instead of a protocol version.
+        Future<WebSocket> old = connect(port, "/?clientId=%s&source=ControlSocket".formatted(id));
+        Future<WebSocket> other = connect(port, "/?clientId=%s&protocol=1".formatted(id));
+        waitUntil(()->old.isComplete() && other.isComplete());
 
-        assertEquals(id, await(sockets.ready()).id());
+        assertTrue(old.failed());
+        assertTrue(other.failed());
+        assertFalse(sockets.ready().isComplete());
     }
 
     @Test
-    void anOlderOdoXOfAnotherTaskIsClosedOnItsFirstMessage() throws Exception {
-        TaskSockets sockets = new TaskSockets(UUID.randomUUID(), task("eval-1"), vertx);
+    void messagesReachTheirChannelOverARealSocket() throws Exception {
+        UUID id = UUID.randomUUID();
+        TaskSockets sockets = new TaskSockets(id, task("eval-1"), vertx);
         int port = listen(sockets);
 
-        WebSocket socket = await(connect(port, null, null));
-        boolean[] closed = {false};
-        socket.closeHandler(v->closed[0] = true);
-        socket.writeTextMessage(new JsonObject().put("clientId", UUID.randomUUID().toString()).put("source", "ControlSocket").put("type", "HELLO").encode());
+        WebSocket socket = await(connect(port, id));
+        OdoClient client = await(sockets.ready());
+        assertFalse(client.isPageReady());
 
-        waitUntil(()->closed[0]);
-        assertFalse(sockets.ready().isComplete());
+        socket.writeTextMessage(new JsonObject()
+                .put("v", WebSocketConnection.PROTOCOL_VERSION)
+                .put("channel", "guidance")
+                .put("type", "PAGE_READY")
+                .put("id", UUID.randomUUID().toString())
+                .encode());
+
+        waitUntil(client::isPageReady);
     }
 
     private static <T> T await(Future<T> future) throws Exception {

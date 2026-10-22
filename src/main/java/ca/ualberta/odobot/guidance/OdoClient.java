@@ -1,6 +1,5 @@
 package ca.ualberta.odobot.guidance;
 
-import ca.ualberta.odobot.guidance.connectionmanagers.ControlConnectionManager;
 import ca.ualberta.odobot.guidance.connectionmanagers.EventConnectionManager;
 import ca.ualberta.odobot.guidance.connectionmanagers.GuidanceConnectionManager;
 import io.vertx.core.Vertx;
@@ -8,8 +7,6 @@ import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.UUID;
 
 public class OdoClient {
@@ -32,22 +29,24 @@ public class OdoClient {
     private RequestManager requestManager = null;
 
     //Connection Managers
-    private ControlConnectionManager controlConnectionManager = null;
     private EventConnectionManager eventConnectionManager = null;
     private GuidanceConnectionManager guidanceConnectionManager = null;
 
-    //WebSocket Connections
-    private WebSocketConnection control = new WebSocketConnection();
-    private WebSocketConnection guidance = new WebSocketConnection();
-    private WebSocketConnection event = new WebSocketConnection();
+    //OdoX's socket, a placeholder until OdoX connects.
+    private WebSocketConnection socket = new WebSocketConnection();
+
+    /**
+     * Whether OdoX has a page ready for guidance messages, see {@link #setPageReady}. The guidance channel is open only
+     * while it does.
+     */
+    private volatile boolean pageReady = false;
 
     public JsonObject statusReport(){
         JsonObject report = new JsonObject()
                 .put("id", id().toString())
                 .put("task", taskContext)
-                .put("ControlSocket", control.isConnected()?"connected":"disconnected")
-                .put("GuidanceSocket", guidance.isConnected()?"connected":"disconnected")
-                .put("EventSocket", event.isConnected()?"connected":"disconnected");
+                .put("socket", socket.isConnected()?"connected":"disconnected")
+                .put("page", pageReady?"ready":"not ready");
 
         return report;
     }
@@ -81,8 +80,7 @@ public class OdoClient {
         this.taskContext = taskContext;
         this.vertx = vertx;
 
-        this.controlConnectionManager = new ControlConnectionManager(this);
-        this.requestManager = new RequestManager(this); //Request Manager must be initalized after control connection manager
+        this.requestManager = new RequestManager(this);
         this.eventConnectionManager = new EventConnectionManager(this); //Event connection manager must be called after RequestManager is bound to the request.
         this.guidanceConnectionManager = new GuidanceConnectionManager(this);
 
@@ -92,37 +90,53 @@ public class OdoClient {
         return vertx;
     }
 
-    public WebSocketConnection getControl() {
-        return control;
+    public WebSocketConnection getSocket() {
+        return socket;
     }
 
-    public void setControl(WebSocketConnection control) {
-        this.control = control;
-        controlConnectionManager.updateConnection(control);
+    /**
+     * Use a newly connected socket of OdoX, e.g. after OdoX reconnected. The page OdoX had ready before is forgotten;
+     * OdoX reports it again on the new socket.
+     */
+    public void setSocket(WebSocketConnection socket) {
+        this.socket = socket;
+        this.pageReady = false;
+        socket.setMessageConsumer(this::route);
+
+        eventConnectionManager.updateConnection(new ChannelConnection(Channel.EVENT, socket, ()->true));
+        guidanceConnectionManager.updateConnection(new ChannelConnection(Channel.GUIDANCE, socket, this::isPageReady));
     }
 
-    public WebSocketConnection getGuidance() {
-        return guidance;
+    /**
+     * Hand a message from OdoX to the manager of its channel.
+     */
+    public void route(JsonObject message){
+        Channel channel = Channel.fromName(message.getString("channel"));
+        if(channel == null){
+            log.warn("[{}] Dropping a message of type {} on unknown channel {}", label(), message.getString("type"), message.getString("channel"));
+            return;
+        }
+
+        switch (channel){
+            case EVENT -> eventConnectionManager.dispatch(message);
+            case GUIDANCE -> guidanceConnectionManager.dispatch(message);
+        }
     }
 
-    public void setGuidance(WebSocketConnection guidance) {
-
-        this.guidance = guidance;
-        guidanceConnectionManager.updateConnection(guidance);
+    public boolean isPageReady(){
+        return pageReady;
     }
 
-    public WebSocketConnection getEvent() {
-        return event;
-    }
-
-    public void setEvent(WebSocketConnection event) {
-        this.event = event;
-        eventConnectionManager.updateConnection(event);
-    }
-
-
-    public ControlConnectionManager getControlConnectionManager() {
-        return controlConnectionManager;
+    /**
+     * OdoX reported that a page is ready for guidance messages (PAGE_READY), or that it is gone (PAGE_GONE), e.g. while
+     * the page navigates. Guidance messages wait while there is no page, and go out in order once one is ready.
+     */
+    public void setPageReady(boolean ready){
+        log.info("[{}] Page {}", label(), ready? "ready" : "gone");
+        this.pageReady = ready;
+        if(ready){
+            guidanceConnectionManager.flushQueue();
+        }
     }
 
     public EventConnectionManager getEventConnectionManager() {
