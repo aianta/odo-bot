@@ -102,6 +102,15 @@ class Qwen38AgentTest {
         assertEquals(new LeftClick(960, 540, 1920, 1080), step.action);
         assertEquals(1, model.calls.size());
 
+        // The step's thoughts travel with it, for the trajectory; OdoX never sees them.
+        assertEquals(1, step.getAgentTrace().stepNumber());
+        assertEquals("The button is in the middle.", step.getAgentTrace().reasoning());
+        assertEquals("Click the Publish button.", step.getAgentTrace().lowLevelInstruction());
+        assertEquals(960, step.getAgentTrace().action().getInteger("x"));
+        assertEquals("req-1", step.getAgentTrace().requestId());
+        assertTrue(step.getAgentTrace().inputObservation() instanceof ScreenshotEntity);
+        assertFalse(step.toJson().containsKey("agentTrace"));
+
         // The next observation is the result of the step; no execution result is needed.
         Promise<QwenCompletion> emptyAnswer = Promise.promise();
         emptyAnswer.complete(new QwenCompletion("<think>nothing</think>", "req-2", null));
@@ -116,6 +125,8 @@ class Qwen38AgentTest {
         // The empty answer executed nothing, so the agent predicted again on the same screenshot.
         assertEquals(3, model.calls.size());
         assertTrue(emitted.get(1) instanceof TaskComplete);
+        assertEquals(3, emitted.get(1).getAgentTrace().stepNumber(), "an ending with no action carries its step's thoughts");
+        assertEquals("DONE", emitted.get(1).getAgentTrace().terminal());
         assertTrue(emittedOnEventLoop.stream().allMatch(b -> b));
         assertEquals("req-3", agent.lastRequestId());
         assertEquals(List.of("Click the Publish button.", "", "The course is published."), agent.actions());

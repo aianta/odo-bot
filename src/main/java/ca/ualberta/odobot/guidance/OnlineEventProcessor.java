@@ -73,6 +73,34 @@ public class OnlineEventProcessor {
     private int rawEventCount = 0;
 
     /**
+     * The position in the task's raw events of the event being processed, or -1 outside {@link #process(JsonObject)}.
+     */
+    private int currentEventIndex = -1;
+
+    /**
+     * The positions in the task's raw events of the events each top-level timeline entity was built from, in arrival
+     * order. A DOM effect or input change folded into an {@link Effect} or {@link DataEntry} counts toward it.
+     */
+    private final Map<TimelineEntity, List<Integer>> sourceEvents = new IdentityHashMap<>();
+
+    /**
+     * Whether to keep what saving the task's trajectory needs beyond the timelines, see {@link #domSnapshots}.
+     */
+    private boolean trajectoryCapture = false;
+
+    /**
+     * The page snapshot (the raw {@code domSnapshot} JSON) of the latest event of each top-level entity, kept only with
+     * {@link #trajectoryCapture}. Effects built during a live run hold no parsed page, so it is kept here.
+     */
+    private final Map<TimelineEntity, String> domSnapshots = new IdentityHashMap<>();
+
+    /**
+     * Facts of the latest event of each top-level entity that the entity itself drops: the event's name (e.g.
+     * LINK_CLICK) and, for inputs, whether it checked the element and its input type.
+     */
+    private final Map<TimelineEntity, JsonObject> eventFacts = new IdentityHashMap<>();
+
+    /**
      * True once the task's events are saved: events that arrive afterwards, e.g. while evaluators drive the browser,
      * are counted and dropped. They are neither written, nor added to the timeline, nor kept in memory.
      */
@@ -109,7 +137,7 @@ public class OnlineEventProcessor {
         if(line != null){
             line.add(taskAnswer);
         }
-        appendRawEvent(new JsonObject()
+        int index = appendRawEvent(new JsonObject()
                 .put("eventType", "customEvent")
                 .put("eventDetails", new JsonObject()
                         .put("name", "TASK_ANSWER")
@@ -117,6 +145,7 @@ public class OnlineEventProcessor {
                 .put("timestamps", new JsonObject()
                         .put("eventTimestamp", timeFormatter.format(Instant.ofEpochMilli(taskAnswer.timestamp()))))
                 .encode());
+        attribute(taskAnswer, index);
     }
 
     /**
@@ -213,19 +242,116 @@ public class OnlineEventProcessor {
         }
     }
 
-    private synchronized void appendRawEvent(String event){
-        rawEventCount++;
+    /**
+     * @return the event's position in the task's raw events, which is its index in the saved event file.
+     */
+    private synchronized int appendRawEvent(String event){
+        int index = rawEventCount++;
         if(rawEventsWriter != null){
             try{
                 rawEventsWriter.write(event);
                 rawEventsWriter.newLine();
-                return;
+                return index;
             }catch (IOException e){
                 log.error("Could not write a raw event to {}, keeping the rest in memory: {}", rawEventsPartFile, e.getMessage());
                 closeRawEventsWriter();
             }
         }
         pendingRawEvents.add(event);
+        return index;
+    }
+
+    /**
+     * @return the position in the task's raw events of the last event recorded, or -1 if none has been.
+     */
+    public synchronized int lastEventIndex(){
+        return rawEventCount - 1;
+    }
+
+    /**
+     * @param enabled whether to keep the page snapshots that saving the task's trajectory needs, see {@link #domSnapshots}.
+     */
+    public void setTrajectoryCapture(boolean enabled){
+        this.trajectoryCapture = enabled;
+    }
+
+    /**
+     * @return the entities of the main timeline, in order.
+     */
+    public synchronized List<TimelineEntity> timeline(){
+        return new ArrayList<>(line);
+    }
+
+    /**
+     * @return the observations of the uncharted timeline, in order.
+     */
+    public synchronized List<TimelineEntity> unchartedTimeline(){
+        return new ArrayList<>(unchartedLine);
+    }
+
+    /**
+     * @return the positions in the task's raw events of the events the entity was built from, in arrival order; empty
+     * for an entity no raw event made, e.g. an observation of an uncharted step.
+     */
+    public synchronized List<Integer> sourceEvents(TimelineEntity entity){
+        List<Integer> events = sourceEvents.get(entity);
+        return events == null? List.of() : List.copyOf(events);
+    }
+
+    /**
+     * @return the HTML of the page snapshot of the entity's latest event, or null if it has none or
+     * {@link #setTrajectoryCapture trajectory capture} is off.
+     */
+    public synchronized String domSnapshotOf(TimelineEntity entity){
+        String snapshot = domSnapshots.get(entity);
+        if(snapshot == null){
+            return null;
+        }
+        try{
+            return new JsonObject(snapshot).getString("outerHTML");
+        }catch (RuntimeException e){
+            log.warn("Could not read the page snapshot of a {}: {}", entity.symbol(), e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * @return the facts of the entity's latest event that the entity drops, see {@link #eventFacts}; empty if none.
+     */
+    public synchronized JsonObject eventFactsOf(TimelineEntity entity){
+        JsonObject facts = eventFacts.get(entity);
+        return facts == null? new JsonObject() : facts.copy();
+    }
+
+    private synchronized void attribute(TimelineEntity entity, int eventIndex){
+        if(entity == null || eventIndex < 0){
+            return;
+        }
+        sourceEvents.computeIfAbsent(entity, e->new ArrayList<>()).add(eventIndex);
+    }
+
+    /**
+     * Credit the event being processed to the entity, and keep what the trajectory needs of it.
+     */
+    private void attribute(TimelineEntity entity, JsonObject event){
+        attribute(entity, currentEventIndex);
+        if(event == null){
+            return;
+        }
+        JsonObject details = event.getJsonObject("eventDetails", new JsonObject());
+        JsonObject facts = new JsonObject().put("name", details.getString("name"));
+        if(details.containsKey("checked")){
+            facts.put("checked", details.getValue("checked"));
+        }
+        if(details.containsKey("inputType")){
+            facts.put("inputType", details.getValue("inputType"));
+        }
+        synchronized (this){
+            eventFacts.put(entity, facts);
+            if(trajectoryCapture && details.getString("domSnapshot") != null){
+                domSnapshots.put(entity, details.getString("domSnapshot"));
+            }
+        }
     }
 
     private void closeRawEventsWriter(){
@@ -336,7 +462,7 @@ public class OnlineEventProcessor {
             return;
         }
         //Recorded before processing, which may change the event.
-        appendRawEvent(event.encode());
+        currentEventIndex = appendRawEvent(event.encode());
         try{
 
 //            int _preprocessLineSize = line.size();
@@ -379,6 +505,8 @@ public class OnlineEventProcessor {
 
         }catch (Exception e){
             log.error(e.getMessage(), e);
+        }finally {
+            currentEventIndex = -1;
         }
 
     }
@@ -407,6 +535,7 @@ public class OnlineEventProcessor {
         log.info("Observation triggered by {} at user location {}, with{} screenshot", trigger,
                 userLocation != null? userLocation: "N/A", screenshot != null? "": "out");
 
+        attribute(observation, currentEventIndex);
         //Observations of uncharted actions only feed the uncharted agent, so they never split an Effect or a DataEntry.
         if(trigger == Observation.Trigger.START_TRANSMISSION){
             line.add(observation);
@@ -423,6 +552,7 @@ public class OnlineEventProcessor {
         log.info("{} - {}", networkEvent.getMethod(), networkEvent.getUrl());
 
         if(Utils.networkEventPredicate.test(networkEvent)){
+            attribute(networkEvent, currentEventIndex);
             line.add(networkEvent);
         }
 
@@ -466,6 +596,7 @@ public class OnlineEventProcessor {
 
                 if(previousBasePath.equals(currentBasePath)){
                     effect.add(domEffect);
+                    attribute(effect, event);
                 }else{
                     //Handle URL change in the middle of a series of DOM Effects
                     ApplicationLocationChange applicationLocationChange = new ApplicationLocationChange();
@@ -479,12 +610,14 @@ public class OnlineEventProcessor {
                     long applicationLocationChangeTimestamp = (lastTimestamp + thisTimestamp)/2;
                     applicationLocationChange.setTimestamp(ZonedDateTime.ofInstant(Instant.ofEpochMilli(applicationLocationChangeTimestamp), domEffect.getTimestamp().getZone()));
 
+                    attribute(applicationLocationChange, currentEventIndex);
                     line.add(applicationLocationChange);
 
                     //Create the Effect following the ApplicationLocationChange.
 
                     Effect postEffect = new Effect();
                     postEffect.add(domEffect);
+                    attribute(postEffect, event);
                     line.add(postEffect);
                 }
 
@@ -531,12 +664,14 @@ public class OnlineEventProcessor {
                     long applicationLocationChangeTimestamp = (lastTimestamp + thisTimestamp)/2;
                     applicationLocationChange.setTimestamp(ZonedDateTime.ofInstant(Instant.ofEpochMilli(applicationLocationChangeTimestamp), domEffect.getTimestamp().getZone()));
 
+                    attribute(applicationLocationChange, currentEventIndex);
                     line.add(applicationLocationChange);
                 }
 
 
                 Effect effect = new Effect();
                 effect.add(domEffect);
+                attribute(effect, event);
                 line.add(effect);
             }
 
@@ -553,6 +688,7 @@ public class OnlineEventProcessor {
         inputChange.setTimestamp(parseTimestamp(event));
 
         if(inputChange instanceof CheckboxEvent){
+            attribute((CheckboxEvent)inputChange, event);
             line.add((CheckboxEvent)inputChange);
             log.info("handled INPUT - Checkbox");
             return;
@@ -568,9 +704,11 @@ public class OnlineEventProcessor {
                 //So create a separate DataEntry object for this input change and add it to the timeline.
                 DataEntry newEntry = new DataEntry();
                 newEntry.add(inputChange);
+                attribute(newEntry, event);
                 line.add(newEntry);
                 return;
             }else{
+                attribute(dataEntry, event);
                 return;
             }
         }
@@ -578,6 +716,7 @@ public class OnlineEventProcessor {
         if(line.last() == null || !(line.last() instanceof DataEntry)){
             DataEntry dataEntry = new DataEntry();
             dataEntry.add(inputChange);
+            attribute(dataEntry, event);
             line.add(dataEntry);
             return;
         }
@@ -590,6 +729,7 @@ public class OnlineEventProcessor {
         SelectEvent selectEvent = selectEventJsonMapper.map(event);
         selectEvent.setTimestamp(parseTimestamp(event));
 
+        attribute(selectEvent, event);
         line.add(selectEvent);
     }
 
@@ -618,6 +758,7 @@ public class OnlineEventProcessor {
             return;
         }
 
+        attribute(clickEvent, event);
         line.add(clickEvent);
 
     }

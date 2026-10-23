@@ -352,6 +352,25 @@ Format expected inside `<task-instance-id>_network_logs.json`
 Documentation below is for development work on OdoBot.
 
 
+## Trajectory dataset
+
+With `"saveTrajectories": true` in an evaluate request, OdoBot saves every task's trajectory to a shareable dataset in `db/`:
+
+* `db/trajectories.db`: one row per task run, with the task as received (session cookies removed), the WebArena scorer's result (`eval_result`, `score`, `success`) and the full evaluation report. It also holds:
+  * the top-level entities of both timelines (charted clicks, data entries, effects, network events, and the uncharted observations), with their metadata and deduplicated, readable page snapshots
+  * every uncharted step, with the model's full reasoning, the action, the provider and token counts
+  * links from each step to the charted entities it caused (`seq_window`, `spatial`)
+
+  The `interaction_thoughts` view gives the reasoning behind each interaction.
+* `db/screenshots/<experimentId>/<stem>/`: viewport screenshots, element crops and action crops, referenced from the database by paths relative to `db/`.
+
+The task field `requireFullReasoning` (uncharted agent) fails a task whose model reasoning doesn't come back in full, instead of saving it without.
+
+Tasks stage their trajectory in `db/staging/` before reporting their outcome, and a single writer commits them, so a crash loses nothing that was staged. Don't open the live database from Windows during a run; read a copy made by `POST /api/trajectories/snapshot`. `GET /api/trajectories/status` shows the commit backlog. `POST /api/trajectories/import` commits leftover staging, and `POST /api/trajectories/vacuum` compacts the database between runs.
+
+The schema, the linking methods, example queries and the OpenRouter reasoning setup are in [docs/capturing-trajectories-at-scale](./docs/capturing-trajectories-at-scale/index.html) (a local file, since `*.html` is not committed).
+
+
 ## Building Docker Image 
 
 ```
@@ -365,7 +384,7 @@ docker build --progress=plain -t aianta/odobot -f docker-gradle/Dockerfile .
 * `/config`: contains configuration YAML files for OdoBot services
 * `/execution_events`: When OdoBot executes tasks on a web application, this folder is populated with logs, telemetry and experiment results.
 * `/libs`: External libraries and tools required for OdoBot to function. 
-* `/db`: The folder containing SQLite (`odobot.db`) and Embedded Neo4J data. These store the application model OdoBot will use during task execution. 
+* `/db`: The folder containing SQLite (`odobot.db`) and Embedded Neo4J data. These store the application model OdoBot will use during task execution. It also holds the trajectory dataset (`trajectories.db`, `screenshots/`, `staging/`), see [Trajectory dataset](#trajectory-dataset). 
 
 ### Port Bindings
 * `8076`: This is the port on which OdoBot exposes its `/api/evaluate` endpoint where tasks can be sent for evaluation.

@@ -1,5 +1,6 @@
 package ca.ualberta.odobot.guidance.instructions;
 
+import ca.ualberta.odobot.trajectory.AgentTrace;
 import io.vertx.core.json.JsonObject;
 
 import java.util.ArrayList;
@@ -12,6 +13,21 @@ public abstract class Instruction {
     private Set<String> alternateXpaths =  new HashSet<>();
 
     private String sourceNodeId;
+
+    /**
+     * What the agent thought when it emitted this instruction, or null. It is saved with the task's trajectory and never
+     * sent to OdoX, so it is not part of {@link #toJson()}.
+     */
+    private AgentTrace agentTrace;
+
+    public AgentTrace getAgentTrace() {
+        return agentTrace;
+    }
+
+    public Instruction setAgentTrace(AgentTrace agentTrace) {
+        this.agentTrace = agentTrace;
+        return this;
+    }
 
     public Set<String> alternateXpaths() {
         return alternateXpaths;

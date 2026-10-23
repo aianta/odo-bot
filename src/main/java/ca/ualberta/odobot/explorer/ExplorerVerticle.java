@@ -8,6 +8,7 @@ import ca.ualberta.odobot.task.TaskEnvironment;
 import ca.ualberta.odobot.task.TaskOutcome;
 import ca.ualberta.odobot.task.TaskSettings;
 import ca.ualberta.odobot.task.TaskVerticle;
+import ca.ualberta.odobot.trajectory.TrajectoryStore;
 import ca.ualberta.odobot.telemetry.TelemetryService;
 import ca.ualberta.odobot.sqlite.SqliteService;
 import ca.ualberta.odobot.telemetry.TelemetryVerticle;
@@ -108,6 +109,25 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
             api.route(HttpMethod.POST, "/evaluate").handler(this::evaluateValidationHandler);
             api.route(HttpMethod.POST, "/evaluate").handler(this::evaluateHandler);
+
+            //The trajectory database, db/trajectories.db. Whatever an earlier run left staged is committed now.
+            TrajectoryStore.init(vertx.getDelegate(), Path.of("db"))
+                    .onSuccess(store->log.info("Trajectory store ready: {}", store.status().encode()))
+                    .onFailure(err->log.error("Trajectories can't be saved: {}", err.getMessage()));
+            api.route(HttpMethod.GET, "/trajectories/status").handler(rc->rc.getDelegate().response()
+                    .putHeader("content-type", "application/json")
+                    .end(TrajectoryStore.get().status(rc.request().getParam("experimentId")).encodePrettily()));
+            api.route(HttpMethod.POST, "/trajectories/snapshot").handler(rc->TrajectoryStore.get().snapshot()
+                    .onSuccess(path->rc.getDelegate().response().putHeader("content-type", "application/json")
+                            .end(new JsonObject().put("snapshot", path).encode()))
+                    .onFailure(err->rc.getDelegate().response().setStatusCode(500).end(err.getMessage())));
+            api.route(HttpMethod.POST, "/trajectories/import").handler(rc->TrajectoryStore.get().importStaged()
+                    .onSuccess(count->rc.getDelegate().response().putHeader("content-type", "application/json")
+                            .end(new JsonObject().put("committed", count).put("status", TrajectoryStore.get().status()).encode()))
+                    .onFailure(err->rc.getDelegate().response().setStatusCode(500).end(err.getMessage())));
+            api.route(HttpMethod.POST, "/trajectories/vacuum").handler(rc->TrajectoryStore.get().vacuum()
+                    .onSuccess(done->rc.getDelegate().response().end("OK"))
+                    .onFailure(err->rc.getDelegate().response().setStatusCode(500).end(err.getMessage())));
 
             api.route(HttpMethod.POST, "/evaluationResults").handler(this::computeEvaluationResults);
             //TODO: Refactor these handlers, they should be a single handler, and the validation logic should probably be encapsulated in some other class.
@@ -1082,13 +1102,25 @@ public class ExplorerVerticle extends HttpServiceVerticle {
             return;
         }
         int maxConcurrentTasks = (Integer) maxConcurrent;
+        try{
+            TrajectoryStore store = TrajectoryStore.get();
+            if(TaskSettings.saveTrajectories(config) && (store == null || !store.canWrite())){
+                rc.response().setStatusCode(503).end("Trajectories can't be saved: %s".formatted(
+                        store == null? "the trajectory store is not running" : store.status().getString("writerProblem")));
+                return;
+            }
+        }catch (IllegalArgumentException e){
+            rc.response().setStatusCode(400).end(e.getMessage());
+            return;
+        }
 
-        //Every task must resolve to an environment it can run in, and have a valid step limit.
+        //Every task must resolve to an environment it can run in, and have a valid step limit and reasoning requirement.
         List<PendingTask> pendingTasks = new ArrayList<>();
         for(Object o: getTasks(config.getJsonArray("tasks"), agent)){
             JsonObject _task = (JsonObject) o;
             try{
                 TaskSettings.maxSteps(_task, agent.getMode());
+                TaskSettings.requireFullReasoning(_task, agent.getMode(), config);
                 pendingTasks.add(new PendingTask(_task, TaskEnvironment.resolve(_task, config)));
             }catch (RuntimeException e){
                 rc.response().setStatusCode(400).end("Task %s: %s".formatted(_task.getString("_evalId", _task.getString("id")), e.getMessage()));

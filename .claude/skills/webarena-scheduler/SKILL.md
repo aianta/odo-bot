@@ -53,8 +53,12 @@ odobot:
     api_key: ${OPENROUTER_API_KEY}
     timeout_seconds: 600
     max_attempts: 3
-    extra_body:                  # OpenRouter: pin providers that keep Qwen's <tool_call> text (see Models)
-      provider: {only: [DekaLLM, Wafer, Novita, Alibaba, Phala, CoreWeave], allow_fallbacks: false}
+    extra_body:                  # OpenRouter: pin providers that keep Qwen's <tool_call> text AND its full reasoning (see Models)
+      reasoning: {enabled: true, exclude: false}
+      provider: {only: [<providers that passed probe-reasoning>], allow_fallbacks: false, require_parameters: true}
+  require_full_reasoning: true   # per task: a step whose reasoning doesn't come back in full is retried, then fails the task
+  extra:                         # merged into each evaluate request
+    saveTrajectories: true       # trajectory dataset in odo-bot/db/trajectories.db + db/screenshots/
   evaluation:
     enabled: true
     judge:                       # fuzzy_match judge (118 tasks); unset keys = WebArena's gpt-4-1106-preview settings
@@ -80,6 +84,13 @@ Models:
   back into the request. The Qwen parser then sees a reply without an action and ends
   the task as done with no answer, which looks like an agent that quits early. Re-test with a replayed request when
   the provider list changes.
+- **Full reasoning (OpenRouter):** every qwen3.8-27b endpoint *advertises* `reasoning`, so `require_parameters` filters
+  nothing; providers differ in what they actually return. Build the allowlist with
+  `.venv/Scripts/python.exe -m wasched probe-reasoning` (each provider is replayed a saved step and must keep both
+  `<tool_call>` and the raw `reasoning.text`, about as long as the reported reasoning tokens), and re-run it before large
+  runs. Proprietary models (OpenAI, Anthropic, Gemini) return summarized, encrypted or no reasoning and never qualify.
+  With `require_full_reasoning: true`, OdoBot rejects the request (400) unless `provider.only` is set with
+  `allow_fallbacks: false`. OdoBot always asks OpenRouter for the reasoning, whatever the setting.
 - **Local Qwen** (`http://host.docker.internal:8080/v1`): handles few concurrent tasks; set `max_running_tasks: 2`.
 - **OpenAI** (`gpt-5.6-luna` for validation): `base_url: null`, `api_key: ${OPENAI_API_KEY}`, and `top_k: null`.
 
@@ -143,6 +154,19 @@ GitLab stacks take ~7 min to start; the first tasks wait for their stack.
   succeeded (`auth.sites.*.status == "ok"`, a failed login is classed `setup_env` and retried once).
 - **Parity spot-check** (optional, before the stacks are torn down): `odo-bot/scripts/webarena-parity/rescore.py`
   re-scores the eval files with WebArena's own evaluators.
+- **Trajectories** (with `odobot.extra.saveTrajectories: true`): one row per task in `odo-bot/db/trajectories.db`
+  (`eval_result`, `score`, `success`, the task definition without session cookies), both timelines' top-level
+  entities, each step's `reasoning` and `provider`, and `step_entity_links` (`seq_window`, `spatial`); screenshots and
+  crops in `odo-bot/db/screenshots/<run-id>/`. The `interaction_thoughts` view gives the thought behind each click or
+  data entry. After a run, check `curl -s localhost:8076/api/trajectories/status` (`staged` should be 0, `lastError`
+  null) and `SELECT COUNT(*) FROM agent_steps WHERE reasoning = ''` (should be 0 with full reasoning). **Never open the
+  live `trajectories.db` from Windows while OdoBot runs** (bind-mount locking is unreliable and a reader can roll back
+  the writer's journal): `curl -s -X POST localhost:8076/api/trajectories/snapshot` writes a copy to read.
+  A task whose trajectory could not be staged shows `harnessError: trajectory not staged: ...` in its tokens file.
+  The ledger records `trajectory_staged` per task. At the end of the run, the scheduler waits up to
+  `odobot.trajectory_commit_wait_s` (300) for OdoBot to commit them, then records `trajectory_committed` or
+  `trajectory_uncommitted` per task and a `trajectories_settled` summary. `report.md` has a `trajectories:` line, and
+  anything still staged is in bold.
 
 ## 6. Clean up
 
@@ -182,3 +206,5 @@ docker start shopping shopping_admin gitlab forum      # bring back hand-started
   the batched build (one DOM_EFFECT per action per mutation callback, LogUI `verbose: false`).
 - **Results of webarena-vanguard (40 tasks, 10 per app, OpenRouter qwen3.8-27b, session auth):** 19/40 (47.5%),
   0 evaluation errors, 1 setup retry, 54 min at ~2.1 concurrent tasks; a reference point for later runs.
+- **Runs before 2026-10-23 have no reasoning:** OdoBot then read only `reasoning_content`, while OpenRouter returns
+  `reasoning`, so their `qwen38-trajectory.jsonl` responses have no `<think>` block.

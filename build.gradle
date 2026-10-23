@@ -33,10 +33,25 @@ application{
 
 
 
+//The commit the jar is built from, read from .git without a git binary (the docker build has none), for the trajectories it saves.
+def odobotCommit = { ->
+    def head = file('.git/HEAD')
+    if(!head.isFile()) return 'unknown'
+    def ref = head.text.trim()
+    if(!ref.startsWith('ref: ')) return ref
+    def refPath = ref.substring(5)
+    def refFile = file(".git/${refPath}")
+    if(refFile.isFile()) return refFile.text.trim()
+    def packed = file('.git/packed-refs')
+    def line = packed.isFile()? packed.readLines().find{ it.endsWith(' ' + refPath) } : null
+    return line? line.split(' ')[0] : 'unknown'
+}
+
 shadowJar{
     manifest{
         attributes "Main-Class": mainClassName
         attributes "Main-Verticle": mainVerticleName
+        attributes "Odobot-Commit": odobotCommit()
     }
     zip64 = true
 

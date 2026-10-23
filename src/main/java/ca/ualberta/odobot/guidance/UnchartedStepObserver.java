@@ -112,7 +112,8 @@ public class UnchartedStepObserver {
         }
         cancelTimer();
         Observation observation = new Observation(Observation.Trigger.UNCHARTED_ACTION, step.getJsonObject("unchartedAction"),
-                userLocation, Screenshot.fromBase64(base64Screenshot), System.currentTimeMillis());
+                userLocation, Screenshot.fromBase64(base64Screenshot), System.currentTimeMillis(),
+                step.getInteger("step"), step.getString("id"));
         log.info("Observed uncharted step {} {} ms after it was done.", step.getValue("step"), observation.timestamp() - doneAt);
         step = null;
         screenshotRequests = 0;

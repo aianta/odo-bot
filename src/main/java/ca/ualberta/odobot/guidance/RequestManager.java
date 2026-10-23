@@ -4,6 +4,7 @@ import ca.ualberta.odobot.common.LlmCallScope;
 import ca.ualberta.odobot.common.LlmClientConfig;
 import ca.ualberta.odobot.common.TaskArtifacts;
 import ca.ualberta.odobot.guidance.instructions.*;
+import ca.ualberta.odobot.guidance.instructions.uncharted.UnchartedStep;
 import ca.ualberta.odobot.semanticflow.model.*;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
@@ -129,6 +130,11 @@ public class RequestManager {
      */
     private final InstructionDispatcher dispatcher;
 
+    /**
+     * The current task's uncharted steps, from the agent's thoughts to the observation of their result.
+     */
+    private final StepLedger stepLedger = new StepLedger();
+
     public RequestManager(OdoClient client){
         this.client = client;
         this.client.setRequestManager(this);
@@ -137,6 +143,13 @@ public class RequestManager {
 
     public InstructionDispatcher getDispatcher() {
         return dispatcher;
+    }
+
+    /**
+     * @return the uncharted steps of the current (or last) task.
+     */
+    public StepLedger getStepLedger() {
+        return stepLedger;
     }
 
     public String getExperimentFolderPath() {
@@ -403,6 +416,7 @@ public class RequestManager {
         this.ended = false;
         this.firstInstructionSent = false;
         this.steps = 0;
+        this.stepLedger.clear();
 
         //Every LLM call made while the task runs is counted toward it, whichever agent makes it.
         this.taskTokenUsage = new TaskTokenUsage(()->activeAgent == null? "none" : activeAgent.getClass().getSimpleName());
@@ -466,6 +480,10 @@ public class RequestManager {
      * sends when transmission starts, and one per uncharted step.
      */
     public void onUnchartedObservation(Observation observation){
+        if(observation.getStepNumber() != null){
+            stepLedger.observed(observation.getStepNumber(), observation, System.currentTimeMillis(),
+                    client.getEventConnectionManager().getEventProcessor().lastEventIndex());
+        }
         if(activeAgent != null && mode == ExecutionMode.UNCHARTED){
             activeAgent.observationHandler(observation);
         }
@@ -476,6 +494,14 @@ public class RequestManager {
      */
     public void onExecutionInstructionSent(JsonObject instruction){
         log.info("Task {}: sent {} {} to page {}.", evalId, instruction.getString("action"), instruction.getString("id"), instruction.getString("pageId"));
+        if(isUnchartedStep(instruction)){
+            stepLedger.sent(instruction.getInteger("step"), instruction.getString("id"), System.currentTimeMillis(),
+                    client.getEventConnectionManager().getEventProcessor().lastEventIndex());
+        }
+    }
+
+    private static boolean isUnchartedStep(JsonObject instruction){
+        return "uncharted_step".equals(instruction.getString("action")) && instruction.getInteger("step") != null;
     }
 
     /**
@@ -493,6 +519,9 @@ public class RequestManager {
             log.warn("Task {}: OdoX reported {} {} {}{}.", evalId, instruction.getString("action"), instruction.getString("id"), status,
                     reply.getString("reason") == null? "" : ": " + reply.getString("reason"));
         }
+        if(isUnchartedStep(instruction)){
+            stepLedger.done(instruction.getInteger("step"), System.currentTimeMillis(), status, reply.getString("reason"));
+        }
         if(ended){
             return;
         }
@@ -507,6 +536,9 @@ public class RequestManager {
      * observed again from now, so the agent decides anew from the page on the screen.
      */
     public void onInstructionLost(JsonObject instruction, boolean followUp){
+        if(isUnchartedStep(instruction)){
+            stepLedger.lost(instruction.getInteger("step"));
+        }
         if(ended){
             return;
         }
@@ -532,7 +564,12 @@ public class RequestManager {
 
         if(ended || source != activeAgent){
             log.info("Dropping instruction, the task has ended or its agent is not active: {}", instruction);
+            recordStep(instruction, "dropped: the task had ended or its agent was not active");
             return;
+        }
+
+        if(!followUp && (instruction instanceof TaskComplete || instruction instanceof GiveUp)){
+            recordStep(instruction, null);
         }
 
         if(instruction instanceof TaskComplete taskComplete){
@@ -573,12 +610,14 @@ public class RequestManager {
         if(!followUp){
             if(maxSteps != null && steps >= maxSteps){
                 log.info("Task {} reached its step limit of {}, ending it instead of executing: {}", evalId, maxSteps, instruction);
+                recordStep(instruction, "step limit of %d reached".formatted(maxSteps));
                 if(evaluationComplete != null){
                     evaluationComplete.tryFail("Step limit of %d reached".formatted(maxSteps));
                 }
                 return;
             }
             steps++;
+            recordStep(instruction, null);
         }
 
         Future<JsonObject> result = dispatcher.submit(instruction, followUp, next->execute(source, next, true));
@@ -587,6 +626,22 @@ public class RequestManager {
             firstInstructionSent = true;
             result.onSuccess(done->log.info("First instruction sent for execution!!"));
         }
+    }
+
+    /**
+     * Record an uncharted step, or the end of the task, the agent emitted, in the {@link #stepLedger}. Instructions that
+     * are neither an uncharted step nor carry the agent's thoughts are not steps, and are not recorded.
+     *
+     * @param notExecuted why the harness does not execute it, or null.
+     */
+    private void recordStep(Instruction instruction, String notExecuted){
+        Integer stepNumber = instruction instanceof UnchartedStep step? Integer.valueOf(step.step)
+                : instruction.getAgentTrace() != null? Integer.valueOf(instruction.getAgentTrace().stepNumber()) : null;
+        if(stepNumber == null){
+            return;
+        }
+        String emitted = instruction instanceof UnchartedStep? "uncharted_step" : instruction.getClass().getSimpleName();
+        stepLedger.emitted(stepNumber, emitted, instruction.getAgentTrace(), notExecuted);
     }
 
     private void taskComplete(){

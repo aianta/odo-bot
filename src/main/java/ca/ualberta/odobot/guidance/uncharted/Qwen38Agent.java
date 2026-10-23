@@ -10,6 +10,8 @@ import ca.ualberta.odobot.guidance.instructions.uncharted.UnchartedStep;
 import ca.ualberta.odobot.guidance.instructions.uncharted.Wait;
 import ca.ualberta.odobot.guidance.uncharted.QwenImages.ProcessedImage;
 import ca.ualberta.odobot.guidance.uncharted.QwenModelClient.QwenCompletion;
+import ca.ualberta.odobot.guidance.uncharted.QwenModelClient.ReasoningInfo;
+import ca.ualberta.odobot.trajectory.AgentTrace;
 import ca.ualberta.odobot.semanticflow.model.Observation;
 import ca.ualberta.odobot.semanticflow.model.Screenshot;
 import ca.ualberta.odobot.semanticflow.model.TimelineEntity;
@@ -69,9 +71,19 @@ public class Qwen38Agent extends UnchartedAgent {
         private QwenAgentConfig config;
         private QwenModelClient modelClient;
         private LlmCallScope llmScope;
+        private boolean requireFullReasoning = false;
 
         public Builder config(QwenAgentConfig config) {
             this.config = config;
+            return this;
+        }
+
+        /**
+         * Whether a step fails when the model's reasoning does not come back in full, see
+         * {@link OpenAIQwenModelClient}. Only used by the default model client. False by default.
+         */
+        public Builder requireFullReasoning(boolean requireFullReasoning) {
+            this.requireFullReasoning = requireFullReasoning;
             return this;
         }
 
@@ -113,7 +125,7 @@ public class Qwen38Agent extends UnchartedAgent {
         protected Qwen38Agent create() {
             Qwen38Agent agent = new Qwen38Agent();
             agent.config = config;
-            agent.modelClient = modelClient != null ? modelClient : new OpenAIQwenModelClient(config, llmScope);
+            agent.modelClient = modelClient != null ? modelClient : new OpenAIQwenModelClient(config, llmScope, requireFullReasoning);
             return agent;
         }
 
@@ -147,7 +159,7 @@ public class Qwen38Agent extends UnchartedAgent {
             log.error("Qwen38Agent must be called on a Vert.x context, ignoring {}.", timelineEntity.getClass().getSimpleName());
             return;
         }
-        step(context, image);
+        step(context, timelineEntity, image);
     }
 
     @Override
@@ -160,7 +172,7 @@ public class Qwen38Agent extends UnchartedAgent {
      * Port of {@code Qwen38Agent.predict}. The resize and encoding run on a worker thread and the model call is
      * asynchronous; everything that touches agent state, and every emit, runs on {@code context}.
      */
-    private void step(Context context, BufferedImage image) {
+    private void step(Context context, TimelineEntity observation, BufferedImage image) {
         inFlight = true;
         int originalWidth = image.getWidth();
         int originalHeight = image.getHeight();
@@ -169,10 +181,11 @@ public class Qwen38Agent extends UnchartedAgent {
                 .compose(processed -> {
                     JsonArray messages = buildMessages(processed);
                     int stepIndex = screenshots.size() - 1;
+                    JsonArray sanitized = QwenHistory.sanitizeForDump(messages);
                     writeArtifact(context, "qwen38-messages-step-%d.json".formatted(stepIndex),
-                            QwenHistory.sanitizeForDump(messages).encodePrettily(), false);
+                            sanitized.encodePrettily(), false);
                     return modelClient.complete(context, messages)
-                            .map(completion -> new ModelAnswer(completion, processed, stepIndex + 1));
+                            .map(completion -> new ModelAnswer(completion, processed, stepIndex + 1, observation, sanitized));
                 })
                 .onComplete(result -> {
                     inFlight = false;
@@ -184,7 +197,12 @@ public class Qwen38Agent extends UnchartedAgent {
                 });
     }
 
-    private record ModelAnswer(QwenCompletion completion, ProcessedImage processed, int stepNumber) {
+    /**
+     * @param observation    the observation the model reasoned over.
+     * @param promptMessages the conversation sent to the model, images omitted.
+     */
+    private record ModelAnswer(QwenCompletion completion, ProcessedImage processed, int stepNumber,
+                               TimelineEntity observation, JsonArray promptMessages) {
     }
 
     /**
@@ -245,17 +263,28 @@ public class Qwen38Agent extends UnchartedAgent {
             return;
         }
 
+        //The step's thoughts travel with the first instruction it emits: its action, else its ending.
+        AgentTrace trace = trace(answer, response, parsed, step, lowLevelInstruction, originalWidth, originalHeight);
         if (step != null) {
+            step.setAgentTrace(trace);
             emit(step);
         }
 
         switch (parsed.terminal()) {
             case DONE -> {
-                emit(new TaskComplete(parsed.answer()));
+                TaskComplete complete = new TaskComplete(parsed.answer());
+                if (step == null) {
+                    complete.setAgentTrace(trace);
+                }
+                emit(complete);
                 stopped = true;
             }
             case FAIL -> {
-                emit(GiveUp.infeasible("Qwen3.8 ended the task as failed: " + parsed.lowLevelInstruction(), parsed.answer()));
+                GiveUp giveUp = GiveUp.infeasible("Qwen3.8 ended the task as failed: " + parsed.lowLevelInstruction(), parsed.answer());
+                if (step == null) {
+                    giveUp.setAgentTrace(trace);
+                }
+                emit(giveUp);
                 stopped = true;
             }
             case NONE -> {
@@ -263,10 +292,51 @@ public class Qwen38Agent extends UnchartedAgent {
                     // An empty response executes nothing, so no new observation will come. OSWorld predicts
                     // again on the unchanged screen; do the same.
                     log.warn("Empty response at step {}, predicting again on the same screenshot.", answer.stepNumber());
-                    step(context, image);
+                    step(context, answer.observation(), image);
                 }
             }
         }
+    }
+
+    private static AgentTrace trace(ModelAnswer answer, String response, ParsedStep parsed, UnchartedStep step,
+                                    String lowLevelInstruction, int originalWidth, int originalHeight) {
+        QwenCompletion completion = answer.completion();
+        ReasoningInfo reasoning = completion.reasoning();
+        return new AgentTrace(
+                answer.stepNumber(),
+                answer.observation(),
+                response,
+                reasoning != null ? reasoning.text() : thinkText(response),
+                QwenResponseParser.stripReasoning(response),
+                lowLevelInstruction,
+                step == null ? null : step.action.toJson(),
+                parsed.pyAutoGuiCodes(),
+                parsed.unsupported(),
+                parsed.terminal().name(),
+                parsed.answer(),
+                answer.promptMessages(),
+                completion.requestId(),
+                reasoning == null ? null : reasoning.promptTokens(),
+                reasoning == null ? null : reasoning.completionTokens(),
+                reasoning == null ? null : reasoning.reasoningTokens(),
+                reasoning == null ? null : reasoning.provider(),
+                reasoning == null ? null : reasoning.source(),
+                reasoning == null ? List.of() : reasoning.formats(),
+                reasoning == null ? "the model client reported nothing about the reasoning" : reasoning.problem(),
+                originalWidth,
+                originalHeight,
+                answer.processed().width(),
+                answer.processed().height(),
+                System.currentTimeMillis());
+    }
+
+    /**
+     * @return the text of the response's leading {@code <think>} block, or "".
+     */
+    private static String thinkText(String response) {
+        int start = response.indexOf("<think>");
+        int end = response.indexOf("</think>");
+        return start >= 0 && end > start ? response.substring(start + "<think>".length(), end).strip() : "";
     }
 
     private void onStepFailed(Throwable err) {

@@ -22,6 +22,8 @@ public class Observation implements TimelineEntity{
     private final String userLocation;
     private final Screenshot screenshot;
     private final long timestamp;
+    private final Integer stepNumber;
+    private final String instructionId;
 
     /**
      * @param triggerDetails the uncharted action that triggered the observation, or null.
@@ -29,11 +31,22 @@ public class Observation implements TimelineEntity{
      * @param screenshot the screenshot of the page, or null.
      */
     public Observation(Trigger trigger, JsonObject triggerDetails, String userLocation, Screenshot screenshot, long timestamp){
+        this(trigger, triggerDetails, userLocation, screenshot, timestamp, null, null);
+    }
+
+    /**
+     * @param stepNumber the uncharted step this observation shows the result of, or null.
+     * @param instructionId the id of the EXECUTE message that carried that step, or null.
+     */
+    public Observation(Trigger trigger, JsonObject triggerDetails, String userLocation, Screenshot screenshot, long timestamp,
+                       Integer stepNumber, String instructionId){
         this.trigger = trigger;
         this.triggerDetails = triggerDetails;
         this.userLocation = userLocation;
         this.screenshot = screenshot;
         this.timestamp = timestamp;
+        this.stepNumber = stepNumber;
+        this.instructionId = instructionId;
     }
 
     public Trigger getTrigger(){
@@ -54,6 +67,21 @@ public class Observation implements TimelineEntity{
      */
     public String getUserLocation(){
         return userLocation;
+    }
+
+    /**
+     * @return the number of the uncharted step whose result this observation shows, or null for the
+     * {@link Trigger#START_TRANSMISSION} observation.
+     */
+    public Integer getStepNumber(){
+        return stepNumber;
+    }
+
+    /**
+     * @return the id of the EXECUTE message that carried the observed step, or null.
+     */
+    public String getInstructionId(){
+        return instructionId;
     }
 
     /**
@@ -79,7 +107,9 @@ public class Observation implements TimelineEntity{
         return new JsonObject()
                 .put("trigger", trigger.name())
                 .put("triggerDetails", triggerDetails)
-                .put("userLocation", userLocation);
+                .put("userLocation", userLocation)
+                .put("stepNumber", stepNumber)
+                .put("instructionId", instructionId);
     }
 
     @Override

@@ -13,6 +13,9 @@ import ca.ualberta.odobot.task.webarena.WebArenaTaskConfig;
 import ca.ualberta.odobot.task.webarena.WebArenaTaskEvaluator;
 import ca.ualberta.odobot.telemetry.TelemetryService;
 import ca.ualberta.odobot.telemetry.model.TaskInstanceResults;
+import ca.ualberta.odobot.trajectory.BuildInfo;
+import ca.ualberta.odobot.trajectory.TrajectoryStore;
+import ca.ualberta.odobot.trajectory.TrajectoryWriter;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
@@ -109,6 +112,31 @@ public class TaskVerticle extends AbstractVerticle {
     private WebArenaEvaluationSettings webArenaSettings;
 
     /**
+     * The WebArena scorer's result, or null until the task is scored.
+     */
+    private WebArenaTaskEvaluator.Result webArenaResult;
+
+    /**
+     * The URL of the agent's tab when the task ended, or null if it could not be read.
+     */
+    private String finalUrl;
+
+    /**
+     * Whether the task's trajectory is saved, see {@link TaskSettings#saveTrajectories}.
+     */
+    private final boolean saveTrajectory;
+
+    /**
+     * Epoch ms when the task started, the trajectory's collection time.
+     */
+    private long collectedAt;
+
+    /**
+     * How many times staging the trajectory is tried before the task gives up on it, and the wait before each retry.
+     */
+    static long[] stagingRetryDelaysMs = {5_000, 15_000, 30_000, 60_000, 90_000, 100_000};
+
+    /**
      * @param agent the agent the experiment runs.
      * @param request the evaluate request.
      * @param task the task, as the agent reads it.
@@ -131,6 +159,7 @@ public class TaskVerticle extends AbstractVerticle {
         this.experimentFolderPath = experimentFolderPath(explorerConfig, request);
         this.experimentResultsFolderPath = experimentFolderPath + "/results";
         this.artifacts = evalId == null? null : TaskArtifacts.of(experimentFolderPath, evalId);
+        this.saveTrajectory = TaskSettings.saveTrajectories(request);
     }
 
     /**
@@ -146,6 +175,7 @@ public class TaskVerticle extends AbstractVerticle {
         started.complete();
 
         timing.markBeforeSetup();
+        collectedAt = System.currentTimeMillis();
         log.info("Starting task {}", evalId);
 
         sockets = new TaskSockets(clientId, new JsonObject()
@@ -177,25 +207,30 @@ public class TaskVerticle extends AbstractVerticle {
 
     @Override
     public void stop(Promise<Void> stopped) {
-        //Normally the task is over and the browser already quit. If the task is undeployed while it runs, end it here.
+        //Normally the task is over and the browser already quit. If the task is undeployed while it runs, end it here,
+        //staging its trajectory first so it is not lost.
+        Future<Void> staged = Future.succeededFuture();
         if(!finishing){
             finishing = true;
             if(evaluation != null){
                 evaluation.tryFail("Task stopped");
             }
-            outcome.tryComplete(new TaskOutcome(evalId, "failed: stopped", null));
+            staged = stageTrajectory(1);
+            staged.onComplete(done->outcome.tryComplete(new TaskOutcome(evalId, "failed: stopped", null)));
         }
-        if(sockets != null){
-            sockets.close();
-        }
-        if(browser == null || browser.driver() == null){
-            stopped.complete();
-            return;
-        }
-        context.<Void>executeBlocking(()->{
-            browser.close();
-            return null;
-        }).onComplete(done->stopped.complete());
+        staged.onComplete(done->{
+            if(sockets != null){
+                sockets.close();
+            }
+            if(browser == null || browser.driver() == null){
+                stopped.complete();
+                return;
+            }
+            context.<Void>executeBlocking(()->{
+                browser.close();
+                return null;
+            }).onComplete(closed->stopped.complete());
+        });
     }
 
     /**
@@ -289,9 +324,13 @@ public class TaskVerticle extends AbstractVerticle {
             requestManager.setEnvironment(environment.toJson());
             requestManager.setMaxSteps(TaskSettings.maxSteps(task, agent.getMode()));
             requestManager.setTaskTiming(timing); //Already marks the setup, the RequestManager marks the execution.
+            client.getEventConnectionManager().getEventProcessor().setTrajectoryCapture(saveTrajectory);
             requestManager.startTask(taskAgent, agent.getMode(), UUID.fromString(task.getString("id")), request.getLong("timeout", 180000L));
             if(browser.authReport() != null){
                 requestManager.putUsageField("auth", browser.authReport());
+            }
+            if(agent.getMode() == ExecutionMode.UNCHARTED){
+                requestManager.putUsageField("requireFullReasoning", TaskSettings.requireFullReasoning(task, agent.getMode(), request));
             }
         }catch (Throwable e){
             if(evaluation != null){
@@ -327,6 +366,7 @@ public class TaskVerticle extends AbstractVerticle {
                     .build();
             case UNCHARTED -> new Qwen38Agent.Builder()
                     .config(TaskSettings.qwenConfig(request))
+                    .requireFullReasoning(TaskSettings.requireFullReasoning(task, agent.getMode(), request))
                     .llmScope(llmScope)
                     .task(agentTask)
                     .artifactDir(experimentFolderPath)
@@ -416,7 +456,8 @@ public class TaskVerticle extends AbstractVerticle {
     private Future<Void> recordFinalUrl(RequestManager requestManager){
         return context.<Void>executeBlocking(()->{
             browser.focusAppTab();
-            requestManager.putUsageField("finalUrl", browser.driver().getCurrentUrl());
+            finalUrl = browser.driver().getCurrentUrl();
+            requestManager.putUsageField("finalUrl", finalUrl);
             return null;
         }).recover(err->{
             log.warn("Task {}: could not read the final URL: {}", evalId, err.getMessage());
@@ -443,6 +484,7 @@ public class TaskVerticle extends AbstractVerticle {
                 timing.markScoringEnd();
             }
         }).map(result->{
+            webArenaResult = result;
             requestManager.putUsageField("webarena", result.summary());
             if(result.judgeUsage() != null){
                 requestManager.putUsageField("evaluatorUsage", result.judgeUsage());
@@ -495,13 +537,15 @@ public class TaskVerticle extends AbstractVerticle {
     }
 
     /**
-     * Quit the browser on a worker thread, close the sockets, then report the outcome.
+     * Stage the task's trajectory, then quit the browser on a worker thread, close the sockets, and report the outcome.
+     * The outcome waits for the trajectory to be staged, so the task's timelines are only let go of once they are on
+     * disk; it does not wait for the trajectory to be committed.
      */
     private void close(){
-        context.<Void>executeBlocking(()->{
+        stageTrajectory(stagingRetryDelaysMs.length + 1).compose(staged->context.<Void>executeBlocking(()->{
             browser.close();
             return null;
-        }).onComplete(done->{
+        })).onComplete(done->{
             if(done.failed()){
                 log.warn("Task {}: could not close the browser: {}", evalId, done.cause().getMessage());
             }
@@ -523,13 +567,155 @@ public class TaskVerticle extends AbstractVerticle {
         finishing = true;
         log.error("Task {} could not be set up: {}", evalId, e.getMessage(), e);
         saveSetupFailure(e);
-        context.<Void>executeBlocking(()->{
+        setupError = "failed: setup: " + e;
+        stageTrajectory(stagingRetryDelaysMs.length + 1).compose(staged->context.<Void>executeBlocking(()->{
             browser.close();
             return null;
-        }).onComplete(done->{
+        })).onComplete(done->{
             sockets.close();
-            outcome.tryComplete(new TaskOutcome(evalId, "failed: setup: " + e, null));
+            outcome.tryComplete(new TaskOutcome(evalId, setupError, trajectoryError));
         });
+    }
+
+    /**
+     * How a task that could not be set up ended, or null.
+     */
+    private String setupError;
+
+    /**
+     * Why the trajectory of a task without a RequestManager (setup failure) could not be staged, or null.
+     */
+    private String trajectoryError;
+
+    /**
+     * Stage the task's trajectory (see {@link TrajectoryWriter}), then hand it to the {@link TrajectoryStore} to commit.
+     * Staging is retried with backoff, holding the task, so a full disk slows the experiment down rather than losing
+     * trajectories. If it still fails, the task reports {@code trajectory not staged} as its harness error.
+     *
+     * @param attempts how many times to try.
+     * @return completes once the trajectory is staged, or staging has been given up on; never fails.
+     */
+    private Future<Void> stageTrajectory(int attempts){
+        if(!saveTrajectory){
+            return Future.succeededFuture();
+        }
+        TrajectoryStore store = TrajectoryStore.get();
+        if(store == null){
+            trajectoryNotStaged("the trajectory store is not running");
+            return Future.succeededFuture();
+        }
+        Path folder = store.stagingFolder(experimentId, TaskArtifacts.fileStem(evalId == null? "unknown" : evalId));
+        return attemptStaging(store, folder, 1, attempts);
+    }
+
+    private Future<Void> attemptStaging(TrajectoryStore store, Path folder, int attempt, int attempts){
+        RequestManager requestManager = client == null? null : client.getRequestManager();
+        OnlineEventProcessor processor = client == null? null : client.getEventConnectionManager().getEventProcessor();
+        return context.<Void>executeBlocking(()->{
+            TrajectoryWriter.stage(taskRun(requestManager), processor, requestManager == null? null : requestManager.getStepLedger(), folder);
+            return null;
+        }).compose(staged->{
+            log.info("Task {}: trajectory staged in {}.", evalId, folder);
+            if(requestManager != null){
+                requestManager.putUsageField("trajectory", new JsonObject().put("staged", true)
+                        .put("folder", store.dbDir().relativize(folder).toString().replace('\\', '/')));
+                requestManager.saveTaskUsage();
+            }
+            store.commit(folder).onFailure(err->log.error("Task {}: trajectory stays staged in {}: {}", evalId, folder, err.getMessage()));
+            return Future.<Void>succeededFuture();
+        }, err->{
+            if(attempt >= attempts){
+                log.error("Task {}: could not stage its trajectory after {} attempt(s), it is lost: {}", evalId, attempt, err.getMessage(), err);
+                trajectoryNotStaged(err.toString());
+                return Future.succeededFuture();
+            }
+            long delay = stagingRetryDelaysMs[Math.min(attempt - 1, stagingRetryDelaysMs.length - 1)];
+            log.warn("Task {}: could not stage its trajectory (attempt {}/{}), retrying in {} ms: {}", evalId, attempt, attempts, delay, err.getMessage());
+            Promise<Void> retried = Promise.promise();
+            vertx.setTimer(Math.max(1, delay), id->attemptStaging(store, folder, attempt + 1, attempts).onComplete(retried));
+            return retried.future();
+        });
+    }
+
+    private void trajectoryNotStaged(String reason){
+        String error = "trajectory not staged: " + reason;
+        RequestManager requestManager = client == null? null : client.getRequestManager();
+        if(requestManager != null){
+            requestManager.setHarnessError(requestManager.getHarnessError() == null? error : requestManager.getHarnessError() + "; " + error);
+            requestManager.putUsageField("trajectory", new JsonObject().put("staged", false).put("error", reason));
+            requestManager.saveTaskUsage();
+        }else{
+            trajectoryError = error;
+        }
+    }
+
+    /**
+     * @return what the trajectory records of the task besides its timelines and steps.
+     */
+    private TrajectoryWriter.TaskRun taskRun(RequestManager requestManager){
+        JsonObject report = null;
+        if(artifacts != null){
+            Path reportFile = artifacts.file(WebArenaTaskEvaluator.FILE_SUFFIX);
+            try{
+                if(Files.isRegularFile(reportFile)){
+                    report = new JsonObject(Files.readString(reportFile));
+                }
+            }catch (IOException | RuntimeException e){
+                log.warn("Task {}: could not read {} for its trajectory: {}", evalId, reportFile, e.getMessage());
+            }
+        }
+        boolean requireFullReasoning;
+        try{
+            requireFullReasoning = agent.getMode() != null && TaskSettings.requireFullReasoning(task, agent.getMode(), request);
+        }catch (IllegalArgumentException e){
+            requireFullReasoning = false;
+        }
+        return new TrajectoryWriter.TaskRun(
+                experimentId,
+                evalId,
+                task,
+                agent.getMode() == null? null : agent.getMode().name(),
+                agent.name(),
+                safeModelDescription(),
+                agentConfig(),
+                requireFullReasoning,
+                BuildInfo.odobotCommit(),
+                BuildInfo.odoxVersion(request.getString(EvaluationTaskRequestFields.ODOSIGHT_PATH.field)),
+                collectedAt,
+                System.currentTimeMillis(),
+                requestManager == null? setupError : requestManager.getTaskOutcome(),
+                requestManager == null? null : requestManager.getHarnessError(),
+                finalUrl,
+                requestManager == null? null : requestManager.getAgentAnswer(),
+                requestManager != null && requestManager.isJudgedInfeasible(),
+                webArenaConfig == null? null : webArenaConfig.taskId(),
+                webArenaResult == null? null : webArenaResult.summary(),
+                report);
+    }
+
+    private String safeModelDescription(){
+        try{
+            return TaskSettings.modelDescription(agent, request);
+        }catch (RuntimeException e){
+            return null;
+        }
+    }
+
+    /**
+     * @return the agent's settings from the evaluate request ({@code llm} and, for the uncharted agent, {@code qwen}),
+     * without API keys.
+     */
+    private JsonObject agentConfig(){
+        JsonObject config = new JsonObject();
+        for(String key: new String[]{"llm", "qwen"}){
+            JsonObject settings = request.getJsonObject(key);
+            if(settings != null){
+                JsonObject copy = settings.copy();
+                copy.remove("api_key");
+                config.put(key, copy);
+            }
+        }
+        return config;
     }
 
     /**

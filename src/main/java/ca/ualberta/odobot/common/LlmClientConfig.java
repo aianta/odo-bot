@@ -2,6 +2,7 @@ package ca.ualberta.odobot.common;
 
 import com.openai.core.JsonValue;
 import com.openai.models.chat.completions.ChatCompletionCreateParams;
+import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
 
 import java.time.Duration;
@@ -101,6 +102,70 @@ public record LlmClientConfig(
      */
     public boolean isOpenAiPlatform() {
         return baseUrl == null || baseUrl.contains("api.openai.com");
+    }
+
+    /**
+     * @return true if requests go to OpenRouter, which routes each one to one of several providers.
+     */
+    public boolean isOpenRouter() {
+        return baseUrl != null && baseUrl.contains("openrouter.ai");
+    }
+
+    /**
+     * For OpenRouter, the settings with the model's reasoning asked for: {@code reasoning: {enabled: true, exclude:
+     * false}} unless {@code extra_body} sets {@code reasoning} or {@code include_reasoning}, and
+     * {@code provider.require_parameters: true} unless it is set, so no provider that ignores {@code reasoning} is used.
+     * Other servers' settings are returned as they are.
+     */
+    public LlmClientConfig withReasoningRequested() {
+        if (!isOpenRouter()) {
+            return this;
+        }
+        JsonObject body = extraBody.copy();
+        if (!body.containsKey("reasoning") && !body.containsKey("include_reasoning")) {
+            body.put("reasoning", new JsonObject().put("enabled", true).put("exclude", false));
+        }
+        JsonObject provider = body.getJsonObject("provider", new JsonObject());
+        if (!provider.containsKey("require_parameters")) {
+            provider.put("require_parameters", true);
+        }
+        body.put("provider", provider);
+        return new LlmClientConfig(model, baseUrl, apiKey, maxTokens, temperature, topP, topK, presencePenalty, body,
+                timeout, maxAttempts);
+    }
+
+    /**
+     * Whether these settings can guarantee the model's full reasoning. On OpenRouter, providers that passed the
+     * reasoning probe must be pinned ({@code provider.only}, with {@code allow_fallbacks: false}), and the reasoning must
+     * not be excluded or turned off.
+     *
+     * @return what is missing, or null if nothing is.
+     */
+    public String fullReasoningProblem() {
+        Object reasoning = extraBody.getValue("reasoning");
+        if (reasoning instanceof JsonObject settings) {
+            if (Boolean.TRUE.equals(settings.getValue("exclude"))) {
+                return "extra_body.reasoning.exclude is true";
+            }
+            if (Boolean.FALSE.equals(settings.getValue("enabled")) || "none".equals(settings.getValue("effort"))) {
+                return "extra_body.reasoning turns reasoning off";
+            }
+        }
+        if (Boolean.FALSE.equals(extraBody.getValue("include_reasoning"))) {
+            return "extra_body.include_reasoning is false";
+        }
+        if (!isOpenRouter()) {
+            return null;
+        }
+        Object provider = extraBody.getValue("provider");
+        if (!(provider instanceof JsonObject routing)
+                || !(routing.getValue("only") instanceof JsonArray only) || only.isEmpty()) {
+            return "OpenRouter needs extra_body.provider.only, the providers that passed the reasoning probe";
+        }
+        if (!Boolean.FALSE.equals(routing.getValue("allow_fallbacks"))) {
+            return "OpenRouter needs extra_body.provider.allow_fallbacks: false";
+        }
+        return null;
     }
 
     /**

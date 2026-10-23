@@ -69,6 +69,44 @@ public final class TaskSettings {
     }
 
     /**
+     * @return whether a step of the task's uncharted agent fails when the model's reasoning does not come back in full:
+     * the task's {@code requireFullReasoning}, false by default.
+     * @throws IllegalArgumentException if {@code requireFullReasoning} isn't a boolean, is true for an agent that isn't
+     * uncharted, or is true while the request's {@code llm} settings can't guarantee full reasoning, see
+     * {@link LlmClientConfig#fullReasoningProblem()}.
+     */
+    public static boolean requireFullReasoning(JsonObject task, ExecutionMode mode, JsonObject evaluateRequest){
+        Object value = task.getValue("requireFullReasoning", false);
+        if(!(value instanceof Boolean require)){
+            throw new IllegalArgumentException("'requireFullReasoning' must be true or false.");
+        }
+        if(!require){
+            return false;
+        }
+        if(mode != ExecutionMode.UNCHARTED){
+            throw new IllegalArgumentException("'requireFullReasoning' is only for the uncharted agent.");
+        }
+        String problem = qwenConfig(evaluateRequest).client().fullReasoningProblem();
+        if(problem != null){
+            throw new IllegalArgumentException("'requireFullReasoning' can't be met: " + problem + ".");
+        }
+        return true;
+    }
+
+    /**
+     * @return whether the experiment saves each task's trajectory to {@code db/trajectories.db}: the request's
+     * {@code saveTrajectories}, false by default.
+     * @throws IllegalArgumentException if {@code saveTrajectories} isn't a boolean.
+     */
+    public static boolean saveTrajectories(JsonObject evaluateRequest){
+        Object value = evaluateRequest.getValue("saveTrajectories", false);
+        if(!(value instanceof Boolean save)){
+            throw new IllegalArgumentException("'saveTrajectories' must be true or false.");
+        }
+        return save;
+    }
+
+    /**
      * @return how the charted agent selects paths: the request's {@code pathSelectionMode}, HYBRID by default.
      */
     public static ExecutionRequest.PathSelectionMode pathSelectionMode(JsonObject evaluateRequest){

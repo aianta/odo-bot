@@ -27,17 +27,32 @@ import java.util.Optional;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
- * Calls an OpenAI-compatible chat completions endpoint (llama.cpp, vLLM, SGLang, ...). Port of
+ * Calls an OpenAI-compatible chat completions endpoint (llama.cpp, vLLM, SGLang, OpenRouter, ...). Port of
  * {@code mm_agents/qwen/client.py}.
  *
- * <p>Qwen3.8 servers return the chain of thought in a separate {@code reasoning_content} field. It is merged back
- * into the text as a {@code <think>} block, which the agent strips before parsing.</p>
+ * <p>Qwen3.8 servers return the chain of thought in a separate field: {@code reasoning_content} (llama.cpp, vLLM) or
+ * {@code reasoning} (OpenRouter). It is merged back into the text as a {@code <think>} block, which the agent strips
+ * before parsing.</p>
+ *
+ * <p>Every completion's reasoning is checked for completeness, see {@link #checkReasoning}. With
+ * {@code requireFullReasoning}, an incomplete one is retried like a failed call, and fails the call once the attempts
+ * run out; otherwise it is only logged.</p>
  */
 public class OpenAIQwenModelClient implements QwenModelClient {
 
     private static final Logger log = LoggerFactory.getLogger(OpenAIQwenModelClient.class);
+
+    /**
+     * Raw reasoning runs about 3-4 characters per token. Less than this many characters per reported reasoning token
+     * means the text is a summary or was cut.
+     */
+    static final double MIN_REASONING_CHARS_PER_TOKEN = 2.0;
+
+    private static final Pattern THINK_BLOCK = Pattern.compile("<think>(.*?)</think>", Pattern.DOTALL);
 
     private final QwenAgentConfig config;
 
@@ -45,6 +60,11 @@ public class OpenAIQwenModelClient implements QwenModelClient {
      * The task this client makes calls for, or null to report them to {@link TokenUsageRecord#active}.
      */
     private final LlmCallScope scope;
+
+    /**
+     * Whether a completion whose reasoning did not come back in full fails the call.
+     */
+    private final boolean requireFullReasoning;
 
     private OpenAIClientAsync client;
 
@@ -56,8 +76,25 @@ public class OpenAIQwenModelClient implements QwenModelClient {
      * @param scope the task this client makes calls for, or null to report them to {@link TokenUsageRecord#active}.
      */
     public OpenAIQwenModelClient(QwenAgentConfig config, LlmCallScope scope) {
+        this(config, scope, false);
+    }
+
+    /**
+     * @param requireFullReasoning whether a completion whose reasoning did not come back in full fails the call.
+     */
+    public OpenAIQwenModelClient(QwenAgentConfig config, LlmCallScope scope, boolean requireFullReasoning) {
         this.config = config;
         this.scope = scope;
+        this.requireFullReasoning = requireFullReasoning;
+    }
+
+    /**
+     * The model's reasoning did not come back in full, and the task requires it.
+     */
+    public static class IncompleteReasoningException extends RuntimeException {
+        public IncompleteReasoningException(String message) {
+            super(message);
+        }
     }
 
     @Override
@@ -79,13 +116,35 @@ public class OpenAIQwenModelClient implements QwenModelClient {
                          TokenUsageRecord.InferenceSpan span, Promise<QwenCompletion> promise) {
         Future.fromCompletionStage(client().chat().completions().create(params), context)
                 .onSuccess(completion -> {
-                    span.end();
                     reportUsage(completion);
+                    QwenCompletion qwenCompletion;
                     try {
-                        promise.tryComplete(toQwenCompletion(completion));
+                        qwenCompletion = toQwenCompletion(completion);
                     } catch (RuntimeException e) {
+                        span.end();
                         promise.tryFail(e);
+                        return;
                     }
+                    ReasoningInfo reasoning = qwenCompletion.reasoning();
+                    if (reasoning != null && !reasoning.complete()) {
+                        String problem = "incomplete reasoning from %s: %s".formatted(
+                                reasoning.provider() == null ? "the server" : reasoning.provider(), reasoning.problem());
+                        if (requireFullReasoning) {
+                            if (attempt >= config.client().maxAttempts()) {
+                                span.fail();
+                                promise.tryFail(new IncompleteReasoningException(problem));
+                                return;
+                            }
+                            span.attemptFailed();
+                            log.warn("[Qwen38Agent] {}, attempt {}/{}", problem, attempt, config.client().maxAttempts());
+                            long delayMs = (long) (Math.min(5.0 * attempt, 30.0) * 1000);
+                            context.owner().setTimer(delayMs, id -> attempt(context, params, attempt + 1, span, promise));
+                            return;
+                        }
+                        log.warn("[Qwen38Agent] {}", problem);
+                    }
+                    span.end();
+                    promise.tryComplete(qwenCompletion);
                 })
                 .onFailure(err -> {
                     Throwable cause = unwrap(err);
@@ -141,10 +200,17 @@ public class OpenAIQwenModelClient implements QwenModelClient {
         return client;
     }
 
+    /**
+     * @return whether a completion whose reasoning did not come back in full fails the call.
+     */
+    public boolean requiresFullReasoning() {
+        return requireFullReasoning;
+    }
+
     ChatCompletionCreateParams buildParams(JsonArray messages) {
         ChatCompletionCreateParams.Builder builder = ChatCompletionCreateParams.builder()
                 .messages(toMessageParams(messages));
-        return config.client().applyTo(builder).build();
+        return config.client().withReasoningRequested().applyTo(builder).build();
     }
 
     static List<ChatCompletionMessageParam> toMessageParams(JsonArray messages) {
@@ -209,11 +275,100 @@ public class OpenAIQwenModelClient implements QwenModelClient {
     static QwenCompletion toQwenCompletion(ChatCompletion completion) {
         ChatCompletionMessage message = completion.choices().get(0).message();
         String content = message.content().orElse("");
-        String reasoning = stringProperty(message._additionalProperties(), "reasoning_content");
+        Map<String, JsonValue> properties = message._additionalProperties();
+
+        //OpenRouter's field first; reasoning_content is the alias local servers use.
+        String separate = nonBlank(stringProperty(properties, "reasoning"));
+        String source = separate != null ? "reasoning" : null;
+        if (separate == null) {
+            separate = nonBlank(stringProperty(properties, "reasoning_content"));
+            source = separate != null ? "reasoning_content" : null;
+        }
+        String reasoningText = separate;
+        if (reasoningText == null) {
+            Matcher inline = THINK_BLOCK.matcher(content);
+            if (inline.find() && !inline.group(1).isBlank()) {
+                reasoningText = inline.group(1).strip();
+                source = "inline_think";
+            }
+        }
+
+        Long promptTokens = null;
+        Long completionTokens = null;
+        Long reasoningTokens = null;
+        try {
+            if (completion.usage().isPresent()) {
+                promptTokens = completion.usage().get().promptTokens();
+                completionTokens = completion.usage().get().completionTokens();
+                reasoningTokens = completion.usage().get().completionTokensDetails()
+                        .flatMap(details -> details.reasoningTokens()).orElse(null);
+            }
+        } catch (RuntimeException e) {
+            log.warn("[Qwen38Agent] could not read completion usage: {}", e.toString());
+        }
+
+        List<String> formats = reasoningFormats(properties.get("reasoning_details"));
+        String provider = stringProperty(completion._additionalProperties(), "provider");
+        String text = reasoningText == null ? "" : reasoningText.strip();
+        ReasoningInfo reasoning = new ReasoningInfo(text, source, formats, reasoningTokens, promptTokens,
+                completionTokens, provider, checkReasoning(text, formats, reasoningTokens));
+
         return new QwenCompletion(
-                mergeReasoningContent(content, reasoning),
+                "inline_think".equals(source) ? content : mergeReasoningContent(content, separate),
                 safeId(completion),
-                stringProperty(completion._additionalProperties(), "hidden_states_path"));
+                stringProperty(completion._additionalProperties(), "hidden_states_path"),
+                reasoning);
+    }
+
+    /**
+     * Whether the reasoning came back in full: as raw text only (no summary or encrypted parts), and about as long as the
+     * reasoning tokens the server reported.
+     *
+     * @return why it is not complete, or null if it is.
+     */
+    static String checkReasoning(String text, List<String> formats, Long reasoningTokens) {
+        List<String> notText = formats.stream().filter(type -> !"reasoning.text".equals(type)).distinct().toList();
+        if (!notText.isEmpty()) {
+            return "reasoning came back as " + String.join(", ", notText);
+        }
+        if (text.isEmpty()) {
+            return reasoningTokens != null && reasoningTokens > 0
+                    ? "no reasoning text for %d reasoning tokens".formatted(reasoningTokens)
+                    : "no reasoning came back";
+        }
+        if (reasoningTokens != null && reasoningTokens > 0 && text.length() < MIN_REASONING_CHARS_PER_TOKEN * reasoningTokens) {
+            return "%d characters of reasoning for %d reasoning tokens, a summary or cut".formatted(text.length(), reasoningTokens);
+        }
+        return null;
+    }
+
+    /**
+     * @return the {@code type} of each part of OpenRouter's {@code reasoning_details}, in order; empty if there are none.
+     */
+    private static List<String> reasoningFormats(JsonValue details) {
+        if (details == null) {
+            return List.of();
+        }
+        List<String> formats = new ArrayList<>();
+        Object parts;
+        try {
+            parts = details.convert(Object.class);
+        } catch (RuntimeException e) {
+            log.warn("[Qwen38Agent] could not read reasoning_details: {}", e.toString());
+            return formats;
+        }
+        if (parts instanceof List<?> list) {
+            for (Object part : list) {
+                if (part instanceof Map<?, ?> fields && fields.get("type") instanceof String type) {
+                    formats.add(type);
+                }
+            }
+        }
+        return formats;
+    }
+
+    private static String nonBlank(String text) {
+        return text == null || text.isBlank() ? null : text;
     }
 
     static String mergeReasoningContent(String content, String reasoning) {
