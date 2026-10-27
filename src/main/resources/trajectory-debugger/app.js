@@ -596,6 +596,8 @@
           <dt>Dispatched</dt><dd>{{ page.logui.dispatched }} · last {{ ago(page.logui.lastDispatchAt, now) }}</dd>
           <dt>Started</dt><dd :class="page.logui.initError ? 'no' : ''">{{ page.logui.initError ? 'failed: ' + page.logui.initError : page.logui.initCompletedAt ? time(page.logui.initCompletedAt) : page.logui.initStartedAt ? 'starting since ' + time(page.logui.initStartedAt) : 'never' }}</dd>
           <template v-if="page.logui.initErrorStack"><dt>Init stack</dt><dd><pre class="mono" style="margin:0;white-space:pre-wrap;font-size:11px">{{ page.logui.initErrorStack }}</pre></dd></template>
+          <template v-if="page.logui.elementInitialisationError"><dt>Element init</dt><dd class="no"><pre class="mono" style="margin:0;white-space:pre-wrap;font-size:11px">{{ page.logui.elementInitialisationError }}</pre></dd></template>
+          <template v-if="page.logui.elementAnomalies && page.logui.elementAnomalies.length"><dt>Skipped keys</dt><dd class="mono">{{ page.logui.elementAnomalies.map(a => a.key + ' (' + a.owner + ')').join(', ') }}</dd></template>
           <dt>Watching DOM</dt><dd :class="page.logui.observing === false ? 'no' : ''">{{ page.logui.observing == null ? '?' : page.logui.observing ? 'yes' : 'no' }}</dd>
           <dt>Last error</dt><dd :class="page.logui.lastError ? 'no' : ''">{{ page.logui.lastError || 'none' }}</dd>
           <dt>DOM effects</dt><dd :class="page.domEffects && page.domEffects.skippedInactive ? 'no' : ''">{{ page.domEffects ? (page.domEffects.observing ? 'observing' : 'not observing') + ' · ' + page.domEffects.emitted + ' emitted' + (page.domEffects.skippedInactive ? ' · ' + page.domEffects.skippedInactive + ' skipped (LogUI inactive)' : '') : 'unknown' }}</dd>
