@@ -18,18 +18,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.sql.Types;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -51,9 +47,10 @@ public class TrajectoryStore {
     private static final Logger log = LoggerFactory.getLogger(TrajectoryStore.class);
 
     /**
-     * The version of {@link TrajectorySchema}. The store refuses a database of another version.
+     * The version of {@link TrajectorySchema}. A database of version 2 is migrated (version 3 adds {@code notes}), one
+     * of any other version is refused, see {@link TrajectoryDatabase#open}.
      */
-    public static final int SCHEMA_VERSION = 2;
+    public static final int SCHEMA_VERSION = 3;
 
     public static final String STAGED_FILE = "trajectory.json";
 
@@ -82,12 +79,12 @@ public class TrajectoryStore {
     /**
      * Only used on the writer thread.
      */
-    private Connection connection;
+    private TrajectoryDatabase database;
 
     /**
-     * The columns rows are inserted with, by table, see {@link #insertColumns}. Only used on the writer thread.
+     * The open database's connection, see {@link #connect()}. Only used on the writer thread.
      */
-    private final Map<String, List<String>> insertColumns = new HashMap<>();
+    private Connection connection;
 
     private volatile boolean ready = false;
 
@@ -340,87 +337,36 @@ public class TrajectoryStore {
         }, true);
     }
 
-    public synchronized void close() {
+    /**
+     * Release the database and close its connection on the writer thread.
+     *
+     * @return completes once the connection is closed, so the file can be moved or deleted.
+     */
+    public synchronized Future<Void> close() {
         if (heartbeatTimer != -1) {
             vertx.cancelTimer(heartbeatTimer);
             heartbeatTimer = -1;
         }
         ready = false;
-        writer.executeBlocking(() -> {
+        return writer.<Void>executeBlocking(() -> {
             releaseWriter();
-            if (connection != null) {
-                connection.close();
+            if (database != null) {
+                database.close();
+                database = null;
                 connection = null;
             }
             return null;
-        }, true).onComplete(done -> writer.close());
+        }, true).eventually(() -> writer.close());
     }
 
     // ---------------------------------------------------------------- writer thread
 
     private void connect() throws SQLException {
-        if (connection != null && !connection.isClosed()) {
+        if (database != null && !database.isClosed()) {
             return;
         }
-        connection = DriverManager.getConnection("jdbc:sqlite:" + dbFile);
-        try (Statement statement = connection.createStatement()) {
-            statement.execute("PRAGMA journal_mode = DELETE");
-            statement.execute("PRAGMA foreign_keys = ON");
-            statement.execute("PRAGMA busy_timeout = 30000");
-            statement.execute("PRAGMA synchronous = FULL");
-        }
-        connection.setAutoCommit(false);
-        createSchema();
-    }
-
-    private void createSchema() throws SQLException {
-        try (Statement statement = connection.createStatement()) {
-            for (String ddl : TrajectorySchema.STATEMENTS) {
-                statement.execute(ddl);
-            }
-            statement.execute("INSERT OR IGNORE INTO dataset_meta(key, value) VALUES ('schema_version', '" + SCHEMA_VERSION + "')");
-            statement.execute("INSERT OR IGNORE INTO dataset_meta(key, value) VALUES ('created_at', '" + Instant.now() + "')");
-            try (ResultSet version = statement.executeQuery("SELECT value FROM dataset_meta WHERE key = 'schema_version'")) {
-                String found = version.next() ? version.getString(1) : null;
-                if (!String.valueOf(SCHEMA_VERSION).equals(found)) {
-                    connection.rollback();
-                    throw new SQLException("%s has schema version %s, this OdoBot writes version %d: migrate it or move it aside"
-                            .formatted(dbFile, found, SCHEMA_VERSION));
-                }
-            }
-        }
-        connection.commit();
-    }
-
-    /**
-     * @return the columns rows of the table are inserted with: all but its INTEGER PRIMARY KEY, which is the rowid.
-     * Generated columns are not listed by table_info.
-     */
-    private List<String> insertColumns(String table) throws SQLException {
-        List<String> columns = insertColumns.get(table);
-        if (columns == null) {
-            columns = new ArrayList<>();
-            List<String> key = new ArrayList<>();
-            String rowid = null;
-            try (Statement statement = connection.createStatement();
-                 ResultSet info = statement.executeQuery("PRAGMA table_info(" + table + ")")) {
-                while (info.next()) {
-                    columns.add(info.getString("name"));
-                    if (info.getInt("pk") > 0) {
-                        key.add(info.getString("name"));
-                        if ("INTEGER".equalsIgnoreCase(info.getString("type"))) {
-                            rowid = info.getString("name");
-                        }
-                    }
-                }
-            }
-            //Only a primary key of one INTEGER column is the rowid.
-            if (key.size() == 1 && key.get(0).equals(rowid)) {
-                columns.remove(rowid);
-            }
-            insertColumns.put(table, columns);
-        }
-        return columns;
+        database = TrajectoryDatabase.open(dbFile);
+        connection = database.connection();
     }
 
     /**
@@ -502,100 +448,7 @@ public class TrajectoryStore {
     }
 
     private void insert(StagedTrajectory staged) throws SQLException {
-        JsonObject t = staged.trajectory();
-        try (PreparedStatement delete = connection.prepareStatement("DELETE FROM trajectories WHERE experiment_id = ? AND eval_id = ?")) {
-            delete.setString(1, staged.experimentId());
-            delete.setString(2, staged.evalId());
-            delete.executeUpdate();
-        }
-
-        insertRow("trajectories", t);
-
-        Map<String, Long> domIds = new HashMap<>();
-        try (PreparedStatement insertDom = connection.prepareStatement("INSERT OR IGNORE INTO dom_snapshots(sha256, html, bytes) VALUES (?, ?, ?)");
-             PreparedStatement selectDom = connection.prepareStatement("SELECT id FROM dom_snapshots WHERE sha256 = ?")) {
-            for (Map.Entry<String, Object> dom : staged.doms()) {
-                String html = (String) dom.getValue();
-                insertDom.setString(1, dom.getKey());
-                insertDom.setString(2, html);
-                insertDom.setLong(3, html.getBytes(StandardCharsets.UTF_8).length);
-                insertDom.executeUpdate();
-                selectDom.setString(1, dom.getKey());
-                try (ResultSet row = selectDom.executeQuery()) {
-                    row.next();
-                    domIds.put(dom.getKey(), row.getLong(1));
-                }
-            }
-        }
-
-        Map<String, Long> entityIds = new HashMap<>();
-        for (Object o : staged.entities()) {
-            JsonObject entity = ((JsonObject) o).copy();
-            entity.put("trajectory_id", t.getString("id"));
-            String sha = entity.getString("dom_sha256");
-            entity.put("dom_snapshot_id", sha == null ? null : domIds.get(sha));
-            entityIds.put(entity.getString("timeline") + ":" + entity.getInteger("position"),
-                    insertRow("timeline_entities", entity));
-        }
-
-        Map<Integer, Long> stepIds = new HashMap<>();
-        for (Object o : staged.steps()) {
-            JsonObject step = ((JsonObject) o).copy();
-            step.put("trajectory_id", t.getString("id"));
-            step.put("input_observation", entityIds.get(step.getString("input_observation_key")));
-            step.put("result_observation", entityIds.get(step.getString("result_observation_key")));
-            stepIds.put(step.getInteger("step_number"), insertRow("agent_steps", step));
-        }
-
-        for (Object o : staged.links()) {
-            JsonObject link = ((JsonObject) o).copy();
-            Long stepId = stepIds.get(link.getInteger("step_number"));
-            Long entityId = entityIds.get(link.getString("entity_key"));
-            if (stepId == null || entityId == null) {
-                log.warn("Dropping a link to step {} or entity {} that the trajectory of {} lacks.",
-                        link.getInteger("step_number"), link.getString("entity_key"), staged.evalId());
-                continue;
-            }
-            link.put("step_id", stepId).put("entity_id", entityId);
-            insertRow("step_entity_links", link);
-        }
-    }
-
-    /**
-     * Insert a row from a JSON object. JSON objects and arrays are stored as JSON text.
-     *
-     * @return the new row's rowid.
-     */
-    private long insertRow(String table, JsonObject row) throws SQLException {
-        List<String> columns = insertColumns(table);
-        String sql = "INSERT INTO %s(%s) VALUES (%s)".formatted(table, String.join(", ", columns),
-                String.join(", ", columns.stream().map(c -> "?").toList()));
-        try (PreparedStatement insert = connection.prepareStatement(sql)) {
-            for (int i = 0; i < columns.size(); i++) {
-                bind(insert, i + 1, row.getValue(columns.get(i)));
-            }
-            insert.executeUpdate();
-        }
-        //The driver does not implement getGeneratedKeys; the connection is only used on the writer thread.
-        try (Statement statement = connection.createStatement(); ResultSet key = statement.executeQuery("SELECT last_insert_rowid()")) {
-            return key.next() ? key.getLong(1) : -1;
-        }
-    }
-
-    private static void bind(PreparedStatement statement, int index, Object value) throws SQLException {
-        if (value == null) {
-            statement.setNull(index, Types.NULL);
-        } else if (value instanceof JsonObject || value instanceof JsonArray) {
-            statement.setString(index, value.toString());
-        } else if (value instanceof Boolean flag) {
-            statement.setInt(index, flag ? 1 : 0);
-        } else if (value instanceof Integer || value instanceof Long) {
-            statement.setLong(index, ((Number) value).longValue());
-        } else if (value instanceof Number number) {
-            statement.setDouble(index, number.doubleValue());
-        } else {
-            statement.setString(index, value.toString());
-        }
+        database.insert(staged);
     }
 
     /**

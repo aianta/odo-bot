@@ -75,6 +75,9 @@ is stopped. Analyse that copy. Before trusting it, `report.md`'s `trajectories:`
 - `trajectories`: one row per task (`experiment_id` = run id, `eval_id`, `webarena_task_id`): task text and
   definition (no cookies), agent/model/config, OdoBot commit, OdoX version, end reason, `eval_result`, `success`,
   `score`, `agent_answer`, `eval_types`, full `eval_report`. **Final attempt only** (unique on experiment + eval id).
+  Schema 3 (since 2026-10-27) adds `notes` here and on `timeline_entities`: a person's notes from the Trajectory
+  Debugger, NULL for agent runs. A debugger export (`debugger-<ts>.zip`) is a database of this schema with
+  `execution_mode = HUMAN` rows, charted entities only, and its screenshots laid out as under `db/`.
 - `agent_steps`: every model reply: `reasoning` (full, `reasoning_complete`), `raw_response`, `low_level_instruction`,
   `action` JSON, `terminal`, `answer`, `emitted` (`uncharted_step`, `TaskComplete`, `GiveUp`), `not_executed` (reply
   past the step cap), `prompt_messages`, `input_observation` / `result_observation` (entity ids), instruction send/done

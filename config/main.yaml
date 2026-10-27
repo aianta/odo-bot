@@ -1,6 +1,6 @@
 # Services to deploy
 LogPreProcessor: true
-TimelineWebApp: true
+TrajectoryDebugger: true
 OdoSightSupport: true
 TPG: false
 Explorer: true

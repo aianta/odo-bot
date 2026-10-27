@@ -7,7 +7,10 @@ import io.vertx.core.json.JsonObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
 
 public class OdoClient {
 
@@ -40,6 +43,8 @@ public class OdoClient {
      * guidance channel is open only while there is one, and guidance messages are addressed to it.
      */
     private volatile String pageId = null;
+
+    private final List<Consumer<JsonObject>> pageListeners = new CopyOnWriteArrayList<>();
 
     public JsonObject statusReport(){
         JsonObject report = new JsonObject()
@@ -156,6 +161,27 @@ public class OdoClient {
         }
         log.info("[{}] Page {} gone", label(), this.pageId);
         this.pageId = null;
+    }
+
+    /**
+     * @param listener called with every PAGE_READY and PAGE_GONE message OdoX sends, as sent (type, pageId, url, ...),
+     *                 e.g. for the Trajectory Debugger's diagnostics.
+     */
+    public void addPageListener(Consumer<JsonObject> listener){
+        pageListeners.add(listener);
+    }
+
+    /**
+     * Tell the page listeners about a PAGE_READY or PAGE_GONE message.
+     */
+    public void onPageMessage(JsonObject message){
+        for(Consumer<JsonObject> listener: pageListeners){
+            try{
+                listener.accept(message);
+            }catch (RuntimeException e){
+                log.warn("[{}] A page listener failed: {}", label(), e.getMessage(), e);
+            }
+        }
     }
 
     public EventConnectionManager getEventConnectionManager() {

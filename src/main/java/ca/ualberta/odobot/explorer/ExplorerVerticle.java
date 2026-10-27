@@ -15,6 +15,7 @@ import ca.ualberta.odobot.telemetry.TelemetryVerticle;
 import ca.ualberta.odobot.telemetry.model.ExperimentResults;
 import io.reactivex.rxjava3.core.Completable;
 
+import ca.ualberta.odobot.debugger.RecordingRequests;
 import io.vertx.config.ConfigRetriever;
 import io.vertx.config.ConfigRetrieverOptions;
 import io.vertx.config.ConfigStoreOptions;
@@ -66,6 +67,11 @@ public class ExplorerVerticle extends HttpServiceVerticle {
      */
     private JsonObject guidanceConfig;
 
+    /**
+     * config/trajectory-debugger.yaml, for the debugging request; its defaults until it has loaded.
+     */
+    private JsonObject debuggerConfig = new JsonObject();
+
     public String serviceName(){return "Data Generation (Explorer) Service";}
 
     public String configFilePath(){
@@ -109,6 +115,18 @@ public class ExplorerVerticle extends HttpServiceVerticle {
 
             api.route(HttpMethod.POST, "/evaluate").handler(this::evaluateValidationHandler);
             api.route(HttpMethod.POST, "/evaluate").handler(this::evaluateHandler);
+
+            //Record a trajectory by hand, watched in the Trajectory Debugger, see RecordingRequests.
+            ConfigRetriever.create(vertx.getDelegate(), new ConfigRetrieverOptions().addStore(new ConfigStoreOptions()
+                            .setType("file").setFormat("yaml").setOptional(true)
+                            .setConfig(new JsonObject().put("path", "config/trajectory-debugger.yaml"))))
+                    .getConfig()
+                    .onSuccess(loaded->debuggerConfig = loaded)
+                    .onFailure(err->log.warn("Could not load config/trajectory-debugger.yaml, using its defaults: {}", err.getMessage()));
+            api.route(HttpMethod.POST, "/debug/record").handler(rc->RecordingRequests.start(rc.getDelegate(), vertx.getDelegate(),
+                    guidanceConfig, debuggerConfig));
+            api.route(HttpMethod.GET, "/debug/record").handler(rc->RecordingRequests.current(rc.getDelegate()));
+            api.route(HttpMethod.DELETE, "/debug/record/:sessionId").handler(rc->RecordingRequests.end(rc.getDelegate(), vertx.getDelegate()));
 
             //The trajectory database, db/trajectories.db. Whatever an earlier run left staged is committed now.
             TrajectoryStore.init(vertx.getDelegate(), Path.of("db"))

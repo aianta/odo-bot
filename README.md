@@ -370,6 +370,27 @@ Tasks stage their trajectory in `db/staging/` before reporting their outcome, an
 
 The schema, the linking methods, example queries and the OpenRouter reasoning setup are in [docs/capturing-trajectories-at-scale](./docs/capturing-trajectories-at-scale/index.html) (a local file, since `*.html` is not committed).
 
+The schema is at version 3: `trajectories.notes` and `timeline_entities.notes` hold what a person wrote in the Trajectory Debugger (agent runs leave them NULL). OdoBot migrates a version 2 database in place when it opens it; an older OdoBot then refuses it.
+
+## Trajectory Debugger
+
+Record a trajectory by hand and watch the charted timeline OdoBot builds from it, live, e.g. to find out why some pages log no clicks. `POST /api/debug/record` (port 8076) opens Firefox on the grid with OdoX, logs in to the task's sites, opens the start page and starts OdoX's transmission, with no agent. Only once OdoX confirms does it answer, with the noVNC link to drive the browser and the debugger's link:
+
+```
+curl -X POST http://localhost:8076/api/debug/record -H 'content-type: application/json' -d '{
+  "startUrl": "http://172.23.11.1/admin/admin/dashboard/",
+  "odoSightPath": "./odo-sight.xpi",
+  "guidanceServiceHost": "172.23.0.2:7080",
+  "firefoxDockerGridURL": "http://172.23.0.20:4444",
+  "targetHosts": ["*"],
+  "viewerUrl": "http://localhost:7900/?autoconnect=1&resize=scale&password=secret"
+}'
+```
+
+The body takes the evaluate request's browser fields, plus a `startUrl` and/or one `task` whose `environment` names the sites and session login, as a WebArena scheduler request does (`startUrl` wins). One session runs at a time; `DELETE /api/debug/record/<sessionId>` ends it (the browser closes, the timelines stay) and `GET /api/debug/record` shows it.
+
+The debugger (`http://localhost:8077`, `config/trajectory-debugger.yaml`, workspace in `db/debugger/`) shows timelines one above the other, aligned by position and colour-coded by kind; click an entity for everything saved for it (row, screenshot with its element outlined, crop, page snapshot) and to annotate it. You can start and stop recording (OdoX's transmission), create, rename, delete and annotate timelines, choose which one recorded events go to (the active one; the first event creates one if none is), cut a timeline after an entity, import timelines from OdoBot's dataset or an uploaded `.zip`/`.db` (as copies: the source is never changed), and download timelines as a zip laid out like `db/`: a `trajectories.db` of this schema (one `trajectories` row per timeline, `execution_mode = HUMAN`, its entities as charted `timeline_entities` rows with their notes, and their page snapshots), the screenshots under `screenshots/<experimentId>/<timelineId>/`, and `timelines.json`. The **OdoX diagnostics** tab shows the event pipeline hop by hop (page scripts → content script → background → OdoBot): the socket, each injected script (injected, loaded, ran), whether LogUI runs and its events reach OdoBot, events dropped for another LogUI session, page errors, and per page whether it went deaf after loading.
+
 
 ## Building Docker Image 
 
@@ -389,9 +410,10 @@ docker build --progress=plain -t aianta/odobot -f docker-gradle/Dockerfile .
 ### Port Bindings
 * `8076`: This is the port on which OdoBot exposes its `/api/evaluate` endpoint where tasks can be sent for evaluation.
 * `7080`: This is the port on which OdoBot exposes its guidance service
+* `8077`: The Trajectory Debugger, the web app for recording trajectories by hand, see [Trajectory Debugger](#trajectory-debugger)
 
 ```
-docker run -p 8076:8076 -p 7080:7080 -v ./config:/application/config -v ./execution_events:/application/execution_events -v ./libs:/application/libs -v ./db:/application/db  --name odobot aianta/odobot
+docker run -p 8076:8076 -p 7080:7080 -p 8077:8077 -v ./config:/application/config -v ./execution_events:/application/execution_events -v ./libs:/application/libs -v ./db:/application/db  --name odobot aianta/odobot
 ```
 
 ## Manual container setup

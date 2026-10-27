@@ -28,7 +28,7 @@ The scheduler talks to the container named in `odobot.container` (`odobot`), at 
 ```bash
 docker build -t aianta/odobot:latest -f docker-gradle/Dockerfile .      # if the code changed
 docker rm -f odobot
-docker run -d --name odobot --network odobot-net --ip 172.23.0.2 -p 7080:7080 -p 8076:8076 \
+docker run -d --name odobot --network odobot-net --ip 172.23.0.2 -p 7080:7080 -p 8076:8076 -p 8077:8077 \
   -v "C:/Users/aiant/phdspace/odobleja/odo-bot/config:/application/config" \
   -v "C:/Users/aiant/phdspace/odobleja/odo-bot/execution_events:/application/execution_events" \
   -v "C:/Users/aiant/phdspace/odobleja/odo-bot/libs:/application/libs" \

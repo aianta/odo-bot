@@ -465,6 +465,11 @@ public class RequestManager {
      */
     public void onObservation(TimelineEntity entity){
 
+        //No task runs, e.g. a person records a trajectory with the Trajectory Debugger: there is nothing to dispatch.
+        if(activeAgent == null){
+            return;
+        }
+
         //Give the DOM time to settle before sending the next instruction.
         if(entity instanceof Effect || entity instanceof NetworkEvent || entity instanceof ApplicationLocationChange){
             dispatcher.onPageActivity();

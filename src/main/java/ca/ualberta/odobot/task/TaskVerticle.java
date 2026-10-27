@@ -255,7 +255,11 @@ public class TaskVerticle extends AbstractVerticle {
         return guidanceHost(configured, port);
     }
 
-    static String guidanceHost(String configured, int port){
+    /**
+     * @return where OdoX reaches a listener on {@code port}: the host of the request's {@code guidanceServiceHost},
+     * with that port.
+     */
+    public static String guidanceHost(String configured, int port){
         if(configured == null || configured.isBlank()){
             throw new IllegalArgumentException("'guidanceServiceHost' is missing.");
         }

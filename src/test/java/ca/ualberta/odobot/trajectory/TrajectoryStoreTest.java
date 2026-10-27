@@ -49,7 +49,7 @@ class TrajectoryStoreTest {
     @AfterEach
     void stop() throws Exception {
         TrajectoryStore.commitRetryDelaysMs = retryDelays;
-        store.close();
+        await(store.close());
         vertx.close().toCompletionStage().toCompletableFuture().get(30, TimeUnit.SECONDS);
     }
 
@@ -135,7 +135,7 @@ class TrajectoryStoreTest {
 
     @Test
     void aDatabaseOfAnotherSchemaVersionIsRefused() throws Exception {
-        store.close();
+        await(store.close());
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + db.resolve("trajectories.db"));
              Statement statement = connection.createStatement()) {
             statement.executeUpdate("UPDATE dataset_meta SET value = '1' WHERE key = 'schema_version'");
@@ -144,6 +144,30 @@ class TrajectoryStoreTest {
         Exception refused = assertThrows(Exception.class, () -> await(store.start()));
         assertTrue(refused.getMessage().contains("schema version 1"), refused.getMessage());
         assertFalse(store.canWrite());
+    }
+
+    @Test
+    void aVersion2DatabaseIsMigratedToVersion3InPlace() throws Exception {
+        await(store.commit(stage("7|OdoBotNL|0b1c")));
+        await(store.close());
+        //Make it a version 2 database: no notes columns.
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + db.resolve("trajectories.db"));
+             Statement statement = connection.createStatement()) {
+            statement.execute("ALTER TABLE trajectories DROP COLUMN notes");
+            statement.execute("ALTER TABLE timeline_entities DROP COLUMN notes");
+            statement.executeUpdate("UPDATE dataset_meta SET value = '2' WHERE key = 'schema_version'");
+        }
+
+        store = new TrajectoryStore(vertx, db);
+        await(store.start());
+        assertEquals(List.of("3"), column("SELECT value FROM dataset_meta WHERE key = 'schema_version'"));
+        assertTrue(store.columns("trajectories").contains("notes"));
+        assertTrue(store.columns("timeline_entities").contains("notes"));
+        assertEquals(5, count("SELECT COUNT(*) FROM timeline_entities WHERE notes IS NULL"), "the rows already there keep NULL notes");
+
+        await(store.commit(stage("8|OdoBotNL|0b1d")));
+        assertEquals(2, count("SELECT COUNT(*) FROM trajectories WHERE notes IS NULL"), "agent runs write no notes");
+        assertEquals(0, column("PRAGMA foreign_key_check").size());
     }
 
     @Test
@@ -161,14 +185,14 @@ class TrajectoryStoreTest {
     @Test
     void whatAStoppedRunLeftStagedIsCommittedOnceAtTheNextStart() throws Exception {
         Path folder = stage("8|OdoBotNL|0b1d");
-        store.close();
+        await(store.close());
 
         store = new TrajectoryStore(vertx, db);
         await(store.start());
         assertEquals(1, count("SELECT COUNT(*) FROM trajectories"));
         assertFalse(Files.exists(folder));
 
-        store.close();
+        await(store.close());
         store = new TrajectoryStore(vertx, db);
         await(store.start());
         assertEquals(1, count("SELECT COUNT(*) FROM trajectories"), "committed exactly once");
@@ -220,7 +244,7 @@ class TrajectoryStoreTest {
         Exception refused = assertThrows(Exception.class, () -> await(second.start()));
         assertTrue(refused.getMessage().contains("another OdoBot"), refused.getMessage());
         assertFalse(second.canWrite());
-        second.close();
+        await(second.close());
     }
 
     @Test

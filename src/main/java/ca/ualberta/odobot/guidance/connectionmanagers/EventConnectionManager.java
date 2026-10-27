@@ -9,6 +9,8 @@ import io.vertx.core.Context;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
+
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -135,14 +137,24 @@ public class EventConnectionManager extends AbstractConnectionManager implements
     }
 
     public Future<Void> startTransmitting(){
+        UUID executionId = client.getRequestManager().getExecutionId();
+        return startTransmitting(executionId == null? null : executionId.toString());
+    }
+
+    /**
+     * @param pathsRequestId the id OdoX files the transmission's events under. OdoX needs one: without it, its
+     *                       START_TRANSMISSION handler fails reading the unset id and never answers. A task uses its
+     *                       execution id; a recording without a task (Trajectory Debugger) uses its own.
+     */
+    public Future<Void> startTransmitting(String pathsRequestId){
 
         JsonObject startTransmissionRequest = new JsonObject()
                 .put("type", "START_TRANSMISSION")
                 .put("source", "EventConnectionManager");
 
 
-        if(client.getRequestManager().getExecutionId() != null){
-            startTransmissionRequest.put("pathsRequestId", client.getRequestManager().getExecutionId().toString());
+        if(pathsRequestId != null){
+            startTransmissionRequest.put("pathsRequestId", pathsRequestId);
         }
 
         log.info("Requesting transmission of user events!");
@@ -156,12 +168,33 @@ public class EventConnectionManager extends AbstractConnectionManager implements
         });
     }
 
+    /**
+     * Ask OdoX how its event pipeline is doing (GET_DIAGNOSTICS): its socket and transmission state, the scripts it
+     * injected into the page, and whether LogUI is running and its events reach the background. An OdoX build that
+     * predates GET_DIAGNOSTICS doesn't answer.
+     *
+     * @return completes with OdoX's reply, or fails if none arrives within the timeout.
+     */
+    public Future<JsonObject> requestDiagnostics(long timeoutMs){
+        JsonObject diagnosticsRequest = new JsonObject()
+                .put("type", "GET_DIAGNOSTICS")
+                .put("source", SOURCE);
+        Future<JsonObject> reply = request(diagnosticsRequest);
+        long timer = client.vertx().setTimer(Math.max(1, timeoutMs), id->failReply(diagnosticsRequest.getString("id"),
+                "OdoX did not answer GET_DIAGNOSTICS within %d ms".formatted(timeoutMs)));
+        return reply.onComplete(done->client.vertx().cancelTimer(timer));
+    }
+
     public Future<Void> stopTransmitting(){
 
         JsonObject stopTransmissionRequest = new JsonObject()
                 .put("type", "STOP_TRANSMISSION")
-                .put("source", "EventConnectionManager")
-                .put("pathsRequestId", client.getRequestManager().getExecutionId().toString());
+                .put("source", "EventConnectionManager");
+
+        //A recording without a task, e.g. from the Trajectory Debugger, has no execution id.
+        if(client.getRequestManager().getExecutionId() != null){
+            stopTransmissionRequest.put("pathsRequestId", client.getRequestManager().getExecutionId().toString());
+        }
 
         log.info("Requesting transmission of user events to end!");
 

@@ -58,7 +58,7 @@ on event-loop or worker threads, and these settings just suppress the warnings.
 | Key | Verticle deployed | Notes |
 |---|---|---|
 | `LogPreProcessor` | `logpreprocessor.LogPreprocessor` | **Must be true** — owns the embedded Neo4j and registers `sqlite-service`, `elasticsearch-service`, `domsequencing-service`. |
-| `TimelineWebApp` | `web.TimelineWebApp` | Read-only browsing UI over pipeline executions. |
+| `TrajectoryDebugger` | `debugger.TrajectoryDebuggerVerticle` | Web app (Vue) for recording trajectories by hand, cutting, annotating, importing and exporting timelines, and OdoX diagnostics. |
 | `OdoSightSupport` | `web.OdoSightSupport` | Endpoints called by the Odo Sight extension / scrape tooling. |
 | `TPG` | `tpg.TPGVerticle` | ⚠️ Currently `false`. Tangled Program Graph learner. |
 | `Explorer` | `explorer.ExplorerVerticle` | Deployed with a dedicated `explorer-pool` (8 workers, 1 h max execute). |
@@ -78,7 +78,7 @@ flowchart TD
     L["Launcher<br/><i>VertxOptions</i>"] --> MV["MainVerticle<br/><code>config/main.yaml</code>"]
 
     MV --> LP["LogPreprocessor<br/>:8078"]
-    MV --> TW["TimelineWebApp<br/>:8080"]
+    MV --> TD["TrajectoryDebugger<br/>:8077"]
     MV --> OS["OdoSightSupport<br/>:8079"]
     MV -.->|"disabled"| TPG["TPGVerticle<br/>:8027"]
     MV --> EX["ExplorerVerticle<br/>:8076"]
@@ -118,7 +118,7 @@ Two base classes in `ca.ualberta.odobot.common` define the shape of most verticl
   - `api` sub-router mounted at `_config.apiPathPrefix` (default `/api/*`).
 - Subclasses register routes on `api` inside their `onStart()`.
 
-Verticles predating these base classes (`LogPreprocessor`, `TimelineWebApp`, `OdoSightSupport`,
+Verticles predating these base classes (`LogPreprocessor`, `OdoSightSupport`,
 `TPGVerticle`) extend `AbstractVerticle` directly and hard-code their host/port/prefix.
 
 ---
@@ -153,7 +153,7 @@ All addresses are string constants in `logpreprocessor/Constants.java`.
 | Address | Interface | Registered by (`ServiceBinder`) | Consumed by (`createProxy` / `ServiceProxyBuilder`) |
 |---|---|---|---|
 | `sqlite-service` | `sqlite.SqliteService` | `LogPreprocessor` **and** `Mind2WebService` ⚠️ (see §7.1) | `ExplorerVerticle`, `OdoSightSupport`, `ModelConstructionVerticle`, `Snippet2XMLVerticle`, `TaskPlannerVerticle`, `DataEntry2LabelVerticle`, `Extractor`, `TPGVerticle`, `AbstractPreprocessingPipeline` |
-| `elasticsearch-service` | `elasticsearch.ElasticsearchService` | `LogPreprocessor` (registered with an 86 400 s timeout) | `TimelineWebApp`, `OdoSightSupport`, `DataEntry2LabelVerticle`, `ModelConstructionVerticle` (300 s), `Extractor` (1 h), `TPGVerticle`, `AbstractPreprocessingPipeline` |
+| `elasticsearch-service` | `elasticsearch.ElasticsearchService` | `LogPreprocessor` (registered with an 86 400 s timeout) | `OdoSightSupport`, `DataEntry2LabelVerticle`, `ModelConstructionVerticle` (300 s), `Extractor` (1 h), `TPGVerticle`, `AbstractPreprocessingPipeline` |
 | `domsequencing-service` | `domsequencing.DOMSequencingService` | `LogPreprocessor` | `TPGVerticle`, `AbstractPreprocessingPipeline` |
 | `snippet-extractor-service` | `snippets.SnippetExtractorService` | `snippets.Extractor` | `LogPreprocessor` (the proxy is injected into `ElasticsearchService.create`) |
 | `task-planner-service` | `taskplanner.TaskPlannerService` | `TaskPlannerVerticle` | `ExplorerVerticle` (1 h timeout), `ModelConstructionVerticle` (1 h timeout) |
@@ -246,13 +246,13 @@ Notably, the `guidance` runtime reaches directly into `LogPreprocessor`, `TaskPl
 | 8055 | `ModelConstructionVerticle` | HTTP | `config/model-construction.yaml` |
 | 8056 | `TelemetryVerticle` | HTTP (no routes) | `config/telemetry.yaml` |
 | 8076 | `ExplorerVerticle` | HTTP | `config/explorer.yaml` |
+| 8077 | `TrajectoryDebuggerVerticle` | HTTP + static `trajectory-debugger/` (classpath) | `config/trajectory-debugger.yaml` |
 | 8078 | `LogPreprocessor` | HTTP | hard-coded |
 | 8079 | `OdoSightSupport` | HTTP | hard-coded |
-| 8080 | `TimelineWebApp` | HTTP + static `webroot/` | hard-coded |
 | 7687 | Embedded Neo4j Bolt connector | Bolt | `GraphDB` constructor |
 
-Per the README, only **8076** (evaluation) and **7080** (guidance) are published from the
-Docker image.
+Per the README, **8076** (evaluation), **7080** (guidance) and **8077** (Trajectory Debugger) are published from
+the Docker image.
 
 ---
 
@@ -345,31 +345,30 @@ Each mounted pipeline gets this route family under `/api/preprocessing/pipelines
 
 ---
 
-### 6.3 `TimelineWebApp` — `ca.ualberta.odobot.web.TimelineWebApp`
+### 6.3 `TrajectoryDebuggerVerticle` — `ca.ualberta.odobot.debugger.TrajectoryDebuggerVerticle`
 
 | | |
 |---|---|
-| **Base** | `AbstractVerticle` |
-| **Config** | none — `0.0.0.0:8080`, prefix `/api/*`, serves static `webroot/` |
-| **Consumes** | `elasticsearch-service` |
+| **Base** | `ConfigurableVerticle` (core Vert.x router inside) |
+| **Config** | `config/trajectory-debugger.yaml` — `host`, `port` (8077), `dir` (`db/debugger`), `datasetDir`, `publicUrl`, `viewerUrl`, `odoSightPath` |
+| **Consumes** | event bus `debugger.live` (published by `LiveRecordingVerticle`), `debugger.session.<id>` (requests to it: `row`, `transmit`, `diagnostics`, `end`); `TrajectoryStore.snapshot()` for imports |
 | **Registers** | nothing |
-| **Notes** | Has a vestigial `getInstance()` singleton accessor that nothing calls. |
 
-Read-only inspection UI over pipeline executions stored in Elasticsearch.
+Owns the `Workspace` (timelines of live or frozen entities, the active timeline; saved to `db/debugger/workspace/`).
+A recording session (`LiveRecordingVerticle`, deployed by `ExplorerVerticle`'s `/debug/record`) reuses `TaskBrowser`
+and `TaskSockets`, publishes each charted entity, and freezes an entity into its folder (`EntityFolder`, rows built by
+`TrajectoryWriter.chartedRow`) once a newer one arrives. Exports (`TimelineExporter`) write a fresh `trajectories.db`
+through `TrajectoryDatabase`; imports (`TimelineImporter`) read one read-only and copy its timelines.
 
 | Method | Path |
 |---|---|
-| GET | `/pipelines` |
-| GET | `/pipelines/:pipelineId/timelines` |
-| GET | `/executions` |
-| GET | `/executions/:executionId/timelines` |
-| GET | `/executions/:executionId/timelineEntities` |
-| GET | `/executions/:executionId/activityLabels` |
-| GET | `/executions/:executionId/activity/:label/timelineEntities` |
-
-Requests to `/executions/:executionId/*` pass through resolver handlers
-(`resolveExecution → resolvePipeline → …`) that hydrate the routing context before the terminal
-handler runs.
+| GET | `/api/workspace?since=<etag>` (304 when unchanged) |
+| POST, PATCH, DELETE | `/api/timelines`, `/api/timelines/:id` (title, notes, active) |
+| POST | `/api/timelines/:id/cut` |
+| GET, PATCH | `/api/entities/:id`, `GET /api/entities/:id/dom`, `GET /api/files/*` |
+| GET, DELETE | `/api/session`; `POST /api/recording`; `GET /api/session/diagnostics` |
+| POST | `/api/export` (zip) |
+| GET, POST, DELETE | `/api/import/dataset`, `/api/import/upload`, `/api/import/:importId` |
 
 ---
 
@@ -420,6 +419,9 @@ The **experiment driver**. Everything that runs a browser end-to-end goes throug
 | POST | `/evaluationTasks` | Run `EvaluationTaskGenerationTask` — synthesize evaluation tasks. |
 | POST | `/convertToOdoBotNL` | Convert evaluation tasks to the OdoBot-NL format. |
 | POST | `/evaluate` | **Primary entry point.** Run `EvaluateTask` for an agent. |
+| POST | `/debug/record` | Start a recording session (no agent): `debugger.LiveRecordingVerticle` opens Firefox with OdoX at a start URL and starts transmission; answers with the noVNC and debugger links. One at a time. |
+| GET | `/debug/record` | The recording session, if one runs. |
+| DELETE | `/debug/record/:sessionId` | End it: freeze its entities, save its raw events, close the browser. |
 | POST | `/evaluationResults` | Score an evaluation run. |
 | POST | `/evaluationResultsWebVoyager` | Score a WebVoyager-format run. |
 | POST | `/filterTasks` | Project one agent's task field out of a task array. |
@@ -850,7 +852,6 @@ hard-coded. The `*-example.yaml` files are the intended template.
 ### 7.6 Dead or vestigial code
 
 - `logpreprocessor/xes/XesTransformerService` — `create()` returns `null`.
-- `TimelineWebApp.getInstance()` — unused singleton accessor.
 - `tpg-service`, `dataentry2label-service`, `snippet2xml-service`, `telemetry-service` are
   registered on the event bus but have **no proxy consumers**; callers use static fields instead.
 - `TaskPlannerVerticle` `POST /api/task` is `@Deprecated`.

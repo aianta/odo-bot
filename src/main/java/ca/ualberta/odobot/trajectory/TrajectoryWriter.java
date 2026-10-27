@@ -159,6 +159,40 @@ public final class TrajectoryWriter {
     }
 
     /**
+     * One charted timeline entity as a {@code timeline_entities} row, see {@link #chartedRow}.
+     *
+     * @param row     the row, with {@code dom_sha256} in place of {@code dom_snapshot_id}.
+     * @param domHtml the page snapshot {@code dom_sha256} names, or null.
+     * @param files   the screenshot files written into the folder.
+     */
+    public record EntityRow(JsonObject row, String domHtml, List<String> files) {
+    }
+
+    /**
+     * Build the {@code timeline_entities} row of one charted entity, exactly as a task's trajectory saves it, writing
+     * its screenshot and crop into {@code folder}. The Trajectory Debugger builds the rows of the timelines a person
+     * records with it.
+     *
+     * @param position     the entity's position on its timeline; it also names its screenshot files.
+     * @param experimentId with {@code fileStem}, where the row's screenshot paths say the files are, relative to
+     *                     {@code db/}: {@code screenshots/<experimentId>/<fileStem>/<file>}.
+     * @param folder       where the files are written, or null to write none.
+     */
+    public static EntityRow chartedRow(TimelineEntity entity, int position, OnlineEventProcessor processor, Path folder,
+                                       String experimentId, String fileStem) throws IOException {
+        if (folder != null) {
+            Files.createDirectories(folder);
+        }
+        TaskRun run = new TaskRun(experimentId, null, null, null, null, null, null, false, null, null, 0L, null, null,
+                null, null, null, false, null, null, null);
+        Builder builder = new Builder(run, fileStem, folder);
+        builder.entity("charted", position, entity, processor);
+        JsonObject row = builder.entities.getJsonObject(0);
+        String sha = row.getString("dom_sha256");
+        return new EntityRow(row, sha == null ? null : builder.doms.getString(sha), List.copyOf(builder.files));
+    }
+
+    /**
      * @return the evalId as it appears in file names, as {@link ca.ualberta.odobot.common.TaskArtifacts#fileStem}.
      */
     static String fileStem(String evalId) {
@@ -510,8 +544,7 @@ public final class TrajectoryWriter {
          * {@code link_click-2}. The uncharted timeline holds only observations, so its files are {@code observation-N}.
          */
         private String fileName(String timeline, int position, JsonObject row) {
-            String event = timeline.equals("uncharted") ? "observation" : row.getString("event_name", row.getString("kind"));
-            String name = TrajectoryStore.safeName(event.toLowerCase(Locale.ROOT)) + "-" + position;
+            String name = timeline.equals("uncharted") ? screenshotName("observation", position) : screenshotName(row, position);
             //A charted observation's position can be an uncharted observation's too.
             return files.contains(name + ".png") ? timeline + "-" + name : name;
         }
@@ -582,6 +615,18 @@ public final class TrajectoryWriter {
     }
 
     // ---------------------------------------------------------------- helpers
+
+    /**
+     * @return the name, without extension, of the screenshot of a charted entity row at a position: the event that
+     * took it and the position, e.g. {@code element_click-2}. Its crop adds {@code -crop}.
+     */
+    public static String screenshotName(JsonObject row, int position) {
+        return screenshotName(row.getString("event_name", row.getString("kind")), position);
+    }
+
+    static String screenshotName(String event, int position) {
+        return TrajectoryStore.safeName(event.toLowerCase(Locale.ROOT)) + "-" + position;
+    }
 
     private static void artifact(JsonObject row, AbstractArtifact artifact) {
         row.put("timestamp", artifact.getTimestamp() == null ? null : artifact.getTimestamp().toInstant().toEpochMilli())

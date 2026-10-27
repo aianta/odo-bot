@@ -1,0 +1,12 @@
+# The Trajectory Debugger: watch, cut, annotate, import and export charted timelines recorded by hand.
+host: 0.0.0.0
+port: 8077
+# Where its workspace (timelines, entity rows, screenshots) and recording sessions are kept.
+dir: db/debugger
+# Where OdoBot's trajectory dataset (trajectories.db and screenshots/) is, for imports when the trajectory store isn't running.
+datasetDir: db
+# How the person reaches the debugger and the recording browser's noVNC from their own browser; a request's viewerUrl wins.
+publicUrl: http://localhost:8077
+viewerUrl: http://localhost:7900/?autoconnect=1&resize=scale&password=secret
+# The OdoX build, recorded in exports as odox_version.
+odoSightPath: ./odo-sight.xpi

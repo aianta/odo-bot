@@ -23,6 +23,7 @@ crawljax_out
 *.txt
 !LICENSE.txt
 *.html
+!src/main/resources/trajectory-debugger/*.html
 neo4j-logs/*
 neo4j-plugins/*
 !neo4j-plugins/.gitkeep

@@ -5,6 +5,7 @@ import ca.ualberta.odobot.guidance.TokenUsageRecord;
 import ca.ualberta.odobot.modelconstruction.ModelConstructionVerticle;
 import ca.ualberta.odobot.common.ConfigurableVerticle;
 import ca.ualberta.odobot.dataentry2label.DataEntry2LabelVerticle;
+import ca.ualberta.odobot.debugger.TrajectoryDebuggerVerticle;
 import ca.ualberta.odobot.explorer.ExplorerVerticle;
 import ca.ualberta.odobot.guidance.GuidanceVerticle;
 import ca.ualberta.odobot.logpreprocessor.LogPreprocessor;
@@ -15,7 +16,6 @@ import ca.ualberta.odobot.taskplanner.TaskPlannerVerticle;
 import ca.ualberta.odobot.telemetry.TelemetryVerticle;
 import ca.ualberta.odobot.tpg.TPGVerticle;
 import ca.ualberta.odobot.web.OdoSightSupport;
-import ca.ualberta.odobot.web.TimelineWebApp;
 import io.reactivex.rxjava3.core.Completable;
 import io.vertx.core.DeploymentOptions;
 import org.slf4j.Logger;
@@ -57,9 +57,8 @@ public class MainVerticle extends ConfigurableVerticle {
             vertx.deployVerticle(logPreprocessor);
         }
 
-        if(_config.getBoolean("TimelineWebApp")){
-            TimelineWebApp timelineWebApp = new TimelineWebApp();
-            vertx.deployVerticle(timelineWebApp);
+        if(_config.getBoolean("TrajectoryDebugger", false)){
+            vertx.deployVerticle(new TrajectoryDebuggerVerticle());
         }
 
         if(_config.getBoolean("OdoSightSupport")){

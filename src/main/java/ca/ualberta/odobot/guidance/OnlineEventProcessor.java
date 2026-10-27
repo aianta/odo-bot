@@ -94,6 +94,14 @@ public class OnlineEventProcessor {
     private final BitSet eventsOnTimeline = new BitSet();
 
     /**
+     * The top-level entities events were credited to since the update listeners were last told, see
+     * {@link #setOnEntityUpdated}.
+     */
+    private final List<TimelineEntity> touched = new ArrayList<>();
+
+    private final List<Consumer<TimelineEntity>> updateListeners = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /**
      * A raw event, as far as telling the events of a step's window apart needs.
      *
      * @param index      its position in the task's raw events.
@@ -168,6 +176,7 @@ public class OnlineEventProcessor {
                 .encode());
         recordKind(index, "customEvent", "TASK_ANSWER");
         attribute(taskAnswer, index);
+        notifyUpdated();
     }
 
     /**
@@ -359,6 +368,41 @@ public class OnlineEventProcessor {
         }
         sourceEvents.computeIfAbsent(entity, e->new ArrayList<>()).add(eventIndex);
         eventsOnTimeline.set(eventIndex);
+        if(!touched.contains(entity)){
+            touched.add(entity);
+        }
+    }
+
+    /**
+     * @param listener called with every top-level entity an event was credited to, once that event is processed: a new
+     *                 entity (after {@link #setOnEntity} listeners hear of it), or one an event was folded into, e.g. a
+     *                 {@link DataEntry} that got another input change or an {@link Effect} that got another DOM effect.
+     */
+    public void setOnEntityUpdated(Consumer<TimelineEntity> listener){
+        updateListeners.add(listener);
+    }
+
+    /**
+     * Tell the update listeners about the entities events were credited to since the last call.
+     */
+    private void notifyUpdated(){
+        List<TimelineEntity> updated;
+        synchronized (this){
+            if(touched.isEmpty()){
+                return;
+            }
+            updated = new ArrayList<>(touched);
+            touched.clear();
+        }
+        for(TimelineEntity entity: updated){
+            for(Consumer<TimelineEntity> listener: updateListeners){
+                try{
+                    listener.accept(entity);
+                }catch (RuntimeException e){
+                    log.warn("An entity update listener failed: {}", e.getMessage(), e);
+                }
+            }
+        }
     }
 
     private synchronized void recordKind(int eventIndex, String eventType, String name){
@@ -557,6 +601,7 @@ public class OnlineEventProcessor {
             log.error(e.getMessage(), e);
         }finally {
             currentEventIndex = -1;
+            notifyUpdated();
         }
 
     }

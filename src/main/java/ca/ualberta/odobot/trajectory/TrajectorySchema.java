@@ -7,8 +7,11 @@ import java.util.List;
  * milliseconds; JSON is stored as text; file paths are relative to {@code db/}.
  *
  * <p>Rows are inserted with every column of their table but its INTEGER PRIMARY KEY, each set from the staged row's
- * field of the same name, see {@link TrajectoryStore}. A change to the tables needs a new
- * {@link TrajectoryStore#SCHEMA_VERSION}.</p>
+ * field of the same name, see {@link TrajectoryDatabase}. A change to the tables needs a new
+ * {@link TrajectoryStore#SCHEMA_VERSION}, and a migration from the previous one in {@link TrajectoryDatabase}.</p>
+ *
+ * <p>Version 3 added {@code notes} to {@code trajectories} and {@code timeline_entities}: what a person wrote about a
+ * timeline or one of its entities in the Trajectory Debugger. Agent runs leave them NULL.</p>
  */
 final class TrajectorySchema {
 
@@ -46,6 +49,7 @@ final class TrajectorySchema {
               judge_model      TEXT,
               eval_report      TEXT,
               build_error      TEXT,
+              notes            TEXT,
               UNIQUE (experiment_id, eval_id)
             )
             """,
@@ -76,6 +80,7 @@ final class TrajectorySchema {
               crop_box      TEXT,
               dom_snapshot_id INTEGER REFERENCES dom_snapshots(id),
               details       TEXT NOT NULL,
+              notes         TEXT,
               UNIQUE (trajectory_id, timeline, position)
             )
             """,

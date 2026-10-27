@@ -21,7 +21,7 @@ import java.util.stream.Collectors;
 import static ca.ualberta.odobot.trajectory.TrajectoryFixtures.*;
 import static org.junit.jupiter.api.Assertions.*;
 
-class TrajectoryWriterTest {
+public class TrajectoryWriterTest {
 
     static final String EVAL_ID = "7|OdoBotNL|0b1c";
     static final String STEM = "7-OdoBotNL-0b1c";
@@ -77,7 +77,7 @@ class TrajectoryWriterTest {
                 "DeepInfra", "reasoning", List.of("reasoning.text"), null, 400, 300, 400, 300, 1_500L + step);
     }
 
-    static TrajectoryWriter.TaskRun run(String evalId) {
+    public static TrajectoryWriter.TaskRun run(String evalId) {
         JsonObject task = new JsonObject().put("id", "0b1c").put("_evalId", evalId).put("task", "Rename the shirt")
                 .put("environment", new JsonObject().put("auth", new JsonObject().put("sites", new JsonObject()
                         .put("shopping_admin", new JsonObject().put("password", "admin1234")

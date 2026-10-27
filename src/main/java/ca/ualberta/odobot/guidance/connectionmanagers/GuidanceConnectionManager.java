@@ -78,6 +78,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
         switch (message.getString("type")){
             case "PAGE_READY":
                 super.addHistory(message);
+                client.onPageMessage(message);
                 String pageId = message.getString("pageId");
                 if(pageId == null){
                     log.warn("Ignoring a PAGE_READY without a pageId.");
@@ -87,6 +88,7 @@ public class GuidanceConnectionManager extends AbstractConnectionManager impleme
                 break;
             case "PAGE_GONE":
                 super.addHistory(message);
+                client.onPageMessage(message);
                 client.onPageGone(message.getString("pageId"));
                 break;
 

@@ -54,6 +54,21 @@ class OnlineEventProcessorTrajectoryTest {
     }
 
     @Test
+    void updateListenersHearOfNewEntitiesAfterTheNewEntityListenersAndOfEntitiesEventsAreFoldedInto() {
+        List<String> heard = new java.util.ArrayList<>();
+        processor.setOnEntity(entity->heard.add("new " + entity.symbol()));
+        processor.setOnEntityUpdated(entity->heard.add("updated " + entity.symbol()));
+
+        processor.process(input(3_000, "S", "one"));
+        processor.process(input(3_100, "Sh", "two"));
+        processor.process(click(3_200, "page", null));
+        processor.process(new JsonObject().put("eventType", "otherEvent").put("eventDetails", new JsonObject().put("name", "TEST")));
+
+        assertEquals(List.of("new DE", "updated DE", "updated DE", "new CE", "updated CE"), heard,
+                "the second input change is folded into the data entry; an event no entity is built from updates nothing");
+    }
+
+    @Test
     void clicksKeepTheirLogUiNameWhichTheEntityDrops() {
         processor.process(click(2_000, "page", null));
         assertEquals("BTN_CLICK", processor.eventFactsOf(processor.timeline().get(0)).getString("name"));
