@@ -57,7 +57,7 @@ class RequestManagerStepLedgerTest {
     }
 
     private static AgentTrace trace(int step) {
-        return new AgentTrace(step, null, "<think>why</think>Action: wait", "why", "Action: wait", "Wait", null, List.of(), List.of(),
+        return new AgentTrace(step, null, "<think>why</think>Action: wait", "why", "Action: wait", "Wait", null, List.of(),
                 "NONE", null, new JsonArray(), "gen-" + step, null, null, null, null, "inline_think", List.of(), null,
                 100, 100, 100, 100, 0);
     }
@@ -73,8 +73,10 @@ class RequestManagerStepLedgerTest {
         run(()->agent.emit.accept(step(1)));
         waitUntil(()->guidance.sent.stream().anyMatch(m->"EXECUTE".equals(m.getString("type"))));
         JsonObject execute = guidance.sent.stream().filter(m->"EXECUTE".equals(m.getString("type"))).findFirst().orElseThrow();
-        run(()->client.route(ChannelRoutingTest.reply(execute, "EXECUTE_DONE").put("status", "ok")));
-        Observation result = new Observation(Observation.Trigger.UNCHARTED_ACTION, null, null, null, 0, 1, execute.getString("id"));
+        JsonObject target = new JsonObject().put("tagName", "body");
+        run(()->client.route(ChannelRoutingTest.reply(execute, "EXECUTE_DONE").put("status", "ok").put("target", target)));
+        Observation result = new Observation(Observation.Trigger.UNCHARTED_ACTION, execute.getJsonObject("unchartedAction"), null, null, 0, 1,
+                execute.getString("id"));
         run(()->requestManager.onUnchartedObservation(result));
 
         StepLedger.Entry entry = requestManager.getStepLedger().entries().get(0);
@@ -86,6 +88,9 @@ class RequestManagerStepLedgerTest {
         assertEquals(-1, entry.eventAtSend, "no event had arrived when it was sent");
         assertEquals("ok", entry.doneStatus);
         assertSame(result, entry.resultObservation);
+        assertEquals(target, entry.target);
+        assertEquals("not_checked", entry.chartedCoverage.getString("verdict"), "a wait only waits");
+        assertEquals("viewport action", entry.chartedCoverage.getString("reason"));
         assertNull(entry.notExecuted);
         assertFalse(entry.lost);
     }

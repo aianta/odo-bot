@@ -481,11 +481,37 @@ public class RequestManager {
      */
     public void onUnchartedObservation(Observation observation){
         if(observation.getStepNumber() != null){
-            stepLedger.observed(observation.getStepNumber(), observation, System.currentTimeMillis(),
-                    client.getEventConnectionManager().getEventProcessor().lastEventIndex());
+            OnlineEventProcessor processor = client.getEventConnectionManager().getEventProcessor();
+            stepLedger.observed(observation.getStepNumber(), observation, System.currentTimeMillis(), processor.lastEventIndex());
+            //A diagnostic: it must never keep the observation from the agent.
+            try{
+                logChartedGap(observation.getStepNumber(), stepLedger.assessChartedCoverage(observation.getStepNumber(), processor));
+            }catch (RuntimeException e){
+                log.warn("Task {}: could not assess whether step {} shows up on the charted timeline.", evalId, observation.getStepNumber(), e);
+            }
         }
         if(activeAgent != null && mode == ExecutionMode.UNCHARTED){
             activeAgent.observationHandler(observation);
+        }
+    }
+
+    /**
+     * Log a step that does not show up on the charted timeline as an interaction, tagged CHARTED_GAP, see
+     * {@link ChartedCoverage}. A silent step most likely did nothing, so it is only logged at info level.
+     */
+    private void logChartedGap(int step, JsonObject coverage){
+        ChartedCoverage.Verdict verdict = ChartedCoverage.verdictOf(coverage);
+        if(!verdict.isGap()){
+            return;
+        }
+        String message = "CHARTED_GAP task={} step={} verdict={} action={} window={} events={} unmapped={} url_changed={} target={}";
+        Object[] arguments = {evalId, step, verdict.label(), coverage.getJsonObject("action"), coverage.getJsonArray("window"),
+                coverage.getJsonObject("events"), coverage.getJsonArray("unmapped_interactions"), coverage.getBoolean("url_changed"),
+                ChartedCoverage.targetSummary(coverage.getJsonObject("target"))};
+        if(verdict == ChartedCoverage.Verdict.SILENT){
+            log.info(message, arguments);
+        }else{
+            log.warn(message, arguments);
         }
     }
 
@@ -520,7 +546,8 @@ public class RequestManager {
                     reply.getString("reason") == null? "" : ": " + reply.getString("reason"));
         }
         if(isUnchartedStep(instruction)){
-            stepLedger.done(instruction.getInteger("step"), System.currentTimeMillis(), status, reply.getString("reason"));
+            stepLedger.done(instruction.getInteger("step"), System.currentTimeMillis(), status, reply.getString("reason"),
+                    reply.getValue("target") instanceof JsonObject target ? target : null);
         }
         if(ended){
             return;

@@ -50,11 +50,4 @@ public record ParsedStep(String lowLevelInstruction, UnchartedInstruction action
     public ParsedStep withLowLevelInstruction(String lowLevelInstruction) {
         return new ParsedStep(lowLevelInstruction, action, terminal, unsupported, answer);
     }
-
-    /**
-     * @return the pyautogui code OSWorld would execute for this step, e.g. {@code pyautogui.click(960, 540)}.
-     */
-    public List<String> pyAutoGuiCodes() {
-        return PyAutoGui.codes(action, terminal);
-    }
 }

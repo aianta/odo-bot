@@ -19,11 +19,10 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Replays real Qwen3.8 responses recorded by OSWorld ({@code results_ep_smoke2}, {@code results_15x4}; 1920x1080
- * screen, relative coordinates) through the Java parser and compares the resulting pyautogui code with what the
- * Python agent executed.
+ * screen, relative coordinates) through the Java parser.
  *
  * <p>The web action space departs from Python for removed actions, scrolls, browser shortcuts and responses with several
- * actions (only the first runs), so steps that use them are only checked for not ending the task by accident.</p>
+ * actions (only the first runs); steps that use them are checked for not ending the task by accident.</p>
  */
 class QwenGoldenTrajectoryTest {
 
@@ -31,45 +30,10 @@ class QwenGoldenTrajectoryTest {
     private static final int HEIGHT = 1080;
 
     /**
-     * Steps whose tool calls use none of the changed actions.
-     */
-    private static final int UNCHANGED_STEPS = 374;
-
-    /**
      * Actions whose Java handling differs from Python's.
      */
     private static final Set<String> CHANGED_ACTIONS = Set.of("mouse_move", "left_mouse_down", "left_mouse_up",
             "left_click_drag", "key_down", "key_up", "right_click", "middle_click", "scroll", "hscroll");
-
-    @Test
-    void javaParserReproducesRecordedPythonActions() throws IOException {
-        List<JsonObject> steps = loadSteps();
-        assertEquals(424, steps.size(), "golden fixture size");
-
-        int[] processed = QwenImages.smartResize(HEIGHT, WIDTH, QwenImages.FACTOR, QwenImages.MIN_PIXELS,
-                QwenImages.MAX_PIXELS, QwenImages.MAX_LONG_SIDE);
-
-        List<String> mismatches = new ArrayList<>();
-        int compared = 0;
-        for (JsonObject step : steps) {
-            if (usesChangedAction(step)) {
-                continue;
-            }
-            compared++;
-            ParsedStep parsed = QwenResponseParser.parseResponse(step.getString("response"), CoordinateType.RELATIVE,
-                    WIDTH, HEIGHT, processed[1], processed[0]);
-            List<String> expected = normalizeExpected(step.getJsonArray("actions"));
-            List<String> actual = parsed.pyAutoGuiCodes();
-            if (!expected.equals(actual)) {
-                mismatches.add("%s step %d%n  expected %s%n  actual   %s".formatted(
-                        step.getString("source"), step.getInteger("step"), expected, actual));
-            }
-        }
-
-        assertEquals(UNCHANGED_STEPS, compared, "steps compared with Python");
-        assertTrue(mismatches.isEmpty(), mismatches.size() + " of " + compared + " steps differ:\n"
-                + String.join("\n", mismatches.subList(0, Math.min(10, mismatches.size()))));
-    }
 
     /**
      * A rejected action must not end the task: only terminate, call_user or a response without a tool call do.
@@ -120,23 +84,6 @@ class QwenGoldenTrajectoryTest {
     private static List<Map<String, Object>> toolCalls(JsonObject step) {
         return QwenResponseParser.toolCallParams(QwenResponseParser.normalizeToolCalls(
                 QwenResponseParser.stripReasoning(step.getString("response"))));
-    }
-
-    /**
-     * OSWorld stops a step at DONE/FAIL; the recorded actions already reflect that. Python's
-     * "moveTo + mouseDown" for left_mouse_down with a coordinate renders the same way in Java, so nothing else
-     * needs adjusting.
-     */
-    private static List<String> normalizeExpected(JsonArray actions) {
-        List<String> expected = new ArrayList<>();
-        for (int i = 0; i < actions.size(); i++) {
-            String action = actions.getString(i);
-            expected.add(action);
-            if ("DONE".equals(action) || "FAIL".equals(action)) {
-                break;
-            }
-        }
-        return expected;
     }
 
     static List<JsonObject> loadSteps() throws IOException {

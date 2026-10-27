@@ -50,7 +50,10 @@ public class TrajectoryStore {
 
     private static final Logger log = LoggerFactory.getLogger(TrajectoryStore.class);
 
-    public static final int SCHEMA_VERSION = 1;
+    /**
+     * The version of {@link TrajectorySchema}. The store refuses a database of another version.
+     */
+    public static final int SCHEMA_VERSION = 2;
 
     public static final String STAGED_FILE = "trajectory.json";
 
@@ -80,6 +83,11 @@ public class TrajectoryStore {
      * Only used on the writer thread.
      */
     private Connection connection;
+
+    /**
+     * The columns rows are inserted with, by table, see {@link #insertColumns}. Only used on the writer thread.
+     */
+    private final Map<String, List<String>> insertColumns = new HashMap<>();
 
     private volatile boolean ready = false;
 
@@ -372,8 +380,47 @@ public class TrajectoryStore {
             }
             statement.execute("INSERT OR IGNORE INTO dataset_meta(key, value) VALUES ('schema_version', '" + SCHEMA_VERSION + "')");
             statement.execute("INSERT OR IGNORE INTO dataset_meta(key, value) VALUES ('created_at', '" + Instant.now() + "')");
+            try (ResultSet version = statement.executeQuery("SELECT value FROM dataset_meta WHERE key = 'schema_version'")) {
+                String found = version.next() ? version.getString(1) : null;
+                if (!String.valueOf(SCHEMA_VERSION).equals(found)) {
+                    connection.rollback();
+                    throw new SQLException("%s has schema version %s, this OdoBot writes version %d: migrate it or move it aside"
+                            .formatted(dbFile, found, SCHEMA_VERSION));
+                }
+            }
         }
         connection.commit();
+    }
+
+    /**
+     * @return the columns rows of the table are inserted with: all but its INTEGER PRIMARY KEY, which is the rowid.
+     * Generated columns are not listed by table_info.
+     */
+    private List<String> insertColumns(String table) throws SQLException {
+        List<String> columns = insertColumns.get(table);
+        if (columns == null) {
+            columns = new ArrayList<>();
+            List<String> key = new ArrayList<>();
+            String rowid = null;
+            try (Statement statement = connection.createStatement();
+                 ResultSet info = statement.executeQuery("PRAGMA table_info(" + table + ")")) {
+                while (info.next()) {
+                    columns.add(info.getString("name"));
+                    if (info.getInt("pk") > 0) {
+                        key.add(info.getString("name"));
+                        if ("INTEGER".equalsIgnoreCase(info.getString("type"))) {
+                            rowid = info.getString("name");
+                        }
+                    }
+                }
+            }
+            //Only a primary key of one INTEGER column is the rowid.
+            if (key.size() == 1 && key.get(0).equals(rowid)) {
+                columns.remove(rowid);
+            }
+            insertColumns.put(table, columns);
+        }
+        return columns;
     }
 
     /**
@@ -462,7 +509,7 @@ public class TrajectoryStore {
             delete.executeUpdate();
         }
 
-        insertRow("trajectories", t, TrajectorySchema.TRAJECTORY_COLUMNS);
+        insertRow("trajectories", t);
 
         Map<String, Long> domIds = new HashMap<>();
         try (PreparedStatement insertDom = connection.prepareStatement("INSERT OR IGNORE INTO dom_snapshots(sha256, html, bytes) VALUES (?, ?, ?)");
@@ -488,7 +535,7 @@ public class TrajectoryStore {
             String sha = entity.getString("dom_sha256");
             entity.put("dom_snapshot_id", sha == null ? null : domIds.get(sha));
             entityIds.put(entity.getString("timeline") + ":" + entity.getInteger("position"),
-                    insertRow("timeline_entities", entity, TrajectorySchema.ENTITY_COLUMNS));
+                    insertRow("timeline_entities", entity));
         }
 
         Map<Integer, Long> stepIds = new HashMap<>();
@@ -497,7 +544,7 @@ public class TrajectoryStore {
             step.put("trajectory_id", t.getString("id"));
             step.put("input_observation", entityIds.get(step.getString("input_observation_key")));
             step.put("result_observation", entityIds.get(step.getString("result_observation_key")));
-            stepIds.put(step.getInteger("step_number"), insertRow("agent_steps", step, TrajectorySchema.STEP_COLUMNS));
+            stepIds.put(step.getInteger("step_number"), insertRow("agent_steps", step));
         }
 
         for (Object o : staged.links()) {
@@ -510,7 +557,7 @@ public class TrajectoryStore {
                 continue;
             }
             link.put("step_id", stepId).put("entity_id", entityId);
-            insertRow("step_entity_links", link, TrajectorySchema.LINK_COLUMNS);
+            insertRow("step_entity_links", link);
         }
     }
 
@@ -519,7 +566,8 @@ public class TrajectoryStore {
      *
      * @return the new row's rowid.
      */
-    private long insertRow(String table, JsonObject row, List<String> columns) throws SQLException {
+    private long insertRow(String table, JsonObject row) throws SQLException {
+        List<String> columns = insertColumns(table);
         String sql = "INSERT INTO %s(%s) VALUES (%s)".formatted(table, String.join(", ", columns),
                 String.join(", ", columns.stream().map(c -> "?").toList()));
         try (PreparedStatement insert = connection.prepareStatement(sql)) {

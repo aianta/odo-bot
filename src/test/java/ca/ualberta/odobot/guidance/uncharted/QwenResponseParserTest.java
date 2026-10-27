@@ -31,7 +31,6 @@ class QwenResponseParserTest {
         assertEquals(Terminal.NONE, step.terminal());
         // Only the committed call counts, not the draft inside <think>.
         assertEquals(new LeftClick(960, 540, 1920, 1080), step.action());
-        assertEquals(List.of("pyautogui.click(960, 540)"), step.pyAutoGuiCodes());
     }
 
     @Test
@@ -58,7 +57,6 @@ class QwenResponseParserTest {
                 <tool_call>{"name": "computer_use", "arguments": {"arguments": {"action": "key", "keys": ["Ctrl", "B"]}}}</tool_call>""");
 
         assertEquals(new KeyPress(List.of("ctrl", "b")), step.action());
-        assertEquals(List.of("pyautogui.hotkey(\"ctrl\", \"b\")"), step.pyAutoGuiCodes());
     }
 
     @Test
@@ -99,8 +97,6 @@ class QwenResponseParserTest {
 
         // As in Python, the JSON -> XML -> parameter round trip strips the trailing newline, so no final Enter.
         assertEquals(new TypeText("a\nb"), step.action());
-        assertEquals(List.of("pyautogui.typewrite(\"a\")", "pyautogui.press(\"enter\")",
-                "pyautogui.typewrite(\"b\")"), step.pyAutoGuiCodes());
     }
 
     @Test
@@ -194,7 +190,6 @@ class QwenResponseParserTest {
                 "left_click_drag is not available: dragging is not supported",
                 "navigate is not available"), step.unsupported());
         assertEquals("Drag the module to the top.", step.lowLevelInstruction());
-        assertEquals(List.of(), step.pyAutoGuiCodes());
     }
 
     @Test
@@ -242,7 +237,6 @@ class QwenResponseParserTest {
         ParsedStep scroll = parse("""
                 <tool_call>{"name": "computer_use", "arguments": {"action": "scroll", "coordinate": [500, 500], "scroll_amount": -10}}</tool_call>""");
         assertEquals(new Scroll(-10, 960, 540, 1920, 1080), scroll.action());
-        assertEquals(List.of("pyautogui.scroll(-10, x=960, y=540)"), scroll.pyAutoGuiCodes());
 
         JsonObject json = scroll.action().toJson();
         assertEquals(-10, json.getInteger("amount"));
@@ -252,7 +246,6 @@ class QwenResponseParserTest {
         ParsedStep hscroll = parse("""
                 <tool_call>{"name": "computer_use", "arguments": {"action": "hscroll", "amount": 3}}</tool_call>""");
         assertEquals(new HScroll(3, null, null, 1920, 1080), hscroll.action());
-        assertEquals(List.of("pyautogui.hscroll(3)"), hscroll.pyAutoGuiCodes());
 
         ParsedStep zero = parse("""
                 <tool_call>{"name": "computer_use", "arguments": {"action": "scroll", "coordinate": [500, 500], "text": "5"}}</tool_call>""");
@@ -276,7 +269,21 @@ class QwenResponseParserTest {
                 "key (only one action runs per step)"), step.unsupported());
         // A terminal call still ends the task after the action.
         assertEquals(Terminal.DONE, step.terminal());
-        assertEquals(List.of("pyautogui.typewrite(\"Week 1\")", "DONE"), step.pyAutoGuiCodes());
+    }
+
+    @Test
+    void aStepWithoutAnActionLineIsDescribedAsPythonDescribesIt() {
+        assertEquals("Performing click action", QwenResponseParser.fallbackInstruction(new LeftClick(1, 1, 10, 10), Terminal.NONE));
+        assertEquals("Performing tripleClick action", QwenResponseParser.fallbackInstruction(new TripleClick(1, 1, 10, 10), Terminal.NONE));
+        assertEquals("Performing typewrite action", QwenResponseParser.fallbackInstruction(new TypeText("a\nb"), Terminal.NONE));
+        assertEquals("Performing press action", QwenResponseParser.fallbackInstruction(new TypeText("\nb"), Terminal.NONE),
+                "Python presses Enter before typing the second line");
+        assertEquals("Performing press action", QwenResponseParser.fallbackInstruction(new KeyPress(List.of("enter")), Terminal.NONE));
+        assertEquals("Performing hotkey action", QwenResponseParser.fallbackInstruction(new KeyPress(List.of("ctrl", "a")), Terminal.NONE));
+        assertEquals("Performing scroll action", QwenResponseParser.fallbackInstruction(new Scroll(-5, null, null, 10, 10), Terminal.NONE));
+        assertEquals("Performing hscroll action", QwenResponseParser.fallbackInstruction(new HScroll(3, null, null, 10, 10), Terminal.NONE));
+        assertEquals("Performing typewrite action", QwenResponseParser.fallbackInstruction(new TypeText("done"), Terminal.DONE),
+                "the action comes before the terminal");
     }
 
     @Test

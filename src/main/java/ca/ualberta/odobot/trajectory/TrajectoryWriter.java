@@ -330,11 +330,12 @@ public final class TrajectoryWriter {
                 row.put("bbox", bbox.toJson());
             }
             if (screenshot != null && screenshot.getImage() != null) {
-                row.put("screenshot_path", screenshot(screenshot, timeline + "-" + position + ".png"));
+                String fileName = fileName(timeline, position, row);
+                row.put("screenshot_path", screenshot(screenshot, fileName + ".png"));
                 if (bbox != null) {
                     JsonObject cropBox = cropBox(screenshot.getImage(), bbox, CROP_PADDING);
                     if (cropBox != null) {
-                        String cropFile = timeline + "-" + position + "-crop.png";
+                        String cropFile = fileName + "-crop.png";
                         writeCrop(screenshot.getImage(), cropBox, cropFile);
                         row.put("crop_path", committed(cropFile)).put("crop_box", cropBox);
                     }
@@ -373,6 +374,7 @@ public final class TrajectoryWriter {
                     .put("seq_at_send", entry.eventAtSend)
                     .put("seq_at_observation", entry.eventAtObservation)
                     .put("lost", entry.lost)
+                    .put("charted_coverage", entry.chartedCoverage)
                     .put("result_observation_key", entry.resultObservation == null ? null : unchartedKeys.get(entry.resultObservation));
             if (trace != null) {
                 row.put("request_id", trace.requestId())
@@ -382,7 +384,6 @@ public final class TrajectoryWriter {
                         .put("committed_response", trace.committedResponse())
                         .put("low_level_instruction", trace.lowLevelInstruction())
                         .put("action", trace.action())
-                        .put("pyautogui", new JsonArray(trace.pyAutoGui()))
                         .put("unsupported", new JsonArray(trace.unsupported()))
                         .put("terminal", trace.terminal())
                         .put("answer", trace.answer())
@@ -481,11 +482,13 @@ public final class TrajectoryWriter {
         }
 
         /**
-         * A square crop of the screenshot the model reasoned over, centred on the point a pointer step aimed at.
+         * A square crop of the screenshot the model reasoned over, centred on the point a pointer step aimed at. Scrolls
+         * get none: their point is only the scrolled area, often the viewport's centre.
          */
         private void actionCrop(JsonObject row, AgentTrace trace) throws IOException {
             JsonObject action = trace.action();
-            if (action == null || action.getValue("x") == null || action.getValue("y") == null
+            if (action == null || !POINTER_ACTIONS.contains(action.getString("action"))
+                    || action.getValue("x") == null || action.getValue("y") == null
                     || !(trace.inputObservation() instanceof Observation observation)
                     || observation.getScreenshot() == null || observation.getScreenshot().getImage() == null) {
                 return;
@@ -500,6 +503,17 @@ public final class TrajectoryWriter {
             String file = "step-" + trace.stepNumber() + "-action.png";
             writeCrop(image, box, file);
             row.put("action_crop_path", committed(file));
+        }
+
+        /**
+         * The name, without extension, of an entity's screenshot: the event that took it and the entity's position, e.g.
+         * {@code link_click-2}. The uncharted timeline holds only observations, so its files are {@code observation-N}.
+         */
+        private String fileName(String timeline, int position, JsonObject row) {
+            String event = timeline.equals("uncharted") ? "observation" : row.getString("event_name", row.getString("kind"));
+            String name = TrajectoryStore.safeName(event.toLowerCase(Locale.ROOT)) + "-" + position;
+            //A charted observation's position can be an uncharted observation's too.
+            return files.contains(name + ".png") ? timeline + "-" + name : name;
         }
 
         private String screenshot(Screenshot screenshot, String fileName) throws IOException {

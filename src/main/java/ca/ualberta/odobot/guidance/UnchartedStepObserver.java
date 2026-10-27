@@ -12,6 +12,8 @@ import java.util.function.Consumer;
 /**
  * Makes the observation of each uncharted step, as OSWorld does: execute the action, wait, take a screenshot.
  *
+ * <p>OdoX takes the page's DOM snapshot with the screenshot, so the observation carries both.</p>
+ *
  * <p>Observing starts once OdoX reports the step done (EXECUTE_DONE), so the action has run, and a {@code wait} action
  * has already waited, before the observer's clock starts. Every event OdoX sends restarts a quiet period; when the page
  * has been quiet for {@link #quietPeriod} the screenshot is requested, and the resulting {@link Observation} (trigger
@@ -104,8 +106,9 @@ public class UnchartedStepObserver {
      * OdoX's reply to a screenshot request.
      * @param base64Screenshot the screenshot, or null.
      * @param userLocation the url of the active tab, or null.
+     * @param domSnapshot the page's DOM snapshot taken with the screenshot, or null.
      */
-    public void onScreenshot(String base64Screenshot, String userLocation){
+    public void onScreenshot(String base64Screenshot, String userLocation, String domSnapshot){
         if(step == null || screenshotRequests == 0){
             log.warn("Got a screenshot that no uncharted step is waiting for, ignoring it.");
             return;
@@ -113,7 +116,10 @@ public class UnchartedStepObserver {
         cancelTimer();
         Observation observation = new Observation(Observation.Trigger.UNCHARTED_ACTION, step.getJsonObject("unchartedAction"),
                 userLocation, Screenshot.fromBase64(base64Screenshot), System.currentTimeMillis(),
-                step.getInteger("step"), step.getString("id"));
+                step.getInteger("step"), step.getString("id"), domSnapshot);
+        if(domSnapshot == null){
+            log.warn("OdoX observed uncharted step {} without a DOM snapshot.", step.getValue("step"));
+        }
         log.info("Observed uncharted step {} {} ms after it was done.", step.getValue("step"), observation.timestamp() - doneAt);
         step = null;
         screenshotRequests = 0;

@@ -3,9 +3,9 @@ package ca.ualberta.odobot.semanticflow.model;
 import io.vertx.core.json.JsonObject;
 
 /**
- * A snapshot of the page sent by OdoX. The first one arrives right after START_TRANSMISSION and is the first
- * observation an agent receives. OdoX also sends one after an uncharted action that produces no other event
- * carrying a screenshot.
+ * A snapshot of the page sent by OdoX: a screenshot and the page's DOM snapshot, taken together. The first one arrives
+ * right after START_TRANSMISSION and is the first observation an agent receives. OdoBot makes one after every uncharted
+ * step, from OdoX's reply to GET_SCREENSHOT.
  */
 public class Observation implements TimelineEntity{
 
@@ -24,6 +24,7 @@ public class Observation implements TimelineEntity{
     private final long timestamp;
     private final Integer stepNumber;
     private final String instructionId;
+    private final String domSnapshot;
 
     /**
      * @param triggerDetails the uncharted action that triggered the observation, or null.
@@ -40,6 +41,15 @@ public class Observation implements TimelineEntity{
      */
     public Observation(Trigger trigger, JsonObject triggerDetails, String userLocation, Screenshot screenshot, long timestamp,
                        Integer stepNumber, String instructionId){
+        this(trigger, triggerDetails, userLocation, screenshot, timestamp, stepNumber, instructionId, null);
+    }
+
+    /**
+     * @param domSnapshot the page's DOM snapshot taken with the screenshot, as OdoX sends it: a JSON string of
+     *                    {@code {outerHTML, outerText}}. Null if OdoX did not send one.
+     */
+    public Observation(Trigger trigger, JsonObject triggerDetails, String userLocation, Screenshot screenshot, long timestamp,
+                       Integer stepNumber, String instructionId, String domSnapshot){
         this.trigger = trigger;
         this.triggerDetails = triggerDetails;
         this.userLocation = userLocation;
@@ -47,6 +57,7 @@ public class Observation implements TimelineEntity{
         this.timestamp = timestamp;
         this.stepNumber = stepNumber;
         this.instructionId = instructionId;
+        this.domSnapshot = domSnapshot;
     }
 
     public Trigger getTrigger(){
@@ -90,6 +101,14 @@ public class Observation implements TimelineEntity{
     @Override
     public Screenshot getScreenshot(){
         return screenshot;
+    }
+
+    /**
+     * @return the page's DOM snapshot taken with the screenshot, a JSON string of {@code {outerHTML, outerText}}, or null
+     * if OdoX did not send one.
+     */
+    public String getDomSnapshot(){
+        return domSnapshot;
     }
 
     @Override

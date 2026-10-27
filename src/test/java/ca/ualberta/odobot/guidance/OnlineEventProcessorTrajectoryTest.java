@@ -1,6 +1,7 @@
 package ca.ualberta.odobot.guidance;
 
 import ca.ualberta.odobot.semanticflow.model.*;
+import io.vertx.core.json.JsonObject;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -59,6 +60,39 @@ class OnlineEventProcessorTrajectoryTest {
     }
 
     @Test
+    void elementClicksAreCharted() {
+        processor.process(namedClick(2_000, "ELEMENT_CLICK", "/html/body/div/button"));
+        assertEquals("CE", processor.timeline().get(0).symbol());
+        assertEquals("ELEMENT_CLICK", processor.eventFactsOf(processor.timeline().get(0)).getString("name"));
+    }
+
+    @Test
+    void aSpanClickInsideALinkIsChartedAsAClickOnTheLink() {
+        //OdoX logs a click once, for the innermost tracked element, so there is no LINK_CLICK copy to fall back on.
+        processor.process(namedClick(2_000, "SPAN_CLICK", "/html/body/div/a/span"));
+        assertEquals(1, processor.timeline().size());
+        assertEquals("/html/body/div/a", ((ClickEvent) processor.timeline().get(0)).getXpath());
+    }
+
+    @Test
+    void consecutiveClicksOnTheSameElementAreEachCharted() {
+        processor.process(namedClick(2_000, "ELEMENT_CLICK", "/html/body/div/button"));
+        processor.process(namedClick(2_500, "ELEMENT_CLICK", "/html/body/div/button"));
+        assertEquals(List.of("CE", "CE"), processor.timeline().stream().map(TimelineEntity::symbol).toList());
+    }
+
+    /**
+     * {@link ca.ualberta.odobot.trajectory.TrajectoryFixtures#click} under another logUI name and target xpath.
+     */
+    private static JsonObject namedClick(long millis, String name, String xpath) {
+        JsonObject event = click(millis, "page", null);
+        JsonObject details = event.getJsonObject("eventDetails");
+        JsonObject element = new JsonObject(details.getString("element")).put("xpath", xpath);
+        details.put("name", name).put("xpath", xpath).put("element", element.encode());
+        return event;
+    }
+
+    @Test
     void pageSnapshotsAreOnlyKeptWithTrajectoryCapture() {
         processor.process(click(2_000, "without", null));
         assertNull(processor.domSnapshotOf(processor.timeline().get(0)));
@@ -69,6 +103,23 @@ class OnlineEventProcessorTrajectoryTest {
 
         TimelineEntity effect = processor.timeline().get(1);
         assertEquals(page("latest"), processor.domSnapshotOf(effect), "an Effect keeps the page of its latest DOM effect");
+    }
+
+    @Test
+    void observationsKeepTheirPageSnapshotWithTrajectoryCapture() {
+        processor.setUnchartedTimelineEnabled(true);
+        processor.process(startObservation(null, snapshot("before")));
+        assertNull(processor.domSnapshotOf(processor.timeline().get(0)));
+        assertEquals(snapshot("before"), ((Observation) processor.timeline().get(0)).getDomSnapshot());
+
+        processor.setTrajectoryCapture(true);
+        processor.process(startObservation(null, snapshot("start")));
+        processor.addUnchartedObservation(new Observation(Observation.Trigger.UNCHARTED_ACTION, null, null, null, 0, 1,
+                "exec-1", snapshot("after")));
+
+        List<TimelineEntity> uncharted = processor.unchartedTimeline();
+        assertEquals(page("start"), processor.domSnapshotOf(uncharted.get(1)));
+        assertEquals(page("after"), processor.domSnapshotOf(uncharted.get(2)));
     }
 
     @Test

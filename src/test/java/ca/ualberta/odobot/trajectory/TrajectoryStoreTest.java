@@ -65,17 +65,19 @@ class TrajectoryStoreTest {
         processor.setUnchartedTimelineEnabled(true);
         processor.setTrajectoryCapture(true);
         StepLedger ledger = new StepLedger();
-        processor.process(startObservation(png(400, 300, Color.WHITE)));
+        processor.process(startObservation(png(400, 300, Color.WHITE), snapshot("start")));
         TimelineEntity start = processor.unchartedTimeline().get(0);
         ledger.emitted(1, "uncharted_step", TrajectoryWriterTest.trace(1, start, new JsonObject().put("action", "left_click")
                 .put("x", 140).put("y", 65)), null);
         ledger.sent(1, "exec-1", 2_000, processor.lastEventIndex());
         processor.process(click(2_010, "clicked", png(400, 300, Color.BLUE)));
         processor.process(domEffect(2_020, "add", "/html/body/div[2]", "Saved", "saved"));
+        ledger.done(1, 2_050, "ok", null, null);
         Observation after = new Observation(Observation.Trigger.UNCHARTED_ACTION, null, BASE_URI,
-                Screenshot.fromBase64(png(400, 300, Color.GRAY)), 3_000, 1, "exec-1");
+                Screenshot.fromBase64(png(400, 300, Color.GRAY)), 3_000, 1, "exec-1", snapshot("after"));
         processor.addUnchartedObservation(after);
         ledger.observed(1, after, 3_000, processor.lastEventIndex());
+        ledger.assessChartedCoverage(1, processor);
 
         Path folder = store.stagingFolder("exp-1", TrajectoryWriter.fileStem(evalId));
         TrajectoryWriter.stage(TrajectoryWriterTest.run(evalId), processor, ledger, folder);
@@ -112,7 +114,11 @@ class TrajectoryStoreTest {
         assertEquals(1, count("SELECT success FROM trajectories"), "PASS");
         assertEquals(5, count("SELECT COUNT(*) FROM timeline_entities"), "3 charted (start, click, effect) and 2 uncharted");
         assertEquals(1, count("SELECT COUNT(*) FROM agent_steps WHERE reasoning <> '' AND input_observation IS NOT NULL AND result_observation IS NOT NULL"));
-        assertEquals(2, count("SELECT COUNT(*) FROM dom_snapshots"));
+        assertEquals(4, count("SELECT COUNT(*) FROM dom_snapshots"), "the click's, the effect's and the two observations'");
+        assertEquals(3, count("SELECT COUNT(*) FROM timeline_entities WHERE kind = 'Observation' AND dom_snapshot_id IS NOT NULL"),
+                "the start observation on both timelines, and the step's");
+        assertEquals(List.of(page("after")), column("SELECT d.html FROM timeline_entities e JOIN dom_snapshots d ON d.id = e.dom_snapshot_id "
+                + "WHERE e.timeline = 'uncharted' AND e.position = 1"));
         assertEquals(0, column("PRAGMA foreign_key_check").size());
         assertEquals(List.of("spatial"), column("SELECT method FROM interaction_thoughts WHERE kind = 'ClickEvent'"),
                 "the view prefers the spatial link");
@@ -122,8 +128,22 @@ class TrajectoryStoreTest {
             assertTrue(Files.isRegularFile(db.resolve(path)), path);
         }
         assertTrue(Files.isRegularFile(db.resolve(column("SELECT action_crop_path FROM agent_steps").get(0))));
+        assertEquals(List.of("charted"), column("SELECT json_extract(charted_coverage, '$.verdict') FROM agent_steps"));
         assertEquals(1, store.status().getLong("committed"));
         assertEquals(0, store.status().getInteger("staged"));
+    }
+
+    @Test
+    void aDatabaseOfAnotherSchemaVersionIsRefused() throws Exception {
+        store.close();
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + db.resolve("trajectories.db"));
+             Statement statement = connection.createStatement()) {
+            statement.executeUpdate("UPDATE dataset_meta SET value = '1' WHERE key = 'schema_version'");
+        }
+        store = new TrajectoryStore(vertx, db);
+        Exception refused = assertThrows(Exception.class, () -> await(store.start()));
+        assertTrue(refused.getMessage().contains("schema version 1"), refused.getMessage());
+        assertFalse(store.canWrite());
     }
 
     @Test
@@ -225,6 +245,6 @@ class TrajectoryStoreTest {
         }
         await(store.vacuum());
         assertEquals(0, count("SELECT COUNT(*) FROM dom_snapshots WHERE sha256 = 'orphan'"));
-        assertEquals(2, count("SELECT COUNT(*) FROM dom_snapshots"));
+        assertEquals(4, count("SELECT COUNT(*) FROM dom_snapshots"));
     }
 }

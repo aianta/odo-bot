@@ -53,10 +53,11 @@ class UnchartedStepObserverTest {
         waitUntil(()->requests.size() == 1);
         assertTrue(requests.get(0) - sent >= 150, "requested before the quiet period elapsed");
 
-        run(()->observer.onScreenshot(png(), LOCATION));
+        run(()->observer.onScreenshot(png(), LOCATION, "{\"outerHTML\":\"<html></html>\"}"));
         waitUntil(()->observations.size() == 1);
 
         Observation observation = observations.get(0);
+        assertEquals("{\"outerHTML\":\"<html></html>\"}", observation.getDomSnapshot());
         assertEquals(Observation.Trigger.UNCHARTED_ACTION, observation.getTrigger());
         assertEquals(click(), observation.getTriggerDetails());
         assertEquals(LOCATION, observation.getUserLocation());
@@ -122,16 +123,16 @@ class UnchartedStepObserverTest {
         Thread.sleep(600);
         assertEquals(2, requests.size());
 
-        run(()->observer.onScreenshot(png(), LOCATION));
+        run(()->observer.onScreenshot(png(), LOCATION, null));
         Thread.sleep(100);
         assertTrue(observations.isEmpty(), "a late reply belongs to no step");
     }
 
     @Test
     void aScreenshotNobodyAskedForIsIgnored() throws Exception {
-        run(()->observer.onScreenshot(png(), LOCATION));
+        run(()->observer.onScreenshot(png(), LOCATION, null));
         run(()->observer.observe(step(1, click())));
-        run(()->observer.onScreenshot(png(), LOCATION));
+        run(()->observer.onScreenshot(png(), LOCATION, null));
         Thread.sleep(50);
         assertTrue(observations.isEmpty());
     }

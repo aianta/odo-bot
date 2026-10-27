@@ -2,6 +2,7 @@ package ca.ualberta.odobot.guidance;
 
 import ca.ualberta.odobot.semanticflow.model.Observation;
 import ca.ualberta.odobot.trajectory.AgentTrace;
+import io.vertx.core.json.JsonObject;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -48,6 +49,11 @@ public class StepLedger {
         public String doneReason;
 
         /**
+         * The element OdoX aimed the action at, as its EXECUTE_DONE described it, or null.
+         */
+        public JsonObject target;
+
+        /**
          * True if OdoX never received the step, or never reported it done.
          */
         public boolean lost = false;
@@ -58,6 +64,12 @@ public class StepLedger {
         public Observation resultObservation;
         public Long observedAt;
         public Integer eventAtObservation;
+
+        /**
+         * Whether the step shows up on the charted timeline, see {@link ChartedCoverage#assess}, or null until its result
+         * is observed.
+         */
+        public JsonObject chartedCoverage;
 
         Entry(int stepNumber) {
             this.stepNumber = stepNumber;
@@ -102,11 +114,15 @@ public class StepLedger {
         }
     }
 
-    public synchronized void done(int stepNumber, long doneAt, String status, String reason) {
+    /**
+     * @param target the element OdoX aimed the action at, or null.
+     */
+    public synchronized void done(int stepNumber, long doneAt, String status, String reason, JsonObject target) {
         Entry entry = entry(stepNumber);
         entry.doneAt = doneAt;
         entry.doneStatus = status;
         entry.doneReason = reason;
+        entry.target = target;
     }
 
     public synchronized void lost(int stepNumber) {
@@ -118,6 +134,28 @@ public class StepLedger {
         entry.resultObservation = observation;
         entry.observedAt = observedAt;
         entry.eventAtObservation = eventAtObservation;
+    }
+
+    /**
+     * Assess whether an observed step shows up on the charted timeline, see {@link ChartedCoverage}, and keep the
+     * assessment with the step.
+     *
+     * @param processor the task's event processor, for the events of the step's window.
+     * @return the assessment.
+     */
+    public synchronized JsonObject assessChartedCoverage(int stepNumber, OnlineEventProcessor processor) {
+        Entry entry = entry(stepNumber);
+        Observation result = entry.resultObservation;
+        JsonObject action = result != null && result.getTriggerDetails() != null ? result.getTriggerDetails()
+                : entry.trace != null ? entry.trace.action() : null;
+        int[] window = entry.eventAtSend != null && entry.eventAtObservation != null
+                ? new int[]{entry.eventAtSend, entry.eventAtObservation} : null;
+        String urlBefore = entry.trace != null && entry.trace.inputObservation() instanceof Observation input
+                ? input.getUserLocation() : null;
+        String urlAfter = result != null ? result.getUserLocation() : null;
+        entry.chartedCoverage = ChartedCoverage.assess(action, entry.doneStatus, entry.lost, window,
+                window == null ? List.of() : processor.eventsIn(window[0], window[1]), urlBefore, urlAfter, entry.target);
+        return entry.chartedCoverage;
     }
 
     /**

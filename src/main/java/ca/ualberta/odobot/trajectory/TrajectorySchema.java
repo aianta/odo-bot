@@ -5,6 +5,10 @@ import java.util.List;
 /**
  * The schema of {@code db/trajectories.db}, see docs/capturing-trajectories-at-scale. Timestamps are epoch
  * milliseconds; JSON is stored as text; file paths are relative to {@code db/}.
+ *
+ * <p>Rows are inserted with every column of their table but its INTEGER PRIMARY KEY, each set from the staged row's
+ * field of the same name, see {@link TrajectoryStore}. A change to the tables needs a new
+ * {@link TrajectoryStore#SCHEMA_VERSION}.</p>
  */
 final class TrajectorySchema {
 
@@ -88,7 +92,7 @@ final class TrajectorySchema {
               result_observation INTEGER REFERENCES timeline_entities(id),
               raw_response TEXT, reasoning TEXT, committed_response TEXT,
               low_level_instruction TEXT,
-              action TEXT, pyautogui TEXT, unsupported TEXT,
+              action TEXT, unsupported TEXT,
               terminal TEXT, answer TEXT,
               emitted            TEXT,
               not_executed       TEXT,
@@ -97,6 +101,7 @@ final class TrajectorySchema {
               instruction_id TEXT, sent_at INTEGER, done_at INTEGER, done_status TEXT, done_reason TEXT, observed_at INTEGER,
               seq_at_send INTEGER, seq_at_observation INTEGER,
               lost INTEGER NOT NULL DEFAULT 0,
+              charted_coverage   TEXT,
               prompt_tokens INTEGER, completion_tokens INTEGER,
               provider           TEXT,
               reasoning_tokens   INTEGER,
@@ -136,25 +141,4 @@ final class TrajectorySchema {
             ) WHERE rn = 1
             """
     );
-
-    static final List<String> TRAJECTORY_COLUMNS = List.of(
-            "id", "eval_id", "experiment_id", "task_id", "webarena_task_id", "task_description", "task_definition",
-            "execution_mode", "agent", "model", "agent_config", "reasoning_required", "odobot_commit", "odox_version",
-            "collected_at", "ended_at", "end_reason", "harness_error", "final_url", "eval_result", "score", "eval_error",
-            "agent_answer", "judged_infeasible", "eval_types", "judge_model", "eval_report", "build_error");
-
-    static final List<String> ENTITY_COLUMNS = List.of(
-            "trajectory_id", "timeline", "position", "kind", "symbol", "event_name", "timestamp", "clock", "first_seq",
-            "last_seq", "location", "xpath", "tag", "html_id", "bbox", "screenshot_path", "crop_path", "crop_box",
-            "dom_snapshot_id", "details");
-
-    static final List<String> STEP_COLUMNS = List.of(
-            "trajectory_id", "step_number", "request_id", "input_observation", "result_observation", "raw_response",
-            "reasoning", "committed_response", "low_level_instruction", "action", "pyautogui", "unsupported", "terminal",
-            "answer", "emitted", "not_executed", "action_crop_path", "prompt_messages", "instruction_id", "sent_at",
-            "done_at", "done_status", "done_reason", "observed_at", "seq_at_send", "seq_at_observation", "lost",
-            "prompt_tokens", "completion_tokens", "provider", "reasoning_tokens", "reasoning_source", "reasoning_formats",
-            "reasoning_complete", "reasoning_problem", "original_size", "processed_size", "answered_at");
-
-    static final List<String> LINK_COLUMNS = List.of("step_id", "entity_id", "method", "confidence", "details");
 }

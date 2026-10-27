@@ -80,7 +80,8 @@ public class EventConnectionManager extends AbstractConnectionManager implements
         request(new JsonObject()
                 .put("type", "GET_SCREENSHOT")
                 .put("source", SOURCE))
-                .onSuccess(reply->stepObserver.onScreenshot(reply.getString("screenshot"), reply.getString("userLocation")));
+                .onSuccess(reply->stepObserver.onScreenshot(reply.getString("screenshot"), reply.getString("userLocation"),
+                        reply.getString("domSnapshot")));
     }
 
 

@@ -25,7 +25,6 @@ import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
-import static ca.ualberta.odobot.common.Utils.getTerminalElementOfXpath;
 import static ca.ualberta.odobot.semanticflow.Utils.getNormalizedPath;
 
 /**
@@ -82,6 +81,28 @@ public class OnlineEventProcessor {
      * order. A DOM effect or input change folded into an {@link Effect} or {@link DataEntry} counts toward it.
      */
     private final Map<TimelineEntity, List<Integer>> sourceEvents = new IdentityHashMap<>();
+
+    /**
+     * The type and name of each raw event, by position, so that the events of a step's window can be told apart without
+     * reading the event file back, see {@link #eventsIn}.
+     */
+    private final NavigableMap<Integer, String[]> eventKinds = new TreeMap<>();
+
+    /**
+     * The positions of the raw events that made it onto a timeline, i.e. that some entity was built from.
+     */
+    private final BitSet eventsOnTimeline = new BitSet();
+
+    /**
+     * A raw event, as far as telling the events of a step's window apart needs.
+     *
+     * @param index      its position in the task's raw events.
+     * @param eventType  e.g. interactionEvent or customEvent.
+     * @param name       its {@code eventDetails.name}, e.g. LINK_CLICK, DOM_EFFECT or EVENT_GAP.
+     * @param onTimeline whether a timeline entity was built from it.
+     */
+    public record EventSummary(int index, String eventType, String name, boolean onTimeline) {
+    }
 
     /**
      * Whether to keep what saving the task's trajectory needs beyond the timelines, see {@link #domSnapshots}.
@@ -145,6 +166,7 @@ public class OnlineEventProcessor {
                 .put("timestamps", new JsonObject()
                         .put("eventTimestamp", timeFormatter.format(Instant.ofEpochMilli(taskAnswer.timestamp()))))
                 .encode());
+        recordKind(index, "customEvent", "TASK_ANSWER");
         attribute(taskAnswer, index);
     }
 
@@ -168,12 +190,13 @@ public class OnlineEventProcessor {
         if(details != null){
             eventDetails.put("details", details);
         }
-        appendRawEvent(new JsonObject()
+        int index = appendRawEvent(new JsonObject()
                 .put("eventType", "customEvent")
                 .put("eventDetails", eventDetails)
                 .put("timestamps", new JsonObject()
                         .put("eventTimestamp", timeFormatter.format(Instant.now())))
                 .encode());
+        recordKind(index, "customEvent", "EVENT_GAP");
     }
 
     /**
@@ -191,6 +214,11 @@ public class OnlineEventProcessor {
             log.warn("The uncharted timeline is disabled, dropping an observation of an uncharted step.");
             return;
         }
+        synchronized (this){
+            if(trajectoryCapture && observation.getDomSnapshot() != null){
+                domSnapshots.put(observation, observation.getDomSnapshot());
+            }
+        }
         unchartedLine.add(observation);
     }
 
@@ -207,6 +235,8 @@ public class OnlineEventProcessor {
     public synchronized void clearRawEvents(){
         pendingRawEvents.clear();
         rawEventCount = 0;
+        eventKinds.clear();
+        eventsOnTimeline.clear();
         closeRawEventsWriter();
         if(rawEventsPartFile != null){
             try{
@@ -328,6 +358,25 @@ public class OnlineEventProcessor {
             return;
         }
         sourceEvents.computeIfAbsent(entity, e->new ArrayList<>()).add(eventIndex);
+        eventsOnTimeline.set(eventIndex);
+    }
+
+    private synchronized void recordKind(int eventIndex, String eventType, String name){
+        eventKinds.put(eventIndex, new String[]{eventType, name});
+    }
+
+    /**
+     * @return the raw events at positions in {@code (fromExclusive, toInclusive]}, in order, e.g. the events of a step's
+     * window, see {@link StepLedger}.
+     */
+    public synchronized List<EventSummary> eventsIn(int fromExclusive, int toInclusive){
+        List<EventSummary> events = new ArrayList<>();
+        if(toInclusive <= fromExclusive){
+            return events;
+        }
+        eventKinds.subMap(fromExclusive, false, toInclusive, true).forEach((index, kind)->
+                events.add(new EventSummary(index, kind[0], kind[1], eventsOnTimeline.get(index))));
+        return events;
     }
 
     /**
@@ -471,6 +520,7 @@ public class OnlineEventProcessor {
 
             String eventType = event.getString("eventType");
             String eventName = eventDetails.getString("name");
+            recordKind(currentEventIndex, eventType, eventName);
 
             log.info("event type: {} - event name: {} - raw events size: {}", eventType, eventName, rawEventCount);
 
@@ -530,12 +580,13 @@ public class OnlineEventProcessor {
         Screenshot screenshot = Screenshot.fromBase64(eventDetails.getString("screenshot"));
 
         long timestamp = event.containsKey("timestamps")? parseTimestamp(event).toInstant().toEpochMilli() : Instant.now().toEpochMilli();
-        Observation observation = new Observation(trigger, triggerDetails, userLocation, screenshot, timestamp);
+        Observation observation = new Observation(trigger, triggerDetails, userLocation, screenshot, timestamp, null, null,
+                eventDetails.getString("domSnapshot"));
 
-        log.info("Observation triggered by {} at user location {}, with{} screenshot", trigger,
-                userLocation != null? userLocation: "N/A", screenshot != null? "": "out");
+        log.info("Observation triggered by {} at user location {}, with{} screenshot, with{} DOM snapshot", trigger,
+                userLocation != null? userLocation: "N/A", screenshot != null? "": "out", observation.getDomSnapshot() != null? "": "out");
 
-        attribute(observation, currentEventIndex);
+        attribute(observation, event);
         //Observations of uncharted actions only feed the uncharted agent, so they never split an Effect or a DataEntry.
         if(trigger == Observation.Trigger.START_TRANSMISSION){
             line.add(observation);
@@ -738,26 +789,11 @@ public class OnlineEventProcessor {
         clickEvent.setTimestamp(parseTimestamp(event));
 
         /*
-         * If the click event is a SPAN click, the terminal element of the click xpath should be a span.
-         * Do this check after creating the click event so that xpath truncation can take place first.
+         * Every click event is a click. OdoX's logUI logs a click once, for the innermost tracked element on its path,
+         * so consecutive clicks with the same xpath are separate clicks, e.g. pressing a "next" button twice, and both
+         * belong on the timeline. (OdoX used to log a click once per tracked element on its path, and duplicates with
+         * the same xpath were dropped here.)
          */
-        var eventName = event.getJsonObject("eventDetails").getString("name");
-        if(eventName.equals("SPAN_CLICK") && (!getTerminalElementOfXpath(clickEvent.getXpath()).contains("span") ||
-                clickEvent.getTriggerElement().text().isEmpty())){
-            return;
-        }
-
-        /**
-         * Special Case:
-         * If the last element in the timeline is also a click event, only add this click event if the xpaths differ.
-         * This arises from the fact that Odo-Sight can report the same click multiple times.
-         * Since we listen for click on <a> and <li> tags, if we have an element <li><a/></li> our listener will
-         * report the click twice, once for the <a> tag, and once for the <li> tag.
-         */
-        if(line.last() != null && line.last() instanceof ClickEvent && ((ClickEvent)line.last()).getXpath().equals(clickEvent.getXpath())){
-            return;
-        }
-
         attribute(clickEvent, event);
         line.add(clickEvent);
 

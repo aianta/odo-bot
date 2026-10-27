@@ -279,9 +279,7 @@ public final class QwenResponseParser {
         }
 
         if (lowLevelInstruction.isEmpty()) {
-            List<String> codes = PyAutoGui.codes(step.action, step.terminal);
-            String firstCode = codes.isEmpty() ? "" : codes.get(0);
-            lowLevelInstruction = "FAIL".equals(firstCode) ? "Need user input" : instructionFromFirstCode(firstCode);
+            lowLevelInstruction = fallbackInstruction(step.action, step.terminal);
         }
 
         return new ParsedStep(lowLevelInstruction, step.action, step.terminal, step.unsupported, step.answer);
@@ -436,20 +434,31 @@ public final class QwenResponseParser {
         return FAILURE_STATUSES.contains(normalized) ? Terminal.FAIL : Terminal.DONE;
     }
 
-    static String instructionFromFirstCode(String firstCode) {
-        if ("DONE".equals(firstCode)) {
-            return "Task completed";
+    /**
+     * The description Python gives a step whose response has no "Action:" line: "Performing &lt;pyautogui method&gt;
+     * action" for the first thing the step executes, e.g. "Performing click action".
+     */
+    static String fallbackInstruction(UnchartedInstruction action, Terminal terminal) {
+        if (action == null) {
+            return switch (terminal) {
+                case DONE -> "Task completed";
+                case FAIL -> "Need user input";
+                case NONE -> "Performing action";
+            };
         }
-        if ("WAIT".equals(firstCode)) {
-            return "Waiting";
-        }
-        int dot = firstCode.indexOf('.');
-        if (dot >= 0) {
-            String method = firstCode.substring(dot + 1);
-            int paren = method.indexOf('(');
-            return "Performing " + (paren >= 0 ? method.substring(0, paren) : method) + " action";
-        }
-        return "Performing action";
+        return switch (action) {
+            case LeftClick a -> "Performing click action";
+            case DoubleClick a -> "Performing doubleClick action";
+            case TripleClick a -> "Performing tripleClick action";
+            // Python types each line separately and presses Enter between lines, so text that starts with a line break
+            // starts with a key press.
+            case TypeText a -> a.text.startsWith("\n") ? "Performing press action" : "Performing typewrite action";
+            case KeyPress a -> a.isChord() ? "Performing hotkey action" : "Performing press action";
+            case Scroll a -> "Performing scroll action";
+            case HScroll a -> "Performing hscroll action";
+            case Wait a -> "Waiting";
+            default -> "Performing action";
+        };
     }
 
     /**

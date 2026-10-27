@@ -238,7 +238,6 @@ public class Qwen38Agent extends UnchartedAgent {
         ParsedStep parsed = QwenResponseParser.parseResponse(response, config.coordinateType(),
                 originalWidth, originalHeight, answer.processed().width(), answer.processed().height());
         log.info("Low level instruction: {}", parsed.lowLevelInstruction());
-        log.info("Pyautogui code: {}", parsed.pyAutoGuiCodes());
 
         String lowLevelInstruction = parsed.lowLevelInstruction();
         UnchartedInstruction stepAction = parsed.action();
@@ -310,7 +309,6 @@ public class Qwen38Agent extends UnchartedAgent {
                 QwenResponseParser.stripReasoning(response),
                 lowLevelInstruction,
                 step == null ? null : step.action.toJson(),
-                parsed.pyAutoGuiCodes(),
                 parsed.unsupported(),
                 parsed.terminal().name(),
                 parsed.answer(),
@@ -374,7 +372,6 @@ public class Qwen38Agent extends UnchartedAgent {
                 .put("low_level_instruction", parsed.lowLevelInstruction())
                 .put("terminal", parsed.terminal().name())
                 .put("answer", parsed.answer())
-                .put("pyautogui", new JsonArray(parsed.pyAutoGuiCodes()))
                 .put("unsupported", new JsonArray(parsed.unsupported()))
                 .put("instruction", step == null ? null : step.toJson())
                 .put("original_size", new JsonArray().add(originalWidth).add(originalHeight))

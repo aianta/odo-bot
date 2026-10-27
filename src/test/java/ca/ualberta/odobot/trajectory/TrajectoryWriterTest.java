@@ -42,7 +42,7 @@ class TrajectoryWriterTest {
         processor.setTrajectoryCapture(true);
         ledger = new StepLedger();
 
-        processor.process(startObservation(png(400, 300, Color.WHITE)));                       //0
+        processor.process(startObservation(png(400, 300, Color.WHITE), snapshot("start")));   //0
         TimelineEntity start = processor.unchartedTimeline().get(0);
 
         ledger.emitted(1, "uncharted_step", trace(1, start, new JsonObject().put("action", "left_click")
@@ -52,18 +52,19 @@ class TrajectoryWriterTest {
         processor.process(domEffect(2_020, "add", "/html/body/div[2]", "Saved", "saved"));    //2
         processor.process(domEffect(2_030, "remove", "/html/body/div[3]", "Spinner", "done"));//3
         processor.process(networkEvent(2_040, "POST", "http://shop.test/admin/catalog/product/save/")); //4
-        ledger.done(1, 2_050, "ok", null);
+        ledger.done(1, 2_050, "ok", null, new JsonObject().put("tagName", "button").put("id", "save"));
         Observation afterClick = new Observation(Observation.Trigger.UNCHARTED_ACTION, null, BASE_URI,
-                Screenshot.fromBase64(png(400, 300, Color.GRAY)), 3_000, 1, "exec-1");
+                Screenshot.fromBase64(png(400, 300, Color.GRAY)), 3_000, 1, "exec-1", snapshot("after click"));
         processor.addUnchartedObservation(afterClick);
         ledger.observed(1, afterClick, 3_000, processor.lastEventIndex());
+        ledger.assessChartedCoverage(1, processor);
 
         ledger.emitted(2, "uncharted_step", trace(2, afterClick, new JsonObject().put("action", "type").put("text", "Shirt")), null);
         ledger.sent(2, "exec-2", 4_000, processor.lastEventIndex());
         processor.process(input(4_010, "S", "typing"));                                        //5
         processor.process(input(4_020, "Shirt", "typed"));                                     //6
         Observation afterTyping = new Observation(Observation.Trigger.UNCHARTED_ACTION, null, BASE_URI,
-                Screenshot.fromBase64(png(400, 300, Color.GREEN)), 5_000, 2, "exec-2");
+                Screenshot.fromBase64(png(400, 300, Color.GREEN)), 5_000, 2, "exec-2", snapshot("after typing"));
         processor.addUnchartedObservation(afterTyping);
         ledger.observed(2, afterTyping, 5_000, processor.lastEventIndex());
     }
@@ -71,7 +72,7 @@ class TrajectoryWriterTest {
     static AgentTrace trace(int step, TimelineEntity input, JsonObject action) {
         return new AgentTrace(step, input, "<think>\nStep " + step + " because the form needs it.\n</think>\n\nAction: go",
                 "Step " + step + " because the form needs it.", "Action: go", "Do step " + step, action,
-                List.of("pyautogui.click(140, 65)"), List.of(), "NONE", null,
+                List.of(), "NONE", null,
                 new JsonArray().add(new JsonObject().put("role", "user")), "gen-" + step, 1000L, 80L, 12L,
                 "DeepInfra", "reasoning", List.of("reasoning.text"), null, 400, 300, 400, 300, 1_500L + step);
     }
@@ -105,8 +106,8 @@ class TrajectoryWriterTest {
         assertEquals(1, click.getInteger("first_seq"));
         assertEquals("/html/body/div/button", click.getString("xpath"));
         assertEquals("browser", click.getString("clock"));
-        assertEquals("screenshots/exp-1/" + STEM + "/charted-1.png", click.getString("screenshot_path"));
-        assertEquals("screenshots/exp-1/" + STEM + "/charted-1-crop.png", click.getString("crop_path"));
+        assertEquals("screenshots/exp-1/" + STEM + "/btn_click-1.png", click.getString("screenshot_path"));
+        assertEquals("screenshots/exp-1/" + STEM + "/btn_click-1-crop.png", click.getString("crop_path"));
         assertEquals(new JsonObject().put("x", 92).put("y", 42).put("width", 96).put("height", 46), click.getJsonObject("crop_box"));
         assertEquals("Save", click.getJsonObject("details").getString("text"));
         assertEquals(page("clicked"), staged.doms().getString(click.getString("dom_sha256")));
@@ -128,6 +129,12 @@ class TrajectoryWriterTest {
         assertEquals(5, entry.getInteger("first_seq"));
         assertEquals(6, entry.getInteger("last_seq"));
 
+        //Observations carry the page's DOM with their screenshot.
+        assertEquals(page("start"), staged.doms().getString(rows.get("charted:0").getString("dom_sha256")));
+        assertEquals(page("start"), staged.doms().getString(rows.get("uncharted:0").getString("dom_sha256")));
+        assertEquals(page("after click"), staged.doms().getString(rows.get("uncharted:1").getString("dom_sha256")));
+        assertEquals(page("after typing"), staged.doms().getString(rows.get("uncharted:2").getString("dom_sha256")));
+
         //The start observation is on both timelines, and its screenshot is written once.
         assertEquals(rows.get("charted:0").getString("screenshot_path"), rows.get("uncharted:0").getString("screenshot_path"));
         assertEquals("server", rows.get("uncharted:1").getString("clock"));
@@ -136,8 +143,9 @@ class TrajectoryWriterTest {
         for (String file : staged.files()) {
             assertTrue(Files.isRegularFile(folder.resolve(file)), file);
         }
-        assertTrue(staged.files().containsAll(List.of("charted-0.png", "charted-1.png", "charted-1-crop.png", "uncharted-1.png",
-                "uncharted-2.png", "step-1-action.png")));
+        assertTrue(staged.files().containsAll(List.of("observation-0.png", "btn_click-1.png", "btn_click-1-crop.png", "observation-1.png",
+                "observation-2.png", "step-1-action.png")));
+        assertEquals("screenshots/exp-1/" + STEM + "/observation-1.png", rows.get("uncharted:1").getString("screenshot_path"));
         assertTrue(Files.isRegularFile(folder.resolve(TrajectoryStore.STAGED_FILE)));
     }
 
@@ -155,6 +163,9 @@ class TrajectoryWriterTest {
         assertEquals("DeepInfra", step1.getString("provider"));
         assertTrue(step1.getBoolean("reasoning_complete"));
         assertEquals("screenshots/exp-1/" + STEM + "/step-1-action.png", step1.getString("action_crop_path"));
+        assertEquals("charted", step1.getJsonObject("charted_coverage").getString("verdict"));
+        assertEquals("save", step1.getJsonObject("charted_coverage").getJsonObject("target").getString("id"));
+        assertNull(staged.steps().getJsonObject(1).getValue("charted_coverage"), "step 2 was never assessed");
 
         Map<String, List<String>> links = staged.links().stream().map(o -> (JsonObject) o).collect(Collectors.groupingBy(
                 l -> l.getInteger("step_number") + "/" + l.getString("method"),
@@ -163,6 +174,44 @@ class TrajectoryWriterTest {
         assertEquals(List.of("charted:1"), links.get("1/spatial"), "the click point lies in the Save button's box");
         assertEquals(List.of("charted:4"), links.get("2/seq_window"));
         assertNull(links.get("2/spatial"), "typing is not a pointer action");
+    }
+
+    @Test
+    void screenshotsAreNamedAfterTheirEventAndNeverOverwriteEachOther() throws Exception {
+        //A click before the start observation puts that observation at charted position 1, the step's observation's
+        //uncharted position.
+        OnlineEventProcessor shifted = new OnlineEventProcessor();
+        shifted.setUnchartedTimelineEnabled(true);
+        shifted.setTrajectoryCapture(true);
+        shifted.process(click(500, "early", png(400, 300, Color.BLUE)));
+        shifted.process(startObservation(png(400, 300, Color.WHITE)));
+        shifted.addUnchartedObservation(new Observation(Observation.Trigger.UNCHARTED_ACTION, null, BASE_URI,
+                Screenshot.fromBase64(png(400, 300, Color.GRAY)), 3_000, 1, "exec-1"));
+
+        StagedTrajectory staged = TrajectoryWriter.stage(run(EVAL_ID), shifted, new StepLedger(), folder);
+
+        Map<String, String> paths = staged.entities().stream().map(o -> (JsonObject) o).collect(Collectors.toMap(
+                r -> r.getString("timeline") + ":" + r.getInteger("position"), r -> r.getString("screenshot_path")));
+        assertTrue(paths.get("charted:0").endsWith("/btn_click-0.png"));
+        assertTrue(paths.get("charted:1").endsWith("/observation-1.png"));
+        assertEquals(paths.get("charted:1"), paths.get("uncharted:0"), "the start observation is written once");
+        assertTrue(paths.get("uncharted:1").endsWith("/uncharted-observation-1.png"));
+        assertEquals(3, staged.files().stream().filter(f -> !f.endsWith("-crop.png")).count());
+    }
+
+    @Test
+    void onlyPointerStepsGetAnActionCrop() throws Exception {
+        TimelineEntity afterTyping = processor.unchartedTimeline().get(2);
+        ledger.emitted(3, "uncharted_step", trace(3, afterTyping, new JsonObject().put("action", "scroll")
+                .put("x", 200).put("y", 150).put("screenshotWidth", 400).put("screenshotHeight", 300)), null);
+        ledger.sent(3, "exec-3", 6_000, processor.lastEventIndex());
+
+        StagedTrajectory staged = TrajectoryWriter.stage(run(EVAL_ID), processor, ledger, folder);
+
+        assertNotNull(staged.steps().getJsonObject(0).getString("action_crop_path"), "a click gets an action crop");
+        assertNull(staged.steps().getJsonObject(2).getString("action_crop_path"), "a scroll aims at no element");
+        assertFalse(staged.files().contains("step-3-action.png"));
+        assertFalse(Files.exists(folder.resolve("step-3-action.png")));
     }
 
     @Test

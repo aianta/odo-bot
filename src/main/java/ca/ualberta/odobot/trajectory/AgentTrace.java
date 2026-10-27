@@ -18,7 +18,6 @@ import java.util.List;
  * @param committedResponse   the answer without its reasoning, as replayed in the conversation.
  * @param lowLevelInstruction the model's one-sentence description of the step.
  * @param action              the action executed, as sent to OdoX, or null if the step executes none.
- * @param pyAutoGui           the step as OSWorld's pyautogui code.
  * @param unsupported         actions the model asked for that were not executed, with why.
  * @param terminal            NONE, DONE or FAIL.
  * @param answer              the answer the model gave when it ended the task, or null.
@@ -46,7 +45,6 @@ public record AgentTrace(
         String committedResponse,
         String lowLevelInstruction,
         JsonObject action,
-        List<String> pyAutoGui,
         List<String> unsupported,
         String terminal,
         String answer,
@@ -67,7 +65,6 @@ public record AgentTrace(
 ) {
 
     public AgentTrace {
-        pyAutoGui = pyAutoGui == null ? List.of() : List.copyOf(pyAutoGui);
         unsupported = unsupported == null ? List.of() : List.copyOf(unsupported);
         reasoningFormats = reasoningFormats == null ? List.of() : List.copyOf(reasoningFormats);
         reasoning = reasoning == null ? "" : reasoning;

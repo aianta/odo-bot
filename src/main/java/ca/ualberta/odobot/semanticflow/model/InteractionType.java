@@ -7,7 +7,8 @@ import java.util.Set;
 
 public enum InteractionType{
 
-    CLICK(Set.of("SPAN_CLICK","LINK_CLICK","TD_CLICK","BUTTON_CLICK_ACTUAL","BTN_CLICK", "LIST_ITEM_CLICK", "INPT_CLICK")),
+    //OdoX logs every click as ELEMENT_CLICK; the per-tag names remain for recordings made before it did.
+    CLICK(Set.of("ELEMENT_CLICK", "SPAN_CLICK","LINK_CLICK","TD_CLICK","BUTTON_CLICK_ACTUAL","BTN_CLICK", "LIST_ITEM_CLICK", "INPT_CLICK")),
     INPUT(Set.of("INPUT_CHANGE")),
     NETWORK_EVENT(Set.of("NETWORK_EVENT")),
     DOM_EFFECT(Set.of("DOM_EFFECT")),

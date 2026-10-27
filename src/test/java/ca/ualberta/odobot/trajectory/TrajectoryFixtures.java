@@ -93,9 +93,16 @@ public final class TrajectoryFixtures {
     }
 
     public static JsonObject startObservation(String screenshot) {
+        return startObservation(screenshot, null);
+    }
+
+    /**
+     * @param domSnapshot the page's DOM snapshot as OdoX sends it with the screenshot, see {@link #snapshot}, or null.
+     */
+    public static JsonObject startObservation(String screenshot, String domSnapshot) {
         return new JsonObject().put("eventType", "customEvent").put("eventDetails", new JsonObject()
                         .put("name", "OBSERVATION").put("trigger", "START_TRANSMISSION")
-                        .put("userLocation", BASE_URI).put("screenshot", screenshot))
+                        .put("userLocation", BASE_URI).put("screenshot", screenshot).put("domSnapshot", domSnapshot))
                 .put("timestamps", timestamps(1_000));
     }
 

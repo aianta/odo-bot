@@ -147,7 +147,6 @@ class Qwen38AgentTest {
         waitUntil(() -> lines(artifactDir.resolve("eval-1-qwen38-trajectory.jsonl")) == 3);
         assertTrue(Files.exists(artifactDir.resolve("eval-1-qwen38-messages-step-0.json")));
         JsonObject firstLine = new JsonObject(Files.readAllLines(artifactDir.resolve("eval-1-qwen38-trajectory.jsonl")).get(0));
-        assertEquals(List.of("pyautogui.click(960, 540)"), firstLine.getJsonArray("pyautogui").getList());
         assertEquals("req-1", firstLine.getString("request_id"));
     }
 

@@ -512,7 +512,7 @@ Every message, both ways, is a flat JSON object:
 
 | Channel | Manager | Messages (→X to OdoX, →B to OdoBot; replies in parentheses) |
 |---|---|---|
-| `event` | `EventConnectionManager` | →X `START_TRANSMISSION` (`TRANSMISSION_STARTED`, sent after the start Observation `EVENT`), `STOP_TRANSMISSION` (`TRANSMISSION_STOPPED`), `GET_SCREENSHOT` (`SCREENSHOT`), `PATH_COMPLETE` (`PATH_COMPLETE_ACK`). →B `EVENT` (numbered by `seq`), streamed into the `OnlineEventProcessor`; `EVENT_GAP`, messages OdoX's outbox had to drop. |
+| `event` | `EventConnectionManager` | →X `START_TRANSMISSION` (`TRANSMISSION_STARTED`, sent after the start Observation `EVENT`), `STOP_TRANSMISSION` (`TRANSMISSION_STOPPED`), `GET_SCREENSHOT` (`SCREENSHOT`: screenshot, URL and the page's DOM snapshot, taken together), `PATH_COMPLETE` (`PATH_COMPLETE_ACK`). →B `EVENT` (numbered by `seq`), streamed into the `OnlineEventProcessor`; `EVENT_GAP`, messages OdoX's outbox had to drop. |
 | `guidance` | `GuidanceConnectionManager`, fed by `InstructionDispatcher` | →X `EXECUTE` (`EXECUTE_DONE` with `status` `ok` / `failed` / `page-gone` once it has run, or `EXECUTION_RESULT` for `queryDom` / `getDOMSnapshot` / `getUIControlState`), `SHOW_NAVIGATION_OPTIONS` (`NAVIGATION_OPTIONS_SHOW_RESULT`), `CLEAR_NAVIGATION_OPTIONS` (`CLEAR_NAVIGATION_OPTIONS_RESULT`). →B `REGISTER_ALTERNATE_XPATH` (`ALTERNATE_XPATH_CONFIRMED`, sent to the page that asked), `UNRESOLVABLE_XPATH`, `PAGE_READY` / `PAGE_GONE` (with the page's `pageId`), `NOT_DELIVERED` (answers a message for a page that isn't the target). |
 
 `AbstractConnectionManager` matches replies to requests and records a timestamped `history` per
@@ -529,6 +529,13 @@ gets no reply in time, is dropped, not counted, and the page is observed again. 
 wait for `EXECUTE_DONE` (charted agents advance on the effects they observe); an undelivered
 charted instruction is re-queued for the next page. `InstructionDispatcher.cancel()` ends it all
 when the task ends: nothing is sent to a page afterwards.
+
+Each uncharted step is checked for an interaction on the charted timeline once its result is
+observed: `StepLedger.assessChartedCoverage` reads the step's window of raw events through
+`OnlineEventProcessor.eventsIn`, and `ChartedCoverage` gives a verdict (`charted`, `unmapped`,
+`event_gap`, `uninstrumented`, `silent` or `not_checked`). A gap is logged as `CHARTED_GAP`, with the
+target element OdoX described in the step's `EXECUTE_DONE` (`target`), and saved with the
+trajectory as the step's `charted_coverage`. Scrolls and waits are not checked.
 
 Lost events are recorded in the raw event log as `EVENT_GAP` custom events, from a `seq` jump or
 an `EVENT_GAP` message, by `OnlineEventProcessor.injectEventGap`.
